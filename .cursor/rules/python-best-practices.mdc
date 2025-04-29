@@ -1,0 +1,105 @@
+---
+description:
+globs: *.py
+alwaysApply: false
+---
+# Python Development Best Practices
+
+## Project Structure
+- Organize code by feature/domain or by layer
+- Use `src/` layout for packages
+- Keep modules focused and cohesive
+- Use `__init__.py` files strategically
+- Maintain clear import hierarchy
+- Place tests in parallel structure
+
+## Code Style & Quality
+- Follow PEP 8 style guide
+- Use type hints consistently
+- Employ dataclasses or Pydantic models for data structures
+- Keep functions focused and under 50 lines
+- Use descriptive variable names
+- Document with clear docstrings (Google style)
+- Add typing stubs for complex interfaces
+
+## Dependencies & Environment
+- All project dependencies and environments should be managed through `uv`
+- do NOT use traditional `python`, `pip`, `venv` tools; use `uv` instead
+- Maintain explicit dependencies with version pins
+- Employ virtual environments
+- Keep development dependencies separate
+
+## Testing & Quality Assurance
+- Write unit tests with pytest
+- Use fixtures for test setup
+- Mock external dependencies
+- Test both success and error paths
+- Measure coverage with coverage.py
+- Run tests in CI pipeline
+
+## Error Handling
+- Use specific exceptions
+- Create custom exception hierarchies
+- Handle errors at appropriate levels
+- Log errors with context
+- Provide meaningful error messages
+- Use context managers for cleanup
+
+## Async Development
+- Use `async`/`await` consistently
+- Handle async context managers properly
+- Manage task lifecycles
+- Use appropriate async primitives
+- Consider thread safety
+- Handle cancellation gracefully
+
+## Configuration & Environment
+- Validate configuration at startup
+- Keep secrets separate from code
+- Use strong typing for config
+- Provide development defaults
+- Document all config options
+
+## Logging & Monitoring
+- Use structured logging
+- Include contextual information
+- Configure appropriate log levels
+- Handle logging in async code
+- Consider log aggregation
+- Monitor performance metrics
+
+## Security
+- Use secure defaults
+- Validate all inputs
+- Handle secrets securely
+- Keep dependencies updated
+- Use security scanning tools
+
+## Performance
+- Use appropriate data structures
+- Consider memory usage
+
+## Documentation
+- Write clear docstrings
+- Include usage examples
+- Document exceptions
+- Keep docs updated with code
+- Use type hints as documentation
+- Document complex algorithms
+
+## Development Tools
+The following tools should be configured and used:
+- `ruff` for fast linting and formatting
+- `mypy` for static type checking
+- `pytest` for testing
+- `pre-commit` for git hooks
+- `coverage.py` for test coverage
+- `direnv` for automatic env setup
+
+## Version Control
+- Write meaningful commit messages
+- Use feature branches
+- Keep commits focused
+- Review code before merging
+- Tag releases appropriately
+- Follow semantic versioning

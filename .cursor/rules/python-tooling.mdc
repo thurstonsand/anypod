@@ -1,0 +1,122 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Python Tooling Configuration
+
+## Code Formatting
+Configure `black` with:
+```toml
+[tool.black]
+line-length = 88
+target-version = ['py39']
+include = '\.pyi?$'
+extend-exclude = '''
+# A regex preceded with ^/ will apply only to files and directories
+# in the root of the project.
+^/foo.py  # exclude a file named foo.py in the root of the project
+'''
+```
+
+## Linting with Ruff
+Configure `ruff` with:
+```toml
+[tool.ruff]
+line-length = 88
+target-version = "py39"
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "C",   # flake8-comprehensions
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+]
+ignore = []
+
+[tool.ruff.mccabe]
+max-complexity = 10
+```
+
+## Type Checking
+Configure `mypy` with:
+```toml
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+```
+
+## Testing
+Configure `pytest` with:
+```toml
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q --cov"
+testpaths = [
+    "tests",
+]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test", "Acceptance"]
+python_functions = ["test_*"]
+```
+
+## Coverage
+Configure `coverage` with:
+```toml
+[tool.coverage.run]
+branch = true
+source = ["src"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "pass",
+    "raise ImportError",
+]
+ignore_errors = true
+omit = ["tests/*", "setup.py"]
+```
+
+## Pre-commit
+Configure `.pre-commit-config.yaml` with:
+```yaml
+repos:
+-   repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+    -   id: trailing-whitespace
+    -   id: end-of-file-fixer
+    -   id: check-yaml
+    -   id: check-added-large-files
+-   repo: https://github.com/psf/black
+    rev: 23.3.0
+    hooks:
+    -   id: black
+-   repo: https://github.com/charliermarsh/ruff-pre-commit
+    rev: v0.0.260
+    hooks:
+    -   id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+-   repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.2.0
+    hooks:
+    -   id: mypy
+        additional_dependencies: [types-all]
+```
+
+These configurations should be placed in `pyproject.toml` unless specified otherwise. They represent modern Python development best practices and ensure consistent code quality across the project.

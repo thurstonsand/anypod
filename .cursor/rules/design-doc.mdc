@@ -1,0 +1,27 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+# Design Document Reference
+
+The [DESIGN_DOC.md](mdc:DESIGN_DOC.md) contains the complete system architecture and specifications for Anypod. This document should be referenced when:
+
+1. Understanding the system architecture
+2. Checking configuration formats
+3. Verifying database schema
+4. Reviewing API endpoints
+5. Understanding deployment requirements
+
+Key sections include:
+- Purpose and non-goals
+- High-level architecture with Mermaid diagrams
+- Configuration examples with YAML
+- Database schema and status lifecycle
+- Processing flow
+- HTTP endpoints
+- Command-line flags
+- Deployment specifications
+- Dependencies and tooling
+
+All development work should align with the specifications in this document.

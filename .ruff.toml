@@ -1,0 +1,44 @@
+line-length = 88
+target-version = "py313"
+
+[lint]
+select = [
+    "E",   # pycodestyle
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "DTZ", # flake8-datetimez
+    "PIE", # flake8-pie
+    "SIM", # flake8-simplify
+    "PTH", # flake8-use-pathlib
+    "RUF", # ruff-specific rules
+]
+ignore = [
+    "E501", # line too long (handled by line-length)
+    "E203", # whitespace before ':'
+]
+exclude = [
+    ".venv",
+    ".git",
+    ".tox",
+    "docs",
+    "venv",
+    "bin",
+    "lib",
+    "deps",
+    "build",
+    "custom_components/old_godspeed/**", # TODO: Remove this exclusion once old_godspeed folder is deleted
+]
+
+[lint.isort]
+combine-as-imports = true
+force-sort-within-sections = true
+known-first-party = ["custom_components.godspeed", "tests"]
+
+[format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"

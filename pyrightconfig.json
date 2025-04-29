@@ -1,0 +1,35 @@
+{
+    "include": [
+        "src"
+    ],
+    "exclude": [
+        "**/node_modules",
+        "**/__pycache__",
+        ".venv",
+        "build",
+        "dist"
+    ],
+    "ignore": [
+        "**/legacy/**"
+    ],
+    "typeCheckingMode": "strict",
+    "strict": [
+        "src"
+    ],
+    "pythonVersion": "3.13",
+    "pythonPlatform": "All",
+    "venvPath": ".",
+    "venv": ".venv",
+    "useLibraryCodeForTypes": false,
+    "strictListInference": true,
+    "strictDictionaryInference": true,
+    "strictSetInference": true,
+    "reportMissingImports": "error",
+    "reportMissingTypeStubs": "error",
+    "reportMissingModuleSource": "warning",
+    "reportUnusedImport": "warning",
+    "reportUnusedVariable": "warning",
+    "reportOptionalMemberAccess": "error",
+    "reportOptionalCall": "error",
+    "stubPath": "typings"
+}

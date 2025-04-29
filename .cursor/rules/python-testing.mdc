@@ -1,0 +1,98 @@
+---
+description:
+globs: tests/**/*.py
+alwaysApply: false
+---
+# Python Testing Best Practices
+
+## Test Structure
+- Place tests in a `tests/` directory parallel to `src/`
+- Mirror the package structure in tests
+- Use clear test names that describe behavior
+- Group related tests in classes
+- Keep test files focused and manageable
+
+## Test Organization
+```python
+# Example test structure
+tests/
+├── conftest.py           # shared fixtures
+├── unit/                 # unit tests
+│   └── test_module.py
+├── integration/          # integration tests
+│   └── test_integration.py
+└── e2e/                  # end-to-end tests
+    └── test_e2e.py
+```
+
+## Writing Tests
+- Use descriptive test names
+- Follow Arrange-Act-Assert pattern
+- One assertion per test when possible
+- Test both success and failure paths
+- Keep tests independent
+- Avoid test interdependence
+
+## Fixtures
+- Use fixtures for setup/teardown
+- Share fixtures in `conftest.py`
+- Scope fixtures appropriately
+- Use factory fixtures for flexibility
+- Clean up resources properly
+- Document fixture purposes
+
+## Mocking
+- Mock at the right level
+- Use `unittest.mock` or `pytest-mock`
+- Verify mock calls when behavior matters
+- Don't mock what you don't own
+- Reset mocks between tests
+- Use spy objects when appropriate
+
+## Test Coverage
+- Aim for meaningful coverage
+- Use branch coverage
+- Exclude appropriate paths
+- Don't chase 100% blindly
+- Document coverage decisions
+- Review uncovered sections
+
+## Async Testing
+- Use `pytest-asyncio`
+- Mark async tests appropriately
+- Handle coroutines correctly
+- Test timeouts and cancellation
+- Mock async dependencies properly
+- Use appropriate async fixtures
+
+## Performance
+- Keep tests fast
+- Use appropriate test scopes
+- Parallelize with `pytest-xdist`
+- Profile slow tests
+- Cache expensive operations
+- Use test categories
+
+## Best Practices
+- Write tests before fixing bugs
+- Test public interfaces primarily
+- Keep tests readable
+- Don't test implementation details
+- Use appropriate assertions
+- Document test requirements
+
+## Test Data
+- Use factories for test data
+- Keep test data minimal
+- Use realistic data shapes
+- Avoid hard-coded values
+- Version control test data
+- Clean up test data
+
+## Continuous Integration
+- Run tests in CI
+- Use matrix testing
+- Test multiple Python versions
+- Enforce coverage thresholds
+- Report test results clearly
+- Cache test dependencies
