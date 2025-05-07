@@ -1,0 +1,9 @@
+feeds:
+  this_american_life:
+    url: https://www.youtube.com/@thisamericanlife/playlists
+    yt_args: >
+      -f "(bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4])"
+      --cookies /cookies/tal.txt
+    schedule: "0 3 * * *"          # cron (required)
+    keep_last: 100                 # prune policy (optional)
+    since: "2024-01-01T00:00:00Z"  # ignore older videos (optional)

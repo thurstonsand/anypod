@@ -7,13 +7,14 @@ alwaysApply: false
 
 ## Test Structure
 - Place tests in a `tests/` directory parallel to `src/`
+- reference packages in src directly; do not prepend a `src.<package>`, just `<package>`
 - Mirror the package structure in tests
 - Use clear test names that describe behavior
 - Group related tests in classes
 - Keep test files focused and manageable
 
 ## Test Organization
-```python
+```
 # Example test structure
 tests/
 ├── conftest.py           # shared fixtures
@@ -32,6 +33,7 @@ tests/
 - Test both success and failure paths
 - Keep tests independent
 - Avoid test interdependence
+- if an assert is non-obvious, add a descriptive message to make failures clear
 
 ## Fixtures
 - Use fixtures for setup/teardown

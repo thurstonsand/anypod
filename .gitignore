@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+
+# Virtual environment
+
+# Distribution / packaging
+build/
+
+# OS-specific
+.DS_Store
+Thumbs.db
+
+.coverage
+*.log
+*.tmp

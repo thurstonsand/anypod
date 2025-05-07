@@ -50,15 +50,17 @@ graph TD
 
 ## 4  Configuration Example
 ```yaml
-this_american_life:
-  url: https://www.youtube.com/@thisamericanlife/playlists
-  yt_args: |
-    -f "(bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4])"
-    --cookies /cookies/tal.txt
-  schedule: "0 3 * * *"          # cron (required)
-  keep_last: 100                 # prune policy (optional)
-  since: "2024-01-01T00:00:00Z"  # ignore older videos (optional)
-  max_attempts: 3                # retry cap (optional)
+feeds:
+  this_american_life:
+    url: https://www.youtube.com/@thisamericanlife/playlists
+    yt_args: |
+      -f "(bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4])"
+      --cookies /cookies/tal.txt
+    schedule: "0 3 * * *"          # cron (required)
+    keep_last: 100                 # prune policy (optional)
+    since: "2024-01-01T00:00:00Z"  # ignore older videos (optional)
+  radio_lab:
+    ...
 ```
 *Only the keys above are validated; any other text inside `yt_args` is passed verbatim to yt-dlp.*
 
@@ -158,6 +160,9 @@ sequenceDiagram
 * Transcoding fallback (ffmpeg) for non-MP4/M4A sources
 * OAuth device-flow
 * Prometheus `/metrics`
+* Support transcripts/auto-generated (whisper can natively output .srt files)
+  * > I’m a podcast author, how can I add transcripts to my show?
+    > In order for Pocket Casts to discover transcripts for an episode and offer them within the app, the podcast feed must include the <podcast:transcript> element and the transcript must be in one of the following formats: VTT, SRT, PodcastIndex JSON, or HTML.
 
 ---
 **End of document**

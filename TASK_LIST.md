@@ -27,9 +27,10 @@ tests/
 ```
 
 ## 2  Configuration Loader
-- [ ] Pydantic V2 models reflecting YAML keys.
-- [ ] `load_config(path) -> dict[str, FeedConfig]`.
-- [ ] Unit tests using fixture YAML.
+- [x] Pydantic V2 models reflecting YAML keys.
+- [x] `load_config(path) -> dict[str, FeedConfig]`.
+  - ended up going with Pydantic Settings instead, seems to work better
+- [x] Unit tests using fixture YAML.
 
 ## 3  Database Layer
 - [ ] Migrations via `sqlite-utils` (`downloads` table + indices).
