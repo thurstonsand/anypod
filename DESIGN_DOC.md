@@ -22,18 +22,18 @@ Anypod is a thin Python wrapper around **yt-dlp** that converts any yt-dlp–sup
 graph TD
   subgraph Config & Scheduler
     A["YAML feeds.yml"]
-    B["APScheduler\n(per-feed cron)"]
+    B["APScheduler (per-feed cron)"]
     A --> B
   end
 
   subgraph Worker Cycle
-    B --> C["Enqueue\nnew items"]
-    C --> D["Download\nqueued"]
+    B --> C["Enqueue new items"]
+    C --> D["Download queued"]
     D --> E["Prune keep_last"]
     E --> F["Generate RSS XML"]
   end
 
-  F --> G["FastAPI\nStatic server"]
+  F --> G["FastAPI Static server"]
   D -->|files| H[(SQLite)]
   C --> H
   E --> H
@@ -103,18 +103,29 @@ sequenceDiagram
   participant S as Scheduler
   participant W as Worker
   participant DB as SQLite
-  participant FS as Filesystem
+  participant FM as FileManager
   participant FG as Feedgen
 
-  S->>W: process_feed(feed)
-  W->>DB: enqueue_new_items()
-  W->>W: download queued
-  W->>DB: update status
-  W->>FS: save file
-  W->>DB: prune_old_items()
+  S->>W: process_feed(feed_config)
+  W->>DB: enqueue_new_items(feed_config)
+  W->>W: download_queued_items()
+  W->>DB: update_status() for downloads
+  W->>FM: save_file(path, data)
+
+  Note over W: Perform Pruning based on feed_config
+  W->>DB: get_items_to_prune_X(feed_config)
+  Note over W, FM: For each item identified for pruning:
+  W->>FM: delete_file(path)
+  W->>DB: remove_pruned_items(feed, video_ids_batch)
+
   W->>FG: generate_feed_xml()
-  FG->>FS: write feeds/{feed}.xml
+  FG->>FM: write_feed_xml(feed, xml_data)
 ```
+
+* Pruning of old items is handled by a multi-step process:
+  1. Identify items to prune.
+  2. Delete associated media files (via FileManager).
+  3. Remove item records from DB.
 
 ---
 
@@ -161,8 +172,5 @@ sequenceDiagram
 * OAuth device-flow
 * Prometheus `/metrics`
 * Support transcripts/auto-generated (whisper can natively output .srt files)
-  * > I’m a podcast author, how can I add transcripts to my show?
+  * > I'm a podcast author, how can I add transcripts to my show?
     > In order for Pocket Casts to discover transcripts for an episode and offer them within the app, the podcast feed must include the <podcast:transcript> element and the transcript must be in one of the following formats: VTT, SRT, PodcastIndex JSON, or HTML.
-
----
-**End of document**

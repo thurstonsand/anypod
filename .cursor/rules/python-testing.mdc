@@ -82,6 +82,7 @@ tests/
 - Don't test implementation details
 - Use appropriate assertions
 - Document test requirements
+- Annotate all tests with a pytest marker for either "Unit" or "Integration"
 
 ## Test Data
 - Use factories for test data

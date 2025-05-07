@@ -35,6 +35,7 @@ asyncio_default_fixture_loop_scope = "function"
 
 [tool.coverage.run]
 source = ["src"]
+omit = ["src/main.py"] # we won't test the main file
 
 [tool.coverage.report]
 fail_under = 70

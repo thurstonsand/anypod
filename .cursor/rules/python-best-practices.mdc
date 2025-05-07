@@ -17,10 +17,11 @@ alwaysApply: false
 - Follow PEP 8 style guide
 - Use type hints consistently
 - Employ dataclasses or Pydantic models for data structures
-- Keep functions focused and under 50 lines
+- Keep functions/methods focused and under 50 lines
 - Use descriptive variable names
 - Document with clear docstrings (Google style)
 - Add typing stubs for complex interfaces
+- prefer `<type> | None` over `Optional[<type>]`
 
 ## Dependencies & Environment
 - All project dependencies and environments should be managed through `uv`

@@ -33,9 +33,38 @@ tests/
 - [x] Unit tests using fixture YAML.
 
 ## 3  Database Layer
-- [ ] Migrations via `sqlite-utils` (`downloads` table + indices).
-- [ ] CRUD helpers: `add_item`, `update_status`, `next_queued_items`, `prune_old_items`.
-- [ ] Tests with tmp in-memory DB.
+- [x] CRUD helpers:
+  - [x] `add_item`
+  - [x] `update_status`
+  - [x] `next_queued_items`
+  - [x] `get_item_by_video_id`
+  - [x] `get_errors`
+  - [x] `get_items_to_prune_by_keep_last`
+  - [x] `get_items_to_prune_by_since`
+  - [x] `remove_pruned_items`
+- [x] Tests with tmp in-memory DB.
+
+## 3.2 File Manager Layer
+- [ ] Handles all direct filesystem operations (read, write, delete files, check existence, create directories).
+- [ ] Abstract away storage details (e.g., base media directory from config).
+- [ ] `save_media_file(feed_name, filename, data_stream) -> Path`.
+- [ ] `delete_media_file(path_to_file) -> bool`.
+- [ ] `get_media_path(feed_name, filename) -> Path`.
+
+## 3.5 Data Coordination Layer
+- [ ] Orchestrates operations between `DatabaseManager` and `FileManager`.
+- [ ] Handles logic for adding/updating items considering existing files and DB entries (e.g., delete old file before replacing DB record).
+- [ ] Manages the multi-step pruning process (get items, delete files, delete DB entries).
+- [ ] `add_item`
+- [ ] `update_status`
+- [ ] `download_queued_items` (using `data.next_queued_items`, `fm.download_items`, `data.update_status`)
+- [ ] `get_item_by_video_id`
+- [ ] `get_errors`
+- [x] `prune_old_downloads`
+- [ ] Implement discrepancy detection logic:
+  - [ ] Find DB entries with `DOWNLOADED` status but no corresponding media file.
+  - [ ] Find media files on disk with no corresponding `DOWNLOADED` DB entry.
+  - [ ] (Optional) Automated resolution strategies or reporting for discrepancies.
 
 ## 4  Downloader Stub
 - [ ] Wrap yt-dlp library; function `download_once(item, yt_args) -> bool`.
@@ -45,10 +74,12 @@ tests/
 ## 5  Scheduler / Worker Loop
 - [ ] Init APScheduler (asyncio).
 - [ ] For each feed (post-validation) add cron trigger → `process_feed`.
-- [ ] Implement `process_feed` steps 1–4 (enqueue → download → prune → generate RSS).
+- [ ] Implement `process_feed` steps:
+  - [ ] 1. Enqueue new items (using `fetch_metadata` and `data.add_item`)
+  - [ ] 2. Download queued items
+  - [ ] 3. Generate RSS feed (using `feedgen.generate_feed_xml`)
 
 ## 6  Feed Generation
-- [ ] Vendor specific commit of `feedgen` under `vendor/`.
 - [ ] `generate_feed_xml(feed_name)` writes to `/feeds/{feed}.xml.tmp` then atomic `mv`.
 - [ ] Unit test verifying enclosure URLs and MIME types.
 
@@ -59,21 +90,22 @@ tests/
 - [ ] Tests with `httpx` for endpoints.
 
 ## 8  CLI & Flags
-- [ ] `python -m anypod` parses flags: `--config`, `--ignore-startup-errors`, `--retry-failed`, `--log-level`.
+- [ ] `python -m anypod` parses flags: `--ignore-startup-errors`, `--retry-failed`, `--log-level`.
 - [ ] Docstrings and `argparse` help messages.
 
 ## 9  Docker & Dev Flow
 - [ ] `Dockerfile` (python:3.13-slim, default root, overridable UID/GID).
 - [ ] `.dockerignore` to exclude tests, .git, caches.
-- [ ] `make dev-shell` or similar for live-reload mounts.
+- [ ] set up a dev env with containers.
 
 ## 10  Release Automation
 - [ ] GH Action `release-yt-dlp.yaml`: on yt-dlp tag → rebuild, test, draft release.
-- [ ] GH Action `deps-bump.yaml`: daily `uv pip install --upgrade --groups dev`, open PR if `uv.lock` changes.
+- [ ] GH Action `deps-bump.yaml`: automate minor release if all tests pass
+  - [ ] if major version bump detected, require manual sign off
 
 ---
 
-When all boxes are checked, you’ll be able to run:
+When all boxes are checked, you'll be able to run:
 
 ```bash
 docker run \
