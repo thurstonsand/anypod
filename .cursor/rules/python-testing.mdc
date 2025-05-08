@@ -28,7 +28,7 @@ tests/
 
 ## Writing Tests
 - Use descriptive test names
-- Follow Arrange-Act-Assert pattern
+- Follow Arrange-Act-Assert pattern but don't leave comments saying that you are
 - One assertion per test when possible
 - Test both success and failure paths
 - Keep tests independent

@@ -4,7 +4,7 @@ import sqlite3
 
 import pytest
 
-from anypod.db import DatabaseManager, DownloadItem, DownloadStatus
+from anypod.db import DatabaseManager, Download, DownloadStatus
 
 # --- Fixtures ---
 
@@ -12,20 +12,19 @@ from anypod.db import DatabaseManager, DownloadItem, DownloadStatus
 @pytest.fixture
 def db_manager(tmp_path_factory: pytest.TempPathFactory) -> Iterator[DatabaseManager]:
     """Provides a DatabaseManager instance with a temporary file-based SQLite database."""
-    # Using tmp_path_factory to create a unique temporary directory for the test run
     temp_dir = tmp_path_factory.mktemp("test_db_data")
     db_file = temp_dir / "test_anypod.db"
     manager = DatabaseManager(db_path=db_file)
     yield manager  # Test will run here
-    manager.close()  # Ensure DB connection is closed
+    manager.close()
 
 
 @pytest.fixture
-def sample_item() -> DownloadItem:
-    """Provides a sample DownloadItem instance for adding to the DB."""
-    return DownloadItem(
+def sample_download() -> Download:
+    """Provides a sample Download instance for adding to the DB."""
+    return Download(
         feed="test_feed",
-        video_id="v123",
+        id="v123",
         source_url="http://example.com/video/v123",
         title="Test Video Title One",
         published=datetime.datetime(2023, 1, 1, 12, 0, 0, tzinfo=datetime.UTC),
@@ -33,11 +32,81 @@ def sample_item() -> DownloadItem:
         duration=120.5,
         thumbnail="http://example.com/thumb/v123.jpg",
         status=DownloadStatus.QUEUED,
-        # path, retries, last_error will use defaults from DownloadItem (None, 0, None)
     )
 
 
 # --- Tests ---
+
+
+@pytest.mark.unit
+def test_download_equality_and_hash(sample_download: Download):
+    """Test equality and hashability of Download objects."""
+    download1_v1 = sample_download
+    download2_v1_same_key = Download(
+        feed="test_feed",
+        id="v123",  # Same feed and id as sample_download
+        source_url="http://example.com/video/v123_alt",
+        title="Test Video Title One Alt",
+        published=datetime.datetime(2023, 1, 1, 13, 0, 0, tzinfo=datetime.UTC),
+        ext="mkv",
+        duration=130.5,
+        thumbnail="http://example.com/thumb/v123_alt.jpg",
+        status=DownloadStatus.DOWNLOADED,  # Different status
+    )
+    download3_v2_diff_id = Download(
+        feed="test_feed",
+        id="v456",  # Different id
+        source_url="http://example.com/video/v456",
+        title="Test Video Title Two",
+        published=datetime.datetime(2023, 1, 2, 12, 0, 0, tzinfo=datetime.UTC),
+        ext="mp4",
+        duration=180,
+        thumbnail="http://example.com/thumb/v456.jpg",
+        status=DownloadStatus.QUEUED,
+    )
+    download4_feed2_v1_diff_feed = Download(
+        feed="another_feed",  # Different feed
+        id="v123",
+        source_url="http://example.com/video/another_v123",
+        title="Another Feed Video",
+        published=datetime.datetime(2023, 1, 1, 12, 0, 0, tzinfo=datetime.UTC),
+        ext="mp4",
+        duration=120.5,
+        thumbnail="http://example.com/thumb/another_v123.jpg",
+        status=DownloadStatus.QUEUED,
+    )
+
+    # Test equality
+    assert download1_v1 == download2_v1_same_key, (
+        "Downloads with same feed/id should be equal"
+    )
+    assert download1_v1 != download3_v2_diff_id, (
+        "Downloads with different id should not be equal"
+    )
+    assert download1_v1 != download4_feed2_v1_diff_feed, (
+        "Downloads with different feed should not be equal"
+    )
+
+    # Test hashability (equal objects must have equal hashes)
+    assert hash(download1_v1) == hash(download2_v1_same_key), (
+        "Hashes of equal Download objects should be equal"
+    )
+
+    # Test usage in a set
+    download_set = {
+        download1_v1,
+        download2_v1_same_key,
+        download3_v2_diff_id,
+        download4_feed2_v1_diff_feed,
+    }
+    # Should contain 3 unique items based on (feed, id)
+    assert len(download_set) == 3, (
+        "Set should contain 3 unique downloads based on (feed,id)"
+    )
+    assert download1_v1 in download_set
+    assert download2_v1_same_key in download_set  # Treated as same as download1_v1
+    assert download3_v2_diff_id in download_set
+    assert download4_feed2_v1_diff_feed in download_set
 
 
 @pytest.mark.unit
@@ -68,151 +137,212 @@ def test_db_manager_initialization_and_schema(db_manager: DatabaseManager):
 
 
 @pytest.mark.unit
-def test_add_and_get_item(db_manager: DatabaseManager, sample_item: DownloadItem):
-    """Test adding a new item and then retrieving it."""
-    db_manager.add_item(sample_item)
+def test_add_and_get_download(db_manager: DatabaseManager, sample_download: Download):
+    """Test adding a new download and then retrieving it."""
+    db_manager.upsert_download(sample_download)
 
-    retrieved_item = db_manager.get_item_by_video_id(
-        feed=sample_item.feed,
-        video_id=sample_item.video_id,
+    retrieved_download = db_manager.get_download_by_id(
+        feed=sample_download.feed,
+        id=sample_download.id,
     )
 
-    assert retrieved_item is not None, "Item should be found in DB"
-    assert retrieved_item["feed"] == sample_item.feed
-    assert retrieved_item["video_id"] == sample_item.video_id
-    assert retrieved_item["title"] == sample_item.title
-    assert retrieved_item["published"] == sample_item.published.isoformat()
-    assert retrieved_item["ext"] == sample_item.ext
-    assert retrieved_item["duration"] == sample_item.duration
-    assert retrieved_item["thumbnail"] == sample_item.thumbnail
-    assert retrieved_item["status"] == str(sample_item.status)
-    assert retrieved_item["retries"] == 0, (
-        "Retries should be 0 for a new item from fixture"
+    assert retrieved_download is not None, "Download should be found in DB"
+    assert retrieved_download["feed"] == sample_download.feed
+    assert retrieved_download["id"] == sample_download.id
+    assert retrieved_download["title"] == sample_download.title
+    assert retrieved_download["published"] == sample_download.published.isoformat()
+    assert retrieved_download["ext"] == sample_download.ext
+    assert retrieved_download["duration"] == sample_download.duration
+    assert retrieved_download["thumbnail"] == sample_download.thumbnail
+    assert retrieved_download["status"] == str(sample_download.status)
+    assert retrieved_download["retries"] == 0, (
+        "Retries should be 0 for a new download from fixture"
     )
-    assert retrieved_item["last_error"] is None, (
-        "Last_error should be None for a new item from fixture"
-    )
-    assert retrieved_item["path"] is None, (
-        "Path should be None for a new item from fixture"
+    assert retrieved_download["last_error"] is None, (
+        "Last_error should be None for a new download from fixture"
     )
 
 
 @pytest.mark.unit
-def test_add_item_conflict(db_manager: DatabaseManager, sample_item: DownloadItem):
-    """Test that adding an item with a conflicting (feed, video_id) raises IntegrityError."""
-    db_manager.add_item(sample_item)  # Add the first item
+def test_upsert_download_updates_existing(
+    db_manager: DatabaseManager, sample_download: Download
+):
+    """Test that upsert_download updates an existing download instead of raising an error."""
+    # Add initial download
+    db_manager.upsert_download(sample_download)
 
-    # Try to add the same item again
-    with pytest.raises(sqlite3.IntegrityError):
-        db_manager.add_item(sample_item)
+    # Create a modified version with the same (feed, id)
+    modified_download = Download(
+        feed=sample_download.feed,
+        id=sample_download.id,
+        source_url="http://example.com/video/v123_updated",
+        title="Updated Test Video Title",
+        published=sample_download.published + datetime.timedelta(hours=1),
+        ext="mkv",  # Changed ext
+        duration=150.0,  # Changed duration
+        thumbnail="http://example.com/thumb/v123_updated.jpg",
+        status=DownloadStatus.DOWNLOADED,  # Changed status
+        retries=1,  # Changed retries
+        last_error="An old error",  # Changed last_error
+    )
+
+    # Perform upsert with the modified download
+    db_manager.upsert_download(modified_download)  # Should not raise IntegrityError
+
+    # Retrieve and verify
+    retrieved_download = db_manager.get_download_by_id(
+        feed=sample_download.feed,
+        id=sample_download.id,
+    )
+
+    assert retrieved_download is not None, "Download should still be found"
+    assert retrieved_download["title"] == modified_download.title
+    assert retrieved_download["source_url"] == modified_download.source_url
+    assert retrieved_download["published"] == modified_download.published.isoformat()
+    assert retrieved_download["ext"] == modified_download.ext
+    assert retrieved_download["duration"] == modified_download.duration
+    assert retrieved_download["thumbnail"] == modified_download.thumbnail
+    assert retrieved_download["status"] == str(modified_download.status)
+    assert retrieved_download["retries"] == modified_download.retries
+    assert retrieved_download["last_error"] == modified_download.last_error
 
 
 @pytest.mark.unit
-def test_update_status(db_manager: DatabaseManager, sample_item: DownloadItem):
-    """Test updating the status of a download item, including new re-queue logic."""
-    # 1. Add an initial item (status QUEUED, retries 0, last_error None)
-    db_manager.add_item(sample_item)
+def test_update_status(db_manager: DatabaseManager, sample_download: Download):
+    """Test updating the status of a download, including new re-queue logic."""
+    db_manager.upsert_download(sample_download)
 
-    # 2. Update to DOWNLOADED
-    download_path = "/media/test_feed/test_video.mp4"
     db_manager.update_status(
-        feed=sample_item.feed,
-        video_id=sample_item.video_id,
+        feed=sample_download.feed,
+        id=sample_download.id,
         status=DownloadStatus.DOWNLOADED,
-        path=download_path,
     )
-    item_downloaded = db_manager.get_item_by_video_id(
-        sample_item.feed, sample_item.video_id
-    )
-    assert item_downloaded is not None
-    assert item_downloaded["status"] == str(DownloadStatus.DOWNLOADED)
-    assert item_downloaded["path"] == download_path
-    assert item_downloaded["retries"] == 0, "Retries should be reset on DOWNLOADED"
-    assert item_downloaded["last_error"] is None, (
-        "Error should be cleared on DOWNLOADED"
-    )
+    download = db_manager.get_download_by_id(sample_download.feed, sample_download.id)
+    assert download is not None
+    assert download["status"] == str(DownloadStatus.DOWNLOADED)
+    assert download["retries"] == 0, "Retries should be reset on DOWNLOADED"
+    assert download["last_error"] is None, "Error should be cleared on DOWNLOADED"
 
-    # 3. Update to ERROR
     error_message = "Download failed: Network issue"
     db_manager.update_status(
-        feed=sample_item.feed,
-        video_id=sample_item.video_id,
+        feed=sample_download.feed,
+        id=sample_download.id,
         status=DownloadStatus.ERROR,
         last_error=error_message,
     )
-    item_error = db_manager.get_item_by_video_id(sample_item.feed, sample_item.video_id)
-    assert item_error is not None
-    assert item_error["status"] == str(DownloadStatus.ERROR)
-    assert item_error["last_error"] == error_message
-    assert item_error["retries"] == 1, "Retries should be incremented on first ERROR"
+    download_error = db_manager.get_download_by_id(
+        sample_download.feed, sample_download.id
+    )
+    assert download_error is not None
+    assert download_error["status"] == str(DownloadStatus.ERROR)
+    assert download_error["last_error"] == error_message
+    assert download_error["retries"] == 1, (
+        "Retries should be incremented on first ERROR"
+    )
 
-    # 4. Update to ERROR again (check retry increment)
     error_message_2 = "Download failed again"
     db_manager.update_status(
-        feed=sample_item.feed,
-        video_id=sample_item.video_id,
+        feed=sample_download.feed,
+        id=sample_download.id,
         status=DownloadStatus.ERROR,
         last_error=error_message_2,
     )
-    item_error_2 = db_manager.get_item_by_video_id(
-        sample_item.feed, sample_item.video_id
+    download_error_2 = db_manager.get_download_by_id(
+        sample_download.feed, sample_download.id
     )
-    assert item_error_2 is not None
-    assert item_error_2["retries"] == 2, "Retries should increment on subsequent ERROR"
-    assert item_error_2["last_error"] == error_message_2
+    assert download_error_2 is not None
+    assert download_error_2["retries"] == 2, (
+        "Retries should increment on subsequent ERROR"
+    )
+    assert download_error_2["last_error"] == error_message_2
 
-    # 5. Update to SKIPPED (retries and last_error should persist, path also persists)
     db_manager.update_status(
-        feed=sample_item.feed,
-        video_id=sample_item.video_id,
+        feed=sample_download.feed,
+        id=sample_download.id,
         status=DownloadStatus.SKIPPED,
     )
-    item_skipped = db_manager.get_item_by_video_id(
-        sample_item.feed, sample_item.video_id
+    download_skipped = db_manager.get_download_by_id(
+        sample_download.feed, sample_download.id
     )
-    assert item_skipped is not None
-    assert item_skipped["status"] == str(DownloadStatus.SKIPPED)
-    assert item_skipped["last_error"] == error_message_2, (
+    assert download_skipped is not None
+    assert download_skipped["status"] == str(DownloadStatus.SKIPPED)
+    assert download_skipped["last_error"] == error_message_2, (
         "Error message should persist on SKIPPED"
     )
-    assert item_skipped["retries"] == 2, "Retries should persist on SKIPPED"
-    assert item_skipped["path"] == download_path, "Path should persist on SKIPPED"
+    assert download_skipped["retries"] == 2, "Retries should persist on SKIPPED"
 
-    # 6. Update back to QUEUED (retries and last_error should persist, path becomes NULL)
     db_manager.update_status(
-        feed=sample_item.feed,
-        video_id=sample_item.video_id,
+        feed=sample_download.feed,
+        id=sample_download.id,
         status=DownloadStatus.QUEUED,
     )
-    item_requeued = db_manager.get_item_by_video_id(
-        sample_item.feed, sample_item.video_id
+    download_requeued = db_manager.get_download_by_id(
+        sample_download.feed, sample_download.id
     )
-    assert item_requeued is not None
-    assert item_requeued["status"] == str(DownloadStatus.QUEUED)
-    assert item_requeued["path"] is None, "Path should be NULL when re-queued"
-    assert item_requeued["last_error"] == error_message_2, (
+    assert download_requeued is not None
+    assert download_requeued["status"] == str(DownloadStatus.QUEUED)
+    assert download_requeued["last_error"] == error_message_2, (
         "Error message should persist on re-QUEUE"
     )
-    assert item_requeued["retries"] == 2, "Retries should persist on re-QUEUE"
+    assert download_requeued["retries"] == 2, "Retries should persist on re-QUEUE"
 
-    # 7. Test updating a non-existent item
+    # Test transitioning to ARCHIVED from an ERROR state
+    db_manager.update_status(
+        feed=sample_download.feed,
+        id=sample_download.id,
+        status=DownloadStatus.ARCHIVED,
+    )
+    download_archived_from_error = db_manager.get_download_by_id(
+        sample_download.feed, sample_download.id
+    )
+    assert download_archived_from_error is not None
+    assert download_archived_from_error["status"] == str(DownloadStatus.ARCHIVED)
+    assert download_archived_from_error["last_error"] == error_message_2, (
+        "Error message should persist when archiving from ERROR state"
+    )
+    assert download_archived_from_error["retries"] == 2, (
+        "Retries should persist when archiving from ERROR state"
+    )
+
+    # Test transitioning to ARCHIVED from a DOWNLOADED state (error/retries should be null/0)
+    db_manager.update_status(
+        feed=sample_download.feed,
+        id=sample_download.id,
+        status=DownloadStatus.DOWNLOADED,  # First set to DOWNLOADED to clear errors/retries
+    )
+    db_manager.update_status(
+        feed=sample_download.feed,
+        id=sample_download.id,
+        status=DownloadStatus.ARCHIVED,
+    )
+    download_archived_from_downloaded = db_manager.get_download_by_id(
+        sample_download.feed, sample_download.id
+    )
+    assert download_archived_from_downloaded is not None
+    assert download_archived_from_downloaded["status"] == str(DownloadStatus.ARCHIVED)
+    assert download_archived_from_downloaded["last_error"] is None, (
+        "Error message should be None when archiving from DOWNLOADED state"
+    )
+    assert download_archived_from_downloaded["retries"] == 0, (
+        "Retries should be 0 when archiving from DOWNLOADED state"
+    )
+
     non_existent_update = db_manager.update_status(
-        feed="other_feed", video_id="non_existent_id", status=DownloadStatus.DOWNLOADED
+        feed="other_feed", id="non_existent_id", status=DownloadStatus.DOWNLOADED
     )
     assert non_existent_update is False, (
-        "Updating non-existent item should return False"
+        "Updating non-existent download should return False"
     )
 
 
 @pytest.mark.unit
-def test_next_queued_items(db_manager: DatabaseManager, sample_item: DownloadItem):
-    """Test fetching the next queued items for a feed."""
+def test_next_queued_downloads(db_manager: DatabaseManager):
+    """Test fetching the next queued downloads for a feed."""
     base_time = datetime.datetime(2023, 1, 1, 12, 0, 0, tzinfo=datetime.UTC)
 
-    # Items for feed1
-    item1_feed1 = DownloadItem(
+    download1_feed1 = Download(
         feed="feed1",
-        video_id="v001",
+        id="v001",
         source_url="url1",
         title="title1_old",
         published=base_time - datetime.timedelta(hours=2),
@@ -220,9 +350,9 @@ def test_next_queued_items(db_manager: DatabaseManager, sample_item: DownloadIte
         duration=10,
         status=DownloadStatus.QUEUED,
     )
-    item2_feed1 = DownloadItem(
+    download2_feed1 = Download(
         feed="feed1",
-        video_id="v002",
+        id="v002",
         source_url="url2",
         title="title2_new",
         published=base_time - datetime.timedelta(hours=1),
@@ -230,9 +360,9 @@ def test_next_queued_items(db_manager: DatabaseManager, sample_item: DownloadIte
         duration=10,
         status=DownloadStatus.QUEUED,
     )
-    item3_feed1_downloaded = DownloadItem(
+    download3_feed1_downloaded = Download(
         feed="feed1",
-        video_id="v003",
+        id="v003",
         source_url="url3",
         title="title3_downloaded",
         published=base_time,
@@ -240,9 +370,9 @@ def test_next_queued_items(db_manager: DatabaseManager, sample_item: DownloadIte
         duration=10,
         status=DownloadStatus.DOWNLOADED,
     )
-    item4_feed1_error = DownloadItem(
+    download4_feed1_error = Download(
         feed="feed1",
-        video_id="v004",
+        id="v004",
         source_url="url4",
         title="title4_error",
         published=base_time + datetime.timedelta(hours=1),
@@ -250,9 +380,9 @@ def test_next_queued_items(db_manager: DatabaseManager, sample_item: DownloadIte
         duration=10,
         status=DownloadStatus.ERROR,
     )
-    item5_feed1_queued_newest = DownloadItem(
+    download5_feed1_queued_newest = Download(
         feed="feed1",
-        video_id="v005",
+        id="v005",
         source_url="url5",
         title="title5_newest",
         published=base_time + datetime.timedelta(hours=2),
@@ -260,11 +390,9 @@ def test_next_queued_items(db_manager: DatabaseManager, sample_item: DownloadIte
         duration=10,
         status=DownloadStatus.QUEUED,
     )
-
-    # Item for feed2
-    item6_feed2_queued = DownloadItem(
+    download6_feed2_queued = Download(
         feed="feed2",
-        video_id="v006",
+        id="v006",
         source_url="url6",
         title="title6_feed2",
         published=base_time,
@@ -273,540 +401,395 @@ def test_next_queued_items(db_manager: DatabaseManager, sample_item: DownloadIte
         status=DownloadStatus.QUEUED,
     )
 
-    all_items = [
-        item1_feed1,
-        item2_feed1,
-        item3_feed1_downloaded,
-        item4_feed1_error,
-        item5_feed1_queued_newest,
-        item6_feed2_queued,
+    all_downloads = [
+        download1_feed1,
+        download2_feed1,
+        download3_feed1_downloaded,
+        download4_feed1_error,
+        download5_feed1_queued_newest,
+        download6_feed2_queued,
     ]
-    for item in all_items:
-        db_manager.add_item(item)
+    for dl in all_downloads:
+        db_manager.upsert_download(dl)
 
     # Test case 1: Get next 2 for feed1 (should be item1 and item2 in that order)
-    queued_feed1_limit2 = db_manager.next_queued_items(feed="feed1", limit=2)
+    queued_feed1_limit2 = db_manager.next_queued_downloads(feed="feed1", limit=2)
     assert len(queued_feed1_limit2) == 2
-    assert queued_feed1_limit2[0]["video_id"] == "v001", (
-        "Oldest queued item for feed1 should be first"
+    assert queued_feed1_limit2[0]["id"] == "v001", (
+        "Oldest queued download for feed1 should be first"
     )
-    assert queued_feed1_limit2[1]["video_id"] == "v002", (
-        "Second oldest queued item for feed1 should be second"
+    assert queued_feed1_limit2[1]["id"] == "v002", (
+        "Second oldest queued download for feed1 should be second"
     )
 
     # Test case 2: Get all for feed1 (should be item1, item2, item5)
-    queued_feed1_all = db_manager.next_queued_items(
-        feed="feed1", limit=10
-    )  # High limit
+    queued_feed1_all = db_manager.next_queued_downloads(feed="feed1", limit=10)
     assert len(queued_feed1_all) == 3
-    assert [item["video_id"] for item in queued_feed1_all] == [
+    assert [dl["id"] for dl in queued_feed1_all] == [
         "v001",
         "v002",
         "v005",
     ], "Should return all queued for feed1 in order"
 
     # Test case 3: Get for feed2 (should only be item6)
-    queued_feed2 = db_manager.next_queued_items(feed="feed2", limit=10)
+    queued_feed2 = db_manager.next_queued_downloads(feed="feed2", limit=10)
     assert len(queued_feed2) == 1
-    assert queued_feed2[0]["video_id"] == "v006", "Should return only item for feed2"
+    assert queued_feed2[0]["id"] == "v006", "Should return only download for feed2"
 
     # Test case 4: Limit 0
-    queued_feed1_limit0 = db_manager.next_queued_items(feed="feed1", limit=0)
-    assert len(queued_feed1_limit0) == 0, "Limit 0 should return no items"
+    queued_feed1_limit0 = db_manager.next_queued_downloads(feed="feed1", limit=0)
+    assert len(queued_feed1_limit0) == 0, "Limit 0 should return no downloads"
 
     # Test case 5: No queued items for a non-existent feed
-    queued_feed_nonexistent = db_manager.next_queued_items(
+    queued_feed_nonexistent = db_manager.next_queued_downloads(
         feed="feed_non_existent", limit=10
     )
-    assert len(queued_feed_nonexistent) == 0, "Non-existent feed should return no items"
+    assert len(queued_feed_nonexistent) == 0, (
+        "Non-existent feed should return no downloads"
+    )
 
     # Test case 6: Feed exists but has no QUEUED items (after updating one)
     db_manager.update_status(
         feed="feed2",
-        video_id="v006",
+        id="v006",
         status=DownloadStatus.DOWNLOADED,
-        path="/some/path",
     )
-    queued_feed2_none_left = db_manager.next_queued_items(feed="feed2", limit=10)
-    assert len(queued_feed2_none_left) == 0, "Feed2 should have no queued items left"
+    queued_feed2_none_left = db_manager.next_queued_downloads(feed="feed2", limit=10)
+    assert len(queued_feed2_none_left) == 0, (
+        "Feed2 should have no queued downloads left"
+    )
 
 
 @pytest.mark.unit
-def test_get_items_to_prune_by_keep_last(db_manager: DatabaseManager):
-    """Test fetching items to prune based on the 'keep_last' rule."""
+def test_get_downloads_to_prune_by_keep_last(db_manager: DatabaseManager):
+    """Test fetching downloads to prune based on 'keep_last'."""
     base_time = datetime.datetime(2023, 1, 1, 12, 0, 0, tzinfo=datetime.UTC)
     feed1_name = "prune_feed1"
 
-    items_to_add = [
-        # Feed 1: Downloaded items - these are candidates for pruning
-        DownloadItem(
-            feed=feed1_name,
-            video_id="f1v1_dl_oldest",
-            published=base_time - datetime.timedelta(days=5),
-            status=DownloadStatus.DOWNLOADED,
-            source_url="url",
-            title="t",
-            ext="mp4",
-            duration=1,
-            path="/path/f1v1",
-        ),
-        DownloadItem(
-            feed=feed1_name,
-            video_id="f1v2_dl_mid1",
-            published=base_time - datetime.timedelta(days=4),
-            status=DownloadStatus.DOWNLOADED,
-            source_url="url",
-            title="t",
-            ext="mp4",
-            duration=1,
-            path="/path/f1v2",
-        ),
-        DownloadItem(
-            feed=feed1_name,
-            video_id="f1v3_dl_mid2",
-            published=base_time - datetime.timedelta(days=3),
-            status=DownloadStatus.DOWNLOADED,
-            source_url="url",
-            title="t",
-            ext="mp4",
-            duration=1,
-            path="/path/f1v3",
-        ),
-        DownloadItem(
-            feed=feed1_name,
-            video_id="f1v4_dl_newest",
-            published=base_time - datetime.timedelta(days=2),
-            status=DownloadStatus.DOWNLOADED,
-            source_url="url",
-            title="t",
-            ext="mp4",
-            duration=1,
-            path="/path/f1v4",
-        ),
-        # Feed 1: Non-downloaded items - should be ignored by this pruning logic
-        DownloadItem(
-            feed=feed1_name,
-            video_id="f1v5_queued",
-            published=base_time - datetime.timedelta(days=1),
-            status=DownloadStatus.QUEUED,
-            source_url="url",
-            title="t",
-            ext="mp4",
-            duration=1,
-        ),
-        DownloadItem(
-            feed=feed1_name,
-            video_id="f1v6_error",
-            published=base_time,
-            status=DownloadStatus.ERROR,
-            source_url="url",
-            title="t",
-            ext="mp4",
-            duration=1,
-        ),
-        # Feed 2: Downloaded item - should be ignored as it's for a different feed
-        DownloadItem(
-            feed="prune_feed2",
-            video_id="f2v1_dl",
-            published=base_time - datetime.timedelta(days=3),
-            status=DownloadStatus.DOWNLOADED,
-            source_url="url",
-            title="t",
-            ext="mp4",
-            duration=1,
-            path="/path/f2v1",
-        ),
-    ]
-    for item in items_to_add:
-        db_manager.add_item(item)
+    # Mix of statuses and published dates
+    dl_f1v1_dl_oldest = Download(
+        feed=feed1_name,
+        id="f1v1_dl_oldest",
+        published=base_time - datetime.timedelta(days=5),
+        status=DownloadStatus.DOWNLOADED,
+        source_url="url",
+        title="t1",
+        ext="mp4",
+        duration=1,
+    )
+    dl_f1v2_err_mid1 = Download(
+        feed=feed1_name,
+        id="f1v2_err_mid1",
+        published=base_time - datetime.timedelta(days=4),
+        status=DownloadStatus.ERROR,
+        source_url="url",
+        title="t2",
+        ext="mkv",
+        duration=1,
+    )
+    dl_f1v3_q_mid2 = Download(
+        feed=feed1_name,
+        id="f1v3_q_mid2",
+        published=base_time - datetime.timedelta(days=3),
+        status=DownloadStatus.QUEUED,
+        source_url="url",
+        title="t3",
+        ext="webm",
+        duration=1,
+    )
+    dl_f1v4_dl_newest = Download(
+        feed=feed1_name,
+        id="f1v4_dl_newest",
+        published=base_time - datetime.timedelta(days=2),
+        status=DownloadStatus.DOWNLOADED,
+        source_url="url",
+        title="t4",
+        ext="mp4",
+        duration=1,
+    )
+    dl_f1v5_arch = Download(
+        feed=feed1_name,
+        id="f1v5_arch",
+        published=base_time - datetime.timedelta(days=1),
+        status=DownloadStatus.ARCHIVED,
+        source_url="url",
+        title="t5",
+        ext="mp3",
+        duration=1,
+    )
 
-    # Test case 1: keep_last = 2 (should prune f1v1, f1v2)
-    # Newest are f1v4, f1v3. To be pruned: f1v2, f1v1 (offset 2 means skip 2 newest)
-    # SQL is ORDER BY published DESC. So newest first. OFFSET 2 skips f1v4, f1v3.
-    # It then selects f1v2, f1v1.
-    # The `get_items_to_prune_by_keep_last` already orders by published DESC in its query.
-    # The items returned by the function will be the ones *to be pruned*, sorted newest-among-the-pruned first (due to DESC order).
-    # So, if we keep 2 (f1v4, f1v3), then f1v2 and f1v1 are pruned. Sqlite OFFSET 2 skips the newest 2.
-    # Result from query will be f1v2, then f1v1.
-    prune_keep2 = db_manager.get_items_to_prune_by_keep_last(
+    # Item for another feed, should be ignored
+    dl_f2v1_dl = Download(
+        feed="prune_feed2",
+        id="f2v1_dl",
+        published=base_time - datetime.timedelta(days=3),
+        status=DownloadStatus.DOWNLOADED,
+        source_url="url",
+        title="t_f2",
+        ext="mp4",
+        duration=1,
+    )
+
+    downloads_to_add = [
+        dl_f1v1_dl_oldest,
+        dl_f1v2_err_mid1,
+        dl_f1v3_q_mid2,
+        dl_f1v4_dl_newest,
+        dl_f1v5_arch,
+        dl_f2v1_dl,
+    ]
+    for dl in downloads_to_add:
+        db_manager.upsert_download(dl)
+
+    prune_keep2 = db_manager.get_downloads_to_prune_by_keep_last(
         feed=feed1_name, keep_last=2
     )
-    assert len(prune_keep2) == 2, "Should identify 2 items to prune when keeping 2/4"
-    pruned_ids_keep2 = sorted(
-        [row["video_id"] for row in prune_keep2]
-    )  # Sort for consistent comparison
-    assert pruned_ids_keep2 == sorted(["f1v1_dl_oldest", "f1v2_dl_mid1"])
-    for row in prune_keep2:
-        assert row["path"] is not None, "Pruned items should have a path"
-
-    # Test case 2: keep_last = 4 (all items for feed1 are kept, so nothing to prune)
-    prune_keep4 = db_manager.get_items_to_prune_by_keep_last(
-        feed=feed1_name, keep_last=4
+    assert len(prune_keep2) == 2, (
+        "Should identify 2 downloads to prune (f1v1_dl_oldest, f1v2_err_mid1)"
     )
-    assert len(prune_keep4) == 0, "Should identify 0 items to prune when keeping all 4"
+    pruned_ids_keep2 = sorted([row["id"] for row in prune_keep2])
+    assert pruned_ids_keep2 == sorted(["f1v1_dl_oldest", "f1v2_err_mid1"])
+    # Check if full rows are returned - access key directly
+    assert prune_keep2[0]["title"] is not None, "Row should contain 'title' key"
+    assert prune_keep2[0]["feed"] == feed1_name
 
-    # Test case 3: keep_last = 5 (more than available, nothing to prune)
-    prune_keep5 = db_manager.get_items_to_prune_by_keep_last(
+    prune_keep5 = db_manager.get_downloads_to_prune_by_keep_last(
         feed=feed1_name, keep_last=5
-    )
+    )  # Keep all
     assert len(prune_keep5) == 0, (
-        "Should identify 0 items to prune when keep_last > available"
+        "Should identify 0 if keep_last >= total items for feed"
     )
 
-    # Test case 4: keep_last = 0 (invalid, should return empty as per function guard)
-    prune_keep0 = db_manager.get_items_to_prune_by_keep_last(
+    prune_keep0 = db_manager.get_downloads_to_prune_by_keep_last(
         feed=feed1_name, keep_last=0
     )
-    assert len(prune_keep0) == 0, "Should return 0 items if keep_last is 0"
-
-    # Test case 5: keep_last = 1 (should prune f1v1, f1v2, f1v3)
-    # Keeps f1v4. Prunes f1v3, f1v2, f1v1. (Offset 1 skips f1v4)
-    prune_keep1 = db_manager.get_items_to_prune_by_keep_last(
-        feed=feed1_name, keep_last=1
-    )
-    assert len(prune_keep1) == 3, "Should identify 3 items to prune when keeping 1/4"
-    pruned_ids_keep1 = sorted([row["video_id"] for row in prune_keep1])
-    assert pruned_ids_keep1 == sorted(
-        ["f1v1_dl_oldest", "f1v2_dl_mid1", "f1v3_dl_mid2"]
-    )
-
-    # Test case 6: Non-existent feed
-    prune_non_existent_feed = db_manager.get_items_to_prune_by_keep_last(
-        feed="non_existent_feed", keep_last=1
-    )
-    assert len(prune_non_existent_feed) == 0, "Should return 0 for non-existent feed"
+    assert len(prune_keep0) == 0, "Should return 0 if keep_last is 0"
 
 
 @pytest.mark.unit
-def test_get_items_to_prune_by_since(db_manager: DatabaseManager):
-    """Test fetching items to prune based on the 'since' date rule."""
-    base_time = datetime.datetime(2023, 1, 10, 12, 0, 0, tzinfo=datetime.UTC)
+def test_get_downloads_to_prune_by_since(db_manager: DatabaseManager):
+    """Test fetching downloads to prune by 'since' date."""
+    base_time = datetime.datetime(2023, 1, 1, 12, 0, 0, tzinfo=datetime.UTC)
     feed_name = "prune_since_feed"
 
-    items_to_add = [
-        DownloadItem(
-            feed=feed_name,
-            video_id="ps_v1_older",
-            published=base_time - datetime.timedelta(days=5),
-            status=DownloadStatus.DOWNLOADED,
-            source_url="url",
-            title="t",
-            ext="mp4",
-            duration=1,
-            path="/path/ps_v1",
-        ),  # Should be pruned by a since of base_time-3d
-        DownloadItem(
-            feed=feed_name,
-            video_id="ps_v2_mid",
-            published=base_time - datetime.timedelta(days=2),
-            status=DownloadStatus.DOWNLOADED,
-            source_url="url",
-            title="t",
-            ext="mp4",
-            duration=1,
-            path="/path/ps_v2",
-        ),  # Should NOT be pruned by a since of base_time-3d
-        DownloadItem(
-            feed=feed_name,
-            video_id="ps_v3_newer",
-            published=base_time + datetime.timedelta(days=1),
-            status=DownloadStatus.DOWNLOADED,
-            source_url="url",
-            title="t",
-            ext="mp4",
-            duration=1,
-            path="/path/ps_v3",
-        ),  # Should NOT be pruned
-        # Feed: Non-downloaded - should be ignored
-        DownloadItem(
-            feed=feed_name,
-            video_id="ps_v4_queued",
-            published=base_time - datetime.timedelta(days=6),
-            status=DownloadStatus.QUEUED,
-            source_url="url",
-            title="t",
-            ext="mp4",
-            duration=1,
-        ),
-        # Different Feed: Downloaded item - should be ignored
-        DownloadItem(
-            feed="other_feed",
-            video_id="other_v1_older_dl",
-            published=base_time - datetime.timedelta(days=5),
-            status=DownloadStatus.DOWNLOADED,
-            source_url="url",
-            title="t",
-            ext="mp4",
-            duration=1,
-            path="/path/other_v1",
-        ),
-    ]
-    for item in items_to_add:
-        db_manager.add_item(item)
+    dl_ps_v1_older_dl = Download(
+        feed=feed_name,
+        id="ps_v1_older_dl",
+        published=base_time - datetime.timedelta(days=5),
+        status=DownloadStatus.DOWNLOADED,
+        source_url="url",
+        title="t1",
+        ext="mp4",
+        duration=1,
+    )
+    dl_ps_v2_mid_err = Download(
+        feed=feed_name,
+        id="ps_v2_mid_err",
+        published=base_time - datetime.timedelta(days=2),
+        status=DownloadStatus.ERROR,
+        source_url="url",
+        title="t2",
+        ext="mkv",
+        duration=1,
+    )
+    dl_ps_v3_newer_q = Download(
+        feed=feed_name,
+        id="ps_v3_newer_q",
+        published=base_time + datetime.timedelta(days=1),
+        status=DownloadStatus.QUEUED,
+        source_url="url",
+        title="t3",
+        ext="webm",
+        duration=1,
+    )
+    dl_ps_v4_arch = Download(
+        feed=feed_name,
+        id="ps_v4_arch",
+        published=base_time,
+        status=DownloadStatus.ARCHIVED,
+        source_url="url",
+        title="t4",
+        ext="mp3",
+        duration=1,
+    )
 
-    # Test case 1: Prune items older than 'base_time - 3 days' (i.e., ps_v1_older)
+    # Item for another feed
+    dl_other_v1_older_dl = Download(
+        feed="other_feed",
+        id="other_v1_older_dl",
+        published=base_time - datetime.timedelta(days=5),
+        status=DownloadStatus.DOWNLOADED,
+        source_url="url",
+        title="t_other",
+        ext="mp4",
+        duration=1,
+    )
+
+    downloads_to_add = [
+        dl_ps_v1_older_dl,
+        dl_ps_v2_mid_err,
+        dl_ps_v3_newer_q,
+        dl_ps_v4_arch,
+        dl_other_v1_older_dl,
+    ]
+    for dl in downloads_to_add:
+        db_manager.upsert_download(dl)
+
+    # Prune items older than 'base_time - 3 days' for feed_name
+    # Candidates: ps_v1_older_dl (day -5)
     since_cutoff_1 = base_time - datetime.timedelta(days=3)
-    pruned_items_1 = db_manager.get_items_to_prune_by_since(
+    pruned_1 = db_manager.get_downloads_to_prune_by_since(
         feed=feed_name, since=since_cutoff_1
     )
-    assert len(pruned_items_1) == 1, "Should identify 1 item older than since_cutoff_1"
-    assert pruned_items_1[0]["video_id"] == "ps_v1_older"
-    assert pruned_items_1[0]["path"] is not None
+    assert len(pruned_1) == 1
+    assert pruned_1[0]["id"] == "ps_v1_older_dl"
+    if pruned_1:  # Check full row
+        # Access key directly
+        assert pruned_1[0]["title"] is not None, "Row should contain 'title' key"
+        assert pruned_1[0]["feed"] == feed_name
+        assert pruned_1[0]["status"] == str(DownloadStatus.DOWNLOADED)
 
-    # Test case 2: Prune items older than 'base_time + 2 days' (should prune ps_v1, ps_v2, ps_v3)
+    # Prune items older than 'base_time + 2 days' for feed_name
+    # Candidates: ps_v1_older_dl (day -5), ps_v2_mid_err (day -2), ps_v4_arch (day 0), ps_v3_newer_q (day +1)
     since_cutoff_2 = base_time + datetime.timedelta(days=2)
-    pruned_items_2 = db_manager.get_items_to_prune_by_since(
+    pruned_2 = db_manager.get_downloads_to_prune_by_since(
         feed=feed_name, since=since_cutoff_2
     )
-    pruned_ids_2 = sorted([row["video_id"] for row in pruned_items_2])
-    assert len(pruned_items_2) == 3, "Should identify 3 items older than since_cutoff_2"
-    assert pruned_ids_2 == sorted(["ps_v1_older", "ps_v2_mid", "ps_v3_newer"])
-
-    # Test case 3: Prune items older than 'base_time - 10 days' (no items this old)
-    since_cutoff_3 = base_time - datetime.timedelta(days=10)
-    pruned_items_3 = db_manager.get_items_to_prune_by_since(
-        feed=feed_name, since=since_cutoff_3
-    )
-    assert len(pruned_items_3) == 0, (
-        "Should identify 0 items older than a very early since_cutoff_3"
-    )
-
-    # Test case 4: Non-existent feed
-    prune_non_existent_feed = db_manager.get_items_to_prune_by_since(
-        feed="non_existent_feed", since=base_time
-    )
-    assert len(prune_non_existent_feed) == 0, "Should return 0 for non-existent feed"
+    pruned_ids_2 = sorted([row["id"] for row in pruned_2])
+    assert len(pruned_2) == 3
+    assert pruned_ids_2 == sorted(["ps_v1_older_dl", "ps_v2_mid_err", "ps_v3_newer_q"])
 
 
 @pytest.mark.unit
-def test_remove_pruned_items(db_manager: DatabaseManager, sample_item: DownloadItem):
-    """Test removing multiple items by their video_ids for a specific feed."""
-    feed1_name = "remove_feed1"
-    feed2_name = "remove_feed2"
-
-    # Items to add
-    item_f1_v1 = DownloadItem(
-        feed=feed1_name,
-        video_id="f1v1",
-        source_url=sample_item.source_url,
-        title="t1",
-        published=sample_item.published,
-        ext="mp4",
-        duration=10,
-        status=DownloadStatus.DOWNLOADED,
-        path="/path/f1v1",
-    )
-    item_f1_v2 = DownloadItem(
-        feed=feed1_name,
-        video_id="f1v2",
-        source_url=sample_item.source_url,
-        title="t2",
-        published=sample_item.published,
-        ext="mp4",
-        duration=10,
-        status=DownloadStatus.DOWNLOADED,
-        path="/path/f1v2",
-    )
-    item_f1_v3 = DownloadItem(
-        feed=feed1_name,
-        video_id="f1v3",
-        source_url=sample_item.source_url,
-        title="t3",
-        published=sample_item.published,
-        ext="mp4",
-        duration=10,
-        status=DownloadStatus.DOWNLOADED,
-        path="/path/f1v3",
-    )
-    item_f2_v1 = DownloadItem(
-        feed=feed2_name,
-        video_id="f2v1",
-        source_url=sample_item.source_url,
-        title="t_f2",
-        published=sample_item.published,
-        ext="mp4",
-        duration=10,
-        status=DownloadStatus.DOWNLOADED,
-        path="/path/f2v1",
-    )
-
-    items_to_add = [item_f1_v1, item_f1_v2, item_f1_v3, item_f2_v1]
-    for item in items_to_add:
-        db_manager.add_item(item)
-
-    # Test case 1: Remove a subset of items from feed1
-    ids_to_remove_f1 = ["f1v1", "f1v3"]
-    deleted_count = db_manager.remove_pruned_items(
-        feed=feed1_name, video_ids=ids_to_remove_f1
-    )
-    assert deleted_count == 2, "Should report 2 items deleted from feed1"
-    assert db_manager.get_item_by_video_id(feed1_name, "f1v1") is None, (
-        "f1v1 should be deleted"
-    )
-    assert db_manager.get_item_by_video_id(feed1_name, "f1v3") is None, (
-        "f1v3 should be deleted"
-    )
-    assert db_manager.get_item_by_video_id(feed1_name, "f1v2") is not None, (
-        "f1v2 should still exist"
-    )
-    assert db_manager.get_item_by_video_id(feed2_name, "f2v1") is not None, (
-        "Item from feed2 should not be affected"
-    )
-
-    # Test case 2: Try to remove already deleted items and non-existent items for feed1
-    ids_to_remove_again_f1 = ["f1v1", "non_existent_id"]
-    deleted_count_again = db_manager.remove_pruned_items(
-        feed=feed1_name, video_ids=ids_to_remove_again_f1
-    )
-    assert deleted_count_again == 0, (
-        "Should report 0 items deleted if they don't exist or already gone"
-    )
-    assert db_manager.get_item_by_video_id(feed1_name, "f1v2") is not None, (
-        "f1v2 should still exist after trying to delete others"
-    )
-
-    # Test case 3: Remove remaining item from feed1
-    deleted_count_last_f1 = db_manager.remove_pruned_items(
-        feed=feed1_name, video_ids=["f1v2"]
-    )
-    assert deleted_count_last_f1 == 1, "Should report 1 item deleted"
-    assert db_manager.get_item_by_video_id(feed1_name, "f1v2") is None, (
-        "f1v2 should now be deleted"
-    )
-
-    # Test case 4: Empty video_ids list
-    deleted_count_empty = db_manager.remove_pruned_items(feed=feed2_name, video_ids=[])
-    assert deleted_count_empty == 0, "Should report 0 items deleted for empty ID list"
-    assert db_manager.get_item_by_video_id(feed2_name, "f2v1") is not None, (
-        "Item f2v1 should still exist"
-    )
-
-    # Test case 5: Removing from a non-existent feed
-    deleted_count_bad_feed = db_manager.remove_pruned_items(
-        feed="non_existent_feed", video_ids=["f2v1"]
-    )
-    assert deleted_count_bad_feed == 0, (
-        "Should report 0 items deleted for non-existent feed"
-    )
-    assert db_manager.get_item_by_video_id(feed2_name, "f2v1") is not None, (
-        "Item f2v1 should still exist after trying to delete from wrong feed"
-    )
-
-
-@pytest.mark.unit
-def test_get_errors(db_manager: DatabaseManager, sample_item: DownloadItem):
-    """Test fetching items with 'error' status."""
+def test_get_errors(db_manager: DatabaseManager):
+    """Test fetching downloads with 'error' status, including offset and limit."""
     base_time = datetime.datetime(2023, 1, 15, 12, 0, 0, tzinfo=datetime.UTC)
     feed1 = "error_feed1"
     feed2 = "error_feed2"
 
-    items_to_add = [
-        # Feed 1 errors
-        DownloadItem(
-            feed=feed1,
-            video_id="f1e1_old",
-            published=base_time - datetime.timedelta(days=2),
-            status=DownloadStatus.ERROR,
-            last_error="Old error 1",
-            source_url="url",
-            title="t",
-            ext="mp4",
-            duration=1,
-        ),
-        DownloadItem(
-            feed=feed1,
-            video_id="f1e2_new",
-            published=base_time - datetime.timedelta(days=1),
-            status=DownloadStatus.ERROR,
-            last_error="New error 1",
-            source_url="url",
-            title="t",
-            ext="mp4",
-            duration=1,
-        ),
-        # Feed 1 non-errors
-        DownloadItem(
-            feed=feed1,
-            video_id="f1q1",
-            published=base_time,
-            status=DownloadStatus.QUEUED,
-            source_url="url",
-            title="t",
-            ext="mp4",
-            duration=1,
-        ),
-        # Feed 2 errors
-        DownloadItem(
-            feed=feed2,
-            video_id="f2e1",
-            published=base_time - datetime.timedelta(days=3),
-            status=DownloadStatus.ERROR,
-            last_error="Feed 2 error",
-            source_url="url",
-            title="t",
-            ext="mp4",
-            duration=1,
-        ),
-        # Feed 3 no errors, just one downloaded item
-        DownloadItem(
-            feed="feed3_no_errors",
-            video_id="f3d1",
-            published=base_time,
-            status=DownloadStatus.DOWNLOADED,
-            source_url="url",
-            title="t",
-            ext="mp4",
-            duration=1,
-            path="/path/f3d1",
-        ),
-    ]
-    for item_data in items_to_add:
-        # Create new DownloadItem instances for each entry if sample_item is used as a base
-        # Or instantiate directly as done above.
-        db_manager.add_item(item_data)
+    # oldest, feed2
+    dl_f2e1 = Download(
+        feed=feed2,
+        id="f2e1",
+        published=base_time - datetime.timedelta(days=3),
+        status=DownloadStatus.ERROR,
+        last_error="Feed 2 error",
+        source_url="url",
+        title="t",
+        ext="mp4",
+        duration=1,
+    )
+    # middle, feed1
+    dl_f1e1_old = Download(
+        feed=feed1,
+        id="f1e1_old",
+        published=base_time - datetime.timedelta(days=2),
+        status=DownloadStatus.ERROR,
+        last_error="Old error 1",
+        source_url="url",
+        title="t",
+        ext="mp4",
+        duration=1,
+    )
+    # newest, feed1
+    dl_f1e2_new = Download(
+        feed=feed1,
+        id="f1e2_new",
+        published=base_time - datetime.timedelta(days=1),
+        status=DownloadStatus.ERROR,
+        last_error="New error 1",
+        source_url="url",
+        title="t",
+        ext="mp4",
+        duration=1,
+    )
+    # Other status items for noise
+    dl_f1q1 = Download(
+        feed=feed1,
+        id="f1q1",
+        published=base_time,
+        status=DownloadStatus.QUEUED,
+        source_url="url",
+        title="t",
+        ext="mp4",
+        duration=1,
+    )
+    dl_f3d1 = Download(
+        feed="feed3_no_errors",
+        id="f3d1",
+        published=base_time,
+        status=DownloadStatus.DOWNLOADED,
+        source_url="url",
+        title="t",
+        ext="mp4",
+        duration=1,
+    )
 
-    # Test case 1: Get all errors (default limit 100)
+    downloads_to_add = [dl_f2e1, dl_f1e1_old, dl_f1e2_new, dl_f1q1, dl_f3d1]
+    for dl_data in downloads_to_add:
+        db_manager.upsert_download(dl_data)
+
+    # Expected order for all errors: f2e1 (oldest), f1e1_old, f1e2_new (newest)
+
+    # Test case 1: Get all errors (default limit 100, default offset 0)
     all_errors = db_manager.get_errors()
-    assert len(all_errors) == 3, "Should fetch all 3 error items"
-    # Check order (newest first overall: f1e2_new, f1e1_old, f2e1)
-    assert all_errors[0]["video_id"] == "f1e2_new"
-    assert all_errors[1]["video_id"] == "f1e1_old"
-    assert all_errors[2]["video_id"] == "f2e1"
+    assert len(all_errors) == 3, "Should fetch all 3 error downloads"
+    assert [row["id"] for row in all_errors] == ["f2e1", "f1e1_old", "f1e2_new"]
     for row in all_errors:
         assert row["status"] == str(DownloadStatus.ERROR)
 
-    # Test case 2: Get errors for feed1
+    # Test case 2: Get errors for feed1 (default limit, default offset)
+    # Expected order for feed1: f1e1_old, f1e2_new
     feed1_errors = db_manager.get_errors(feed=feed1)
     assert len(feed1_errors) == 2, "Should fetch 2 errors for feed1"
-    # Check order (newest first for feed1: f1e2_new, f1e1_old)
-    assert feed1_errors[0]["video_id"] == "f1e2_new"
-    assert feed1_errors[1]["video_id"] == "f1e1_old"
+    assert [row["id"] for row in feed1_errors] == ["f1e1_old", "f1e2_new"]
 
     # Test case 3: Get errors with limit
-    limited_errors = db_manager.get_errors(limit=1)
+    limited_errors = db_manager.get_errors(limit=1, offset=0)
     assert len(limited_errors) == 1, "Should fetch only 1 error with limit=1"
-    assert limited_errors[0]["video_id"] == "f1e2_new", (
-        "Should be the newest overall error"
-    )
+    assert limited_errors[0]["id"] == "f2e1", "Should be the oldest overall error"
 
-    limited_errors_feed1 = db_manager.get_errors(feed=feed1, limit=1)
+    limited_errors_feed1 = db_manager.get_errors(feed=feed1, limit=1, offset=0)
     assert len(limited_errors_feed1) == 1
-    assert limited_errors_feed1[0]["video_id"] == "f1e2_new", (
-        "Should be newest for feed1"
+    assert limited_errors_feed1[0]["id"] == "f1e1_old", "Should be oldest for feed1"
+
+    # Test case 4: Get errors with offset
+    offset_errors = db_manager.get_errors(limit=100, offset=1)  # Skip 1, get the rest
+    assert len(offset_errors) == 2, "Should fetch 2 errors with offset=1"
+    assert [row["id"] for row in offset_errors] == ["f1e1_old", "f1e2_new"]
+
+    offset_errors_feed1 = db_manager.get_errors(
+        feed=feed1, limit=100, offset=1
+    )  # Skip 1 from feed1 errors
+    assert len(offset_errors_feed1) == 1, "Should fetch 1 error for feed1 with offset=1"
+    assert offset_errors_feed1[0]["id"] == "f1e2_new"
+
+    # Test case 5: Get errors with limit and offset
+    limit_offset_errors = db_manager.get_errors(
+        limit=1, offset=1
+    )  # Skip f2e1, get f1e1_old
+    assert len(limit_offset_errors) == 1, "Should fetch 1 error with limit=1, offset=1"
+    assert limit_offset_errors[0]["id"] == "f1e1_old"
+
+    # Test case 6: Offset greater than number of items
+    offset_too_high = db_manager.get_errors(limit=100, offset=5)
+    assert len(offset_too_high) == 0, "Should return empty list if offset is too high"
+
+    offset_too_high_feed1 = db_manager.get_errors(feed=feed1, limit=100, offset=3)
+    assert len(offset_too_high_feed1) == 0, (
+        "Should return empty for feed1 if offset is too high"
     )
 
-    # Test case 4: No errors for a specific feed
+    # Test case 7: No errors for a specific feed
     no_errors_feed3 = db_manager.get_errors(feed="feed3_no_errors")
     assert len(no_errors_feed3) == 0, "Should return empty list for feed with no errors"
 
-    # Test case 5: No errors at all (after updating existing errors)
+    # Test case 8: No errors at all (after updating existing errors)
+    db_manager.update_status(feed=feed1, id="f1e1_old", status=DownloadStatus.QUEUED)
     db_manager.update_status(
-        feed=feed1, video_id="f1e1_old", status=DownloadStatus.QUEUED
+        feed=feed1, id="f1e2_new", status=DownloadStatus.DOWNLOADED
     )
-    db_manager.update_status(
-        feed=feed1, video_id="f1e2_new", status=DownloadStatus.DOWNLOADED, path="/p"
-    )
-    db_manager.update_status(feed=feed2, video_id="f2e1", status=DownloadStatus.SKIPPED)
+    db_manager.update_status(feed=feed2, id="f2e1", status=DownloadStatus.SKIPPED)
     all_errors_cleared = db_manager.get_errors()
     assert len(all_errors_cleared) == 0, (
         "Should return empty list when all errors are cleared"

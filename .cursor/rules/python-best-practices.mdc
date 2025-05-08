@@ -47,6 +47,8 @@ alwaysApply: false
 - Log errors with context
 - Provide meaningful error messages
 - Use context managers for cleanup
+- When catching and wrapping errors, prefer to use `from e` syntax for stack tracing. Do not directly reference the underlying error in the wrapping error message (e.g. NO `f"<error msg>: {e}"`)
+- When using a try/catch block, scope the try as small as possible to only the code/line that can potentially throw the exception
 
 ## Async Development
 - Use `async`/`await` consistently
