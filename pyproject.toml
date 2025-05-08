@@ -15,6 +15,7 @@ dev = [
     "pre-commit>=4.2.0",
     "pytest>=8.3.5",
     "pytest-asyncio>=0.26.0",
+    "pytest-mock>=3.14.0",
     "pytest-cov>=5.0.0",
     "ruff>=0.11.7",
     "pyright>=1.1.400",
@@ -30,7 +31,7 @@ managed = true
 minversion = "7.0"
 pythonpath = ["src"]
 testpaths = ["tests"]
-addopts = "-ra -q --tb=short --maxfail=1 --disable-warnings --strict-markers --cov=src --cov-report=html"
+addopts = "-ra -q --tb=short --maxfail=1 --disable-warnings --strict-markers --cov=src --cov-report=html --cov-report=term-missing"
 filterwarnings = ["error"]
 markers = [
     "integration: mark slow integration tests",
@@ -42,7 +43,11 @@ asyncio_default_fixture_loop_scope = "function"
 
 [tool.coverage.run]
 source = ["src"]
-omit = ["src/anypod/cli.py", "src/anypod/__main__.py", "src/anypod/__init__.py"] # we won't test the executable files
+omit = [
+    "src/anypod/cli.py",
+    "src/anypod/__main__.py",
+    "src/anypod/__init__.py",
+] # we won't test the executable files
 
 [tool.coverage.report]
 fail_under = 70

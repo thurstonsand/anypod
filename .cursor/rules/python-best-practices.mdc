@@ -21,11 +21,13 @@ alwaysApply: false
 - Use descriptive variable names
 - Document with clear docstrings (Google style)
 - Add typing stubs for complex interfaces
-- prefer `<type> | None` over `Optional[<type>]`
+- Prefer `<type> | None` over `Optional[<type>]`
+- When opening files, use `Path.open`
 
 ## Dependencies & Environment
 - All project dependencies and environments should be managed through `uv`
 - do NOT use traditional `python`, `pip`, `venv` tools; use `uv` instead
+- do NOT use `uv pip` legacy commands; use `uv add`, `uv sync`, etc instead
 - Maintain explicit dependencies with version pins
 - Employ virtual environments
 - Keep development dependencies separate

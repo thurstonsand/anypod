@@ -48,12 +48,13 @@ src/
 - [x] Tests with tmp in-memory DB.
 
 ## 3.2 File Manager Layer
-- [ ] Abstraction seam: encapsulate base directory so future S3/GCS back‑ends can subclass
-- [ ] Implement `save_media_file(feed_name, filename, data_stream) -> Path` (atomic write)
-- [ ] Implement `delete_media_file(path_to_file) -> bool`
-- [ ] Implement `get_media_path(feed_name, filename) -> Path`
-- [ ] Ensure directory hygiene: base media and feed directories exist
-- [ ] Write unit tests (tmp dir fixtures)
+- [x] Abstraction seam: encapsulate base directory so future S3/GCS back‑ends can subclass
+- [x] Implement `save_download_file(feed, filename, data_stream) -> Path` (atomic write)
+- [x] Implement `delete_download_file(feed, filename) -> bool`
+- [x] Implement `download_exists(feed, filename) -> bool`
+- [x] Implement `get_download_stream(feed, filename) -> IO[bytes]`
+- [x] Ensure directory hygiene: base download and feed directories exist (covered by save_download_file)
+- [x] Write unit tests (tmp dir fixtures)
 
 ## 3.5 Data Coordination Layer
 Implement `DataCoordinator` class receiving `DatabaseManager` & `FileManager` instances
@@ -66,8 +67,8 @@ Implement `DataCoordinator` class receiving `DatabaseManager` & `FileManager` in
 - [ ] `get_errors`
 - [ ] `prune_old_downloads`
 - [ ] Implement discrepancy detection logic:
-  - [ ] Find DB entries with `DOWNLOADED` status but no corresponding media file.
-  - [ ] Find media files on disk with no corresponding `DOWNLOADED` DB entry.
+  - [ ] Find DB entries with `DOWNLOADED` status but no corresponding download file.
+  - [ ] Find download files on disk with no corresponding `DOWNLOADED` DB entry.
   - [ ] (Optional) Automated resolution strategies or reporting for discrepancies.
   Unit tests with in‑memory DB & tmp FS
 
