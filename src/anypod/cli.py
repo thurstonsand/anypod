@@ -1,4 +1,4 @@
-from config import AppSettings
+from .config import AppSettings
 
 
 def main():

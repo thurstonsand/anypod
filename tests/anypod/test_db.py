@@ -4,7 +4,7 @@ import sqlite3
 
 import pytest
 
-from db import DatabaseManager, DownloadItem, DownloadStatus
+from anypod.db import DatabaseManager, DownloadItem, DownloadStatus
 
 # --- Fixtures ---
 

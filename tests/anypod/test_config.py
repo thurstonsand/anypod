@@ -5,7 +5,7 @@ import pytest
 from pytest import MonkeyPatch
 import yaml
 
-from config import AppSettings, YamlFileFromFieldSource
+from anypod.config import AppSettings, YamlFileFromFieldSource
 
 # Sample valid feed configuration data for testing
 SAMPLE_FEEDS_DATA = {

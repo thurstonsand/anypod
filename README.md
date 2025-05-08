@@ -2,4 +2,4 @@
 
 ## Development
 
-run with `uv run src/main.py --config-file example_feeds.yaml`
+run with `uv run anypod --config-file example_feeds.yaml`
