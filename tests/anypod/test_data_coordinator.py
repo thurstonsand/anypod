@@ -553,54 +553,6 @@ def test_update_status_db_error_on_final_update(
     )
 
 
-# --- Tests for _row_to_download ---
-# Note: Testing a private method. Generally discouraged, but useful here
-# for isolating the conversion logic and its specific error handling.
-
-
-@pytest.mark.unit
-def test_row_to_download_success(
-    coordinator: DataCoordinator,  # Need coordinator instance to call the method
-    sample_download_data: dict[str, Any],
-    sample_download_obj: Download,
-):
-    """Test successful conversion of a valid row dictionary."""
-    # Mock sqlite3.Row behavior by using the dictionary directly
-    mock_row = sample_download_data
-    converted_download = coordinator._row_to_download(mock_row)  # type: ignore
-    assert converted_download == sample_download_obj
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize(
-    "malformed_field, malformed_value, expected_error_message_part",
-    [
-        ("published", "not-a-date-string", "Invalid date format"),
-        (
-            "published",
-            None,
-            "Invalid date format",
-        ),  # None is not a valid ISO date string
-        ("status", "weird_status", "Invalid status value"),
-    ],
-)
-def test_row_to_download_malformed_data(
-    coordinator: DataCoordinator,
-    sample_download_data: dict[str, Any],
-    malformed_field: str,
-    malformed_value: Any,
-    expected_error_message_part: str,
-):
-    """Test ValueError is raised for malformed data fields."""
-    corrupted_row_data = sample_download_data.copy()
-    corrupted_row_data[malformed_field] = malformed_value
-
-    with pytest.raises(ValueError) as exc_info:
-        coordinator._row_to_download(corrupted_row_data)  # type: ignore
-
-    assert exc_info.type is ValueError
-
-
 # --- Tests for get_download_by_id ---
 
 
@@ -820,9 +772,8 @@ def test_get_errors_success_no_feed_no_offset(
 
     mock_db_manager.get_errors.return_value = [error_row_1_data, error_row_2_data]
 
-    # Re-create Download objects based on potentially modified data
-    download1 = coordinator._row_to_download(error_row_1_data)  # type: ignore
-    download2 = coordinator._row_to_download(error_row_2_data)  # type: ignore
+    download1 = Download.from_row(error_row_1_data)  # type: ignore[arg-type]
+    download2 = Download.from_row(error_row_2_data)  # type: ignore[arg-type]
     assert download1 is not None
     assert download2 is not None
 
@@ -854,7 +805,7 @@ def test_get_errors_success_with_feed(
     error_row_data["last_error"] = "Feed specific error"
 
     mock_db_manager.get_errors.return_value = [error_row_data]
-    expected_download = coordinator._row_to_download(error_row_data)  # type: ignore
+    expected_download = Download.from_row(error_row_data)  # type: ignore[arg-type]
     assert expected_download is not None
 
     retrieved_errors = coordinator.get_errors(
@@ -883,7 +834,7 @@ def test_get_errors_pagination(
     paginated_row_data["status"] = str(DownloadStatus.ERROR)
 
     mock_db_manager.get_errors.return_value = [paginated_row_data]
-    expected_download = coordinator._row_to_download(paginated_row_data)  # type: ignore
+    expected_download = Download.from_row(paginated_row_data)  # type: ignore[arg-type]
     assert expected_download is not None
 
     retrieved_errors = coordinator.get_errors(

@@ -33,6 +33,41 @@ class Download:
     retries: int = 0
     last_error: str | None = None
 
+    @classmethod
+    def from_row(cls, row: sqlite3.Row) -> "Download":
+        """Converts a sqlite3.Row to a Download object."""
+        # Ensure datetime conversion is robust
+        published_str = row["published"]
+        try:
+            published_dt = datetime.datetime.fromisoformat(published_str)
+        except (TypeError, ValueError) as e:
+            # Handle cases where published_str might be invalid format
+            raise ValueError(
+                f"Invalid date format for 'published' in DB row: {published_str}"
+            ) from e
+
+        # Ensure status conversion is robust
+        status_str = row["status"]
+        try:
+            status_enum = DownloadStatus(status_str)
+        except ValueError as e:
+            # Handle cases where status_str is not a valid DownloadStatus member
+            raise ValueError(f"Invalid status value in DB row: {status_str}") from e
+
+        return cls(
+            feed=row["feed"],
+            id=row["id"],
+            source_url=row["source_url"],
+            title=row["title"],
+            published=published_dt,
+            ext=row["ext"],
+            duration=float(row["duration"]),  # Ensure duration is float
+            thumbnail=row["thumbnail"],
+            status=status_enum,
+            retries=row["retries"],
+            last_error=row["last_error"],
+        )
+
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Download):
             return NotImplemented

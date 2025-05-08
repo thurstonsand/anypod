@@ -1,6 +1,7 @@
 from collections.abc import Iterator
 import datetime
 import sqlite3
+from typing import Any
 
 import pytest
 
@@ -33,6 +34,26 @@ def sample_download() -> Download:
         thumbnail="http://example.com/thumb/v123.jpg",
         status=DownloadStatus.QUEUED,
     )
+
+
+@pytest.fixture
+def sample_download_row_data() -> dict[str, Any]:
+    """Provides raw data for a sample Download object, simulating a DB row."""
+    return {
+        "feed": "test_feed",
+        "id": "test_id_123",
+        "source_url": "http://example.com/video/123",
+        "title": "Test Video Title",
+        "published": datetime.datetime(
+            2023, 1, 1, 12, 0, 0, tzinfo=datetime.UTC
+        ).isoformat(),  # Stored as ISO string in DB
+        "ext": "mp4",
+        "duration": 120.0,
+        "thumbnail": "http://example.com/thumb/123.jpg",
+        "status": str(DownloadStatus.QUEUED),
+        "retries": 0,
+        "last_error": None,
+    }
 
 
 # --- Tests ---
@@ -794,3 +815,64 @@ def test_get_errors(db_manager: DatabaseManager):
     assert len(all_errors_cleared) == 0, (
         "Should return empty list when all errors are cleared"
     )
+
+
+# --- Tests for Download.from_row ---
+
+
+@pytest.mark.unit
+def test_download_from_row_success(sample_download_row_data: dict[str, Any]):
+    """Test successful conversion of a valid row dictionary to a Download object."""
+    # Simulate sqlite3.Row by using a dictionary. Access by string keys is what sqlite3.Row provides.
+    mock_row = sample_download_row_data
+
+    # Expected Download object based on the row data
+    expected_published_dt = datetime.datetime.fromisoformat(mock_row["published"])
+    expected_status_enum = DownloadStatus(mock_row["status"])
+    expected_download = Download(
+        feed=mock_row["feed"],
+        id=mock_row["id"],
+        source_url=mock_row["source_url"],
+        title=mock_row["title"],
+        published=expected_published_dt,
+        ext=mock_row["ext"],
+        duration=float(mock_row["duration"]),
+        thumbnail=mock_row["thumbnail"],
+        status=expected_status_enum,
+        retries=int(mock_row["retries"]),
+        last_error=mock_row["last_error"],
+    )
+
+    converted_download = Download.from_row(mock_row)  # type: ignore[arg-type] # dict approximates sqlite3.Row
+    assert converted_download == expected_download
+    assert converted_download.published == expected_published_dt
+    assert converted_download.status == expected_status_enum
+    assert converted_download.duration == float(mock_row["duration"])
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "malformed_field, malformed_value, expected_error_message_part",
+    [
+        ("published", "not-a-date-string", "Invalid date format"),
+        ("published", None, "Invalid date format"),
+        ("status", "unknown_status", "Invalid status value"),
+        (
+            "duration",
+            "not-a-float",
+            "could not convert string to float",
+        ),  # Assuming direct float conversion error
+    ],
+)
+def test_download_from_row_malformed_data(
+    sample_download_row_data: dict[str, Any],
+    malformed_field: str,
+    malformed_value: Any,
+    expected_error_message_part: str,
+):
+    """Test ValueError is raised for malformed data fields during Download.from_row()."""
+    corrupted_row_data = sample_download_row_data.copy()
+    corrupted_row_data[malformed_field] = malformed_value
+
+    with pytest.raises(ValueError):
+        Download.from_row(corrupted_row_data)  # type: ignore[arg-type]

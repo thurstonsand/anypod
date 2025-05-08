@@ -157,43 +157,6 @@ class DataCoordinator:
         # but we return its result.
         return updated_in_db
 
-    def _row_to_download(self, row: sqlite3.Row) -> Download:
-        """Converts a sqlite3.Row to a Download object."""
-        # Ensure datetime conversion is robust
-        published_str = row["published"]
-        try:
-            published_dt = datetime.datetime.fromisoformat(published_str)
-        except (TypeError, ValueError) as e:
-            # Handle cases where published_str might be None or invalid format
-            # This should ideally not happen if DB data is clean.
-            # For now, let's raise an error or return None/default, depending on strictness.
-            # Raising an error is safer to highlight data integrity issues.
-            raise ValueError(
-                f"Invalid date format for 'published' in DB row: {published_str}"
-            ) from e
-
-        # Ensure status conversion is robust
-        status_str = row["status"]
-        try:
-            status_enum = DownloadStatus(status_str)
-        except ValueError as e:
-            # Handle cases where status_str is not a valid DownloadStatus member
-            raise ValueError(f"Invalid status value in DB row: {status_str}") from e
-
-        return Download(
-            feed=row["feed"],
-            id=row["id"],
-            source_url=row["source_url"],
-            title=row["title"],
-            published=published_dt,
-            ext=row["ext"],
-            duration=row["duration"],
-            thumbnail=row["thumbnail"],
-            status=status_enum,
-            retries=row["retries"],
-            last_error=row["last_error"],
-        )
-
     def get_download_by_id(self, feed: str, id: str) -> Download | None:
         """
         Retrieves a specific download by its feed and ID.
@@ -210,13 +173,13 @@ class DataCoordinator:
         """
         try:
             row = self.db_manager.get_download_by_id(feed, id)
-            return None if row is None else self._row_to_download(row)
+            return None if row is None else Download.from_row(row)
         except sqlite3.Error as e:
             raise DatabaseOperationError(
                 f"Database lookup failed for download {feed}/{id}",
             ) from e
         except ValueError as e:
-            # Catch potential ValueError from _row_to_download if data is malformed
+            # Catch potential ValueError from Download.from_row if data is malformed
             # This indicates a data integrity issue rather than a direct DB operation failure.
             # Re-raise as a DataCoordinatorError or a specific DataIntegrityError for clarity.
             raise DataCoordinatorError(
@@ -276,7 +239,7 @@ class DataCoordinator:
         self, feed: str | None = None, limit: int = 100, offset: int = 0
     ) -> list[Download]:
         """
-        Retrieves downloads that are in an ERROR state.
+        Retrieves downloads with an ERROR status.
 
         Args:
             feed: Optional feed name to filter errors by.
@@ -284,38 +247,23 @@ class DataCoordinator:
             offset: Number of error records to skip (for pagination).
 
         Returns:
-            A list of Download objects in ERROR state.
+            A list of Download objects with ERROR status.
 
         Raises:
-            DatabaseOperationError: If a database query fails.
-            DataCoordinatorError: If there's an issue converting database rows to Download objects.
+            DatabaseOperationError: If the database query fails.
+            DataCoordinatorError: For data integrity issues (e.g. malformed DB data).
         """
         try:
-            error_rows = self.db_manager.get_errors(
-                feed=feed, limit=limit, offset=offset
-            )
+            rows = self.db_manager.get_errors(feed=feed, limit=limit, offset=offset)
+            downloads = [Download.from_row(row) for row in rows]
         except sqlite3.Error as e:
             raise DatabaseOperationError(
-                "Database error while "
-                + (
-                    f"querying errors for feed '{feed}' with offset {offset}"
-                    if feed
-                    else f"querying all errors with offset {offset}"
-                )
+                f"Database query failed for errors (feed: {feed}, limit: {limit}, offset: {offset})",
             ) from e
-
-        downloads_with_errors: list[Download] = []
-        for row in error_rows:
-            try:
-                download = self._row_to_download(row)
-                downloads_with_errors.append(download)
-            except ValueError as e:
-                item_id = row["id"] if row and "id" in row else "unknown_id"
-                item_feed = row["feed"] if row and "feed" in row else "unknown_feed"
-                raise DataCoordinatorError(
-                    f"Data integrity issue converting error row for {item_feed}/{item_id} to Download object",
-                ) from e
-        return downloads_with_errors
+        except ValueError as e:
+            # Catch potential ValueError from Download.from_row if data is malformed
+            raise DataCoordinatorError("Data integrity issue") from e
+        return downloads
 
     def prune_old_downloads(
         self,
@@ -370,14 +318,14 @@ class DataCoordinator:
 
             for row in rows_for_keep_last:
                 try:
-                    dl = self._row_to_download(row)
-                    candidate_downloads_to_prune.add(dl)
+                    dl = Download.from_row(row)
                 except ValueError as e:
                     item_id = row["id"] if row and "id" in row else "unknown_id"
                     item_feed = row["feed"] if row and "feed" in row else "unknown_feed"
                     raise DataCoordinatorError(
                         f"Cannot convert keep_last row for {item_feed}/{item_id} to Download object",
                     ) from e
+                candidate_downloads_to_prune.add(dl)
 
         # 2. Get candidates from prune_before_date rule
         if prune_before_date is not None:
@@ -392,14 +340,14 @@ class DataCoordinator:
                 ) from e
             for row in rows_for_since:
                 try:
-                    dl = self._row_to_download(row)
-                    candidate_downloads_to_prune.add(dl)
+                    dl = Download.from_row(row)
                 except ValueError as e:
                     item_id = row["id"] if row and "id" in row else "unknown_id"
                     item_feed = row["feed"] if row and "feed" in row else "unknown_feed"
                     raise DataCoordinatorError(
                         f"Cannot convert prune_before_date row for {item_feed}/{item_id} to Download object",
                     ) from e
+                candidate_downloads_to_prune.add(dl)
 
         if not candidate_downloads_to_prune:
             return [], []

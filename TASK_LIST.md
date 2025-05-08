@@ -69,7 +69,7 @@ src/
 This section details the components that manage the lifecycle of downloads, from discovery to storage and pruning. They are organized into a `data_coordinator` module and related services/wrappers.
 
 ### 3.5.1 `db.py::Download` model updates
-- [ ] `from_row(cls, db_row: sqlite3.Row) -> Download` class method for mapping.
+- [x] `from_row(cls, db_row: sqlite3.Row) -> Download` class method for mapping.
 
 ### 3.5.2 `YtdlpWrapper` (`ytdlp_wrapper.py`)
 - [ ] Create `ytdlp_wrapper.py` and class `YtdlpWrapper`.
