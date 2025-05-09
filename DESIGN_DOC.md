@@ -96,7 +96,7 @@ graph TD
 | **`FeedGen`**                       | Generates RSS XML feed files based on current download metadata.                                                 | Manages in-memory feed cache; uses `DatabaseManager` & `FileManager`. Called by `DataCoordinator`.   |
 | **DataCoordinator Module**          | Houses services that orchestrate data lifecycle operations using foundational components and `FeedGen`.         | Uses `DatabaseManager`, `FileManager`, `YtdlpWrapper`, `FeedGen`. Main class is `DataCoordinator`. |
 |   ↳ **`DataCoordinator`**           | High-level orchestration of enqueue, download, prune, and feed generation phases.                                | Delegates to `Enqueuer`, `Downloader`, `Pruner`, and calls `FeedGen`. Ensures sequence.            |
-|   ↳ **`Enqueuer`**                  | Fetches media metadata from sources and adds new items to the database queue.                                    | Uses `YtdlpWrapper` for metadata, `DatabaseManager` for DB writes.                                   |
+|   ↳ **`Enqueuer`**                  | Fetches media metadata in two phases—(1) re-poll existing 'upcoming' entries to transition them to 'queued' when VOD; (2) fetch latest feed items and insert new 'queued' or 'upcoming' entries. | Uses `YtdlpWrapper` for metadata, `DatabaseManager` for DB writes.                                   |
 |   ↳ **`Downloader`**                | Processes queued items: triggers downloads via `YtdlpWrapper`, saves files, and updates database records.        | Uses `YtdlpWrapper`, `FileManager`, `DatabaseManager`. Handles download success/failure.             |
 |   ↳ **`Pruner`**                    | Implements retention policies by identifying and removing old/stale downloads and their files.                   | Uses `DatabaseManager` for selection, `FileManager` for deletion.                                    |
 | **HTTP (FastAPI)**                  | Serve static RSS & media and expose health/error JSON.                                                           | Delegates look‑ups to `DataCoordinator` or relevant services; zero business logic.                   |
@@ -132,7 +132,7 @@ CREATE TABLE IF NOT EXISTS downloads (
   ext          TEXT NOT NULL,
   duration     REAL NOT NULL,            -- seconds
   thumbnail    TEXT,                     -- URL
-  status       TEXT NOT NULL,            -- queued | downloaded | error | skipped
+  status       TEXT NOT NULL,            -- upcoming | queued | downloaded | error | skipped
   retries      INTEGER NOT NULL DEFAULT 0,
   last_error   TEXT,
   PRIMARY KEY  (feed, id)
@@ -143,10 +143,11 @@ CREATE INDEX idx_feed_status ON downloads(feed, status);
 * `mime` is derived from `ext` at feed-generation time via lookup table.
 
 ### Status lifecycle
-1. **queued** – metadata accepted; waiting to download
-2. **downloaded** – file saved
-3. **error** – last attempt failed; requires `--retry-failed`
-4. **skipped** – outside current `since` window; excluded from RSS
+1. **upcoming** – scheduled premiere or live; waiting for VOD
+2. **queued** – metadata accepted; waiting to download
+3. **downloaded** – file saved
+4. **error** – last attempt failed; requires `--retry-failed`
+5. **skipped** – outside current `since` window; excluded from RSS
 
 ---
 
@@ -168,9 +169,9 @@ sequenceDiagram
 
   DC->>Store: Get Queued Items (DB)
   Store-->>DC: Queued Downloadables
-  DC->>YTDLW: Download Media Content
-  YTDLW-->>DC: Downloaded Media Files (Streamed)
-  DC->>Store: Store Media & Update Status (File -> Filesystem, Status -> DB)
+  DC->>YTDLW: Download Media Content (to temp file path)
+  YTDLW-->>DC: Path to Downloaded Media File (in temp location)
+  DC->>Store: Store Media & Update Status (Move file to permanent storage, Status -> DB)
 
   DC->>Store: Identify Old/Stale Media (DB + Policies)
   Store-->>DC: Items to Prune
@@ -187,7 +188,7 @@ The `Scheduler` triggers a `DataCoordinator.process_feed(feed_config)` call. The
 
 1.  **Media Discovery & Enqueuing**: The `DataCoordinator` uses the `YtdlpWrapper` to discover available media items. New metadata is then passed to persistent storage, resulting in new items being enqueued in the `Database`.
 
-2.  **Media Downloading & Storage**: The `DataCoordinator` retrieves queued items from the `Database`. For each, it uses the `YtdlpWrapper` to download the actual media content. The downloaded files are then saved to the `Filesystem`, and their status is updated to `downloaded` in the `Database`.
+2.  **Media Downloading & Storage**: The `DataCoordinator` retrieves queued items from the `Database`. For each, it uses the `YtdlpWrapper` to download the actual media content. `YtdlpWrapper` saves the completed file to a temporary location on a designated data volume and returns the path to this file. The `DataCoordinator` (via its `Downloader` service and `FileManager`) then moves this file to its final permanent storage location on the `Filesystem`, and the item's status is updated to `downloaded` in the `Database`.
 
 3.  **Pruning**: Based on configured retention policies, the `DataCoordinator` identifies old or stale media by querying the `Database`. The corresponding media files are removed from the `Filesystem`, and their database records are updated (e.g., to `archived`).
 
@@ -197,14 +198,34 @@ The `Scheduler` triggers a `DataCoordinator.process_feed(feed_config)` call. The
 
 ---
 
-## 7  Feed Persistence
+### 7 YouTube URL Handling by `YtdlpWrapper`
+
+The `YtdlpWrapper` is designed to provide a consistent interface for fetching metadata regardless of the exact type of YouTube URL provided in the feed configuration. It intelligently handles:
+
+1.  **Channel URLs** (e.g., `https://www.youtube.com/@ChannelName`):
+    *   Anypod first performs a lightweight "discovery" request to identify the URL as a channel page.
+    *   It then attempts to locate the channel's primary "Videos" tab (e.g., `https://www.youtube.com/@ChannelName/videos`).
+    *   This resolved "Videos" tab URL is then used for the main metadata fetch. All user-provided `yt_args` are applied to this resolved URL.
+    *   *Future enhancement*: Allow configuration to target other tabs like "Live" or "Shorts".
+
+2.  **Playlist URLs** (e.g., `https://www.youtube.com/playlist?list=PL...`, or a specific channel tab URL like `https://www.youtube.com/@ChannelName/videos`):
+    *   These are treated as direct playlists. Metadata is fetched for the items within this playlist, respecting user-provided `yt_args`.
+
+3.  **Single Video URLs** (e.g., `https://www.youtube.com/watch?v=VideoID`):
+    *   Metadata for the single video is fetched.
+
+This resolution logic aims to simplify configuration for the end-user, as they can often provide a general channel URL and Anypod will attempt to find the most relevant video list. The `feed_name` provided in the configuration is used as the primary `source_identifier` for associating downloaded items with their feed, ensuring consistency.
+
+---
+
+## 8  Feed Persistence
 
 - The `FeedGen` module maintains a **write-once/read-many-locked in-memory cache**:
   - When the scheduler generates a feed, it replaces the cached bytes under a write lock.
   - HTTP handlers retrieve the feed after receiving a read lock.
   - On startup the cache is populated since all feeds will be retrieved immediately.
 
-## 8  HTTP Endpoints
+## 9  HTTP Endpoints
 | Path | Description |
 |------|-------------|
 | `/feeds/{feed}.xml` | Podcast RSS |
@@ -214,7 +235,7 @@ The `Scheduler` triggers a `DataCoordinator.process_feed(feed_config)` call. The
 
 ---
 
-## 9  Command-Line Flags (MVP)
+## 10  Command-Line Flags (MVP)
 * `--config-file PATH` – custom YAML path (default `/config/feeds.yml`)
 * `--ignore-startup-errors` – keep running if validation fails (feed disabled in memory)
 * `--retry-failed` – reset `error` → `queued` rows before scheduler starts
@@ -222,7 +243,7 @@ The `Scheduler` triggers a `DataCoordinator.process_feed(feed_config)` call. The
 
 ---
 
-## 10  Deployment
+## 11  Deployment
 | Aspect | Setting |
 |--------|---------|
 | **Image** | `ghcr.io/thurstonsand/anypod:latest` |
@@ -233,14 +254,14 @@ The `Scheduler` triggers a `DataCoordinator.process_feed(feed_config)` call. The
 
 ---
 
-## 11  Dependencies & Tooling
+## 12  Dependencies & Tooling
 * Managed by **uv** (`pyproject.toml` + `uv.lock`).
 * yt-dlp pinned to specific commit.
 * Dev deps: ruff · pytest-asyncio · pytest-cov · pyright · pre-commit
 
 ---
 
-## 12  Future Work
+## 13  Future Work
 * Admin dashboard (React + shadcn/ui)
 * Automatic retries with jitter
 * Transcoding fallback (ffmpeg) for non-MP4/M4A sources
@@ -261,3 +282,5 @@ The `Scheduler` triggers a `DataCoordinator.process_feed(feed_config)` call. The
     | **Archive tier**                         | Move oldest media to a cheap "cold" volume (e.g., S3/Glacier) instead of deleting, while pruning DB rows locally.                           | No data loss; total cap becomes *hot‑tier* only.             | Requires new storage backend; retrieval latency for old episodes.                                          |
 * integrate with sponsorblock -- either skip blocked sections, or add chapters to download
 * add per-source rate limiting
+* issue template include rules on requesting support for new source
+* enable a podcast feed that accepts requests to an endpoint to add individual videos to the feed; basically manually curated

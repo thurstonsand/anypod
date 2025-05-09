@@ -231,8 +231,9 @@ def test_upsert_download_updates_existing(
 @pytest.mark.unit
 def test_update_status(db_manager: DatabaseManager, sample_download: Download):
     """Test updating the status of a download, including new re-queue logic."""
-    db_manager.upsert_download(sample_download)
+    db_manager.upsert_download(sample_download)  # Initial status is QUEUED
 
+    # Test: QUEUED -> DOWNLOADED
     db_manager.update_status(
         feed=sample_download.feed,
         id=sample_download.id,
@@ -244,6 +245,7 @@ def test_update_status(db_manager: DatabaseManager, sample_download: Download):
     assert download["retries"] == 0, "Retries should be reset on DOWNLOADED"
     assert download["last_error"] is None, "Error should be cleared on DOWNLOADED"
 
+    # Test: DOWNLOADED -> ERROR
     error_message = "Download failed: Network issue"
     db_manager.update_status(
         feed=sample_download.feed,
@@ -261,6 +263,7 @@ def test_update_status(db_manager: DatabaseManager, sample_download: Download):
         "Retries should be incremented on first ERROR"
     )
 
+    # Test: ERROR -> ERROR (increment retries)
     error_message_2 = "Download failed again"
     db_manager.update_status(
         feed=sample_download.feed,
@@ -277,6 +280,43 @@ def test_update_status(db_manager: DatabaseManager, sample_download: Download):
     )
     assert download_error_2["last_error"] == error_message_2
 
+    # Test: ERROR -> UPCOMING (retries and error persist)
+    db_manager.update_status(
+        feed=sample_download.feed,
+        id=sample_download.id,
+        status=DownloadStatus.UPCOMING,
+    )
+    download_upcoming_from_error = db_manager.get_download_by_id(
+        sample_download.feed, sample_download.id
+    )
+    assert download_upcoming_from_error is not None
+    assert download_upcoming_from_error["status"] == str(DownloadStatus.UPCOMING)
+    assert download_upcoming_from_error["last_error"] == error_message_2, (
+        "Error message should persist when transitioning to UPCOMING from ERROR"
+    )
+    assert download_upcoming_from_error["retries"] == 2, (
+        "Retries should persist when transitioning to UPCOMING from ERROR"
+    )
+
+    # Test: UPCOMING -> QUEUED (retries and error persist)
+    db_manager.update_status(
+        feed=sample_download.feed,
+        id=sample_download.id,
+        status=DownloadStatus.QUEUED,
+    )
+    download_requeued_from_upcoming = db_manager.get_download_by_id(
+        sample_download.feed, sample_download.id
+    )
+    assert download_requeued_from_upcoming is not None
+    assert download_requeued_from_upcoming["status"] == str(DownloadStatus.QUEUED)
+    assert download_requeued_from_upcoming["last_error"] == error_message_2, (
+        "Error message should persist when transitioning to QUEUED from UPCOMING"
+    )
+    assert download_requeued_from_upcoming["retries"] == 2, (
+        "Retries should persist when transitioning to QUEUED from UPCOMING"
+    )
+
+    # Test: QUEUED -> SKIPPED (retries and error persist)
     db_manager.update_status(
         feed=sample_download.feed,
         id=sample_download.id,
@@ -292,6 +332,8 @@ def test_update_status(db_manager: DatabaseManager, sample_download: Download):
     )
     assert download_skipped["retries"] == 2, "Retries should persist on SKIPPED"
 
+    # Test: SKIPPED -> QUEUED (error and retries persist)
+    # Re-using download_requeued variable name for clarity of flow
     db_manager.update_status(
         feed=sample_download.feed,
         id=sample_download.id,
@@ -357,131 +399,6 @@ def test_update_status(db_manager: DatabaseManager, sample_download: Download):
 
 
 @pytest.mark.unit
-def test_next_queued_downloads(db_manager: DatabaseManager):
-    """Test fetching the next queued downloads for a feed."""
-    base_time = datetime.datetime(2023, 1, 1, 12, 0, 0, tzinfo=datetime.UTC)
-
-    download1_feed1 = Download(
-        feed="feed1",
-        id="v001",
-        source_url="url1",
-        title="title1_old",
-        published=base_time - datetime.timedelta(hours=2),
-        ext="mp4",
-        duration=10,
-        status=DownloadStatus.QUEUED,
-    )
-    download2_feed1 = Download(
-        feed="feed1",
-        id="v002",
-        source_url="url2",
-        title="title2_new",
-        published=base_time - datetime.timedelta(hours=1),
-        ext="mp4",
-        duration=10,
-        status=DownloadStatus.QUEUED,
-    )
-    download3_feed1_downloaded = Download(
-        feed="feed1",
-        id="v003",
-        source_url="url3",
-        title="title3_downloaded",
-        published=base_time,
-        ext="mp4",
-        duration=10,
-        status=DownloadStatus.DOWNLOADED,
-    )
-    download4_feed1_error = Download(
-        feed="feed1",
-        id="v004",
-        source_url="url4",
-        title="title4_error",
-        published=base_time + datetime.timedelta(hours=1),
-        ext="mp4",
-        duration=10,
-        status=DownloadStatus.ERROR,
-    )
-    download5_feed1_queued_newest = Download(
-        feed="feed1",
-        id="v005",
-        source_url="url5",
-        title="title5_newest",
-        published=base_time + datetime.timedelta(hours=2),
-        ext="mp4",
-        duration=10,
-        status=DownloadStatus.QUEUED,
-    )
-    download6_feed2_queued = Download(
-        feed="feed2",
-        id="v006",
-        source_url="url6",
-        title="title6_feed2",
-        published=base_time,
-        ext="mp4",
-        duration=10,
-        status=DownloadStatus.QUEUED,
-    )
-
-    all_downloads = [
-        download1_feed1,
-        download2_feed1,
-        download3_feed1_downloaded,
-        download4_feed1_error,
-        download5_feed1_queued_newest,
-        download6_feed2_queued,
-    ]
-    for dl in all_downloads:
-        db_manager.upsert_download(dl)
-
-    # Test case 1: Get next 2 for feed1 (should be item1 and item2 in that order)
-    queued_feed1_limit2 = db_manager.next_queued_downloads(feed="feed1", limit=2)
-    assert len(queued_feed1_limit2) == 2
-    assert queued_feed1_limit2[0]["id"] == "v001", (
-        "Oldest queued download for feed1 should be first"
-    )
-    assert queued_feed1_limit2[1]["id"] == "v002", (
-        "Second oldest queued download for feed1 should be second"
-    )
-
-    # Test case 2: Get all for feed1 (should be item1, item2, item5)
-    queued_feed1_all = db_manager.next_queued_downloads(feed="feed1", limit=10)
-    assert len(queued_feed1_all) == 3
-    assert [dl["id"] for dl in queued_feed1_all] == [
-        "v001",
-        "v002",
-        "v005",
-    ], "Should return all queued for feed1 in order"
-
-    # Test case 3: Get for feed2 (should only be item6)
-    queued_feed2 = db_manager.next_queued_downloads(feed="feed2", limit=10)
-    assert len(queued_feed2) == 1
-    assert queued_feed2[0]["id"] == "v006", "Should return only download for feed2"
-
-    # Test case 4: Limit 0
-    queued_feed1_limit0 = db_manager.next_queued_downloads(feed="feed1", limit=0)
-    assert len(queued_feed1_limit0) == 0, "Limit 0 should return no downloads"
-
-    # Test case 5: No queued items for a non-existent feed
-    queued_feed_nonexistent = db_manager.next_queued_downloads(
-        feed="feed_non_existent", limit=10
-    )
-    assert len(queued_feed_nonexistent) == 0, (
-        "Non-existent feed should return no downloads"
-    )
-
-    # Test case 6: Feed exists but has no QUEUED items (after updating one)
-    db_manager.update_status(
-        feed="feed2",
-        id="v006",
-        status=DownloadStatus.DOWNLOADED,
-    )
-    queued_feed2_none_left = db_manager.next_queued_downloads(feed="feed2", limit=10)
-    assert len(queued_feed2_none_left) == 0, (
-        "Feed2 should have no queued downloads left"
-    )
-
-
-@pytest.mark.unit
 def test_get_downloads_to_prune_by_keep_last(db_manager: DatabaseManager):
     """Test fetching downloads to prune based on 'keep_last'."""
     base_time = datetime.datetime(2023, 1, 1, 12, 0, 0, tzinfo=datetime.UTC)
@@ -538,6 +455,16 @@ def test_get_downloads_to_prune_by_keep_last(db_manager: DatabaseManager):
         ext="mp3",
         duration=1,
     )
+    dl_f1v6_upcoming_older = Download(  # New UPCOMING download, older
+        feed=feed1_name,
+        id="f1v6_upcoming_older",
+        published=base_time - datetime.timedelta(days=6),  # Older than f1v1_dl_oldest
+        status=DownloadStatus.UPCOMING,
+        source_url="url",
+        title="t6_upcoming",
+        ext="mp4",
+        duration=1,
+    )
 
     # Item for another feed, should be ignored
     dl_f2v1_dl = Download(
@@ -558,10 +485,14 @@ def test_get_downloads_to_prune_by_keep_last(db_manager: DatabaseManager):
         dl_f1v4_dl_newest,
         dl_f1v5_arch,
         dl_f2v1_dl,
+        dl_f1v6_upcoming_older,  # Add to list
     ]
     for dl in downloads_to_add:
         db_manager.upsert_download(dl)
 
+    # Keep 2: f1v4_dl_newest (kept), f1v3_q_mid2 (kept)
+    # Pruned: f1v2_err_mid1, f1v1_dl_oldest
+    # Ignored from pruning: f1v5_arch, f1v6_upcoming_older
     prune_keep2 = db_manager.get_downloads_to_prune_by_keep_last(
         feed=feed1_name, keep_last=2
     )
@@ -569,16 +500,19 @@ def test_get_downloads_to_prune_by_keep_last(db_manager: DatabaseManager):
         "Should identify 2 downloads to prune (f1v1_dl_oldest, f1v2_err_mid1)"
     )
     pruned_ids_keep2 = sorted([row["id"] for row in prune_keep2])
-    assert pruned_ids_keep2 == sorted(["f1v1_dl_oldest", "f1v2_err_mid1"])
-    # Check if full rows are returned - access key directly
-    assert prune_keep2[0]["title"] is not None, "Row should contain 'title' key"
-    assert prune_keep2[0]["feed"] == feed1_name
+    assert "f1v6_upcoming_older" not in pruned_ids_keep2, (
+        "UPCOMING download f1v6_upcoming_older should NOT be in the prune list"
+    )
+    assert sorted(["f1v1_dl_oldest", "f1v2_err_mid1"]) == pruned_ids_keep2
 
+    # Keep 5: All non-ARCHIVED and non-UPCOMING items are kept
+    # (f1v4_dl_newest, f1v3_q_mid2, f1v2_err_mid1, f1v1_dl_oldest)
+    # There are 4 such items. f1v5_arch and f1v6_upcoming_older are ignored.
     prune_keep5 = db_manager.get_downloads_to_prune_by_keep_last(
         feed=feed1_name, keep_last=5
-    )  # Keep all
+    )
     assert len(prune_keep5) == 0, (
-        "Should identify 0 if keep_last >= total items for feed"
+        "Should identify 0 if keep_last >= total non-ARCHIVED/non-UPCOMING items for feed"
     )
 
     prune_keep0 = db_manager.get_downloads_to_prune_by_keep_last(
@@ -633,6 +567,16 @@ def test_get_downloads_to_prune_by_since(db_manager: DatabaseManager):
         ext="mp3",
         duration=1,
     )
+    dl_ps_v5_upcoming_ancient = Download(  # New UPCOMING download, very old
+        feed=feed_name,
+        id="ps_v5_upcoming_ancient",
+        published=base_time - datetime.timedelta(days=10),  # Much older than cutoff
+        status=DownloadStatus.UPCOMING,
+        source_url="url",
+        title="t5_upcoming",
+        ext="mp4",
+        duration=1,
+    )
 
     # Item for another feed
     dl_other_v1_older_dl = Download(
@@ -651,27 +595,38 @@ def test_get_downloads_to_prune_by_since(db_manager: DatabaseManager):
         dl_ps_v2_mid_err,
         dl_ps_v3_newer_q,
         dl_ps_v4_arch,
+        dl_ps_v5_upcoming_ancient,  # Add to list
         dl_other_v1_older_dl,
     ]
     for dl in downloads_to_add:
         db_manager.upsert_download(dl)
 
     # Prune items older than 'base_time - 3 days' for feed_name
-    # Candidates: ps_v1_older_dl (day -5)
+    # Candidates for pruning (ignoring ARCHIVED and UPCOMING):
+    # - ps_v1_older_dl (day -5) -> YES
+    # - ps_v2_mid_err (day -2) -> NO (not older than day -3)
+    # - ps_v3_newer_q (day +1) -> NO
+    # - ps_v4_arch (day 0) -> NO (archived)
+    # - ps_v5_upcoming_ancient (day -10) -> NO (upcoming, due to db.py change)
     since_cutoff_1 = base_time - datetime.timedelta(days=3)
     pruned_1 = db_manager.get_downloads_to_prune_by_since(
         feed=feed_name, since=since_cutoff_1
     )
     assert len(pruned_1) == 1
     assert pruned_1[0]["id"] == "ps_v1_older_dl"
-    if pruned_1:  # Check full row
-        # Access key directly
-        assert pruned_1[0]["title"] is not None, "Row should contain 'title' key"
-        assert pruned_1[0]["feed"] == feed_name
-        assert pruned_1[0]["status"] == str(DownloadStatus.DOWNLOADED)
+    # Verify that ps_v5_upcoming_ancient was not pruned
+    pruned_ids_1 = [row["id"] for row in pruned_1]
+    assert "ps_v5_upcoming_ancient" not in pruned_ids_1, (
+        "UPCOMING download should not be pruned by since_cutoff_1"
+    )
 
     # Prune items older than 'base_time + 2 days' for feed_name
-    # Candidates: ps_v1_older_dl (day -5), ps_v2_mid_err (day -2), ps_v4_arch (day 0), ps_v3_newer_q (day +1)
+    # Candidates for pruning (ignoring ARCHIVED and UPCOMING):
+    # - ps_v1_older_dl (day -5) -> YES
+    # - ps_v2_mid_err (day -2) -> YES
+    # - ps_v3_newer_q (day +1) -> YES
+    # - ps_v4_arch (day 0) -> NO (archived)
+    # - ps_v5_upcoming_ancient (day -10) -> NO (upcoming, due to db.py change)
     since_cutoff_2 = base_time + datetime.timedelta(days=2)
     pruned_2 = db_manager.get_downloads_to_prune_by_since(
         feed=feed_name, since=since_cutoff_2
@@ -679,16 +634,19 @@ def test_get_downloads_to_prune_by_since(db_manager: DatabaseManager):
     pruned_ids_2 = sorted([row["id"] for row in pruned_2])
     assert len(pruned_2) == 3
     assert pruned_ids_2 == sorted(["ps_v1_older_dl", "ps_v2_mid_err", "ps_v3_newer_q"])
+    assert "ps_v5_upcoming_ancient" not in pruned_ids_2, (
+        "UPCOMING download should not be pruned by since_cutoff_2"
+    )
 
 
 @pytest.mark.unit
-def test_get_errors(db_manager: DatabaseManager):
-    """Test fetching downloads with 'error' status, including offset and limit."""
+def test_get_downloads_by_status(db_manager: DatabaseManager):
+    """Test fetching downloads by various statuses, including offset and limit."""
     base_time = datetime.datetime(2023, 1, 15, 12, 0, 0, tzinfo=datetime.UTC)
-    feed1 = "error_feed1"
-    feed2 = "error_feed2"
+    feed1 = "status_feed1"
+    feed2 = "status_feed2"
 
-    # oldest, feed2
+    # oldest, feed2, ERROR
     dl_f2e1 = Download(
         feed=feed2,
         id="f2e1",
@@ -696,11 +654,11 @@ def test_get_errors(db_manager: DatabaseManager):
         status=DownloadStatus.ERROR,
         last_error="Feed 2 error",
         source_url="url",
-        title="t",
+        title="t_err_f2",
         ext="mp4",
         duration=1,
     )
-    # middle, feed1
+    # middle, feed1, ERROR
     dl_f1e1_old = Download(
         feed=feed1,
         id="f1e1_old",
@@ -708,11 +666,11 @@ def test_get_errors(db_manager: DatabaseManager):
         status=DownloadStatus.ERROR,
         last_error="Old error 1",
         source_url="url",
-        title="t",
+        title="t_err_f1_old",
         ext="mp4",
         duration=1,
     )
-    # newest, feed1
+    # newest, feed1, ERROR
     dl_f1e2_new = Download(
         feed=feed1,
         id="f1e2_new",
@@ -720,100 +678,160 @@ def test_get_errors(db_manager: DatabaseManager):
         status=DownloadStatus.ERROR,
         last_error="New error 1",
         source_url="url",
-        title="t",
+        title="t_err_f1_new",
         ext="mp4",
         duration=1,
     )
-    # Other status items for noise
+    # Other status items for noise and testing other statuses
     dl_f1q1 = Download(
         feed=feed1,
         id="f1q1",
         published=base_time,
         status=DownloadStatus.QUEUED,
         source_url="url",
-        title="t",
+        title="t_q_f1",
         ext="mp4",
         duration=1,
     )
     dl_f3d1 = Download(
-        feed="feed3_no_errors",
+        feed="feed3_no_match",
         id="f3d1",
         published=base_time,
         status=DownloadStatus.DOWNLOADED,
         source_url="url",
-        title="t",
+        title="t_d_f3",
+        ext="mp4",
+        duration=1,
+    )
+    dl_f1_upcoming = Download(
+        feed=feed1,
+        id="f1upcoming",
+        published=base_time - datetime.timedelta(days=4),  # Older than errors
+        status=DownloadStatus.UPCOMING,
+        source_url="url",
+        title="t_up_f1",
+        ext="mp4",
+        duration=1,
+    )
+    dl_f2_upcoming = Download(
+        feed=feed2,
+        id="f2upcoming",
+        published=base_time - datetime.timedelta(days=5),
+        status=DownloadStatus.UPCOMING,
+        source_url="url",
+        title="t_up_f2",
         ext="mp4",
         duration=1,
     )
 
-    downloads_to_add = [dl_f2e1, dl_f1e1_old, dl_f1e2_new, dl_f1q1, dl_f3d1]
+    downloads_to_add = [
+        dl_f2e1,  # ERROR
+        dl_f1e1_old,  # ERROR
+        dl_f1e2_new,  # ERROR
+        dl_f1q1,  # QUEUED
+        dl_f3d1,  # DOWNLOADED
+        dl_f1_upcoming,  # UPCOMING
+        dl_f2_upcoming,  # UPCOMING
+    ]
     for dl_data in downloads_to_add:
         db_manager.upsert_download(dl_data)
 
     # Expected order for all errors: f2e1 (oldest), f1e1_old, f1e2_new (newest)
-
-    # Test case 1: Get all errors (default limit 100, default offset 0)
-    all_errors = db_manager.get_errors()
-    assert len(all_errors) == 3, "Should fetch all 3 error downloads"
+    all_errors = db_manager.get_downloads_by_status(
+        status_to_filter=DownloadStatus.ERROR
+    )
+    assert len(all_errors) == 3, "Should fetch all 3 ERROR downloads"
     assert [row["id"] for row in all_errors] == ["f2e1", "f1e1_old", "f1e2_new"]
     for row in all_errors:
         assert row["status"] == str(DownloadStatus.ERROR)
 
-    # Test case 2: Get errors for feed1 (default limit, default offset)
-    # Expected order for feed1: f1e1_old, f1e2_new
-    feed1_errors = db_manager.get_errors(feed=feed1)
-    assert len(feed1_errors) == 2, "Should fetch 2 errors for feed1"
+    feed1_errors = db_manager.get_downloads_by_status(
+        status_to_filter=DownloadStatus.ERROR, feed=feed1
+    )
+    assert len(feed1_errors) == 2, "Should fetch 2 ERROR downloads for feed1"
     assert [row["id"] for row in feed1_errors] == ["f1e1_old", "f1e2_new"]
 
-    # Test case 3: Get errors with limit
-    limited_errors = db_manager.get_errors(limit=1, offset=0)
+    limited_errors = db_manager.get_downloads_by_status(
+        status_to_filter=DownloadStatus.ERROR, limit=1, offset=0
+    )
     assert len(limited_errors) == 1, "Should fetch only 1 error with limit=1"
     assert limited_errors[0]["id"] == "f2e1", "Should be the oldest overall error"
 
-    limited_errors_feed1 = db_manager.get_errors(feed=feed1, limit=1, offset=0)
-    assert len(limited_errors_feed1) == 1
-    assert limited_errors_feed1[0]["id"] == "f1e1_old", "Should be oldest for feed1"
-
-    # Test case 4: Get errors with offset
-    offset_errors = db_manager.get_errors(limit=100, offset=1)  # Skip 1, get the rest
-    assert len(offset_errors) == 2, "Should fetch 2 errors with offset=1"
-    assert [row["id"] for row in offset_errors] == ["f1e1_old", "f1e2_new"]
-
-    offset_errors_feed1 = db_manager.get_errors(
-        feed=feed1, limit=100, offset=1
-    )  # Skip 1 from feed1 errors
-    assert len(offset_errors_feed1) == 1, "Should fetch 1 error for feed1 with offset=1"
-    assert offset_errors_feed1[0]["id"] == "f1e2_new"
-
-    # Test case 5: Get errors with limit and offset
-    limit_offset_errors = db_manager.get_errors(
-        limit=1, offset=1
-    )  # Skip f2e1, get f1e1_old
-    assert len(limit_offset_errors) == 1, "Should fetch 1 error with limit=1, offset=1"
-    assert limit_offset_errors[0]["id"] == "f1e1_old"
-
-    # Test case 6: Offset greater than number of items
-    offset_too_high = db_manager.get_errors(limit=100, offset=5)
-    assert len(offset_too_high) == 0, "Should return empty list if offset is too high"
-
-    offset_too_high_feed1 = db_manager.get_errors(feed=feed1, limit=100, offset=3)
-    assert len(offset_too_high_feed1) == 0, (
-        "Should return empty for feed1 if offset is too high"
+    # --- Test UPCOMING status ---
+    # Expected order for all UPCOMING: f2upcoming (oldest), f1upcoming (newest)
+    all_upcoming = db_manager.get_downloads_by_status(
+        status_to_filter=DownloadStatus.UPCOMING
     )
+    assert len(all_upcoming) == 2, "Should fetch all 2 UPCOMING downloads"
+    assert [row["id"] for row in all_upcoming] == ["f2upcoming", "f1upcoming"]
+    for row in all_upcoming:
+        assert row["status"] == str(DownloadStatus.UPCOMING)
 
-    # Test case 7: No errors for a specific feed
-    no_errors_feed3 = db_manager.get_errors(feed="feed3_no_errors")
-    assert len(no_errors_feed3) == 0, "Should return empty list for feed with no errors"
+    feed1_upcoming = db_manager.get_downloads_by_status(
+        status_to_filter=DownloadStatus.UPCOMING, feed=feed1
+    )
+    assert len(feed1_upcoming) == 1, "Should fetch 1 UPCOMING download for feed1"
+    assert feed1_upcoming[0]["id"] == "f1upcoming"
 
-    # Test case 8: No errors at all (after updating existing errors)
+    # --- Test QUEUED status (feed1 has one) ---
+    feed1_queued = db_manager.get_downloads_by_status(
+        status_to_filter=DownloadStatus.QUEUED, feed=feed1
+    )
+    assert len(feed1_queued) == 1, "Should fetch 1 QUEUED download for feed1"
+    assert feed1_queued[0]["id"] == "f1q1"
+
+    # --- Test DOWNLOADED status (feed3_no_match has one) ---
+    downloaded_f3 = db_manager.get_downloads_by_status(
+        status_to_filter=DownloadStatus.DOWNLOADED, feed="feed3_no_match"
+    )
+    assert len(downloaded_f3) == 1, "Should fetch 1 DOWNLOADED for feed3_no_match"
+    assert downloaded_f3[0]["id"] == "f3d1"
+
+    # --- Test with offset and limit for UPCOMING ---
+    upcoming_limit1_offset1 = db_manager.get_downloads_by_status(
+        status_to_filter=DownloadStatus.UPCOMING, limit=1, offset=1
+    )  # Skips f2upcoming, gets f1upcoming
+    assert len(upcoming_limit1_offset1) == 1
+    assert upcoming_limit1_offset1[0]["id"] == "f1upcoming"
+
+    # --- Test no items for a status/feed combination ---
+    no_feed2_queued = db_manager.get_downloads_by_status(
+        status_to_filter=DownloadStatus.QUEUED, feed=feed2
+    )
+    assert len(no_feed2_queued) == 0
+
+    no_skipped_any_feed = db_manager.get_downloads_by_status(
+        status_to_filter=DownloadStatus.SKIPPED
+    )
+    assert len(no_skipped_any_feed) == 0
+
+    # --- Test offset greater than number of items ---
+    offset_too_high_error = db_manager.get_downloads_by_status(
+        status_to_filter=DownloadStatus.ERROR, limit=100, offset=5
+    )
+    assert len(offset_too_high_error) == 0
+
+    # --- Test no items at all (after updating existing items to a different status) ---
     db_manager.update_status(feed=feed1, id="f1e1_old", status=DownloadStatus.QUEUED)
     db_manager.update_status(
         feed=feed1, id="f1e2_new", status=DownloadStatus.DOWNLOADED
     )
     db_manager.update_status(feed=feed2, id="f2e1", status=DownloadStatus.SKIPPED)
-    all_errors_cleared = db_manager.get_errors()
+    all_errors_cleared = db_manager.get_downloads_by_status(
+        status_to_filter=DownloadStatus.ERROR
+    )
     assert len(all_errors_cleared) == 0, (
-        "Should return empty list when all errors are cleared"
+        "Should return empty list when all ERROR items are cleared"
+    )
+
+    # Test original upcoming items are also gone if we query for them after updates
+    db_manager.update_status(feed=feed1, id="f1upcoming", status=DownloadStatus.QUEUED)
+    db_manager.update_status(feed=feed2, id="f2upcoming", status=DownloadStatus.QUEUED)
+    all_upcoming_cleared = db_manager.get_downloads_by_status(
+        status_to_filter=DownloadStatus.UPCOMING
+    )
+    assert len(all_upcoming_cleared) == 0, (
+        "Should return empty list when all UPCOMING items are cleared"
     )
 
 

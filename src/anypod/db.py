@@ -7,6 +7,7 @@ from typing import Any
 
 
 class DownloadStatus(Enum):
+    UPCOMING = "upcoming"
     QUEUED = "queued"
     DOWNLOADED = "downloaded"
     ERROR = "error"
@@ -91,7 +92,7 @@ CREATE TABLE IF NOT EXISTS downloads (
   ext          TEXT NOT NULL,
   duration     REAL NOT NULL,            -- seconds
   thumbnail    TEXT,                     -- URL
-  status       TEXT NOT NULL,            -- queued | downloaded | error | skipped
+  status       TEXT NOT NULL,            -- upcoming | queued | downloaded | error | skipped
   retries      INTEGER NOT NULL DEFAULT 0,
   last_error   TEXT,
   PRIMARY KEY  (feed, id)
@@ -197,6 +198,7 @@ class DatabaseManager:
         - If status is QUEUED: retries and last_error persist.
         - If status is SKIPPED: only status is updated. retries and last_error persist.
         - If status is ARCHIVED: only status is updated. retries and last_error persist.
+        - If status is UPCOMING: only status is updated. retries and last_error persist.
         Returns True if a row was updated, False otherwise.
         """
         updates = ["status = ?"]
@@ -210,7 +212,8 @@ class DatabaseManager:
             params.append(last_error)
             updates.append("retries = retries + 1")
         elif (
-            status == DownloadStatus.QUEUED
+            status == DownloadStatus.UPCOMING
+            or status == DownloadStatus.QUEUED
             or status == DownloadStatus.SKIPPED
             or status == DownloadStatus.ARCHIVED
         ):
@@ -224,41 +227,19 @@ class DatabaseManager:
             cursor = conn.execute(sql, tuple(params))
             return cursor.rowcount > 0
 
-    def next_queued_downloads(self, feed: str, limit: int = 10) -> list[sqlite3.Row]:
-        """Retrieves the next 'queued' downloads for a given feed, oldest first.
-        Returns a list of database rows.
-        """
-        sql = """
-        SELECT *
-        FROM downloads
-        WHERE feed = ? AND status = ?
-        ORDER BY published ASC, id ASC
-        LIMIT ?
-        """
-        cursor: sqlite3.Cursor | None = None
-        try:
-            # For SELECT statements, explicit cursor is often clearer
-            with self._get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(sql, (feed, str(DownloadStatus.QUEUED), limit))
-                return cursor.fetchall()
-        finally:
-            if cursor:
-                cursor.close()
-
     def get_downloads_to_prune_by_keep_last(
         self, feed: str, keep_last: int
     ) -> list[sqlite3.Row]:
         """Identifies downloads to prune based on 'keep_last'.
         Returns a list of rows.
-        Excludes items with status ARCHIVED.
+        Excludes items with status ARCHIVED or UPCOMING.
         """
         if keep_last <= 0:
             return []
         sql = """
         SELECT *
         FROM downloads
-        WHERE feed = ? AND status != ?
+        WHERE feed = ? AND status NOT IN (?, ?)
         ORDER BY published DESC, id DESC
         LIMIT -1 OFFSET ?
         """
@@ -266,7 +247,12 @@ class DatabaseManager:
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                params = (feed, str(DownloadStatus.ARCHIVED), keep_last)
+                params = (
+                    feed,
+                    str(DownloadStatus.ARCHIVED),
+                    str(DownloadStatus.UPCOMING),
+                    keep_last,
+                )
                 cursor.execute(sql, params)
                 return cursor.fetchall()
         finally:
@@ -278,7 +264,7 @@ class DatabaseManager:
     ) -> list[sqlite3.Row]:
         """Identifies downloads published before the 'since' datetime (UTC).
         Returns a list of rows.
-        Excludes items with status ARCHIVED.
+        Excludes items with status ARCHIVED or UPCOMING.
         'since' MUST be a timezone-aware datetime object in UTC.
         """
         sql = """
@@ -286,14 +272,19 @@ class DatabaseManager:
         FROM downloads
         WHERE feed = ?
           AND published < ?
-          AND status != ?
+          AND status NOT IN (?, ?)
         ORDER BY published ASC
         """
         cursor: sqlite3.Cursor | None = None
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                params = (feed, since.isoformat(), str(DownloadStatus.ARCHIVED))
+                params = (
+                    feed,
+                    since.isoformat(),
+                    str(DownloadStatus.ARCHIVED),
+                    str(DownloadStatus.UPCOMING),
+                )
                 cursor.execute(sql, params)
                 return cursor.fetchall()
         finally:
@@ -315,10 +306,14 @@ class DatabaseManager:
             if cursor:
                 cursor.close()
 
-    def get_errors(
-        self, feed: str | None = None, limit: int = 100, offset: int = 0
+    def get_downloads_by_status(
+        self,
+        status_to_filter: DownloadStatus,
+        feed: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
     ) -> list[sqlite3.Row]:
-        """Retrieves downloads with 'error' status, newest first.
+        """Retrieves downloads with a specific status, newest first.
         Can be filtered by a specific feed. Returns a list of database rows.
         """
         params: list[Any] = []
@@ -330,7 +325,7 @@ class DatabaseManager:
             ORDER BY published ASC, id ASC
             LIMIT ? OFFSET ?
             """
-            params.extend([feed, str(DownloadStatus.ERROR), limit, offset])
+            params.extend([feed, str(status_to_filter), limit, offset])
         else:
             sql = """
             SELECT *
@@ -339,7 +334,7 @@ class DatabaseManager:
             ORDER BY published ASC, id ASC
             LIMIT ? OFFSET ?
             """
-            params.extend([str(DownloadStatus.ERROR), limit, offset])
+            params.extend([str(status_to_filter), limit, offset])
 
         cursor: sqlite3.Cursor | None = None
         try:

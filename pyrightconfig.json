@@ -10,7 +10,9 @@
         "dist"
     ],
     "ignore": [
-        "**/legacy/**"
+        "**/legacy/**",
+        "src/anypod/ytdlp_wrapper/*.py",
+        "test/anypod/ytdlp_wrapper/*.py"
     ],
     "typeCheckingMode": "strict",
     "strict": [

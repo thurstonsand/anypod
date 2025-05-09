@@ -1,0 +1,11 @@
+cli_args:
+  - "-f"
+  - "worst[ext=mp4]"
+
+feeds:
+  - https://www.youtube.com/@coletdjnz # channel
+  - https://www.youtube.com/@coletdjnz/shorts # channel tab
+  - https://www.youtube.com/@coletdjnz/videos # videos tab
+  - https://youtube.com/playlist?list=PLt5yu3-wZAlSLRHmI1qNm0wjyVNWw1pCU&si=ZSBBgcLWYf2bxd5l # playlist
+  - https://youtu.be/aqz-KE-bpKQ?si=gggSJ6WU2A1w7_FL # video short link
+  - https://www.youtube.com/watch?v=aqz-KE-bpKQ # video

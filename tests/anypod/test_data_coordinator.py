@@ -746,166 +746,187 @@ def test_stream_download_db_error_propagates(
     coordinator.get_download_by_id.assert_called_once_with(feed, download_id)
 
 
-# --- Tests for get_errors ---
+# --- Tests for get_downloads_by_status ---
 
 
 @pytest.mark.unit
-def test_get_errors_success_no_feed_no_offset(
+def test_get_downloads_by_status_error_success(
     coordinator: DataCoordinator,
     mock_db_manager: MagicMock,
     sample_download_data: dict[str, Any],
 ):
-    """Test successfully retrieving all errors, default limit, no offset."""
+    """Test successfully retrieving ERROR downloads, default limit, no offset."""
     limit_val = 5
     offset_val = 0
+    status_to_fetch = DownloadStatus.ERROR
 
     error_row_1_data = sample_download_data.copy()
     error_row_1_data["id"] = "error_id_1"
-    error_row_1_data["status"] = str(DownloadStatus.ERROR)
+    error_row_1_data["status"] = str(status_to_fetch)
     error_row_1_data["last_error"] = "First error"
 
     error_row_2_data = sample_download_data.copy()
     error_row_2_data["feed"] = "another_feed"
     error_row_2_data["id"] = "error_id_2"
-    error_row_2_data["status"] = str(DownloadStatus.ERROR)
+    error_row_2_data["status"] = str(status_to_fetch)
     error_row_2_data["last_error"] = "Second error"
 
-    mock_db_manager.get_errors.return_value = [error_row_1_data, error_row_2_data]
+    mock_db_manager.get_downloads_by_status.return_value = [
+        error_row_1_data,
+        error_row_2_data,
+    ]
 
     download1 = Download.from_row(error_row_1_data)  # type: ignore[arg-type]
     download2 = Download.from_row(error_row_2_data)  # type: ignore[arg-type]
-    assert download1 is not None
-    assert download2 is not None
-
     expected_downloads = [download1, download2]
 
-    retrieved_errors = coordinator.get_errors(limit=limit_val, offset=offset_val)
+    retrieved_downloads = coordinator.get_downloads_by_status(
+        status_to_filter=status_to_fetch, limit=limit_val, offset=offset_val
+    )
 
-    assert retrieved_errors == expected_downloads
-    mock_db_manager.get_errors.assert_called_once_with(
-        feed=None, limit=limit_val, offset=offset_val
+    assert retrieved_downloads == expected_downloads
+    mock_db_manager.get_downloads_by_status.assert_called_once_with(
+        status_to_filter=status_to_fetch, feed=None, limit=limit_val, offset=offset_val
     )
 
 
 @pytest.mark.unit
-def test_get_errors_success_with_feed(
+def test_get_downloads_by_status_upcoming_with_feed(
     coordinator: DataCoordinator,
     mock_db_manager: MagicMock,
     sample_download_data: dict[str, Any],
 ):
-    """Test successfully retrieving errors for a specific feed."""
+    """Test successfully retrieving UPCOMING downloads for a specific feed."""
     target_feed = "my_specific_feed"
     limit_val = 10
     offset_val = 0
+    status_to_fetch = DownloadStatus.UPCOMING
 
-    error_row_data = sample_download_data.copy()
-    error_row_data["feed"] = target_feed
-    error_row_data["id"] = "error_for_feed"
-    error_row_data["status"] = str(DownloadStatus.ERROR)
-    error_row_data["last_error"] = "Feed specific error"
+    upcoming_row_data = sample_download_data.copy()
+    upcoming_row_data["feed"] = target_feed
+    upcoming_row_data["id"] = "upcoming_for_feed"
+    upcoming_row_data["status"] = str(status_to_fetch)
 
-    mock_db_manager.get_errors.return_value = [error_row_data]
-    expected_download = Download.from_row(error_row_data)  # type: ignore[arg-type]
-    assert expected_download is not None
+    mock_db_manager.get_downloads_by_status.return_value = [upcoming_row_data]
+    expected_download = Download.from_row(upcoming_row_data)  # type: ignore[arg-type]
 
-    retrieved_errors = coordinator.get_errors(
-        feed=target_feed, limit=limit_val, offset=offset_val
+    retrieved_downloads = coordinator.get_downloads_by_status(
+        status_to_filter=status_to_fetch,
+        feed=target_feed,
+        limit=limit_val,
+        offset=offset_val,
     )
 
-    assert retrieved_errors == [expected_download]
-    mock_db_manager.get_errors.assert_called_once_with(
-        feed=target_feed, limit=limit_val, offset=offset_val
+    assert retrieved_downloads == [expected_download]
+    mock_db_manager.get_downloads_by_status.assert_called_once_with(
+        status_to_filter=status_to_fetch,
+        feed=target_feed,
+        limit=limit_val,
+        offset=offset_val,
     )
 
 
 @pytest.mark.unit
-def test_get_errors_pagination(
+def test_get_downloads_by_status_queued_pagination(
     coordinator: DataCoordinator,
     mock_db_manager: MagicMock,
     sample_download_data: dict[str, Any],
 ):
-    """Test pagination with limit and offset."""
+    """Test pagination for QUEUED status with limit and offset."""
     limit_val = 1
     offset_val = 5
+    status_to_fetch = DownloadStatus.QUEUED
 
-    # Simulate that the db_manager.get_errors call with offset would return this specific row
     paginated_row_data = sample_download_data.copy()
-    paginated_row_data["id"] = "paginated_error_id"
-    paginated_row_data["status"] = str(DownloadStatus.ERROR)
+    paginated_row_data["id"] = "paginated_queued_id"
+    paginated_row_data["status"] = str(status_to_fetch)
 
-    mock_db_manager.get_errors.return_value = [paginated_row_data]
+    mock_db_manager.get_downloads_by_status.return_value = [paginated_row_data]
     expected_download = Download.from_row(paginated_row_data)  # type: ignore[arg-type]
-    assert expected_download is not None
 
-    retrieved_errors = coordinator.get_errors(
-        limit=limit_val, offset=offset_val
-    )  # Get 1 item, skipping 5
+    retrieved_downloads = coordinator.get_downloads_by_status(
+        status_to_filter=status_to_fetch, limit=limit_val, offset=offset_val
+    )
 
-    assert retrieved_errors == [expected_download]
-    mock_db_manager.get_errors.assert_called_once_with(
-        feed=None, limit=limit_val, offset=offset_val
+    assert retrieved_downloads == [expected_download]
+    mock_db_manager.get_downloads_by_status.assert_called_once_with(
+        status_to_filter=status_to_fetch, feed=None, limit=limit_val, offset=offset_val
     )
 
 
 @pytest.mark.unit
-def test_get_errors_no_errors_found(
+def test_get_downloads_by_status_no_items_found(
     coordinator: DataCoordinator, mock_db_manager: MagicMock
 ):
-    """Test behavior when no errors are found in the database."""
-    mock_db_manager.get_errors.return_value = []
+    """Test behavior when no items are found in the database for a given status."""
+    status_to_fetch = DownloadStatus.SKIPPED
+    mock_db_manager.get_downloads_by_status.return_value = []
 
-    retrieved_errors = coordinator.get_errors()
+    retrieved_downloads = coordinator.get_downloads_by_status(
+        status_to_filter=status_to_fetch
+    )
 
-    assert retrieved_errors == []
-    # default limit and offset
-    mock_db_manager.get_errors.assert_called_once_with(feed=None, limit=100, offset=0)
+    assert retrieved_downloads == []
+    mock_db_manager.get_downloads_by_status.assert_called_once_with(
+        status_to_filter=status_to_fetch, feed=None, limit=100, offset=0
+    )
 
 
 @pytest.mark.unit
-def test_get_errors_db_error_on_get_errors(
+def test_get_downloads_by_status_db_error(
     coordinator: DataCoordinator, mock_db_manager: MagicMock
 ):
-    """Test DatabaseOperationError is raised if db_manager.get_errors fails."""
+    """Test DatabaseOperationError is raised if db_manager.get_downloads_by_status fails."""
     target_feed = "some_feed"
-
-    original_db_error = sqlite3.Error("DB connection lost during get_errors")
-    mock_db_manager.get_errors.side_effect = original_db_error
+    status_to_fetch = DownloadStatus.DOWNLOADED
+    original_db_error = sqlite3.Error(
+        "DB connection lost during get_downloads_by_status"
+    )
+    mock_db_manager.get_downloads_by_status.side_effect = original_db_error
 
     with pytest.raises(DatabaseOperationError) as exc_info:
-        coordinator.get_errors(feed=target_feed)
+        coordinator.get_downloads_by_status(
+            status_to_filter=status_to_fetch, feed=target_feed
+        )
 
     assert exc_info.type is DatabaseOperationError
     assert exc_info.value.__cause__ is original_db_error
-    # default limit and offset
-    mock_db_manager.get_errors.assert_called_once_with(
-        feed=target_feed, limit=100, offset=0
+    mock_db_manager.get_downloads_by_status.assert_called_once_with(
+        status_to_filter=status_to_fetch, feed=target_feed, limit=100, offset=0
     )
 
 
 @pytest.mark.unit
-def test_get_errors_row_conversion_value_error(
+def test_get_downloads_by_status_row_conversion_value_error(
     coordinator: DataCoordinator,
     mock_db_manager: MagicMock,
     sample_download_data: dict[str, Any],
 ):
-    """Test DataCoordinatorError if _row_to_download raises ValueError for a row."""
+    """Test DataCoordinatorError if Download.from_row raises ValueError for a row."""
+    status_to_fetch = DownloadStatus.ERROR
     valid_row_data = sample_download_data.copy()
     valid_row_data["id"] = "valid_id"
-    valid_row_data["status"] = str(DownloadStatus.ERROR)
+    valid_row_data["status"] = str(status_to_fetch)
 
     malformed_row_data = sample_download_data.copy()
     malformed_row_data["id"] = "malformed_id"
-    malformed_row_data["status"] = str(DownloadStatus.ERROR)
+    malformed_row_data["status"] = str(status_to_fetch)
     malformed_row_data["published"] = "not-a-valid-date"  # This will cause ValueError
 
-    mock_db_manager.get_errors.return_value = [valid_row_data, malformed_row_data]
+    mock_db_manager.get_downloads_by_status.return_value = [
+        valid_row_data,
+        malformed_row_data,
+    ]
 
     with pytest.raises(DataCoordinatorError) as exc_info:
-        coordinator.get_errors()
+        coordinator.get_downloads_by_status(status_to_filter=status_to_fetch)
 
     assert exc_info.type is DataCoordinatorError
     assert isinstance(exc_info.value.__cause__, ValueError)
-    mock_db_manager.get_errors.assert_called_once_with(feed=None, limit=100, offset=0)
+    # Default limit and offset
+    mock_db_manager.get_downloads_by_status.assert_called_once_with(
+        status_to_filter=status_to_fetch, feed=None, limit=100, offset=0
+    )
 
 
 # --- Tests for prune_old_downloads ---

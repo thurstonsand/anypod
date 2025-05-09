@@ -35,6 +35,7 @@ src/
         exceptions.py         # Custom exceptions
 ```
 
+```
  tests/
     anypod/ # tests mirror the src/anypod structure
 ```
@@ -72,29 +73,50 @@ This section details the components that manage the lifecycle of downloads, from
 - [x] `from_row(cls, db_row: sqlite3.Row) -> Download` class method for mapping.
 
 ### 3.5.2 `YtdlpWrapper` (`ytdlp_wrapper.py`)
-- [ ] Create `ytdlp_wrapper.py` and class `YtdlpWrapper`.
-- [ ] `YtdlpWrapper.fetch_metadata(url: str, yt_args: str) -> list[dict]`: Fetches metadata for all items at the given URL using yt-dlp's metadata extraction capabilities. Each dict should contain keys like `id`, `source_url`, `title`, `published` (ISO 8601), `ext`, `duration`, `thumbnail`. This will be used by `Enqueuer`.
-- [ ] `YtdlpWrapper.download_media_stream(item_metadata: dict, yt_args: str) -> tuple[IO[bytes], dict]`: Provides a stream of the media content for the given item, allowing the caller to control where and how the data is written to disk. Returns a tuple: `(media_stream, updated_metadata_dict)`, where `media_stream` is a readable binary stream of the downloaded media, and `updated_metadata_dict` may include refined details such as exact filesize or final extension. This will be called by the `Downloader` service, which is responsible for saving the stream to the desired location.
+- [x] Create `ytdlp_wrapper.py` and class `YtdlpWrapper`.
+- [x] `YtdlpWrapper.fetch_metadata(feed_name: str, url: str, yt_cli_args: str) -> Download`: Fetches metadata for all items at the given URL using yt-dlp's metadata extraction capabilities.
+- [ ] Set up tmp dirs for writing data for merge: e.g. `/data/.tmp_completed_downloads/<feed_name>/<download.ext>/` and `/data/.tmp_yt_dlp_parts/<feed_name>/<download.ext>/`
+- [ ] `YtdlpWrapper.download_media_to_file(download: Download, yt_cli_args: list[str]) -> str`:
+    - Purpose: Downloads media (video or audio) for the given item to a specified directory, handling potential merges (e.g., video + audio) via `yt-dlp` and FFmpeg.
+    - Arguments:
+        - `download`: Metadata of the item to download, used for naming and context.
+        - `yt_cli_args`: List of command-line arguments for `yt-dlp` (e.g., format selection from feed config).
+    - Returns: A tuple `file_path` on success, or throws exception on failure.
+        - `file_path`: Absolute path to the successfully downloaded (and potentially merged) media file in `download_target_dir`.
+        - `updated_metadata_dict`: May include refined details like exact `filesize` or final `ext` as determined by `yt-dlp` during download. This can be useful for updating the database.
 - [ ] Sandbox test using a Creative-Commons short video (no network in CI → use `pytest.mark.skipif` or cached sample JSON for `fetch_metadata` and a small dummy file for `download_media`).
 - [ ] Unit tests for `YtdlpWrapper`.
+
+### 3.5.2.1 Logger
+- [ ] implement a global logging framework
 
 ### 3.5.3 `Enqueuer` (`data_coordinator/enqueuer.py`)
 - [ ] Constructor accepts `DatabaseManager`, `YtdlpWrapper`.
 - [ ] `enqueue_new_downloads(feed_config: FeedConfig) -> int`:
-    - Fetches metadata using `YtdlpWrapper.fetch_metadata()`.
-    - For each new item, checks existence via `DatabaseManager` (using `Download.from_row` if needed).
-    - Adds new items to DB as 'queued' via `DatabaseManager.add_download()`.
-    - Returns count of newly enqueued items.
+    - Phase 1: Re-fetch metadata for existing DB entries with status 'upcoming'; update those now VOD to 'queued'.
+    - Phase 2: Fetch metadata for latest N videos via `YtdlpWrapper.fetch_metadata()`.
+        - For each item not in DB:
+            - If VOD (`live_status=='not_live'` and `is_live==False`), insert with status 'queued'.
+            - If live or scheduled (`live_status=='upcoming'` or `is_live==True`), insert with status 'upcoming'.
+        - For each existing 'upcoming' entry now VOD, update status to 'queued'.
+    - Returns count of newly enqueued or transitioned-to-queued items.
 - [ ] Unit tests for `Enqueuer` with mocked dependencies.
 
 ### 3.5.4 `Downloader` Service (`data_coordinator/downloader.py`)
-- [ ] Constructor accepts `DatabaseManager`, `FileManager`, `YtdlpWrapper`.
-- [ ] `download_queued_items(feed_name: str, yt_args: str, limit: int = 0) -> tuple[int, int]`: (success_count, failure_count)
-    - Gets queued downloads via `DatabaseManager.next_queued_downloads()`, uses `Download.from_row`.
-    - For each item:
-        - Calls `YtdlpWrapper.download_media()`.
-        - On success: uses `FileManager.save_download_file()` and `DatabaseManager.update_status()` (to 'downloaded').
-        - On failure: `DatabaseManager.update_status()` (to 'error', logs error, increments retries).
+- [ ] Constructor accepts `DatabaseManager`, `FileManager`, `YtdlpWrapper`, and application config (for base data paths).
+- [ ] `download_queued_items(feed_config: FeedConfig, limit: int = 0) -> tuple[int, int]`: (success_count, failure_count)
+    - Gets queued `Download` objects via `DatabaseManager.next_queued_downloads(feed_config.name, limit)`.
+    - For each `Download` item:
+        - Convert `feed_config.yt_args` string to `list[str]` for `YtdlpWrapper`.
+        - get download: Download from the db
+        - Call `YtdlpWrapper.download_media_to_file(download, yt_cli_args)`.
+            - Generate final filename (e.g., using `item.title` and `updated_metadata['ext']`).
+            - Call `FileManager.save_download_file(feed_config.name, final_filename, source_file_path=completed_file_path)`.
+                - (Note: `FileManager.save_download_file` will need to implement moving a file from `source_file_path` to its final managed location.)
+            - Update DB: status to 'downloaded', store final path from `FileManager`, update `ext`, `filesize` from `updated_metadata`.
+        - On failure:
+            - Update DB: status to 'error', log error, increment retries.
+        - Ensure cleanup of source file regardless of success/failure of the individual download.
 - [ ] Unit tests for `Downloader` (Service) with mocked dependencies.
 
 ### 3.5.5 `Pruner` (`data_coordinator/pruner.py`)

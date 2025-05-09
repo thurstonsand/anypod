@@ -16,3 +16,15 @@ class FileOperationError(DataCoordinatorError):
 
 class DownloadNotFoundError(DataCoordinatorError):
     """Raised when a specific download is not found when expected."""
+
+
+class YtdlpError(AnypodError):
+    """Base class for yt-dlp errors."""
+
+
+class YtdlpDataError(YtdlpError):
+    """Raised when yt-dlp data extraction fails."""
+
+
+class YtdlpApiError(YtdlpError):
+    """Raised when yt-dlp API calls fail."""

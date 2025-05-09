@@ -8,7 +8,12 @@ version = "0.1.0"
 description = "Thin yt‑dlp → podcast solution"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = ["pydantic>=2.11.3", "pydantic-settings>=2.9.1", "pyyaml>=6.0.2"]
+dependencies = [
+    "pydantic>=2.11.3",
+    "pydantic-settings>=2.9.1",
+    "pyyaml>=6.0.2",
+    "yt-dlp>=2025.4.30",
+]
 
 [dependency-groups]
 dev = [
@@ -22,7 +27,7 @@ dev = [
 ]
 
 [project.scripts]
-anypod = "anypod.cli:main"
+anypod = "anypod.cli:main_cli"
 
 [tool.uv]
 managed = true
@@ -44,9 +49,9 @@ asyncio_default_fixture_loop_scope = "function"
 [tool.coverage.run]
 source = ["src"]
 omit = [
-    "src/anypod/cli.py",
-    "src/anypod/__main__.py",
-    "src/anypod/__init__.py",
+    "src/anypod/cli/*",
+    "src/anypod/**/__main__.py",
+    "src/anypod/**/__init__.py",
 ] # we won't test the executable files
 
 [tool.coverage.report]

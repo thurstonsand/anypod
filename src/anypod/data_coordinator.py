@@ -235,34 +235,46 @@ class DataCoordinator:
                 f"Error while trying to stream file {filename} for download {feed}/{id}",
             ) from e
 
-    def get_errors(
-        self, feed: str | None = None, limit: int = 100, offset: int = 0
+    def get_downloads_by_status(
+        self,
+        status_to_filter: DownloadStatus,
+        feed: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
     ) -> list[Download]:
         """
-        Retrieves downloads with an ERROR status.
+        Retrieves downloads with a specific status.
 
         Args:
-            feed: Optional feed name to filter errors by.
-            limit: Maximum number of error records to return.
-            offset: Number of error records to skip (for pagination).
+            status_to_filter: The DownloadStatus to filter by.
+            feed: Optional feed name to filter by.
+            limit: Maximum number of records to return.
+            offset: Number of records to skip (for pagination).
 
         Returns:
-            A list of Download objects with ERROR status.
+            A list of Download objects matching the status and other criteria.
 
         Raises:
             DatabaseOperationError: If the database query fails.
             DataCoordinatorError: For data integrity issues (e.g. malformed DB data).
         """
         try:
-            rows = self.db_manager.get_errors(feed=feed, limit=limit, offset=offset)
+            rows = self.db_manager.get_downloads_by_status(
+                status_to_filter=status_to_filter,
+                feed=feed,
+                limit=limit,
+                offset=offset,
+            )
             downloads = [Download.from_row(row) for row in rows]
         except sqlite3.Error as e:
             raise DatabaseOperationError(
-                f"Database query failed for errors (feed: {feed}, limit: {limit}, offset: {offset})",
+                f"Database query failed for status {status_to_filter} (feed: {feed}, limit: {limit}, offset: {offset})",
             ) from e
         except ValueError as e:
             # Catch potential ValueError from Download.from_row if data is malformed
-            raise DataCoordinatorError("Data integrity issue") from e
+            raise DataCoordinatorError(
+                f"Data integrity issue while fetching by status {status_to_filter}"
+            ) from e
         return downloads
 
     def prune_old_downloads(

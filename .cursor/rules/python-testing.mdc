@@ -7,6 +7,7 @@ alwaysApply: false
 
 ## Test Structure
 - Place tests in a `tests/` directory parallel to `src/`
+  - integration tests go in `tests/integration` and should be prepended with `integration_test_`
 - reference packages in src directly; do not prepend a `src.<package>`, just `<package>`
 - Mirror the package structure in tests
 - Use clear test names that describe behavior
@@ -21,7 +22,7 @@ tests/
 ├── unit/                 # unit tests
 │   └── test_module.py
 ├── integration/          # integration tests
-│   └── test_integration.py
+│   └── integration_test_functionality.py
 └── e2e/                  # end-to-end tests
     └── test_e2e.py
 ```
@@ -45,17 +46,17 @@ tests/
 
 ## Mocking
 - Mock at the right level
-- Use `unittest.mock` or `pytest-mock`
+- Use `pytest-mock`
 - Verify mock calls when behavior matters
 - Don't mock what you don't own
 - Reset mocks between tests
 - Use spy objects when appropriate
 
 ## Test Coverage
-- Aim for meaningful coverage
+- **IMPORTANT**: Aim for meaningful coverage
 - Use branch coverage
 - Exclude appropriate paths
-- Don't chase 100% blindly
+- **IMPORTANT**: Don't chase 100% blindly
 - Document coverage decisions
 - Review uncovered sections
 
@@ -83,6 +84,7 @@ tests/
 - Use appropriate assertions
 - Document test requirements
 - Annotate all tests with a pytest marker for either "Unit" or "Integration"
+- Execute tests with `uv run pytest`
 
 ## Test Data
 - Use factories for test data
