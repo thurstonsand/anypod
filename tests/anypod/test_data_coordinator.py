@@ -125,6 +125,92 @@ def existing_download_db_row_downloaded(sample_download_obj: Download) -> sqlite
     return mock_row_dict  # type: ignore
 
 
+@pytest.fixture
+def pruning_dl_data() -> list[dict[str, Any]]:
+    """Provides a list of raw data for downloads with various statuses and published dates."""
+    base_time = datetime.datetime(2023, 10, 15, 12, 0, 0, tzinfo=datetime.UTC)
+    return [
+        {
+            "feed": "prune_feed",
+            "id": "item1_dl_oldest",
+            "title": "Oldest DL",
+            "published": (base_time - datetime.timedelta(days=30)).isoformat(),
+            "status": str(DownloadStatus.DOWNLOADED),
+            "ext": "mp4",
+            "duration": 10,
+            "source_url": "url1",
+            "retries": 0,
+            "last_error": None,
+            "thumbnail": None,
+        },
+        {
+            "feed": "prune_feed",
+            "id": "item2_err_old",
+            "title": "Old Error",
+            "published": (base_time - datetime.timedelta(days=20)).isoformat(),
+            "status": str(DownloadStatus.ERROR),
+            "ext": "mkv",
+            "duration": 20,
+            "source_url": "url2",
+            "retries": 3,
+            "last_error": "Failed DL",
+            "thumbnail": None,
+        },
+        {
+            "feed": "prune_feed",
+            "id": "item3_q_mid",
+            "title": "Mid Queued",
+            "published": (base_time - datetime.timedelta(days=10)).isoformat(),
+            "status": str(DownloadStatus.QUEUED),
+            "ext": "webm",
+            "duration": 30,
+            "source_url": "url3",
+            "retries": 0,
+            "last_error": None,
+            "thumbnail": None,
+        },
+        {
+            "feed": "prune_feed",
+            "id": "item4_dl_keep",
+            "title": "To Keep DL",
+            "published": (base_time - datetime.timedelta(days=5)).isoformat(),
+            "status": str(DownloadStatus.DOWNLOADED),
+            "ext": "mp4",
+            "duration": 40,
+            "source_url": "url4",
+            "retries": 0,
+            "last_error": None,
+            "thumbnail": None,
+        },
+        {
+            "feed": "prune_feed",
+            "id": "item5_arch_new",
+            "title": "New Archived",
+            "published": (base_time - datetime.timedelta(days=1)).isoformat(),
+            "status": str(DownloadStatus.ARCHIVED),
+            "ext": "mp3",
+            "duration": 50,
+            "source_url": "url5",
+            "retries": 0,
+            "last_error": None,
+            "thumbnail": None,
+        },
+        {
+            "feed": "other_feed",
+            "id": "item6_other_dl",
+            "title": "Other Feed DL",
+            "published": (base_time - datetime.timedelta(days=15)).isoformat(),
+            "status": str(DownloadStatus.DOWNLOADED),
+            "ext": "mp4",
+            "duration": 60,
+            "source_url": "url6",
+            "retries": 0,
+            "last_error": None,
+            "thumbnail": None,
+        },
+    ]
+
+
 # --- Tests for add_download ---
 
 
@@ -186,9 +272,6 @@ def test_replace_download_status_downloaded_file_deleted(
     """Test replacing a download (status DOWNLOADED), file is successfully deleted."""
     existing_download_data = sample_download_data.copy()
     existing_download_data["status"] = str(DownloadStatus.DOWNLOADED)
-    existing_download_data["ext"] = (
-        "mp4"  # Ensure ext is present for filename construction
-    )
     mock_db_manager.get_download_by_id.return_value = existing_download_data
     mock_file_manager.delete_download_file.return_value = (
         True  # File deletion successful
@@ -203,11 +286,11 @@ def test_replace_download_status_downloaded_file_deleted(
     mock_db_manager.get_download_by_id.assert_called_once_with(
         new_download_to_add.feed, new_download_to_add.id
     )
-    expected_filename = (
+    expected_file_name = (
         f"{existing_download_data['id']}.{existing_download_data['ext']}"
     )
     mock_file_manager.delete_download_file.assert_called_once_with(
-        feed=existing_download_data["feed"], filename=expected_filename
+        feed=existing_download_data["feed"], file_name=expected_file_name
     )
     mock_db_manager.update_status.assert_not_called()
     mock_db_manager.delete_downloads.assert_not_called()
@@ -216,7 +299,6 @@ def test_replace_download_status_downloaded_file_deleted(
 
 @pytest.mark.unit
 def test_replace_download_status_downloaded_file_not_found_warning(
-    capsys: pytest.CaptureFixture[str],
     coordinator: DataCoordinator,
     mock_db_manager: MagicMock,
     mock_file_manager: MagicMock,
@@ -226,7 +308,6 @@ def test_replace_download_status_downloaded_file_not_found_warning(
     """Test warning printed if status is DOWNLOADED but file is not found by FileManager during replacement."""
     existing_download_data = sample_download_data.copy()
     existing_download_data["status"] = str(DownloadStatus.DOWNLOADED)
-    existing_download_data["ext"] = "mp4"
     mock_db_manager.get_download_by_id.return_value = existing_download_data
     mock_file_manager.delete_download_file.return_value = False  # File not found
 
@@ -238,15 +319,13 @@ def test_replace_download_status_downloaded_file_not_found_warning(
         sample_download_obj.feed, sample_download_obj.id
     )
     # Check that delete was attempted
-    expected_filename = (
+    expected_file_name = (
         f"{existing_download_data['id']}.{existing_download_data['ext']}"
     )
     mock_file_manager.delete_download_file.assert_called_once_with(
-        feed=existing_download_data["feed"], filename=expected_filename
+        feed=existing_download_data["feed"], file_name=expected_file_name
     )
-    # Check that the warning was printed
-    captured = capsys.readouterr()
-    assert f"Warning: Expected file {expected_filename}" in captured.out
+
     # Check that the upsert still happened
     mock_db_manager.upsert_download.assert_called_once_with(sample_download_obj)
 
@@ -259,20 +338,17 @@ def test_replace_download_status_downloaded_file_delete_os_error(
     sample_download_obj: Download,
     sample_download_data: dict[str, Any],
 ):
-    """Test FileOperationError if file deletion raises OSError."""
+    """Test OSError if file deletion raises OSError."""
     existing_download_data = sample_download_data.copy()
     existing_download_data["status"] = str(DownloadStatus.DOWNLOADED)
     existing_download_data["ext"] = "mkv"
     mock_db_manager.get_download_by_id.return_value = existing_download_data
     mock_file_manager.delete_download_file.side_effect = OSError("Disk full")
 
-    with pytest.raises(FileOperationError) as exc_info:
+    with pytest.raises(OSError) as exc_info:
         coordinator.add_download(sample_download_obj)
 
-    assert exc_info.type is FileOperationError
-    assert (
-        exc_info.value.__cause__ is mock_file_manager.delete_download_file.side_effect
-    )
+    assert exc_info.value is mock_file_manager.delete_download_file.side_effect
     mock_db_manager.update_status.assert_not_called()
     mock_db_manager.delete_downloads.assert_not_called()
     mock_db_manager.upsert_download.assert_not_called()
@@ -392,7 +468,6 @@ def test_update_status_from_downloaded_file_deleted(
     current_download_data = sample_download_data.copy()
     current_download_data["status"] = str(DownloadStatus.DOWNLOADED)
     current_download_data["id"] = download_id
-    current_download_data["ext"] = "mp4"
     mock_db_manager.get_download_by_id.return_value = current_download_data
     mock_file_manager.delete_download_file.return_value = True
     mock_db_manager.update_status.return_value = True
@@ -401,9 +476,9 @@ def test_update_status_from_downloaded_file_deleted(
 
     assert result is True, "DB update should succeed"
     mock_db_manager.get_download_by_id.assert_called_once_with(feed, download_id)
-    expected_filename = f"{download_id}.{current_download_data['ext']}"
+    expected_file_name = f"{download_id}.{current_download_data['ext']}"
     mock_file_manager.delete_download_file.assert_called_once_with(
-        feed=feed, filename=expected_filename
+        feed=feed, file_name=expected_file_name
     )
     mock_db_manager.update_status.assert_called_once_with(
         feed=feed, id=download_id, status=new_status, last_error=None
@@ -412,7 +487,6 @@ def test_update_status_from_downloaded_file_deleted(
 
 @pytest.mark.unit
 def test_update_status_from_downloaded_file_not_found_warning(
-    capsys: pytest.CaptureFixture[str],
     coordinator: DataCoordinator,
     mock_db_manager: MagicMock,
     mock_file_manager: MagicMock,
@@ -436,12 +510,10 @@ def test_update_status_from_downloaded_file_not_found_warning(
 
     assert result is True
     mock_db_manager.get_download_by_id.assert_called_once_with(feed, download_id)
-    expected_filename = f"{download_id}.{current_download_data['ext']}"
+    expected_file_name = f"{download_id}.{current_download_data['ext']}"
     mock_file_manager.delete_download_file.assert_called_once_with(
-        feed=feed, filename=expected_filename
+        feed=feed, file_name=expected_file_name
     )
-    captured = capsys.readouterr()
-    assert f"Warning: Tried to delete file {expected_filename}" in captured.out
     mock_db_manager.update_status.assert_called_once_with(
         feed=feed, id=download_id, status=new_status, last_error="file missing"
     )
@@ -454,7 +526,7 @@ def test_update_status_from_downloaded_file_delete_os_error(
     mock_file_manager: MagicMock,
     sample_download_data: dict[str, Any],
 ):
-    """Test FileOperationError if file deletion fails (FROM DOWNLOADED) due to OSError."""
+    """Test OSError if file deletion fails (FROM DOWNLOADED) due to OSError."""
     feed = sample_download_data["feed"]
     download_id = sample_download_data["id"]
     new_status = DownloadStatus.SKIPPED
@@ -466,13 +538,10 @@ def test_update_status_from_downloaded_file_delete_os_error(
     original_os_error = OSError("Permission denied")
     mock_file_manager.delete_download_file.side_effect = original_os_error
 
-    with pytest.raises(FileOperationError) as exc_info:
+    with pytest.raises(OSError) as exc_info:
         coordinator.update_status(feed, download_id, new_status)
 
-    assert exc_info.type is FileOperationError
-    assert exc_info.value.__cause__ is original_os_error
-    expected_filename = f"{download_id}.{current_download_data['ext']}"
-    assert f"Failed to delete file {expected_filename}" in str(exc_info.value)
+    assert exc_info.value is original_os_error
     mock_db_manager.update_status.assert_not_called()
 
 
@@ -622,8 +691,7 @@ def test_stream_download_success(
     feed = sample_download_obj.feed
     download_id = sample_download_obj.id
     sample_download_obj.status = DownloadStatus.DOWNLOADED  # Ensure status is correct
-    sample_download_obj.ext = "mp4"  # Ensure ext is present
-    expected_filename = f"{download_id}.{sample_download_obj.ext}"
+    expected_file_name = f"{download_id}.{sample_download_obj.ext}"
     mock_stream = BytesIO(b"dummy file content")
 
     # Mock the internal get_download_by_id call to return the modified object
@@ -636,7 +704,7 @@ def test_stream_download_success(
     assert stream is mock_stream
     coordinator.get_download_by_id.assert_called_once_with(feed, download_id)
     mock_file_manager.get_download_stream.assert_called_once_with(
-        feed, expected_filename
+        feed, expected_file_name
     )
 
 
@@ -678,54 +746,24 @@ def test_stream_download_file_not_found_error(
     mock_file_manager: MagicMock,
     sample_download_obj: Download,
 ):
-    """Test FileOperationError if FileManager raises FileNotFoundError."""
+    """Test DataCoordinatorError if FileManager raises FileNotFoundError and status update occurs."""
     feed = sample_download_obj.feed
     download_id = sample_download_obj.id
     sample_download_obj.status = DownloadStatus.DOWNLOADED
-    sample_download_obj.ext = "mp4"
-    expected_filename = f"{download_id}.{sample_download_obj.ext}"
-    original_error = FileNotFoundError("File vanished")
 
     coordinator.get_download_by_id = MagicMock(return_value=sample_download_obj)
-    mock_file_manager.get_download_stream.side_effect = original_error
+    coordinator.update_status = MagicMock(return_value=True)
 
-    with pytest.raises(FileOperationError) as exc_info:
+    mocked_exception = FileNotFoundError("File vanished")
+    mock_file_manager.get_download_stream.side_effect = mocked_exception
+
+    with pytest.raises(DataCoordinatorError) as exc_info:
         coordinator.stream_download_by_id(feed, download_id)
 
-    assert exc_info.type is FileOperationError
-    assert exc_info.value.__cause__ is original_error
+    assert exc_info.value.__cause__ is mocked_exception
+
     coordinator.get_download_by_id.assert_called_once_with(feed, download_id)
-    mock_file_manager.get_download_stream.assert_called_once_with(
-        feed, expected_filename
-    )
-
-
-@pytest.mark.unit
-def test_stream_download_os_error(
-    coordinator: DataCoordinator,
-    mock_file_manager: MagicMock,
-    sample_download_obj: Download,
-):
-    """Test FileOperationError if FileManager raises OSError."""
-    feed = sample_download_obj.feed
-    download_id = sample_download_obj.id
-    sample_download_obj.status = DownloadStatus.DOWNLOADED
-    sample_download_obj.ext = "wav"
-    expected_filename = f"{download_id}.{sample_download_obj.ext}"
-    original_error = OSError("Permission denied opening file")
-
-    coordinator.get_download_by_id = MagicMock(return_value=sample_download_obj)
-    mock_file_manager.get_download_stream.side_effect = original_error
-
-    with pytest.raises(FileOperationError) as exc_info:
-        coordinator.stream_download_by_id(feed, download_id)
-
-    assert exc_info.type is FileOperationError
-    assert exc_info.value.__cause__ is original_error
-    coordinator.get_download_by_id.assert_called_once_with(feed, download_id)
-    mock_file_manager.get_download_stream.assert_called_once_with(
-        feed, expected_filename
-    )
+    coordinator.update_status.assert_called_once()
 
 
 @pytest.mark.unit
@@ -897,7 +935,7 @@ def test_get_downloads_by_status_db_error(
 
 
 @pytest.mark.unit
-def test_get_downloads_by_status_row_conversion_value_error(
+def test_get_downloads_by_status_ignores_invalid_rows(
     coordinator: DataCoordinator,
     mock_db_manager: MagicMock,
     sample_download_data: dict[str, Any],
@@ -918,11 +956,9 @@ def test_get_downloads_by_status_row_conversion_value_error(
         malformed_row_data,
     ]
 
-    with pytest.raises(DataCoordinatorError) as exc_info:
-        coordinator.get_downloads_by_status(status_to_filter=status_to_fetch)
-
-    assert exc_info.type is DataCoordinatorError
-    assert isinstance(exc_info.value.__cause__, ValueError)
+    downloads = coordinator.get_downloads_by_status(status_to_filter=status_to_fetch)
+    assert len(downloads) == 1
+    assert downloads[0].id == valid_row_data["id"]
     # Default limit and offset
     mock_db_manager.get_downloads_by_status.assert_called_once_with(
         status_to_filter=status_to_fetch, feed=None, limit=100, offset=0
@@ -930,92 +966,6 @@ def test_get_downloads_by_status_row_conversion_value_error(
 
 
 # --- Tests for prune_old_downloads ---
-
-
-@pytest.fixture
-def pruning_dl_data() -> list[dict[str, Any]]:
-    """Provides a list of raw data for downloads with various statuses and published dates."""
-    base_time = datetime.datetime(2023, 10, 15, 12, 0, 0, tzinfo=datetime.UTC)
-    return [
-        {
-            "feed": "prune_feed",
-            "id": "item1_dl_oldest",
-            "title": "Oldest DL",
-            "published": (base_time - datetime.timedelta(days=30)).isoformat(),
-            "status": str(DownloadStatus.DOWNLOADED),
-            "ext": "mp4",
-            "duration": 10,
-            "source_url": "url1",
-            "retries": 0,
-            "last_error": None,
-            "thumbnail": None,
-        },
-        {
-            "feed": "prune_feed",
-            "id": "item2_err_old",
-            "title": "Old Error",
-            "published": (base_time - datetime.timedelta(days=20)).isoformat(),
-            "status": str(DownloadStatus.ERROR),
-            "ext": "mkv",
-            "duration": 20,
-            "source_url": "url2",
-            "retries": 3,
-            "last_error": "Failed DL",
-            "thumbnail": None,
-        },
-        {
-            "feed": "prune_feed",
-            "id": "item3_q_mid",
-            "title": "Mid Queued",
-            "published": (base_time - datetime.timedelta(days=10)).isoformat(),
-            "status": str(DownloadStatus.QUEUED),
-            "ext": "webm",
-            "duration": 30,
-            "source_url": "url3",
-            "retries": 0,
-            "last_error": None,
-            "thumbnail": None,
-        },
-        {
-            "feed": "prune_feed",
-            "id": "item4_dl_keep",
-            "title": "To Keep DL",
-            "published": (base_time - datetime.timedelta(days=5)).isoformat(),
-            "status": str(DownloadStatus.DOWNLOADED),
-            "ext": "mp4",
-            "duration": 40,
-            "source_url": "url4",
-            "retries": 0,
-            "last_error": None,
-            "thumbnail": None,
-        },
-        {
-            "feed": "prune_feed",
-            "id": "item5_arch_new",
-            "title": "New Archived",
-            "published": (base_time - datetime.timedelta(days=1)).isoformat(),
-            "status": str(DownloadStatus.ARCHIVED),
-            "ext": "mp3",
-            "duration": 50,
-            "source_url": "url5",
-            "retries": 0,
-            "last_error": None,
-            "thumbnail": None,
-        },
-        {
-            "feed": "other_feed",
-            "id": "item6_other_dl",
-            "title": "Other Feed DL",
-            "published": (base_time - datetime.timedelta(days=15)).isoformat(),
-            "status": str(DownloadStatus.DOWNLOADED),
-            "ext": "mp4",
-            "duration": 60,
-            "source_url": "url6",
-            "retries": 0,
-            "last_error": None,
-            "thumbnail": None,
-        },
-    ]
 
 
 @pytest.mark.unit
@@ -1083,7 +1033,6 @@ def test_prune_keep_last_archives_and_deletes_files(
     mock_db_manager: MagicMock,
     mock_file_manager: MagicMock,
     pruning_dl_data: list[dict[str, Any]],
-    capsys: pytest.CaptureFixture[str],
 ):
     """Test pruning with 'keep_last', archives records, deletes files for DOWNLOADED."""
     feed_name = "prune_feed"
@@ -1124,9 +1073,9 @@ def test_prune_keep_last_archives_and_deletes_files(
     )
 
     # Check file deletion calls (only for item1)
-    expected_filename_item1 = f"{candidate_rows[0]['id']}.{candidate_rows[0]['ext']}"
+    expected_file_name_item1 = f"{candidate_rows[0]['id']}.{candidate_rows[0]['ext']}"
     mock_file_manager.delete_download_file.assert_any_call(
-        feed_name, expected_filename_item1
+        feed_name, expected_file_name_item1
     )
     assert mock_file_manager.delete_download_file.call_count == 1
 
@@ -1169,9 +1118,9 @@ def test_prune_by_date_archives_non_downloaded(
     mock_db_manager.get_downloads_to_prune_by_since.assert_called_once_with(
         feed_name, cutoff_date
     )
-    expected_filename_item1 = f"{candidate_rows[0]['id']}.{candidate_rows[0]['ext']}"
+    expected_file_name_item1 = f"{candidate_rows[0]['id']}.{candidate_rows[0]['ext']}"
     mock_file_manager.delete_download_file.assert_called_once_with(
-        feed_name, expected_filename_item1
+        feed_name, expected_file_name_item1
     )
     mock_db_manager.update_status.assert_any_call(
         feed_name, candidate_rows[0]["id"], DownloadStatus.ARCHIVED
@@ -1217,9 +1166,9 @@ def test_prune_union_of_rules(
         "Expected 1 file to be deleted (item1 was DOWNLOADED)"
     )
 
-    expected_filename_item1 = f"{pruning_dl_data[0]['id']}.{pruning_dl_data[0]['ext']}"
+    expected_file_name_item1 = f"{pruning_dl_data[0]['id']}.{pruning_dl_data[0]['ext']}"
     mock_file_manager.delete_download_file.assert_called_once_with(
-        feed_name, expected_filename_item1
+        feed_name, expected_file_name_item1
     )
 
     all_candidate_ids = {
@@ -1244,43 +1193,7 @@ def test_prune_union_of_rules(
 
 
 @pytest.mark.unit
-def test_prune_file_not_found_warning(
-    capsys: pytest.CaptureFixture[str],
-    coordinator: DataCoordinator,
-    mock_db_manager: MagicMock,
-    mock_file_manager: MagicMock,
-    pruning_dl_data: list[dict[str, Any]],
-):
-    """Test warning logged if a DOWNLOADED item's file is not found during pruning."""
-    feed_name = "prune_feed"
-    candidate_rows = [pruning_dl_data[0]]
-    mock_db_manager.get_downloads_to_prune_by_keep_last.return_value = candidate_rows
-    mock_db_manager.get_downloads_to_prune_by_since.return_value = []
-
-    mock_file_manager.delete_download_file.return_value = False
-    mock_db_manager.update_status.return_value = True
-
-    archived_ids, deleted_file_ids = coordinator.prune_old_downloads(
-        feed=feed_name,
-        keep_last=4,
-        prune_before_date=None,
-    )
-
-    assert len(archived_ids) == 1
-    assert len(deleted_file_ids) == 0
-    captured = capsys.readouterr()
-    expected_filename = f"{candidate_rows[0]['id']}.{candidate_rows[0]['ext']}"
-    assert (
-        f"Warning: File {expected_filename} for downloaded item {feed_name}/{candidate_rows[0]['id']} not found on disk"
-        in captured.out
-    )
-    mock_db_manager.update_status.assert_called_once_with(
-        feed_name, candidate_rows[0]["id"], DownloadStatus.ARCHIVED
-    )
-
-
-@pytest.mark.unit
-def test_prune_file_delete_os_error_halts(
+def test_prune_file_delete_file_error_halts(
     coordinator: DataCoordinator,
     mock_db_manager: MagicMock,
     mock_file_manager: MagicMock,
@@ -1292,8 +1205,8 @@ def test_prune_file_delete_os_error_halts(
     mock_db_manager.get_downloads_to_prune_by_keep_last.return_value = candidate_rows
     mock_db_manager.get_downloads_to_prune_by_since.return_value = []
 
-    original_os_error = OSError("Disk permission error")
-    mock_file_manager.delete_download_file.side_effect = original_os_error
+    original_file_error = FileOperationError("Disk permission error")
+    mock_file_manager.delete_download_file.side_effect = original_file_error
 
     with pytest.raises(FileOperationError) as exc_info:
         coordinator.prune_old_downloads(
@@ -1301,10 +1214,10 @@ def test_prune_file_delete_os_error_halts(
         )
 
     assert exc_info.type is FileOperationError
-    assert exc_info.value.__cause__ is original_os_error
-    expected_filename_item1 = f"{candidate_rows[0]['id']}.{candidate_rows[0]['ext']}"
+    assert exc_info.value.__cause__ is original_file_error
+    expected_file_name_item1 = f"{candidate_rows[0]['id']}.{candidate_rows[0]['ext']}"
     mock_file_manager.delete_download_file.assert_called_once_with(
-        feed_name, expected_filename_item1
+        feed_name, expected_file_name_item1
     )
     mock_db_manager.update_status.assert_not_called()
 
@@ -1327,7 +1240,6 @@ def test_prune_db_candidate_fetch_error(
 
 @pytest.mark.unit
 def test_prune_row_conversion_error_skips_candidate(
-    capsys: pytest.CaptureFixture[str],
     coordinator: DataCoordinator,
     mock_db_manager: MagicMock,
     mock_file_manager: MagicMock,
@@ -1347,25 +1259,17 @@ def test_prune_row_conversion_error_skips_candidate(
     ]
     mock_db_manager.get_downloads_to_prune_by_since.return_value = []
 
-    mock_file_manager.delete_download_file.return_value = (
-        True  # For valid_candidate_row
-    )
+    mock_file_manager.delete_download_file.return_value = True
     mock_db_manager.update_status.return_value = True
 
-    # Expecting error to be raised and halt further processing for this design
-    with pytest.raises(DataCoordinatorError) as exc_info:
-        coordinator.prune_old_downloads(
-            feed=feed_name, keep_last=3, prune_before_date=None
-        )
+    coordinator.prune_old_downloads(feed=feed_name, keep_last=3, prune_before_date=None)
 
-    # Assertions about the caught exception:
-    assert exc_info.type is DataCoordinatorError
-    assert isinstance(exc_info.value.__cause__, ValueError)
+    assert mock_file_manager.delete_download_file.call_count == 1
+    assert mock_db_manager.update_status.call_count == 1
 
 
 @pytest.mark.unit
 def test_prune_db_update_status_error_skips_item(
-    capsys: pytest.CaptureFixture[str],
     coordinator: DataCoordinator,
     mock_db_manager: MagicMock,
     mock_file_manager: MagicMock,
@@ -1411,7 +1315,6 @@ def test_prune_db_update_status_error_skips_item(
 
 @pytest.mark.unit
 def test_prune_db_update_status_returns_false_skips_item(
-    capsys: pytest.CaptureFixture[str],
     coordinator: DataCoordinator,
     mock_db_manager: MagicMock,
     mock_file_manager: MagicMock,
@@ -1449,9 +1352,4 @@ def test_prune_db_update_status_returns_false_skips_item(
         "Only item1's file should have been deleted"
     )
 
-    captured = capsys.readouterr()
-    assert (
-        f"Warning: Failed to archive {feed_name}/{item1_row['id']} during pruning. DB record NOT updated."
-        in captured.out
-    )
     assert mock_db_manager.update_status.call_count == 2

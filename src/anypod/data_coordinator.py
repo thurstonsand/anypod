@@ -1,4 +1,5 @@
 import datetime
+import logging
 import sqlite3
 from typing import IO
 
@@ -10,6 +11,8 @@ from .exceptions import (
     FileOperationError,
 )
 from .file_manager import FileManager
+
+logger = logging.getLogger(__name__)
 
 
 class DataCoordinator:
@@ -28,6 +31,7 @@ class DataCoordinator:
         """
         self.db_manager = db_manager
         self.file_manager = file_manager
+        logger.debug("DataCoordinator initialized.")
 
     def add_download(self, download_to_add: Download) -> None:
         """
@@ -43,42 +47,79 @@ class DataCoordinator:
         Raises:
             DatabaseOperationError: If a database operation fails.
             FileOperationError: If a file operation fails (e.g., expected file not found, or cannot delete).
-            DownloadNotFoundError: If an existing download is expected but not found during DB deletion.
         """
+        logger.debug(
+            "Attempting to add download.",
+            extra={"feed_id": download_to_add.feed, "download_id": download_to_add.id},
+        )
         try:
             existing_db_row = self.db_manager.get_download_by_id(
                 download_to_add.feed, download_to_add.id
             )
         except sqlite3.Error as e:
             raise DatabaseOperationError(
-                f"Error checking for existing download {download_to_add.feed}/{download_to_add.id}",
+                message="Error checking for existing download.",
+                feed_id=download_to_add.feed,
+                download_id=download_to_add.id,
             ) from e
 
         if existing_db_row and existing_db_row["status"] == str(
             DownloadStatus.DOWNLOADED
         ):
+            logger.info(
+                "Existing downloaded item found, preparing to replace.",
+                extra={
+                    "feed_id": download_to_add.feed,
+                    "download_id": download_to_add.id,
+                },
+            )
             # Download exists, so we need to replace it.
-            # We assume ext is present due to NOT NULL constraint in DB.
-            filename_to_delete = f"{download_to_add.id}.{existing_db_row['ext']}"
+            file_name_to_delete = f"{download_to_add.id}.{existing_db_row['ext']}"
             try:
                 deleted = self.file_manager.delete_download_file(
-                    feed=download_to_add.feed, filename=filename_to_delete
+                    feed=download_to_add.feed, file_name=file_name_to_delete
                 )
-            except OSError as e:
-                # Handles FS errors like permission issues during delete_download_file
+            except FileOperationError as e:
                 raise FileOperationError(
-                    f"Error deleting file {filename_to_delete} for download {download_to_add.feed}/{download_to_add.id}",
+                    message="Error deleting file.",
+                    feed_id=download_to_add.feed,
+                    download_id=download_to_add.id,
+                    file_name=file_name_to_delete,
                 ) from e
-            if not deleted:
-                print(
-                    f"Warning: Expected file {filename_to_delete} for downloaded item {download_to_add.feed}/{download_to_add.id} not found on disk for deletion."
+            if deleted:
+                logger.debug(
+                    "Successfully deleted existing file for replacement.",
+                    extra={
+                        "feed_id": download_to_add.feed,
+                        "download_id": download_to_add.id,
+                        "file_name": file_name_to_delete,
+                    },
+                )
+            else:
+                logger.warning(
+                    "Expected file for existing download not found on disk for deletion.",
+                    extra={
+                        "feed_id": download_to_add.feed,
+                        "download_id": download_to_add.id,
+                        "file_name": file_name_to_delete,
+                    },
                 )
 
         try:
             self.db_manager.upsert_download(download_to_add)
+            logger.info(
+                "Download record upserted successfully.",
+                extra={
+                    "feed_id": download_to_add.feed,
+                    "item_id": download_to_add.id,
+                    "status": download_to_add.status,
+                },
+            )
         except sqlite3.Error as e:
             raise DatabaseOperationError(
-                f"Error adding new download {download_to_add.feed}/{download_to_add.id}",
+                message="Error adding or updating download record.",
+                feed_id=download_to_add.feed,
+                download_id=download_to_add.id,
             ) from e
 
     def update_status(
@@ -107,50 +148,111 @@ class DataCoordinator:
             FileOperationError: If an essential file operation fails (e.g., deleting an existing file).
             DownloadNotFoundError: If the download to update is not found in the database initially.
         """
+        logger.debug(
+            "Attempting to update download status.",
+            extra={
+                "feed_id": feed,
+                "item_id": id,
+                "new_status": status,
+                "last_error": last_error,
+            },
+        )
         try:
             current_download_row = self.db_manager.get_download_by_id(feed, id)
         except sqlite3.Error as e:
             raise DatabaseOperationError(
-                f"Error retrieving download {feed}/{id} for status update to {status}",
+                message=f"Error retrieving download for status update to {status}.",
+                feed_id=feed,
+                download_id=id,
             ) from e
 
         if not current_download_row:
             raise DownloadNotFoundError(
-                f"Cannot update status: Download {feed}/{id} not found."
+                message=f"Cannot update status to {status}: Download not found.",
+                feed_id=feed,
+                download_id=id,
             )
 
         current_status_str = current_download_row["status"]
+        current_status_enum = (
+            DownloadStatus(current_status_str) if current_status_str else None
+        )
 
         # If status is changing FROM DOWNLOADED to something else, delete the file.
         if (
-            current_status_str == str(DownloadStatus.DOWNLOADED)
+            current_status_enum == DownloadStatus.DOWNLOADED
             and status != DownloadStatus.DOWNLOADED
         ):
             current_ext = current_download_row["ext"]
-            filename_to_delete = f"{id}.{current_ext}"
+            file_name_to_delete = f"{id}.{current_ext}"
+            logger.info(
+                "Status changing from DOWNLOADED, attempting to delete associated file.",
+                extra={
+                    "feed_id": feed,
+                    "item_id": id,
+                    "file_name": file_name_to_delete,
+                    "new_status": status,
+                },
+            )
             try:
                 deleted = self.file_manager.delete_download_file(
-                    feed=feed, filename=filename_to_delete
+                    feed=feed, file_name=file_name_to_delete
                 )
-            except OSError as e:
-                # If file deletion fails with an OS error, this is more critical.
-                # We should raise an error and not proceed with the DB status update to avoid inconsistency.
+            except FileOperationError as e:
                 raise FileOperationError(
-                    f"Failed to delete file {filename_to_delete} for {feed}/{id} when changing status from DOWNLOADED",
+                    message=f"Failed to delete file when changing status from {DownloadStatus.DOWNLOADED}.",
+                    feed_id=feed,
+                    download_id=id,
+                    file_name=file_name_to_delete,
                 ) from e
-            if not deleted:
-                print(
-                    f"Warning: Tried to delete file {filename_to_delete} for download {feed}/{id} but it was not found on disk when changing status from DOWNLOADED."
+            if deleted:
+                logger.debug(
+                    "Successfully deleted file due to status change.",
+                    extra={
+                        "feed_id": feed,
+                        "item_id": id,
+                        "file_name": file_name_to_delete,
+                    },
+                )
+            else:
+                logger.warning(
+                    "File not found on disk during status change from DOWNLOADED.",
+                    extra={
+                        "feed_id": feed,
+                        "item_id": id,
+                        "file_name": file_name_to_delete,
+                    },
                 )
 
-        # Proceed to update the status in the database
         try:
             updated_in_db = self.db_manager.update_status(
                 feed=feed, id=id, status=status, last_error=last_error
             )
+            if updated_in_db:
+                logger.info(
+                    "Download status updated successfully in database.",
+                    extra={
+                        "feed_id": feed,
+                        "item_id": id,
+                        "new_status": status,
+                        "previous_status": current_status_str,
+                    },
+                )
+            else:
+                logger.warning(
+                    "Download status update in database reported no rows changed.",
+                    extra={
+                        "feed_id": feed,
+                        "item_id": id,
+                        "target_status": status,
+                        "last_error": last_error,
+                    },
+                )
         except sqlite3.Error as e:
             raise DatabaseOperationError(
-                f"Error updating status for download {feed}/{id} to {status}",
+                message=f"Error updating status to {status} for download.",
+                feed_id=feed,
+                download_id=id,
             ) from e
         # If db_manager.update_status itself returns False after all the above checks,
         # it implies the item disappeared between the get and update, which is highly unlikely
@@ -171,17 +273,26 @@ class DataCoordinator:
         Raises:
             DatabaseOperationError: If the database lookup fails.
         """
+        logger.debug(
+            "Attempting to get download by ID.", extra={"feed_id": feed, "item_id": id}
+        )
         try:
             row = self.db_manager.get_download_by_id(feed, id)
-            return None if row is None else Download.from_row(row)
+            if row is None:
+                logger.debug(
+                    "Download not found by ID.", extra={"feed_id": feed, "item_id": id}
+                )
+                return None
+            return Download.from_row(row)
         except sqlite3.Error as e:
             raise DatabaseOperationError(
-                f"Database lookup failed for download {feed}/{id}",
+                message="Database lookup failed for download.",
+                feed_id=feed,
+                download_id=id,
             ) from e
         except ValueError as e:
             # Catch potential ValueError from Download.from_row if data is malformed
             # This indicates a data integrity issue rather than a direct DB operation failure.
-            # Re-raise as a DataCoordinatorError or a specific DataIntegrityError for clarity.
             raise DataCoordinatorError(
                 f"Data integrity issue for download {feed}/{id}: {e}"
             ) from e
@@ -206,34 +317,61 @@ class DataCoordinator:
             FileOperationError: If there's an issue retrieving the file stream from the FileManager.
             DataCoordinatorError: For data integrity issues (e.g. malformed DB data).
         """
+        log_params = {"feed_id": feed, "download_id": id}
+        logger.debug(
+            "Attempting to stream download by ID.",
+            extra=log_params,
+        )
         download = self.get_download_by_id(feed, id)
 
-        if download is None or download.status != DownloadStatus.DOWNLOADED:
+        if download is None:
+            logger.info(
+                "Stream requested for non-existent or unparsable download record.",
+                extra=log_params,
+            )
+            return None
+        if download.status != DownloadStatus.DOWNLOADED:
+            logger.info(
+                "Stream requested for item not in DOWNLOADED status.",
+                extra={**log_params, "status": download.status},
+            )
             return None
 
-        filename = f"{download.id}.{download.ext}"
+        file_name = f"{download.id}.{download.ext}"
+        log_params["file_name"] = file_name
 
         try:
-            return self.file_manager.get_download_stream(feed, filename)
+            return self.file_manager.get_download_stream(feed, file_name)
         except FileNotFoundError as e:
             # DB says DOWNLOADED, but file is missing. Change the status to ERROR.
-            error_msg = f"File {filename} not found for DOWNLOADED item despite being marked as downloaded."
-
-            # TODO: This should be done in a single transaction with the DB update.
-            self.update_status(
-                feed=feed,
-                id=id,
-                status=DownloadStatus.ERROR,
-                last_error=error_msg,
+            error_msg = (
+                f"File marked as {DownloadStatus.DOWNLOADED} but not found on disk"
             )
-
-            raise FileOperationError(error_msg) from e
-
-        except OSError as e:
-            # Other filesystem errors (e.g., permissions)
-            raise FileOperationError(
-                f"Error while trying to stream file {filename} for download {feed}/{id}",
-            ) from e
+            logger.error(
+                f"{error_msg} Attempting to update status to ERROR.",
+                extra=log_params,
+                exc_info=e,
+            )
+            # TODO: This should be done in a single transaction with the DB update.
+            try:
+                self.update_status(
+                    feed=feed,
+                    id=id,
+                    status=DownloadStatus.ERROR,
+                    last_error=f"{error_msg}: {file_name}.",
+                )
+            except (
+                DatabaseOperationError,
+                DownloadNotFoundError,
+                FileOperationError,
+            ) as e_update:
+                logger.error(
+                    "Failed to update status to ERROR after file not found.",
+                    extra={**log_params, "original_error": e},
+                    exc_info=e_update,
+                )
+            # Raise DataCoordinatorError wrapping the original FileOperationError
+            raise DataCoordinatorError(f"{error_msg} Check logs for details.") from e
 
     def get_downloads_by_status(
         self,
@@ -244,6 +382,7 @@ class DataCoordinator:
     ) -> list[Download]:
         """
         Retrieves downloads with a specific status.
+        Malformed records from the database will be logged and skipped.
 
         Args:
             status_to_filter: The DownloadStatus to filter by.
@@ -256,8 +395,18 @@ class DataCoordinator:
 
         Raises:
             DatabaseOperationError: If the database query fails.
-            DataCoordinatorError: For data integrity issues (e.g. malformed DB data).
         """
+        logger.debug(
+            "Attempting to get downloads by status.",
+            extra={
+                "status_filter": str(status_to_filter),
+                "limit": limit,
+                "offset": offset,
+                "feed_id": feed or "<all>",
+            },
+        )
+
+        downloads: list[Download] = []
         try:
             rows = self.db_manager.get_downloads_by_status(
                 status_to_filter=status_to_filter,
@@ -265,15 +414,33 @@ class DataCoordinator:
                 limit=limit,
                 offset=offset,
             )
-            downloads = [Download.from_row(row) for row in rows]
+            for row in rows:
+                try:
+                    downloads.append(Download.from_row(row))
+                except ValueError as e:
+                    logger.error(
+                        "Data integrity issue: Failed to parse download record from database during batch fetch; skipping this item.",
+                        extra={
+                            "feed_id": row["feed"],
+                            "item_id": row["id"],
+                            "status_filter": status_to_filter,
+                        },
+                        exc_info=e,
+                    )
+            logger.debug(
+                f"Retrieved {len(downloads)} downloads by status.",
+                extra={
+                    "status_filter": str(status_to_filter),
+                    "limit": limit,
+                    "offset": offset,
+                    "feed_id": feed or "<all>",
+                },
+            )
         except sqlite3.Error as e:
             raise DatabaseOperationError(
-                f"Database query failed for status {status_to_filter} (feed: {feed}, limit: {limit}, offset: {offset})",
-            ) from e
-        except ValueError as e:
-            # Catch potential ValueError from Download.from_row if data is malformed
-            raise DataCoordinatorError(
-                f"Data integrity issue while fetching by status {status_to_filter}"
+                message=f"Database query failed for downloads by status {status_to_filter}.",
+                feed_id=feed,
+                download_id=f"limit:{limit}_offset:{offset}",
             ) from e
         return downloads
 
@@ -285,6 +452,7 @@ class DataCoordinator:
     ) -> tuple[list[str], list[str]]:
         """
         Prunes old downloads for a given feed based on retention rules.
+        Malformed records identified as candidates will be logged and skipped for pruning.
 
         Deletion Logic:
         1. Identifies downloads to prune based on `keep_last` (number of latest items to keep).
@@ -292,7 +460,7 @@ class DataCoordinator:
         3. The union of these two sets of downloads is considered for pruning.
         4. For each candidate download:
            a. If its status is DOWNLOADED, its associated file is deleted from the filesystem.
-           b. The download record is deleted from the database.
+           b. The download record is updated to ARCHIVED status in the database.
 
         Args:
             feed: The name of the feed to prune.
@@ -307,10 +475,16 @@ class DataCoordinator:
         Raises:
             DatabaseOperationError: If a database operation fails during candidate fetching or deletion.
             FileOperationError: If a file deletion operation fails critically for a specific item.
-                                 Pruning for that item might be skipped, or the error could be aggregated.
-                                 (Current: Critical failures halt and raise).
-            DataCoordinatorError: If there are unexpected data integrity issues (e.g. missing extension for a downloaded file).
         """
+        log_params = {
+            "feed_id": feed,
+            "keep_last": keep_last,
+            "prune_before_date": (
+                prune_before_date.isoformat() if prune_before_date else None
+            ),
+        }
+        logger.info("Starting pruning process for feed.", extra=log_params)
+
         ids_of_downloads_archived: list[str] = []
         ids_of_files_deleted: list[str] = []
         # Use a set now that Download is hashable
@@ -318,80 +492,122 @@ class DataCoordinator:
 
         # 1. Get candidates from keep_last rule
         if keep_last is not None and keep_last > 0:
-            # get_downloads_to_prune_by_keep_last returns IDs of items TO BE PRUNED
+            logger.debug(
+                "Identifying prune candidates by keep_last rule.", extra=log_params
+            )
             try:
                 rows_for_keep_last = (
                     self.db_manager.get_downloads_to_prune_by_keep_last(feed, keep_last)
                 )
             except sqlite3.Error as e:
                 raise DatabaseOperationError(
-                    f"Database error while identifying downloads to prune (keep_last={keep_last}) for feed '{feed}'"
+                    message="Database error identifying downloads to prune by keep_last rule.",
+                    feed_id=feed,
+                    download_id=f"keep_last:{keep_last}",
                 ) from e
 
             for row in rows_for_keep_last:
                 try:
-                    dl = Download.from_row(row)
+                    candidate_downloads_to_prune.add(Download.from_row(row))
                 except ValueError as e:
-                    item_id = row["id"] if row and "id" in row else "unknown_id"
-                    item_feed = row["feed"] if row and "feed" in row else "unknown_feed"
-                    raise DataCoordinatorError(
-                        f"Cannot convert keep_last row for {item_feed}/{item_id} to Download object",
-                    ) from e
-                candidate_downloads_to_prune.add(dl)
+                    logger.error(
+                        "Data integrity issue: Failed to parse download record from keep_last candidates; skipping this item for pruning.",
+                        extra={
+                            "feed_id": feed,
+                            "download_id": row["id"]  # noqa: SIM401 row is a Row, not dict
+                            if "id" in row
+                            else "unknown_id_keep_last",
+                        },
+                        exc_info=e,
+                    )
 
         # 2. Get candidates from prune_before_date rule
         if prune_before_date is not None:
-            # get_downloads_to_prune_by_since returns IDs of items TO BE PRUNED
+            logger.debug("Identifying prune candidates by date rule.", extra=log_params)
             try:
                 rows_for_since = self.db_manager.get_downloads_to_prune_by_since(
                     feed, prune_before_date
                 )
             except sqlite3.Error as e:
                 raise DatabaseOperationError(
-                    f"Database error while identifying downloads to prune (prune_before_date={prune_before_date}) for feed '{feed}'"
+                    message="Database error identifying downloads to prune by date rule.",
+                    feed_id=feed,
+                    download_id=f"prune_before_date:{prune_before_date.isoformat()}",
                 ) from e
             for row in rows_for_since:
                 try:
-                    dl = Download.from_row(row)
+                    candidate_downloads_to_prune.add(Download.from_row(row))
                 except ValueError as e:
-                    item_id = row["id"] if row and "id" in row else "unknown_id"
-                    item_feed = row["feed"] if row and "feed" in row else "unknown_feed"
-                    raise DataCoordinatorError(
-                        f"Cannot convert prune_before_date row for {item_feed}/{item_id} to Download object",
-                    ) from e
-                candidate_downloads_to_prune.add(dl)
+                    logger.error(
+                        "Data integrity issue: Failed to parse download record from prune_before_date candidates; skipping this item for pruning.",
+                        extra={
+                            "feed_id": feed,
+                            "download_id": row["id"]  # noqa: SIM401 row is a Row, not dict
+                            if "id" in row
+                            else "unknown_id_prune_date",
+                        },
+                        exc_info=e,
+                    )
 
         if not candidate_downloads_to_prune:
+            logger.info("No items found to prune for feed.", extra=log_params)
             return [], []
+
+        logger.info(
+            f"Identified {len(candidate_downloads_to_prune)} candidate(s) for pruning.",
+            extra=log_params,
+        )
 
         # 3. Process each candidate for deletion
         successfully_processed_ids_for_db_deletion: list[str] = []
 
         for download_to_prune in candidate_downloads_to_prune:
+            item_prune_log_params = {
+                "feed_id": feed,
+                "download_id": download_to_prune.id,
+                "download_status": download_to_prune.status,
+            }
+
             if download_to_prune.status == DownloadStatus.DOWNLOADED:
-                filename_to_delete = f"{download_to_prune.id}.{download_to_prune.ext}"
+                file_name_to_delete = f"{download_to_prune.id}.{download_to_prune.ext}"
+                item_prune_log_params["file_name"] = file_name_to_delete
+                logger.debug(
+                    "Attempting to delete file for downloaded item being pruned.",
+                    extra=item_prune_log_params,
+                )
                 try:
                     deleted_on_fs = self.file_manager.delete_download_file(
-                        feed, filename_to_delete
+                        feed, file_name_to_delete
                     )
                     if deleted_on_fs:
+                        logger.info(
+                            "File deleted successfully during pruning.",
+                            extra=item_prune_log_params,
+                        )
                         ids_of_files_deleted.append(download_to_prune.id)
                     else:
-                        print(
-                            f"Warning: File {filename_to_delete} for downloaded item {feed}/{download_to_prune.id} not found on disk during pruning. DB record will still be deleted."
+                        logger.warning(
+                            "File for downloaded item not found on disk during pruning. DB record will still be archived.",
+                            extra=item_prune_log_params,
                         )
-                except OSError as e_fs:
+                except FileOperationError as e_fs:
                     raise FileOperationError(
-                        f"OS error deleting file {filename_to_delete} for {feed}/{download_to_prune.id} during pruning. DB record NOT deleted.",
+                        message="Error deleting file during pruning. Download not modified.",
+                        feed_id=feed,
+                        download_id=download_to_prune.id,
+                        file_name=file_name_to_delete,
                     ) from e_fs
 
-                successfully_processed_ids_for_db_deletion.append(download_to_prune.id)
-            else:
-                # Everything else is just a DB record deletion.
-                successfully_processed_ids_for_db_deletion.append(download_to_prune.id)
+            successfully_processed_ids_for_db_deletion.append(download_to_prune.id)
 
         # 4. Update status to ARCHIVED for successfully processed items
+        if successfully_processed_ids_for_db_deletion:
+            logger.debug(
+                f"Attempting to archive {len(successfully_processed_ids_for_db_deletion)} download records.",
+                extra={"feed_id": feed},
+            )
         for id_to_archive in successfully_processed_ids_for_db_deletion:
+            archive_log_params = {"feed_id": feed, "download_id": id_to_archive}
             try:
                 updated_in_db = self.db_manager.update_status(
                     feed, id_to_archive, DownloadStatus.ARCHIVED
@@ -399,19 +615,32 @@ class DataCoordinator:
             except sqlite3.Error as e:
                 # This is an error during the DB update itself.
                 raise DatabaseOperationError(
-                    f"Database error while updating status to ARCHIVED for {id_to_archive} during pruning for feed '{feed}'"
+                    message="Database error updating status to ARCHIVED during pruning.",
+                    feed_id=feed,
+                    download_id=id_to_archive,
                 ) from e
             if updated_in_db:
+                logger.info(
+                    "Download record archived successfully.",
+                    extra=archive_log_params,
+                )
                 ids_of_downloads_archived.append(id_to_archive)
             else:
-                print(
-                    f"Warning: Failed to archive {feed}/{id_to_archive} during pruning. DB record NOT updated."
+                logger.error(
+                    "Failed to archive download record.",
+                    extra=archive_log_params,
                 )
 
+        logger.info(
+            "Pruning process completed for feed.",
+            extra={
+                **log_params,
+                "downloads_archived_count": len(ids_of_downloads_archived),
+                "files_deleted_count": len(ids_of_files_deleted),
+            },
+        )
         return ids_of_downloads_archived, ids_of_files_deleted
 
     # Placeholder for other methods from the task list:
-    # def download_queued(self, feed: str, limit: int) -> list[Download]:
-    #    # Similar to above, convert rows to Download objects
     # def find_db_downloads_without_files(self, feed: str | None = None) -> list[Download]:
     # def find_files_without_db_downloads(self, feed: str | None = None) -> list[Path]:

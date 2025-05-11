@@ -10,7 +10,10 @@
             "request": "launch",
             "module": "anypod",
             "args": [
-                "--debug-ytdlp"
+                "--debug-ytdlp",
+                "true",
+                "--config-file",
+                "${workspaceFolder}/debug.yaml"
             ]
         }
     ]

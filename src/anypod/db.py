@@ -1,9 +1,14 @@
 from dataclasses import dataclass
-import datetime
+from datetime import datetime
 from enum import Enum
+import logging
 from pathlib import Path
 import sqlite3
 from typing import Any
+
+from .exceptions import DatabaseOperationError
+
+logger = logging.getLogger(__name__)
 
 
 class DownloadStatus(Enum):
@@ -26,7 +31,7 @@ class Download:
     id: str
     source_url: str
     title: str
-    published: datetime.datetime  # Should be UTC
+    published: datetime  # Should be UTC
     ext: str
     duration: float  # in seconds
     status: DownloadStatus
@@ -37,22 +42,18 @@ class Download:
     @classmethod
     def from_row(cls, row: sqlite3.Row) -> "Download":
         """Converts a sqlite3.Row to a Download object."""
-        # Ensure datetime conversion is robust
         published_str = row["published"]
         try:
-            published_dt = datetime.datetime.fromisoformat(published_str)
+            published_dt = datetime.fromisoformat(published_str)
         except (TypeError, ValueError) as e:
-            # Handle cases where published_str might be invalid format
             raise ValueError(
                 f"Invalid date format for 'published' in DB row: {published_str}"
             ) from e
 
-        # Ensure status conversion is robust
         status_str = row["status"]
         try:
             status_enum = DownloadStatus(status_str)
         except ValueError as e:
-            # Handle cases where status_str is not a valid DownloadStatus member
             raise ValueError(f"Invalid status value in DB row: {status_str}") from e
 
         return cls(
@@ -62,7 +63,7 @@ class Download:
             title=row["title"],
             published=published_dt,
             ext=row["ext"],
-            duration=float(row["duration"]),  # Ensure duration is float
+            duration=float(row["duration"]),
             thumbnail=row["thumbnail"],
             status=status_enum,
             retries=row["retries"],
@@ -109,13 +110,22 @@ class DatabaseManager:
         """Initializes the DatabaseManager with the path to the SQLite database."""
         self.db_path = db_path
         self._connection: sqlite3.Connection | None = None
+        logger.debug("DatabaseManager initialized.", extra={"db_path": str(db_path)})
 
     def _get_connection(self) -> sqlite3.Connection:
         """Establishes and returns the database connection, creating it if necessary."""
         if self._connection is None:
+            logger.info(
+                "Database connection not found, establishing new connection.",
+                extra={"db_path": str(self.db_path)},
+            )
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
             self._connection = sqlite3.connect(self.db_path, check_same_thread=False)
             self._connection.row_factory = sqlite3.Row
+            logger.info(
+                "Database connection established successfully.",
+                extra={"db_path": str(self.db_path)},
+            )
             self._initialize_schema()
         return self._connection
 
@@ -128,17 +138,33 @@ class DatabaseManager:
             )
         try:
             with self._connection:  # Use connection as context manager for DDL
+                logger.debug(
+                    "Attempting to initialize database schema (CREATE TABLE IF NOT EXISTS)."
+                )
                 self._connection.execute(_CREATE_TABLE_SQL)
+                logger.debug("Table 'downloads' initialization check complete.")
+                logger.debug(
+                    "Attempting to initialize index 'idx_feed_status' (CREATE INDEX IF NOT EXISTS)."
+                )
                 self._connection.execute(_CREATE_INDEX_SQL)
+                logger.info("Database schema initialization check complete.")
         except sqlite3.Error as e:
-            # Propagate error, schema initialization is critical
-            raise RuntimeError("Failed to initialize database schema") from e
+            raise DatabaseOperationError(
+                message="Failed to initialize database schema",
+            ) from e
 
     def close(self) -> None:
         """Closes the database connection if it's open."""
         if self._connection:
+            logger.info(
+                "Closing database connection.", extra={"db_path": str(self.db_path)}
+            )
             self._connection.close()
             self._connection = None
+        else:
+            logger.debug(
+                "Attempted to close database connection, but it was already closed."
+            )
 
     # --- CRUD Operations ---
 
@@ -149,6 +175,12 @@ class DatabaseManager:
         """Inserts or updates a download in the downloads table (upsert behavior).
         If a download with the same (feed, id) exists, it will be replaced.
         """
+        log_params = {
+            "feed_id": download.feed,
+            "download_id": download.id,
+            "status": str(download.status),
+        }
+        logger.debug("Attempting to upsert download record.", extra=log_params)
         sql = """
         INSERT INTO downloads (
             feed, id, source_url, title, published,
@@ -168,6 +200,7 @@ class DatabaseManager:
             last_error = excluded.last_error
         """
         with self._get_connection() as conn:
+            logger.debug("Executing upsert SQL for download.", extra=log_params)
             conn.execute(
                 sql,
                 (
@@ -184,6 +217,7 @@ class DatabaseManager:
                     download.last_error,
                 ),
             )
+        logger.debug("Upsert download record execution complete.", extra=log_params)
 
     def update_status(
         self,
@@ -201,29 +235,37 @@ class DatabaseManager:
         - If status is UPCOMING: only status is updated. retries and last_error persist.
         Returns True if a row was updated, False otherwise.
         """
+        log_params = {
+            "feed_id": feed,
+            "download_id": id,
+            "new_status": str(status),
+            "last_error_param": last_error,
+        }
+        logger.debug("Attempting to update download status.", extra=log_params)
         updates = ["status = ?"]
         params: list[Any] = [str(status)]
 
-        if status == DownloadStatus.DOWNLOADED:
-            updates.append("last_error = NULL")
-            updates.append("retries = 0")
-        elif status == DownloadStatus.ERROR:
-            updates.append("last_error = ?")
-            params.append(last_error)
-            updates.append("retries = retries + 1")
-        elif (
-            status == DownloadStatus.UPCOMING
-            or status == DownloadStatus.QUEUED
-            or status == DownloadStatus.SKIPPED
-            or status == DownloadStatus.ARCHIVED
-        ):
-            # Only update the status
-            pass
+        match status:
+            case DownloadStatus.DOWNLOADED:
+                updates.append("last_error = NULL")
+                updates.append("retries = 0")
+            case DownloadStatus.ERROR:
+                updates.append("last_error = ?")
+                params.append(last_error)
+                updates.append("retries = retries + 1")
+            case (
+                DownloadStatus.UPCOMING
+                | DownloadStatus.QUEUED
+                | DownloadStatus.SKIPPED
+                | DownloadStatus.ARCHIVED
+            ):
+                pass
 
         sql = f"UPDATE downloads SET {', '.join(updates)} WHERE feed = ? AND id = ?"
         params.extend([feed, id])
 
         with self._get_connection() as conn:
+            logger.debug("Executing status update SQL.", extra=log_params)
             cursor = conn.execute(sql, tuple(params))
             return cursor.rowcount > 0
 
@@ -234,7 +276,14 @@ class DatabaseManager:
         Returns a list of rows.
         Excludes items with status ARCHIVED or UPCOMING.
         """
+        log_params = {"feed_id": feed, "keep_last": keep_last}
+        logger.debug(
+            "Attempting to get downloads to prune by keep_last rule.", extra=log_params
+        )
         if keep_last <= 0:
+            logger.debug(
+                "'keep_last' is 0 or negative, returning empty list.", extra=log_params
+            )
             return []
         sql = """
         SELECT *
@@ -253,6 +302,10 @@ class DatabaseManager:
                     str(DownloadStatus.UPCOMING),
                     keep_last,
                 )
+                logger.debug(
+                    "Executing SQL to find prunable downloads by keep_last.",
+                    extra=log_params,
+                )
                 cursor.execute(sql, params)
                 return cursor.fetchall()
         finally:
@@ -260,13 +313,18 @@ class DatabaseManager:
                 cursor.close()
 
     def get_downloads_to_prune_by_since(
-        self, feed: str, since: datetime.datetime
+        self, feed: str, since: datetime
     ) -> list[sqlite3.Row]:
         """Identifies downloads published before the 'since' datetime (UTC).
         Returns a list of rows.
         Excludes items with status ARCHIVED or UPCOMING.
         'since' MUST be a timezone-aware datetime object in UTC.
         """
+        log_params = {"feed_id": feed, "prune_before_date": since.isoformat()}
+        logger.debug(
+            "Attempting to get downloads to prune by 'since' date rule.",
+            extra=log_params,
+        )
         sql = """
         SELECT *
         FROM downloads
@@ -285,6 +343,10 @@ class DatabaseManager:
                     str(DownloadStatus.ARCHIVED),
                     str(DownloadStatus.UPCOMING),
                 )
+                logger.debug(
+                    "Executing SQL to find prunable downloads by 'since' date.",
+                    extra=log_params,
+                )
                 cursor.execute(sql, params)
                 return cursor.fetchall()
         finally:
@@ -295,11 +357,14 @@ class DatabaseManager:
         """Retrieves a specific download by feed and id.
         Returns a database row or None if not found.
         """
+        log_params = {"feed_id": feed, "download_id": id}
+        logger.debug("Attempting to get download by ID.", extra=log_params)
         sql = "SELECT * FROM downloads WHERE feed = ? AND id = ?"
         cursor: sqlite3.Cursor | None = None
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
+                logger.debug("Executing SQL to get download by ID.", extra=log_params)
                 cursor.execute(sql, (feed, id))
                 return cursor.fetchone()
         finally:
@@ -316,6 +381,13 @@ class DatabaseManager:
         """Retrieves downloads with a specific status, newest first.
         Can be filtered by a specific feed. Returns a list of database rows.
         """
+        log_params = {
+            "status": str(status_to_filter),
+            "feed_id": feed if feed else "<all>",
+            "limit": limit,
+            "offset": offset,
+        }
+        logger.debug("Attempting to get downloads by status.", extra=log_params)
         params: list[Any] = []
         if feed:
             sql = """
@@ -340,6 +412,9 @@ class DatabaseManager:
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
+                logger.debug(
+                    "Executing SQL to get downloads by status.", extra=log_params
+                )
                 cursor.execute(sql, tuple(params))
                 return cursor.fetchall()
         finally:

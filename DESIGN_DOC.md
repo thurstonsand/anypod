@@ -235,6 +235,24 @@ This resolution logic aims to simplify configuration for the end-user, as they c
 
 ---
 
+## 14 Logging Guidelines
+
+*   **Structured Logging:** add relevant context to the `extra` dictionary instead of in the message directly.
+*   **Context is Key:**
+    *   All log messages include a `context_id` for tracing.
+    *   Always include `feed_id` and relevant item id (e.g., `source_url` or `download.id`) in the `extra` dictionary for logs related to feed/item processing.
+*   **Clear Log Levels:** Adhere to standard log level semantics:
+    *   `DEBUG`: For developer tracing, verbose.
+    *   `INFO`: For operator awareness of normal system operations and milestones.
+    *   `WARNING`: For recoverable issues or potential problems that don't stop current operations but may need attention (e.g., a transient download failure that will be retried).
+    *   `ERROR`: For specific, non-recoverable failures of an operation that require attention (e.g., metadata parsing failure for an item). The system should log the error and continue with other tasks.
+    *   `CRITICAL`: For severe runtime errors threatening application stability or causing shutdown.
+*   **Actionable Messages:** Log messages (especially `WARNING`/`ERROR`) should provide clear, concise information about the event. The `extra` dict carries detailed context.
+*   **Error Context Propagation:** Custom exceptions should carry diagnostic data. A utility function (`exc_extract`) is used to gather this data from the exception chain and include it in the `extra` field of error logs.
+*   **Security:** Never log secrets (API keys, passwords) or PII. Be cautious with logging overly verbose data structures at `INFO` level or above.
+
+---
+
 ## 10  Command-Line Flags (MVP)
 * `--config-file PATH` – custom YAML path (default `/config/feeds.yml`)
 * `--ignore-startup-errors` – keep running if validation fails (feed disabled in memory)
@@ -284,3 +302,5 @@ This resolution logic aims to simplify configuration for the end-user, as they c
 * add per-source rate limiting
 * issue template include rules on requesting support for new source
 * enable a podcast feed that accepts requests to an endpoint to add individual videos to the feed; basically manually curated
+  * also include manual audio file uploads
+* performance testing once both server and cron exist -- does the cron being active cause slow down for the server?

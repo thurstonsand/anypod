@@ -6,6 +6,7 @@ from pytest import MonkeyPatch
 import yaml
 
 from anypod.config import AppSettings, YamlFileFromFieldSource
+from anypod.exceptions import ConfigLoadError
 
 # Sample valid feed configuration data for testing
 SAMPLE_FEEDS_DATA = {
@@ -177,7 +178,9 @@ def test_nonexistent_config_file_raises_error(monkeypatch: MonkeyPatch):
     non_existent_path = "/path/to/hopefully/nonexistent/feeds.yaml"
     monkeypatch.setenv("CONFIG_FILE", non_existent_path)
 
-    with pytest.raises(OSError, match="Failed to load YAML config file") as exc_info:
+    with pytest.raises(
+        ConfigLoadError, match="Failed to load or parse YAML configuration file"
+    ) as exc_info:
         AppSettings()  # type: ignore[call-arg]
 
     assert isinstance(exc_info.value.__cause__, FileNotFoundError), (
@@ -197,7 +200,9 @@ def test_invalid_yaml_format_raises_error(tmp_path: Path):
     with Path.open(invalid_yaml_path, "w", encoding="utf-8") as f:
         f.write(invalid_content)
 
-    with pytest.raises(OSError, match="Failed to load YAML config file") as exc_info:
+    with pytest.raises(
+        ConfigLoadError, match="Failed to load or parse YAML configuration file"
+    ) as exc_info:
         AppSettings(config_file=invalid_yaml_path)
 
     assert isinstance(exc_info.value.__cause__, yaml.YAMLError), (
@@ -266,7 +271,9 @@ def test_invalid_yaml_returns_non_dict_type_raises_error(tmp_path: Path):
     with Path.open(invalid_type_yaml_path, "w", encoding="utf-8") as f:
         f.write(list_content)
 
-    with pytest.raises(OSError, match="Failed to load YAML config file") as exc_info:
+    with pytest.raises(
+        ConfigLoadError, match="Failed to load or parse YAML configuration file"
+    ) as exc_info:
         AppSettings(config_file=invalid_type_yaml_path)
 
     assert isinstance(exc_info.value.__cause__, TypeError), (

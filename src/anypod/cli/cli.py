@@ -1,30 +1,49 @@
-import argparse
+import logging
 import pathlib
 
+from ..config import AppSettings
+from ..logging_config import setup_logging
 from .debug_ytdlp import run_debug_ytdlp_mode
 from .default import default as run_default_mode
 
-# __file__ is src/anypod/cli/cli.py
-# parents[0] is src/anypod/cli
-# parents[1] is src/anypod
-# parents[2] is src
-# parents[3] is the workspace root /Users/thurstonsand/Develop/anypod
 DEBUG_YAML_PATH = pathlib.Path(__file__).resolve().parents[3] / "debug.yaml"
 
 
 def main_cli():
-    parser = argparse.ArgumentParser(description="Anypod CLI tool.", allow_abbrev=False)
-    parser.add_argument(
-        "--debug-ytdlp",
-        action="store_true",
-        help="Run in yt-dlp debug mode, using a debug.yaml configuration file in the workspace root directory.",
+    settings = AppSettings()  # type: ignore[call-arg]
+
+    setup_logging(
+        log_format_type=settings.log_format,
+        app_log_level_name=settings.log_level,
+        include_stacktrace=settings.log_include_stacktrace,
     )
-    # Add other application-wide arguments here if needed in the future
 
-    args, _ = parser.parse_known_args()
+    logger = logging.getLogger(__name__)
 
-    if args.debug_ytdlp:
-        print(f"Running in yt-dlp debug mode with config: {DEBUG_YAML_PATH}")
-        run_debug_ytdlp_mode(DEBUG_YAML_PATH)
+    logger.info(
+        "Application logging configured.",
+        extra={
+            "log_format": settings.log_format,
+            "log_level": settings.log_level,
+            "include_stacktrace": settings.log_include_stacktrace,
+        },
+    )
+    logger.debug(
+        "Application settings loaded.",
+        extra={
+            "config_file": str(settings.config_file),
+            "debug_ytdlp_mode_enabled": settings.debug_ytdlp,
+        },
+    )
+
+    if settings.debug_ytdlp:
+        logger.info(
+            "Initializing Anypod in yt-dlp debug mode.",
+            extra={"debug_config_file_used": str(settings.config_file)},
+        )
+        run_debug_ytdlp_mode(settings.config_file)
     else:
-        run_default_mode()
+        logger.info("Initializing Anypod in default mode.")
+        run_default_mode(settings)
+
+    logger.debug("main_cli execution finished.")

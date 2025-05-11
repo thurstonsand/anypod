@@ -1,9 +1,11 @@
 import io
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from pytest_mock import MockerFixture
 
+from anypod.exceptions import FileOperationError
 from anypod.file_manager import FileManager
 
 # --- Fixtures ---
@@ -34,17 +36,17 @@ def test_save_download_file_success(
     Verifies directory creation, .incomplete handling, final file content, and return path.
     """
     feed_name = "my_test_feed"
-    filename = "episode1.mp3"
+    file_name = "episode1.mp3"
     file_content = b"This is some test audio data."
     data_stream = io.BytesIO(file_content)
 
     saved_path = file_manager.save_download_file(
-        feed=feed_name, filename=filename, data_stream=data_stream
+        feed=feed_name, file_name=file_name, data_stream=data_stream
     )
 
     expected_feed_dir = temp_base_download_path / feed_name
-    expected_final_path = expected_feed_dir / filename
-    incomplete_file_path = expected_feed_dir / (filename + ".incomplete")
+    expected_final_path = expected_feed_dir / file_name
+    incomplete_file_path = expected_feed_dir / (file_name + ".incomplete")
 
     assert expected_feed_dir.exists(), "Feed directory should have been created."
     assert expected_feed_dir.is_dir(), "Feed directory should be a directory."
@@ -92,13 +94,13 @@ def test_save_download_file_overwrites_existing_file(
     Tests that save_download_file overwrites an existing file with the same name.
     """
     feed_name = "overwrite_feed"
-    filename = "track.mp3"
+    file_name = "track.mp3"
     initial_content = b"Initial version."
     new_content = b"New shiny version!"
 
     feed_dir = temp_base_download_path / feed_name
     feed_dir.mkdir(parents=True, exist_ok=True)
-    existing_file_path = feed_dir / filename
+    existing_file_path = feed_dir / file_name
 
     # Create an initial file
     with Path.open(existing_file_path, "wb") as f:
@@ -107,7 +109,7 @@ def test_save_download_file_overwrites_existing_file(
 
     # Act: Save new content to the same filname
     saved_path = file_manager.save_download_file(
-        feed=feed_name, filename=filename, data_stream=io.BytesIO(new_content)
+        feed=feed_name, file_name=file_name, data_stream=io.BytesIO(new_content)
     )
 
     assert saved_path == existing_file_path, "Returned path should be the same."
@@ -125,15 +127,15 @@ def test_save_download_file_overwrites_existing_incomplete_file(
     Tests that save_download_file correctly handles and overwrites an existing .incomplete file.
     """
     feed_name = "overwrite_incomplete_feed"
-    filename = "podcast.mp3"
+    file_name = "podcast.mp3"
     old_incomplete_content = b"Stale incomplete data."
     new_valid_content = b"Fresh and complete data!"
 
     feed_dir = temp_base_download_path / feed_name
     feed_dir.mkdir(parents=True, exist_ok=True)
 
-    final_file_path = feed_dir / filename
-    incomplete_file_path = feed_dir / (filename + ".incomplete")
+    final_file_path = feed_dir / file_name
+    incomplete_file_path = feed_dir / (file_name + ".incomplete")
 
     # Create an old .incomplete file
     with Path.open(incomplete_file_path, "wb") as f:
@@ -142,7 +144,7 @@ def test_save_download_file_overwrites_existing_incomplete_file(
     assert not final_file_path.exists()
 
     saved_path = file_manager.save_download_file(
-        feed=feed_name, filename=filename, data_stream=io.BytesIO(new_valid_content)
+        feed=feed_name, file_name=file_name, data_stream=io.BytesIO(new_valid_content)
     )
 
     assert saved_path == final_file_path, "Returned path should be the final path."
@@ -162,19 +164,20 @@ def test_save_download_file_error_during_write_cleans_up(
     the .incomplete file is cleaned up.
     """
     feed_name = "error_write_feed"
-    filename = "broken_stream.dat"
+    file_name = "broken_stream.dat"
     data_stream = io.BytesIO(b"Some data before error.")
 
     incomplete_file_path = (
-        temp_base_download_path / feed_name / (filename + ".incomplete")
+        temp_base_download_path / feed_name / (file_name + ".incomplete")
     )
 
     mocked_copyfileobj = mocker.patch("shutil.copyfileobj")
-    mocked_copyfileobj.side_effect = OSError("Simulated disk full error")
+    simulated_os_error = OSError("Simulated disk full error")
+    mocked_copyfileobj.side_effect = simulated_os_error
 
-    with pytest.raises(OSError, match="Simulated disk full error"):
+    with pytest.raises(FileOperationError) as exc_info:
         file_manager.save_download_file(
-            feed=feed_name, filename=filename, data_stream=data_stream
+            feed=feed_name, file_name=file_name, data_stream=data_stream
         )
 
     assert not incomplete_file_path.exists(), (
@@ -184,6 +187,8 @@ def test_save_download_file_error_during_write_cleans_up(
     assert (temp_base_download_path / feed_name).exists(), (
         "Feed directory should still exist as it's created before write attempt."
     )
+
+    assert exc_info.value.__cause__ is simulated_os_error
 
 
 # --- Tests for delete_download_file ---
@@ -195,15 +200,15 @@ def test_delete_download_file_success(
 ):
     """Tests successful deletion of an existing file."""
     feed_name = "delete_feed"
-    filename = "to_delete.txt"
+    file_name = "to_delete.txt"
     file_content = b"content"
 
     file_to_delete_path = file_manager.save_download_file(
-        feed_name, filename, io.BytesIO(file_content)
+        feed_name, file_name, io.BytesIO(file_content)
     )
     assert file_to_delete_path.exists()
 
-    result = file_manager.delete_download_file(feed_name, filename)
+    result = file_manager.delete_download_file(feed_name, file_name)
 
     assert result is True, "delete_download_file should return True on success."
     assert not file_to_delete_path.exists(), "File should be deleted from disk."
@@ -213,9 +218,9 @@ def test_delete_download_file_success(
 def test_delete_download_file_not_found(file_manager: FileManager):
     """Tests delete_download_file returns False for a non-existent file."""
     feed_name = "delete_feed_not_found"
-    filename = "non_existent.txt"
+    file_name = "non_existent.txt"
 
-    result = file_manager.delete_download_file(feed_name, filename)
+    result = file_manager.delete_download_file(feed_name, file_name)
 
     assert result is False, (
         "delete_download_file should return False if file not found."
@@ -229,20 +234,20 @@ def test_delete_download_file_not_found(file_manager: FileManager):
 def test_download_exists_true(file_manager: FileManager):
     """Tests download_exists returns True when a file exists."""
     feed_name = "exists_feed"
-    filename = "existing_file.mp3"
+    file_name = "existing_file.mp3"
 
-    file_manager.save_download_file(feed_name, filename, io.BytesIO(b"dummy data"))
+    file_manager.save_download_file(feed_name, file_name, io.BytesIO(b"dummy data"))
 
-    assert file_manager.download_exists(feed_name, filename) is True
+    assert file_manager.download_exists(feed_name, file_name) is True
 
 
 @pytest.mark.unit
 def test_download_exists_false_not_found(file_manager: FileManager):
     """Tests download_exists returns False when a file does not exist."""
     feed_name = "exists_feed_false"
-    filename = "ghost_file.mp3"
+    file_name = "ghost_file.mp3"
 
-    assert file_manager.download_exists(feed_name, filename) is False
+    assert file_manager.download_exists(feed_name, file_name) is False
 
 
 @pytest.mark.unit
@@ -251,14 +256,14 @@ def test_download_exists_false_is_directory(
 ):
     """Tests download_exists returns False if the path is a directory, not a file."""
     feed_name = "exists_feed_dir"
-    dir_as_filename = "a_directory"
+    dir_as_file_name = "a_directory"
 
     # Setup: Create a directory where a file might be expected
-    (temp_base_download_path / feed_name / dir_as_filename).mkdir(
+    (temp_base_download_path / feed_name / dir_as_file_name).mkdir(
         parents=True, exist_ok=True
     )
 
-    assert file_manager.download_exists(feed_name, dir_as_filename) is False
+    assert file_manager.download_exists(feed_name, dir_as_file_name) is False
 
 
 # --- Tests for get_download_stream ---
@@ -268,12 +273,12 @@ def test_download_exists_false_is_directory(
 def test_get_download_stream_success(file_manager: FileManager):
     """Tests successfully getting a stream for an existing file and checks its content."""
     feed_name = "stream_feed"
-    filename = "stream_me.mp3"
+    file_name = "stream_me.mp3"
     file_content = b"Test stream content."
 
-    file_manager.save_download_file(feed_name, filename, io.BytesIO(file_content))
+    file_manager.save_download_file(feed_name, file_name, io.BytesIO(file_content))
 
-    with file_manager.get_download_stream(feed_name, filename) as stream:
+    with file_manager.get_download_stream(feed_name, file_name) as stream:
         read_content = stream.read()
 
     assert read_content == file_content, (
@@ -285,10 +290,10 @@ def test_get_download_stream_success(file_manager: FileManager):
 def test_get_download_stream_file_not_found(file_manager: FileManager):
     """Tests get_download_stream raises FileNotFoundError for a non-existent file."""
     feed_name = "stream_feed_404"
-    filename = "no_such_file.mp3"
+    file_name = "no_such_file.mp3"
 
     with pytest.raises(FileNotFoundError):
-        file_manager.get_download_stream(feed_name, filename)
+        file_manager.get_download_stream(feed_name, file_name)
 
 
 @pytest.mark.unit
@@ -297,11 +302,38 @@ def test_get_download_stream_path_is_directory(
 ):
     """Tests get_download_stream raises FileNotFoundError if the path is a directory."""
     feed_name = "stream_feed_dir"
-    dir_as_filename = "i_am_a_dir"
+    dir_as_file_name = "i_am_a_dir"
 
-    (temp_base_download_path / feed_name / dir_as_filename).mkdir(
+    (temp_base_download_path / feed_name / dir_as_file_name).mkdir(
         parents=True, exist_ok=True
     )
 
     with pytest.raises(FileNotFoundError):
-        file_manager.get_download_stream(feed_name, dir_as_filename)
+        file_manager.get_download_stream(feed_name, dir_as_file_name)
+
+
+@pytest.mark.unit
+def test_get_download_stream_file_operation_error(
+    file_manager: FileManager, temp_base_download_path: Path
+):
+    """Tests get_download_stream raises FileOperationError for a file operation error."""
+    feed_name = "stream_feed_error"
+    file_name = "error_file.mp3"
+
+    # Setup a dummy downloaded file
+    feed_dir = temp_base_download_path / feed_name
+    feed_dir.mkdir(parents=True, exist_ok=True)
+    file_path = feed_dir / file_name
+    with Path.open(file_path, "wb") as f:
+        f.write(b"dummy content")
+
+    # Patch Path.open to simulate a file operation error on read
+    simulated_error = OSError("Simulated disk full error")
+    with (
+        patch.object(Path, "open", side_effect=simulated_error),
+        pytest.raises(OSError) as exc_info,
+    ):
+        file_manager.get_download_stream(feed_name, file_name)
+
+    # Verify the FileOperationError includes correct file_name and cause
+    assert exc_info.value is simulated_error

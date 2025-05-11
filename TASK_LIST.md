@@ -59,10 +59,10 @@ src/
 
 ## 3.2 File Manager Layer
 - [x] Abstraction seam: encapsulate base directory so future S3/GCS back‑ends can subclass
-- [x] Implement `save_download_file(feed, filename, data_stream) -> Path` (atomic write)
-- [x] Implement `delete_download_file(feed, filename) -> bool`
-- [x] Implement `download_exists(feed, filename) -> bool`
-- [x] Implement `get_download_stream(feed, filename) -> IO[bytes]`
+- [x] Implement `save_download_file(feed, file_name, data_stream) -> Path` (atomic write)
+- [x] Implement `delete_download_file(feed, file_name) -> bool`
+- [x] Implement `download_exists(feed, file_name) -> bool`
+- [x] Implement `get_download_stream(feed, file_name) -> IO[bytes]`
 - [x] Ensure directory hygiene: base download and feed directories exist (covered by save_download_file)
 - [x] Write unit tests (tmp dir fixtures)
 
@@ -88,7 +88,7 @@ This section details the components that manage the lifecycle of downloads, from
 - [ ] Unit tests for `YtdlpWrapper`.
 
 ### 3.5.2.1 Logger
-- [ ] implement a global logging framework
+- [x] implement a global logging framework
 
 ### 3.5.3 `Enqueuer` (`data_coordinator/enqueuer.py`)
 - [ ] Constructor accepts `DatabaseManager`, `YtdlpWrapper`.
@@ -110,8 +110,8 @@ This section details the components that manage the lifecycle of downloads, from
         - Convert `feed_config.yt_args` string to `list[str]` for `YtdlpWrapper`.
         - get download: Download from the db
         - Call `YtdlpWrapper.download_media_to_file(download, yt_cli_args)`.
-            - Generate final filename (e.g., using `item.title` and `updated_metadata['ext']`).
-            - Call `FileManager.save_download_file(feed_config.name, final_filename, source_file_path=completed_file_path)`.
+            - Generate final file_name (e.g., using `item.title` and `updated_metadata['ext']`).
+            - Call `FileManager.save_download_file(feed_config.name, final_file_name, source_file_path=completed_file_path)`.
                 - (Note: `FileManager.save_download_file` will need to implement moving a file from `source_file_path` to its final managed location.)
             - Update DB: status to 'downloaded', store final path from `FileManager`, update `ext`, `filesize` from `updated_metadata`.
         - On failure:
