@@ -38,6 +38,7 @@ src/
 ```
  tests/
     anypod/ # tests mirror the src/anypod structure
+        integration/ # integration tests can be run with `pytest --integration`
 ```
 
 ## 2  Configuration Loader
@@ -74,18 +75,16 @@ This section details the components that manage the lifecycle of downloads, from
 
 ### 3.5.2 `YtdlpWrapper` (`ytdlp_wrapper.py`)
 - [x] Create `ytdlp_wrapper.py` and class `YtdlpWrapper`.
-- [x] `YtdlpWrapper.fetch_metadata(feed_name: str, url: str, yt_cli_args: str) -> Download`: Fetches metadata for all items at the given URL using yt-dlp's metadata extraction capabilities.
-- [ ] Set up tmp dirs for writing data for merge: e.g. `/data/.tmp_completed_downloads/<feed_name>/<download.ext>/` and `/data/.tmp_yt_dlp_parts/<feed_name>/<download.ext>/`
-- [ ] `YtdlpWrapper.download_media_to_file(download: Download, yt_cli_args: list[str]) -> str`:
-    - Purpose: Downloads media (video or audio) for the given item to a specified directory, handling potential merges (e.g., video + audio) via `yt-dlp` and FFmpeg.
+- [x] `YtdlpWrapper.fetch_metadata(feed_name: str, url: str, yt_cli_args: list[str]) -> list[Download]`: Fetches metadata for all downloads at the given URL using yt-dlp's metadata extraction capabilities.
+- [x] `YtdlpWrapper.download_media_to_file(download: Download, yt_cli_args: list[str], download_target_dir: Path) -> Path`:
+    - Purpose: Downloads media (video or audio) for the given entry to a specified directory, handling potential merges (e.g., video + audio) via `yt-dlp` and FFmpeg.
     - Arguments:
-        - `download`: Metadata of the item to download, used for naming and context.
+        - `download`: Metadata of the entry to download, used for naming and context.
         - `yt_cli_args`: List of command-line arguments for `yt-dlp` (e.g., format selection from feed config).
-    - Returns: A tuple `file_path` on success, or throws exception on failure.
-        - `file_path`: Absolute path to the successfully downloaded (and potentially merged) media file in `download_target_dir`.
-        - `updated_metadata_dict`: May include refined details like exact `filesize` or final `ext` as determined by `yt-dlp` during download. This can be useful for updating the database.
-- [ ] Sandbox test using a Creative-Commons short video (no network in CI → use `pytest.mark.skipif` or cached sample JSON for `fetch_metadata` and a small dummy file for `download_media`).
-- [ ] Unit tests for `YtdlpWrapper`.
+        - `download_target_dir`: The base directory where the feed-specific subfolder and media file will be created.
+    - Returns: `Path` to the successfully downloaded media file.
+- [x] Sandbox test using a Creative-Commons short video, covered by integration tests using real URLs.
+- [x] Unit tests for `YtdlpWrapper`.
 
 ### 3.5.2.1 Logger
 - [x] implement a global logging framework
@@ -95,22 +94,23 @@ This section details the components that manage the lifecycle of downloads, from
 - [ ] `enqueue_new_downloads(feed_config: FeedConfig) -> int`:
     - Phase 1: Re-fetch metadata for existing DB entries with status 'upcoming'; update those now VOD to 'queued'.
     - Phase 2: Fetch metadata for latest N videos via `YtdlpWrapper.fetch_metadata()`.
-        - For each item not in DB:
+        - For each download not in DB:
             - If VOD (`live_status=='not_live'` and `is_live==False`), insert with status 'queued'.
             - If live or scheduled (`live_status=='upcoming'` or `is_live==True`), insert with status 'upcoming'.
         - For each existing 'upcoming' entry now VOD, update status to 'queued'.
-    - Returns count of newly enqueued or transitioned-to-queued items.
+    - Returns count of newly enqueued or transitioned-to-queued downloads.
 - [ ] Unit tests for `Enqueuer` with mocked dependencies.
 
 ### 3.5.4 `Downloader` Service (`data_coordinator/downloader.py`)
+- [ ] Set up tmp dirs for writing data for merge: e.g. `/data/.tmp_completed_downloads/<feed_name>/<download.ext>/` and `/data/.tmp_yt_dlp_parts/<feed_name>/<download.ext>/`
 - [ ] Constructor accepts `DatabaseManager`, `FileManager`, `YtdlpWrapper`, and application config (for base data paths).
-- [ ] `download_queued_items(feed_config: FeedConfig, limit: int = 0) -> tuple[int, int]`: (success_count, failure_count)
+- [ ] `download_queued(feed_config: FeedConfig, limit: int = 0) -> tuple[int, int]`: (success_count, failure_count)
     - Gets queued `Download` objects via `DatabaseManager.next_queued_downloads(feed_config.name, limit)`.
-    - For each `Download` item:
+    - For each `Download`:
         - Convert `feed_config.yt_args` string to `list[str]` for `YtdlpWrapper`.
         - get download: Download from the db
         - Call `YtdlpWrapper.download_media_to_file(download, yt_cli_args)`.
-            - Generate final file_name (e.g., using `item.title` and `updated_metadata['ext']`).
+            - Generate final file_name (e.g., using `download.title` and `updated_metadata['ext']`).
             - Call `FileManager.save_download_file(feed_config.name, final_file_name, source_file_path=completed_file_path)`.
                 - (Note: `FileManager.save_download_file` will need to implement moving a file from `source_file_path` to its final managed location.)
             - Update DB: status to 'downloaded', store final path from `FileManager`, update `ext`, `filesize` from `updated_metadata`.
@@ -124,7 +124,7 @@ This section details the components that manage the lifecycle of downloads, from
 - [ ] `prune_feed_downloads(feed_name: str, keep_last: int | None, prune_before_date: datetime | None) -> tuple[int, int]`: (archived_count, files_deleted_count)
     - Implements logic previously in the old `DataCoordinator.prune_old_downloads`.
     - Uses `DatabaseManager` to get candidates, `Download.from_row` to convert rows.
-    - Uses `FileManager.delete_download_file()` for downloaded items.
+    - Uses `FileManager.delete_download_file()` for download.
     - Uses `DatabaseManager.update_status()` to 'archived'.
 - [ ] Unit tests for `Pruner` with mocked dependencies.
 
@@ -132,10 +132,10 @@ This section details the components that manage the lifecycle of downloads, from
 - [ ] Constructor accepts `Enqueuer`, `Downloader`, `Pruner`, `FeedGen`, `DatabaseManager`, `FileManager` (for pass-through methods like `get_download_by_id`, `stream_download_by_id`, etc.).
 - [ ] `process_feed(feed_config: FeedConfig) -> None`:
     - Calls `Enqueuer.enqueue_new_downloads()`.
-    - Calls `Downloader.download_queued_items()`.
+    - Calls `Downloader.download_queued()`.
     - Calls `Pruner.prune_feed_downloads()`.
     - Calls `FeedGen.generate_feed_xml()`.
-- [ ] `add_download` (delegates to DB, handles file deletion if replacing DOWNLOADED item)
+- [ ] `add_download` (delegates to DB, handles file deletion if replacing DOWNLOADED)
 - [ ] `update_status` (delegates to DB, handles file deletion on status change from DOWNLOADED)
 - [ ] `get_download_by_id` (delegates to DB, uses `Download.from_row`)
 - [ ] `stream_download_by_id` (delegates to `FileManager` after checking DB status via `get_download_by_id`, handles `FileNotFoundError` by updating status to ERROR)

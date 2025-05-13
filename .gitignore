@@ -15,3 +15,7 @@ Thumbs.db
 coverage.xml
 *.log
 *.tmp
+
+# Testing
+debug_downloads/
+yt-dlp_metadata/

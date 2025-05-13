@@ -267,7 +267,7 @@ def test_invalid_yaml_returns_non_dict_type_raises_error(tmp_path: Path):
     """
     invalid_type_yaml_path = tmp_path / "invalid_type.yaml"
     # YAML content that is a list, not a dictionary
-    list_content = "- item1\n- item2"
+    list_content = "- download1\n- download2"
     with Path.open(invalid_type_yaml_path, "w", encoding="utf-8") as f:
         f.write(list_content)
 

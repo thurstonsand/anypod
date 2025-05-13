@@ -274,7 +274,7 @@ class DatabaseManager:
     ) -> list[sqlite3.Row]:
         """Identifies downloads to prune based on 'keep_last'.
         Returns a list of rows.
-        Excludes items with status ARCHIVED or UPCOMING.
+        Excludes downloads with status ARCHIVED or UPCOMING.
         """
         log_params = {"feed_id": feed, "keep_last": keep_last}
         logger.debug(
@@ -317,7 +317,7 @@ class DatabaseManager:
     ) -> list[sqlite3.Row]:
         """Identifies downloads published before the 'since' datetime (UTC).
         Returns a list of rows.
-        Excludes items with status ARCHIVED or UPCOMING.
+        Excludes downloads with status ARCHIVED or UPCOMING.
         'since' MUST be a timezone-aware datetime object in UTC.
         """
         log_params = {"feed_id": feed, "prune_before_date": since.isoformat()}

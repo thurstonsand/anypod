@@ -27,10 +27,10 @@ class FeedConfig(BaseModel):
     yt_args: str | None = Field(None, description="Arguments passed verbatim to yt-dlp")
     schedule: str = Field(..., min_length=1, description="Cron schedule string")
     keep_last: int | None = Field(
-        None, ge=1, description="Prune policy - number of latest items to keep"
+        None, ge=1, description="Prune policy - number of latest downloads to keep"
     )
     since: datetime | None = Field(
-        None, description="ISO8601 timestamp to ignore older items"
+        None, description="ISO8601 timestamp to ignore older downloads"
     )
 
 

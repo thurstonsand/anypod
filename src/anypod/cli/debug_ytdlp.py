@@ -4,6 +4,8 @@ import sys
 
 import yaml
 
+from ..db import DownloadStatus
+from ..exceptions import YtdlpApiError
 from ..ytdlp_wrapper import YtdlpWrapper
 
 # Import Download for potential type hinting if we pretty print, though not strictly needed if just printing raw output.
@@ -47,9 +49,10 @@ def run_debug_ytdlp_mode(debug_yaml_path: Path) -> None:
         sys.exit(1)
 
     cli_args: list[str] = config.get("cli_args", [])
-    feed_urls: list[str] = config.get("feeds", [])
+    feed_urls_dict: dict[str, str] = config.get("feeds", [])
+    should_download: bool = config.get("download", False)
 
-    if not feed_urls:
+    if not feed_urls_dict:
         logger.info(
             "No feed URLs found in debug configuration. Nothing to process.",
             extra={"config_path": str(debug_yaml_path)},
@@ -62,15 +65,37 @@ def run_debug_ytdlp_mode(debug_yaml_path: Path) -> None:
     logger.info(
         "Processing feeds in yt-dlp debug mode.",
         extra={
-            "feed_count": len(feed_urls),
+            "feed_count": len(feed_urls_dict),
             "cli_args_used": cli_args if cli_args else "default_wrapper_options",
             "config_path": str(debug_yaml_path),
         },
     )
 
-    for i, url in enumerate(feed_urls):
+    # Define download directory relative to project root (assuming script is run from root or similar)
+    project_root = (
+        Path(__file__).resolve().parents[3]
+    )  # Adjust index based on actual structure
+    download_dir = project_root / "debug_downloads"
+
+    if should_download:
+        try:
+            download_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(
+                "Downloading is enabled.",
+                extra={"download_directory": str(download_dir)},
+            )
+        except OSError:
+            logger.critical(
+                "Failed to create download directory.",
+                exc_info=True,
+                extra={"directory_path": str(download_dir)},
+            )
+            sys.exit(1)
+    else:
+        logger.info("Downloading is disabled. Fetching metadata only.")
+
+    for feed_name, url in feed_urls_dict.items():
         # Create a simple feed name for context. This is not a stored feed_id from a DB.
-        feed_name = f"debug_feed_{i + 1}_{Path(url).name}"
         logger.info(
             "Fetching metadata for feed.",
             extra={"feed_url": url, "feed_name": feed_name},
@@ -90,30 +115,81 @@ def run_debug_ytdlp_mode(debug_yaml_path: Path) -> None:
 
             if downloads:
                 logger.info(
-                    "Successfully fetched items for feed.",
-                    extra={"item_count": len(downloads), "feed_url": url},
+                    "Successfully fetched downloads for feed.",
+                    extra={"download_count": len(downloads), "feed_url": url},
                 )
-                for download_item in downloads:
-                    logger.info(
-                        "Fetched item details.",
-                        extra={
-                            "feed_url": url,
-                            "feed_name": feed_name,
-                            "item_title": download_item.title,
-                            "item_id": download_item.id,
-                            "item_source_url": download_item.source_url,
-                            "item_published": download_item.published.isoformat()
-                            if download_item.published
-                            else "N/A",
-                            "item_duration_s": download_item.duration,
-                            "item_ext": download_item.ext,
-                            "item_thumbnail": download_item.thumbnail or "N/A",
-                            "item_status": download_item.status,
-                        },
-                    )
+                for download in downloads:
+                    if should_download:
+                        # Only attempt to download if the download is actually downloadable (not upcoming/live)
+                        if download.status == DownloadStatus.QUEUED:
+                            logger.info(
+                                "Attempting to download.",
+                                extra={
+                                    "feed_url": url,
+                                    "feed_name": feed_name,
+                                    "download_title": download.title,
+                                    "download_id": download.id,
+                                },
+                            )
+                            try:
+                                file_path = ytdlp_wrapper.download_media_to_file(
+                                    download=download,
+                                    yt_cli_args=cli_args,
+                                    download_target_dir=download_dir,
+                                )
+                                logger.info(
+                                    "Successfully downloaded.",
+                                    extra={
+                                        "feed_url": url,
+                                        "feed_name": feed_name,
+                                        "download_title": download.title,
+                                        "download_id": download.id,
+                                        "file_path": file_path,
+                                    },
+                                )
+                            except YtdlpApiError as e:
+                                logger.error(
+                                    "Failed to download.",
+                                    exc_info=e,
+                                    extra={
+                                        "feed_url": url,
+                                        "feed_name": feed_name,
+                                        "download_title": download.title,
+                                        "download_id": download.id,
+                                    },
+                                )
+                        else:
+                            logger.info(
+                                "Skipping download due to status.",
+                                extra={
+                                    "feed_url": url,
+                                    "feed_name": feed_name,
+                                    "download_title": download.title,
+                                    "download_id": download.id,
+                                    "download_status": download.status,
+                                },
+                            )
+                    else:
+                        logger.info(
+                            "Fetched download details.",
+                            extra={
+                                "feed_url": url,
+                                "feed_name": feed_name,
+                                "download_title": download.title,
+                                "download_id": download.id,
+                                "download_source_url": download.source_url,
+                                "download_published": download.published.isoformat()
+                                if download.published
+                                else "N/A",
+                                "download_duration_s": download.duration,
+                                "download_ext": download.ext,
+                                "download_thumbnail": download.thumbnail or "N/A",
+                                "download_status": download.status,
+                            },
+                        )
             else:
                 logger.info(
-                    "No downloadable items found or parsed for feed.",
+                    "No downloads found or parsed for feed.",
                     extra={"feed_url": url, "feed_name": feed_name},
                 )
         except RuntimeError:

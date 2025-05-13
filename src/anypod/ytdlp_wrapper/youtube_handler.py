@@ -12,18 +12,20 @@ logger = logging.getLogger(__name__)
 class YtdlpYoutubeDataError(YtdlpDataError):
     """Raised when yt-dlp data extraction fails for YouTube."""
 
-    def __init__(self, feed_name: str, entry_id: str, message: str):
-        self.feed_name = feed_name
-        self.entry_id = entry_id
+    def __init__(
+        self, message: str, feed_name: str | None = None, download_id: str | None = None
+    ):
         super().__init__(f"YouTube Parser: {message}")
+        self.feed_name = feed_name
+        self.download_id = download_id
 
 
 class YtdlpYoutubeVideoFilteredOutError(YtdlpDataError):
     """Raised when a video is filtered out by yt-dlp."""
 
-    def __init__(self, feed_name: str, entry_id: str):
+    def __init__(self, feed_name: str | None = None, download_id: str | None = None):
         self.feed_name = feed_name
-        self.entry_id = entry_id
+        self.download_id = download_id
         super().__init__("YouTube: Video filtered out by yt-dlp.")
 
 
@@ -36,9 +38,9 @@ class YoutubeHandler:
     def get_source_specific_ydl_options(self, purpose: FetchPurpose) -> dict[str, Any]:
         logger.debug(
             "No source specific ydl options for Youtube.",
-            extra={"purpose": str(purpose)},
+            extra={"purpose": purpose},
         )
-        # No filtering at discovery or metadata needed
+        # No filtering at discovery, metadata fetch, or media download needed from here
         return {}
 
     def _parse_single_video_entry(
@@ -52,9 +54,9 @@ class YoutubeHandler:
 
         if not video_id:
             raise YtdlpYoutubeDataError(
-                feed_name,
-                "<missing_id>",
-                f"Missing video ID. Data: {str(entry)[:200]}",
+                f"Missing video ID. Data: {str(entry)[:200]}.",
+                feed_name=feed_name,
+                download_id="<missing_id>",
             )
         logger.debug("Video ID found.", extra={"video_id": video_id})
 
@@ -77,9 +79,9 @@ class YoutubeHandler:
         title = entry.get("title")
         if not title or title in ("[Deleted video]", "[Private video]"):
             raise YtdlpYoutubeDataError(
-                feed_name,
-                str(video_id),
-                f"Video unavailable or deleted (title: '{title}')",
+                f"Video unavailable or deleted (title: '{title}').",
+                feed_name=feed_name,
+                download_id=str(video_id),
             )
         logger.debug("Title found.", extra={"video_id": video_id, "title": title})
 
@@ -89,7 +91,9 @@ class YoutubeHandler:
                 publish_source_field = "timestamp"
             except (TypeError, ValueError, OSError) as e:
                 raise YtdlpYoutubeDataError(
-                    feed_name, str(video_id), f"Invalid 'timestamp' {ts_val}"
+                    f"Invalid 'timestamp' {ts_val}.",
+                    feed_name=feed_name,
+                    download_id=str(video_id),
                 ) from e
         elif (upload_date_str := entry.get("upload_date")) is not None:
             try:
@@ -99,9 +103,9 @@ class YoutubeHandler:
                 publish_source_field = "upload_date"
             except (TypeError, ValueError) as e:
                 raise YtdlpYoutubeDataError(
-                    feed_name,
-                    str(video_id),
-                    f"Invalid 'upload_date' {upload_date_str}",
+                    f"Invalid 'upload_date' {upload_date_str}.",
+                    feed_name=feed_name,
+                    download_id=str(video_id),
                 ) from e
         elif (release_ts_val := entry.get("release_timestamp")) is not None:
             try:
@@ -109,13 +113,15 @@ class YoutubeHandler:
                 publish_source_field = "release_timestamp"
             except (TypeError, ValueError, OSError) as e:
                 raise YtdlpYoutubeDataError(
-                    feed_name,
-                    str(video_id),
-                    f"Invalid 'release_timestamp' {release_ts_val}",
+                    f"Invalid 'release_timestamp' {release_ts_val}.",
+                    feed_name=feed_name,
+                    download_id=str(video_id),
                 ) from e
         else:
             raise YtdlpYoutubeDataError(
-                feed_name, str(video_id), "Missing published datetime"
+                "Missing published datetime.",
+                feed_name=feed_name,
+                download_id=str(video_id),
             )
 
         if published_dt and publish_source_field:
@@ -154,15 +160,17 @@ class YoutubeHandler:
             extension = entry.get("ext")
             if not extension:
                 raise YtdlpYoutubeDataError(
-                    feed_name, str(video_id), "Missing extension"
+                    "Missing extension.",
+                    feed_name=feed_name,
+                    download_id=str(video_id),
                 )
             duration_val = entry.get("duration")
             # Explicitly check for bool first, as bool is a subclass of int
             if isinstance(duration_val, bool):
                 raise YtdlpYoutubeDataError(
-                    feed_name,
-                    str(video_id),
-                    f"Duration had unexpected type: '({type(duration_val)}){duration_val}'",
+                    f"Duration had unexpected type: '({type(duration_val)}){duration_val}'.",
+                    feed_name=feed_name,
+                    download_id=str(video_id),
                 )
             elif isinstance(duration_val, int | float):
                 duration_float = float(duration_val)
@@ -171,15 +179,15 @@ class YoutubeHandler:
                     duration_float = float(duration_val)
                 except ValueError as e:
                     raise YtdlpYoutubeDataError(
-                        feed_name,
-                        str(video_id),
-                        f"Unparsable duration '{duration_val}'",
+                        f"Unparsable duration '{duration_val}'.",
+                        feed_name=feed_name,
+                        download_id=str(video_id),
                     ) from e
             else:
                 raise YtdlpYoutubeDataError(
-                    feed_name,
-                    str(video_id),
-                    f"Duration had unexpected type: '({type(duration_val)}){duration_val}'",
+                    f"Duration had unexpected type: '({type(duration_val)}){duration_val}'.",
+                    feed_name=feed_name,
+                    download_id=str(video_id),
                 )
             logger.debug(
                 "Determined extension and duration for non-live entry.",
@@ -276,8 +284,8 @@ class YoutubeHandler:
                 not discovery_info.get("entries")
                 # it's a channel if all the entries underneath it are also playlists (representing tabs)
                 or all(
-                    isinstance(e, dict) and e.get("_type") == "playlist"
-                    for e in discovery_info.get("entries")
+                    isinstance(e, dict) and e.get("_type") == "playlist"  # type: ignore
+                    for e in discovery_info.get("entries")  # type: ignore
                 )
             )
         ):
@@ -288,17 +296,17 @@ class YoutubeHandler:
             )
             for entry_data in entries:
                 if isinstance(entry_data, dict):
-                    tab_url = entry_data.get("webpage_url")
-                    if tab_url and tab_url.rstrip("/").endswith("/videos"):
+                    tab_url = entry_data.get("webpage_url")  # type: ignore
+                    if tab_url and tab_url.rstrip("/").endswith("/videos"):  # type: ignore
                         logger.info(
                             "Found 'Videos' tab for channel.",
                             extra={
                                 "initial_url": initial_url,
-                                "videos_tab_url": tab_url,
+                                "videos_tab_url": tab_url,  # type: ignore
                                 "reference_type": ReferenceType.COLLECTION,
                             },
                         )
-                        return tab_url, ReferenceType.COLLECTION
+                        return tab_url, ReferenceType.COLLECTION  # type: ignore
 
             logger.warning(
                 "'Videos' tab not found for main channel page. Using resolved URL as collection.",
@@ -316,7 +324,8 @@ class YoutubeHandler:
             "webpage_url", ""
         ).rstrip("/").endswith("/playlists"):
             raise YtdlpYoutubeDataError(
-                f"Link is a playlists tab, not a specific playlist. Pick a specific list. URL: {initial_url}"
+                f"Link is a playlists tab, not a specific playlist. Pick a specific list. URL: {initial_url}",
+                download_id=initial_url,
             )
         # Handle playlists and any other channel tabs
         elif extractor == "youtube:tab":
@@ -362,7 +371,7 @@ class YoutubeHandler:
         downloads: list[Download] = []
         if ref_type == ReferenceType.SINGLE:
             logger.debug(
-                "Parsing as single item.",
+                "Parsing as single download.",
                 extra={"source_identifier": source_identifier},
             )
             try:
@@ -371,13 +380,13 @@ class YoutubeHandler:
                 )
             except YtdlpYoutubeDataError as e:
                 logger.error(
-                    "Failed to parse single video entry. Skipping.",
+                    "Failed to parse single download. Skipping.",
                     exc_info=e,
                     extra={"source_identifier": source_identifier},
                 )
             except YtdlpYoutubeVideoFilteredOutError as e:
                 logger.info(
-                    "Video filtered out by yt-dlp. Skipping.",
+                    "Download filtered out by yt-dlp. Skipping.",
                     exc_info=e,
                     extra={"source_identifier": source_identifier},
                 )
@@ -387,35 +396,36 @@ class YoutubeHandler:
                 "Parsing as collection.",
                 extra={
                     "source_identifier": source_identifier,
-                    "num_entries_found": len(entries)
+                    "num_entries_found": len(entries)  # type: ignore
                     if isinstance(entries, list)
                     else "N/A (not a list)",
                 },
             )
             if isinstance(entries, list):
-                for i, entry_data in enumerate(entries):
-                    item_id_for_log = entry_data.get("id", f"entry_{i}")
+                for i, entry_data in enumerate(entries):  # type: ignore
+                    entry_id_for_log = entry_data.get("id", f"entry_{i}")  # type: ignore
                     try:
                         parsed_download = self._parse_single_video_entry(
-                            entry_data, source_identifier
+                            entry_data,  # type: ignore
+                            source_identifier,
                         )
                         downloads.append(parsed_download)
                     except YtdlpYoutubeDataError as e:
                         logger.error(
-                            "Failed to parse video entry in collection. Skipping item.",
+                            "Failed to parse video entry in collection. Skipping download.",
                             exc_info=e,
                             extra={
                                 "source_identifier": source_identifier,
-                                "item_id_approx": item_id_for_log,  # entry_id in exception has actual
+                                "download_id_approx": entry_id_for_log,  # type: ignore
                             },
                         )
                     except YtdlpYoutubeVideoFilteredOutError as e:
                         logger.info(
-                            "Video in collection filtered out by yt-dlp. Skipping item.",
+                            "Video in collection filtered out by yt-dlp. Skipping download.",
                             exc_info=e,
                             extra={
                                 "source_identifier": source_identifier,
-                                "item_id_approx": item_id_for_log,  # entry_id in exception has actual
+                                "download_id_approx": entry_id_for_log,  # type: ignore
                             },
                         )
 
@@ -429,7 +439,7 @@ class YoutubeHandler:
                 )
         else:  # UNKNOWN_RESOLVED_URL or UNKNOWN_DIRECT_FETCH
             logger.warning(
-                "Parsing with unknown reference type, attempting as single item.",
+                "Parsing with unknown reference type, attempting as single download.",
                 extra={
                     "source_identifier": source_identifier,
                     "ref_type": ref_type,

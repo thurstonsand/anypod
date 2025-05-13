@@ -96,8 +96,8 @@ graph TD
 | **`FeedGen`**                       | Generates RSS XML feed files based on current download metadata.                                                 | Manages in-memory feed cache; uses `DatabaseManager` & `FileManager`. Called by `DataCoordinator`.   |
 | **DataCoordinator Module**          | Houses services that orchestrate data lifecycle operations using foundational components and `FeedGen`.         | Uses `DatabaseManager`, `FileManager`, `YtdlpWrapper`, `FeedGen`. Main class is `DataCoordinator`. |
 |   ↳ **`DataCoordinator`**           | High-level orchestration of enqueue, download, prune, and feed generation phases.                                | Delegates to `Enqueuer`, `Downloader`, `Pruner`, and calls `FeedGen`. Ensures sequence.            |
-|   ↳ **`Enqueuer`**                  | Fetches media metadata in two phases—(1) re-poll existing 'upcoming' entries to transition them to 'queued' when VOD; (2) fetch latest feed items and insert new 'queued' or 'upcoming' entries. | Uses `YtdlpWrapper` for metadata, `DatabaseManager` for DB writes.                                   |
-|   ↳ **`Downloader`**                | Processes queued items: triggers downloads via `YtdlpWrapper`, saves files, and updates database records.        | Uses `YtdlpWrapper`, `FileManager`, `DatabaseManager`. Handles download success/failure.             |
+|   ↳ **`Enqueuer`**                  | Fetches media metadata in two phases—(1) re-poll existing 'upcoming' entries to transition them to 'queued' when VOD; (2) fetch latest feed media and insert new 'queued' or 'upcoming' entries. | Uses `YtdlpWrapper` for metadata, `DatabaseManager` for DB writes.                                   |
+|   ↳ **`Downloader`**                | Processes queued downloads: triggers downloads via `YtdlpWrapper`, saves files, and updates database records.        | Uses `YtdlpWrapper`, `FileManager`, `DatabaseManager`. Handles download success/failure.             |
 |   ↳ **`Pruner`**                    | Implements retention policies by identifying and removing old/stale downloads and their files.                   | Uses `DatabaseManager` for selection, `FileManager` for deletion.                                    |
 | **HTTP (FastAPI)**                  | Serve static RSS & media and expose health/error JSON.                                                           | Delegates look‑ups to `DataCoordinator` or relevant services; zero business logic.                   |
 
@@ -163,18 +163,18 @@ sequenceDiagram
 
   S->>DC: process_feed(feed_config)
 
-  DC->>YTDLW: Discover New Media Items
+  DC->>YTDLW: Discover New Media
   YTDLW-->>DC: Raw Media Metadata
-  DC->>Store: Enqueue New Items (Metadata -> DB)
+  DC->>Store: Enqueue New Downloads (Metadata -> DB)
 
-  DC->>Store: Get Queued Items (DB)
+  DC->>Store: Get Queued Downloads (DB)
   Store-->>DC: Queued Downloadables
   DC->>YTDLW: Download Media Content (to temp file path)
   YTDLW-->>DC: Path to Downloaded Media File (in temp location)
   DC->>Store: Store Media & Update Status (Move file to permanent storage, Status -> DB)
 
   DC->>Store: Identify Old/Stale Media (DB + Policies)
-  Store-->>DC: Items to Prune
+  Store-->>DC: Downloads to Prune
   DC->>Store: Remove Stale Media (Filesystem + DB update)
 
   DC->>FG: Generate Feed XML
@@ -186,9 +186,9 @@ sequenceDiagram
 
 The `Scheduler` triggers a `DataCoordinator.process_feed(feed_config)` call. The `DataCoordinator` then orchestrates the conceptual flow of data through distinct phases, interacting with key components:
 
-1.  **Media Discovery & Enqueuing**: The `DataCoordinator` uses the `YtdlpWrapper` to discover available media items. New metadata is then passed to persistent storage, resulting in new items being enqueued in the `Database`.
+1.  **Media Discovery & Enqueuing**: The `DataCoordinator` uses the `YtdlpWrapper` to discover available media. New metadata is then passed to persistent storage, resulting in new downloads being enqueued in the `Database`.
 
-2.  **Media Downloading & Storage**: The `DataCoordinator` retrieves queued items from the `Database`. For each, it uses the `YtdlpWrapper` to download the actual media content. `YtdlpWrapper` saves the completed file to a temporary location on a designated data volume and returns the path to this file. The `DataCoordinator` (via its `Downloader` service and `FileManager`) then moves this file to its final permanent storage location on the `Filesystem`, and the item's status is updated to `downloaded` in the `Database`.
+2.  **Media Downloading & Storage**: The `DataCoordinator` retrieves queued downloads from the `Database`. For each, it uses the `YtdlpWrapper` to download the actual media content. `YtdlpWrapper` saves the completed file to a temporary location on a designated data volume and returns the path to this file. The `DataCoordinator` (via its `Downloader` service and `FileManager`) then moves this file to its final permanent storage location on the `Filesystem`, and the download's status is updated to `downloaded` in the `Database`.
 
 3.  **Pruning**: Based on configured retention policies, the `DataCoordinator` identifies old or stale media by querying the `Database`. The corresponding media files are removed from the `Filesystem`, and their database records are updated (e.g., to `archived`).
 
@@ -209,12 +209,12 @@ The `YtdlpWrapper` is designed to provide a consistent interface for fetching me
     *   *Future enhancement*: Allow configuration to target other tabs like "Live" or "Shorts".
 
 2.  **Playlist URLs** (e.g., `https://www.youtube.com/playlist?list=PL...`, or a specific channel tab URL like `https://www.youtube.com/@ChannelName/videos`):
-    *   These are treated as direct playlists. Metadata is fetched for the items within this playlist, respecting user-provided `yt_args`.
+    *   These are treated as direct playlists. Metadata is fetched for the downloads within this playlist, respecting user-provided `yt_args`.
 
 3.  **Single Video URLs** (e.g., `https://www.youtube.com/watch?v=VideoID`):
     *   Metadata for the single video is fetched.
 
-This resolution logic aims to simplify configuration for the end-user, as they can often provide a general channel URL and Anypod will attempt to find the most relevant video list. The `feed_name` provided in the configuration is used as the primary `source_identifier` for associating downloaded items with their feed, ensuring consistency.
+This resolution logic aims to simplify configuration for the end-user, as they can often provide a general channel URL and Anypod will attempt to find the most relevant video list. The `feed_name` provided in the configuration is used as the primary `source_identifier` for associating downloads with their feed, ensuring consistency.
 
 ---
 
@@ -240,12 +240,12 @@ This resolution logic aims to simplify configuration for the end-user, as they c
 *   **Structured Logging:** add relevant context to the `extra` dictionary instead of in the message directly.
 *   **Context is Key:**
     *   All log messages include a `context_id` for tracing.
-    *   Always include `feed_id` and relevant item id (e.g., `source_url` or `download.id`) in the `extra` dictionary for logs related to feed/item processing.
+    *   Always include `feed_id` and relevant download id (e.g., `source_url` or `download.id`) in the `extra` dictionary for logs related to feed/media processing.
 *   **Clear Log Levels:** Adhere to standard log level semantics:
     *   `DEBUG`: For developer tracing, verbose.
     *   `INFO`: For operator awareness of normal system operations and milestones.
     *   `WARNING`: For recoverable issues or potential problems that don't stop current operations but may need attention (e.g., a transient download failure that will be retried).
-    *   `ERROR`: For specific, non-recoverable failures of an operation that require attention (e.g., metadata parsing failure for an item). The system should log the error and continue with other tasks.
+    *   `ERROR`: For specific, non-recoverable failures of an operation that require attention (e.g., metadata parsing failure for a download). The system should log the error and continue with other tasks.
     *   `CRITICAL`: For severe runtime errors threatening application stability or causing shutdown.
 *   **Actionable Messages:** Log messages (especially `WARNING`/`ERROR`) should provide clear, concise information about the event. The `extra` dict carries detailed context.
 *   **Error Context Propagation:** Custom exceptions should carry diagnostic data. A utility function (`exc_extract`) is used to gather this data from the exception chain and include it in the `extra` field of error logs.
@@ -293,9 +293,9 @@ This resolution logic aims to simplify configuration for the end-user, as they c
   *
     | Policy                                   | What it does                                                                                                                                | Strengths                                                    | Watch‑outs                                                                                                 |
     |------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------|------------------------------------------------------------------------------------------------------------|
-    | **Min‑floor + global LRU** *(recommended)* | Add `min_last:` per feed (default = 1). Delete oldest items across *all* feeds until the cap is met **but never go below `min_last` for any feed**. | Simple mental model; prevents "rare" shows from disappearing. | If every feed is at its floor and cap is still breached, system enters "degraded‑full" state and refuses new downloads. |
-    | **Time‑window floor**                    | Keep at least *N* days of history per feed (`min_days:`). Evict globally‑oldest items that fall outside each feed's window.                  | Users often reason in "last 90 days" rather than episode counts. | Variable episode sizes make space usage less predictable.                                                  |
-    | **Weighted eviction**                    | Allow optional `weight:` per feed; compute *effective LRU‑age* = `real_age / weight`. Evict by that metric.                                 | Lets you bias important feeds without hard floors.            | Harder to predict which item will vanish next; extra YAML tuning.                                          |
+    | **Min‑floor + global LRU** *(recommended)* | Add `min_last:` per feed (default = 1). Delete oldest downloads across *all* feeds until the cap is met **but never go below `min_last` for any feed**. | Simple mental model; prevents "rare" shows from disappearing. | If every feed is at its floor and cap is still breached, system enters "degraded‑full" state and refuses new downloads. |
+    | **Time‑window floor**                    | Keep at least *N* days of history per feed (`min_days:`). Evict globally‑oldest downloads that fall outside each feed's window.                  | Users often reason in "last 90 days" rather than episode counts. | Variable episode sizes make space usage less predictable.                                                  |
+    | **Weighted eviction**                    | Allow optional `weight:` per feed; compute *effective LRU‑age* = `real_age / weight`. Evict by that metric.                                 | Lets you bias important feeds without hard floors.            | Harder to predict which download will vanish next; extra YAML tuning.                                          |
     | **Quota borrow/return**                  | Each feed gets `quota = max_total/N`. Feeds may borrow unused space from others up to `borrow_limit%`. GC first reclaims borrowed space, then local quota, then uses global LRU. | Self‑balancing; high‑volume feeds thrive while small ones keep minimum. | Most complex to implement; needs periodic re‑balancing pass.                                               |
     | **Archive tier**                         | Move oldest media to a cheap "cold" volume (e.g., S3/Glacier) instead of deleting, while pruning DB rows locally.                           | No data loss; total cap becomes *hot‑tier* only.             | Requires new storage backend; retrieval latency for old episodes.                                          |
 * integrate with sponsorblock -- either skip blocked sections, or add chapters to download

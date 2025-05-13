@@ -22,6 +22,7 @@ class FetchPurpose(Enum):
 
     DISCOVERY = "discovery"
     METADATA_FETCH = "metadata_fetch"
+    MEDIA_DOWNLOAD = "media_download"
 
     def __str__(self) -> str:
         return self.value
@@ -41,13 +42,15 @@ class SourceHandlerBase(Protocol):
         Returns source-specific options to be merged into yt-dlp opts.
         Example: {'match_filter': '!is_live'} for YouTube.
         """
+        ...
 
     def determine_fetch_strategy(
         self, initial_url: str, ydl_caller_for_discovery: YdlApiCaller
     ) -> tuple[str | None, ReferenceType]:
         """
-        Classifies the initial URL and determines the final URL to fetch items from.
+        Classifies the initial URL and determines the final URL to fetch downloads from.
         """
+        ...
 
     def parse_metadata_to_downloads(
         self,
@@ -58,3 +61,4 @@ class SourceHandlerBase(Protocol):
         """
         Parses the full metadata dictionary from yt-dlp into a list of Download objects.
         """
+        ...

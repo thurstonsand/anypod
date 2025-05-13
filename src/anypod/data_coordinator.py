@@ -67,7 +67,7 @@ class DataCoordinator:
             DownloadStatus.DOWNLOADED
         ):
             logger.info(
-                "Existing downloaded item found, preparing to replace.",
+                "Existing download found, preparing to replace.",
                 extra={
                     "feed_id": download_to_add.feed,
                     "download_id": download_to_add.id,
@@ -111,7 +111,7 @@ class DataCoordinator:
                 "Download record upserted successfully.",
                 extra={
                     "feed_id": download_to_add.feed,
-                    "item_id": download_to_add.id,
+                    "download_id": download_to_add.id,
                     "status": download_to_add.status,
                 },
             )
@@ -152,7 +152,7 @@ class DataCoordinator:
             "Attempting to update download status.",
             extra={
                 "feed_id": feed,
-                "item_id": id,
+                "download_id": id,
                 "new_status": status,
                 "last_error": last_error,
             },
@@ -189,7 +189,7 @@ class DataCoordinator:
                 "Status changing from DOWNLOADED, attempting to delete associated file.",
                 extra={
                     "feed_id": feed,
-                    "item_id": id,
+                    "download_id": id,
                     "file_name": file_name_to_delete,
                     "new_status": status,
                 },
@@ -210,7 +210,7 @@ class DataCoordinator:
                     "Successfully deleted file due to status change.",
                     extra={
                         "feed_id": feed,
-                        "item_id": id,
+                        "download_id": id,
                         "file_name": file_name_to_delete,
                     },
                 )
@@ -219,7 +219,7 @@ class DataCoordinator:
                     "File not found on disk during status change from DOWNLOADED.",
                     extra={
                         "feed_id": feed,
-                        "item_id": id,
+                        "download_id": id,
                         "file_name": file_name_to_delete,
                     },
                 )
@@ -233,7 +233,7 @@ class DataCoordinator:
                     "Download status updated successfully in database.",
                     extra={
                         "feed_id": feed,
-                        "item_id": id,
+                        "download_id": id,
                         "new_status": status,
                         "previous_status": current_status_str,
                     },
@@ -243,7 +243,7 @@ class DataCoordinator:
                     "Download status update in database reported no rows changed.",
                     extra={
                         "feed_id": feed,
-                        "item_id": id,
+                        "download_id": id,
                         "target_status": status,
                         "last_error": last_error,
                     },
@@ -255,7 +255,7 @@ class DataCoordinator:
                 download_id=id,
             ) from e
         # If db_manager.update_status itself returns False after all the above checks,
-        # it implies the item disappeared between the get and update, which is highly unlikely
+        # it implies the download disappeared between the get and update, which is highly unlikely
         # but we return its result.
         return updated_in_db
 
@@ -274,13 +274,15 @@ class DataCoordinator:
             DatabaseOperationError: If the database lookup fails.
         """
         logger.debug(
-            "Attempting to get download by ID.", extra={"feed_id": feed, "item_id": id}
+            "Attempting to get download by ID.",
+            extra={"feed_id": feed, "download_id": id},
         )
         try:
             row = self.db_manager.get_download_by_id(feed, id)
             if row is None:
                 logger.debug(
-                    "Download not found by ID.", extra={"feed_id": feed, "item_id": id}
+                    "Download not found by ID.",
+                    extra={"feed_id": feed, "download_id": id},
                 )
                 return None
             return Download.from_row(row)
@@ -332,7 +334,7 @@ class DataCoordinator:
             return None
         if download.status != DownloadStatus.DOWNLOADED:
             logger.info(
-                "Stream requested for item not in DOWNLOADED status.",
+                "Stream requested for download not in DOWNLOADED status.",
                 extra={**log_params, "status": download.status},
             )
             return None
@@ -419,10 +421,10 @@ class DataCoordinator:
                     downloads.append(Download.from_row(row))
                 except ValueError as e:
                     logger.error(
-                        "Data integrity issue: Failed to parse download record from database during batch fetch; skipping this item.",
+                        "Data integrity issue: Failed to parse download record from database during batch fetch; skipping this download.",
                         extra={
                             "feed_id": row["feed"],
-                            "item_id": row["id"],
+                            "download_id": row["id"],
                             "status_filter": status_to_filter,
                         },
                         exc_info=e,
@@ -455,8 +457,8 @@ class DataCoordinator:
         Malformed records identified as candidates will be logged and skipped for pruning.
 
         Deletion Logic:
-        1. Identifies downloads to prune based on `keep_last` (number of latest items to keep).
-        2. Identifies downloads to prune based on `prune_before_date` (items published before this date).
+        1. Identifies downloads to prune based on `keep_last` (number of latest downloads to keep).
+        2. Identifies downloads to prune based on `prune_before_date` (downloads published before this date).
         3. The union of these two sets of downloads is considered for pruning.
         4. For each candidate download:
            a. If its status is DOWNLOADED, its associated file is deleted from the filesystem.
@@ -464,9 +466,9 @@ class DataCoordinator:
 
         Args:
             feed: The name of the feed to prune.
-            keep_last: If not None, keeps only this many of the most recent DOWNLOADED items.
-                       Older DOWNLOADED items are candidates for pruning.
-            prune_before_date: If not None, DOWNLOADED items published before this date are
+            keep_last: If not None, keeps only this many of the most recent DOWNLOADED downloads.
+                       Older DOWNLOADED downloads are candidates for pruning.
+            prune_before_date: If not None, DOWNLOADED downloads published before this date are
                                candidates for pruning.
 
         Returns:
@@ -474,7 +476,7 @@ class DataCoordinator:
 
         Raises:
             DatabaseOperationError: If a database operation fails during candidate fetching or deletion.
-            FileOperationError: If a file deletion operation fails critically for a specific item.
+            FileOperationError: If a file deletion operation fails critically for a specific download.
         """
         log_params = {
             "feed_id": feed,
@@ -511,7 +513,7 @@ class DataCoordinator:
                     candidate_downloads_to_prune.add(Download.from_row(row))
                 except ValueError as e:
                     logger.error(
-                        "Data integrity issue: Failed to parse download record from keep_last candidates; skipping this item for pruning.",
+                        "Data integrity issue: Failed to parse download record from keep_last candidates; skipping this download for pruning.",
                         extra={
                             "feed_id": feed,
                             "download_id": row["id"]  # noqa: SIM401 row is a Row, not dict
@@ -539,7 +541,7 @@ class DataCoordinator:
                     candidate_downloads_to_prune.add(Download.from_row(row))
                 except ValueError as e:
                     logger.error(
-                        "Data integrity issue: Failed to parse download record from prune_before_date candidates; skipping this item for pruning.",
+                        "Data integrity issue: Failed to parse download record from prune_before_date candidates; skipping this download for pruning.",
                         extra={
                             "feed_id": feed,
                             "download_id": row["id"]  # noqa: SIM401 row is a Row, not dict
@@ -550,7 +552,7 @@ class DataCoordinator:
                     )
 
         if not candidate_downloads_to_prune:
-            logger.info("No items found to prune for feed.", extra=log_params)
+            logger.info("No downloads found to prune for feed.", extra=log_params)
             return [], []
 
         logger.info(
@@ -562,7 +564,7 @@ class DataCoordinator:
         successfully_processed_ids_for_db_deletion: list[str] = []
 
         for download_to_prune in candidate_downloads_to_prune:
-            item_prune_log_params = {
+            download_prune_log_params = {
                 "feed_id": feed,
                 "download_id": download_to_prune.id,
                 "download_status": download_to_prune.status,
@@ -570,10 +572,10 @@ class DataCoordinator:
 
             if download_to_prune.status == DownloadStatus.DOWNLOADED:
                 file_name_to_delete = f"{download_to_prune.id}.{download_to_prune.ext}"
-                item_prune_log_params["file_name"] = file_name_to_delete
+                download_prune_log_params["file_name"] = file_name_to_delete
                 logger.debug(
-                    "Attempting to delete file for downloaded item being pruned.",
-                    extra=item_prune_log_params,
+                    "Attempting to delete file for downloaded download being pruned.",
+                    extra=download_prune_log_params,
                 )
                 try:
                     deleted_on_fs = self.file_manager.delete_download_file(
@@ -582,13 +584,13 @@ class DataCoordinator:
                     if deleted_on_fs:
                         logger.info(
                             "File deleted successfully during pruning.",
-                            extra=item_prune_log_params,
+                            extra=download_prune_log_params,
                         )
                         ids_of_files_deleted.append(download_to_prune.id)
                     else:
                         logger.warning(
-                            "File for downloaded item not found on disk during pruning. DB record will still be archived.",
-                            extra=item_prune_log_params,
+                            "File for download not found on disk during pruning. DB record will still be archived.",
+                            extra=download_prune_log_params,
                         )
                 except FileOperationError as e_fs:
                     raise FileOperationError(
@@ -600,7 +602,7 @@ class DataCoordinator:
 
             successfully_processed_ids_for_db_deletion.append(download_to_prune.id)
 
-        # 4. Update status to ARCHIVED for successfully processed items
+        # 4. Update status to ARCHIVED for successfully processed downloads
         if successfully_processed_ids_for_db_deletion:
             logger.debug(
                 f"Attempting to archive {len(successfully_processed_ids_for_db_deletion)} download records.",

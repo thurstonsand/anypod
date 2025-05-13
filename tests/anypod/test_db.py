@@ -120,7 +120,7 @@ def test_download_equality_and_hash(sample_download: Download):
         download3_v2_diff_id,
         download4_feed2_v1_diff_feed,
     }
-    # Should contain 3 unique items based on (feed, id)
+    # Should contain 3 unique downloads based on (feed, id)
     assert len(download_set) == 3, (
         "Set should contain 3 unique downloads based on (feed,id)"
     )
@@ -466,7 +466,7 @@ def test_get_downloads_to_prune_by_keep_last(db_manager: DatabaseManager):
         duration=1,
     )
 
-    # Item for another feed, should be ignored
+    # download for another feed, should be ignored
     dl_f2v1_dl = Download(
         feed="prune_feed2",
         id="f2v1_dl",
@@ -505,14 +505,14 @@ def test_get_downloads_to_prune_by_keep_last(db_manager: DatabaseManager):
     )
     assert sorted(["f1v1_dl_oldest", "f1v2_err_mid1"]) == pruned_ids_keep2
 
-    # Keep 5: All non-ARCHIVED and non-UPCOMING items are kept
+    # Keep 5: All non-ARCHIVED and non-UPCOMING downloads are kept
     # (f1v4_dl_newest, f1v3_q_mid2, f1v2_err_mid1, f1v1_dl_oldest)
-    # There are 4 such items. f1v5_arch and f1v6_upcoming_older are ignored.
+    # There are 4 such downloads. f1v5_arch and f1v6_upcoming_older are ignored.
     prune_keep5 = db_manager.get_downloads_to_prune_by_keep_last(
         feed=feed1_name, keep_last=5
     )
     assert len(prune_keep5) == 0, (
-        "Should identify 0 if keep_last >= total non-ARCHIVED/non-UPCOMING items for feed"
+        "Should identify 0 if keep_last >= total non-ARCHIVED/non-UPCOMING downloads for feed"
     )
 
     prune_keep0 = db_manager.get_downloads_to_prune_by_keep_last(
@@ -578,7 +578,7 @@ def test_get_downloads_to_prune_by_since(db_manager: DatabaseManager):
         duration=1,
     )
 
-    # Item for another feed
+    # download for another feed
     dl_other_v1_older_dl = Download(
         feed="other_feed",
         id="other_v1_older_dl",
@@ -601,7 +601,7 @@ def test_get_downloads_to_prune_by_since(db_manager: DatabaseManager):
     for dl in downloads_to_add:
         db_manager.upsert_download(dl)
 
-    # Prune items older than 'base_time - 3 days' for feed_name
+    # Prune downloads older than 'base_time - 3 days' for feed_name
     # Candidates for pruning (ignoring ARCHIVED and UPCOMING):
     # - ps_v1_older_dl (day -5) -> YES
     # - ps_v2_mid_err (day -2) -> NO (not older than day -3)
@@ -620,7 +620,7 @@ def test_get_downloads_to_prune_by_since(db_manager: DatabaseManager):
         "UPCOMING download should not be pruned by since_cutoff_1"
     )
 
-    # Prune items older than 'base_time + 2 days' for feed_name
+    # Prune downloads older than 'base_time + 2 days' for feed_name
     # Candidates for pruning (ignoring ARCHIVED and UPCOMING):
     # - ps_v1_older_dl (day -5) -> YES
     # - ps_v2_mid_err (day -2) -> YES
@@ -682,7 +682,7 @@ def test_get_downloads_by_status(db_manager: DatabaseManager):
         ext="mp4",
         duration=1,
     )
-    # Other status items for noise and testing other statuses
+    # Other status downloads for noise and testing other statuses
     dl_f1q1 = Download(
         feed=feed1,
         id="f1q1",
@@ -794,7 +794,7 @@ def test_get_downloads_by_status(db_manager: DatabaseManager):
     assert len(upcoming_limit1_offset1) == 1
     assert upcoming_limit1_offset1[0]["id"] == "f1upcoming"
 
-    # --- Test no items for a status/feed combination ---
+    # --- Test no downloads for a status/feed combination ---
     no_feed2_queued = db_manager.get_downloads_by_status(
         status_to_filter=DownloadStatus.QUEUED, feed=feed2
     )
@@ -805,13 +805,13 @@ def test_get_downloads_by_status(db_manager: DatabaseManager):
     )
     assert len(no_skipped_any_feed) == 0
 
-    # --- Test offset greater than number of items ---
+    # --- Test offset greater than number of downloads ---
     offset_too_high_error = db_manager.get_downloads_by_status(
         status_to_filter=DownloadStatus.ERROR, limit=100, offset=5
     )
     assert len(offset_too_high_error) == 0
 
-    # --- Test no items at all (after updating existing items to a different status) ---
+    # --- Test no downloads at all (after updating existing downloads to a different status) ---
     db_manager.update_status(feed=feed1, id="f1e1_old", status=DownloadStatus.QUEUED)
     db_manager.update_status(
         feed=feed1, id="f1e2_new", status=DownloadStatus.DOWNLOADED
@@ -821,17 +821,17 @@ def test_get_downloads_by_status(db_manager: DatabaseManager):
         status_to_filter=DownloadStatus.ERROR
     )
     assert len(all_errors_cleared) == 0, (
-        "Should return empty list when all ERROR items are cleared"
+        "Should return empty list when all ERROR downloads are cleared"
     )
 
-    # Test original upcoming items are also gone if we query for them after updates
+    # Test original upcoming downloads are also gone if we query for them after updates
     db_manager.update_status(feed=feed1, id="f1upcoming", status=DownloadStatus.QUEUED)
     db_manager.update_status(feed=feed2, id="f2upcoming", status=DownloadStatus.QUEUED)
     all_upcoming_cleared = db_manager.get_downloads_by_status(
         status_to_filter=DownloadStatus.UPCOMING
     )
     assert len(all_upcoming_cleared) == 0, (
-        "Should return empty list when all UPCOMING items are cleared"
+        "Should return empty list when all UPCOMING downloads are cleared"
     )
 
 

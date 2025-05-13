@@ -132,7 +132,7 @@ def pruning_dl_data() -> list[dict[str, Any]]:
     return [
         {
             "feed": "prune_feed",
-            "id": "item1_dl_oldest",
+            "id": "download1_dl_oldest",
             "title": "Oldest DL",
             "published": (base_time - datetime.timedelta(days=30)).isoformat(),
             "status": str(DownloadStatus.DOWNLOADED),
@@ -145,7 +145,7 @@ def pruning_dl_data() -> list[dict[str, Any]]:
         },
         {
             "feed": "prune_feed",
-            "id": "item2_err_old",
+            "id": "download2_err_old",
             "title": "Old Error",
             "published": (base_time - datetime.timedelta(days=20)).isoformat(),
             "status": str(DownloadStatus.ERROR),
@@ -158,7 +158,7 @@ def pruning_dl_data() -> list[dict[str, Any]]:
         },
         {
             "feed": "prune_feed",
-            "id": "item3_q_mid",
+            "id": "download3_q_mid",
             "title": "Mid Queued",
             "published": (base_time - datetime.timedelta(days=10)).isoformat(),
             "status": str(DownloadStatus.QUEUED),
@@ -171,7 +171,7 @@ def pruning_dl_data() -> list[dict[str, Any]]:
         },
         {
             "feed": "prune_feed",
-            "id": "item4_dl_keep",
+            "id": "download4_dl_keep",
             "title": "To Keep DL",
             "published": (base_time - datetime.timedelta(days=5)).isoformat(),
             "status": str(DownloadStatus.DOWNLOADED),
@@ -184,7 +184,7 @@ def pruning_dl_data() -> list[dict[str, Any]]:
         },
         {
             "feed": "prune_feed",
-            "id": "item5_arch_new",
+            "id": "download5_arch_new",
             "title": "New Archived",
             "published": (base_time - datetime.timedelta(days=1)).isoformat(),
             "status": str(DownloadStatus.ARCHIVED),
@@ -197,7 +197,7 @@ def pruning_dl_data() -> list[dict[str, Any]]:
         },
         {
             "feed": "other_feed",
-            "id": "item6_other_dl",
+            "id": "download6_other_dl",
             "title": "Other Feed DL",
             "published": (base_time - datetime.timedelta(days=15)).isoformat(),
             "status": str(DownloadStatus.DOWNLOADED),
@@ -687,7 +687,7 @@ def test_stream_download_success(
     mock_file_manager: MagicMock,
     sample_download_obj: Download,  # Use this to mock the result of get_download_by_id
 ):
-    """Test successfully getting a stream for a DOWNLOADED item."""
+    """Test successfully getting a stream for a DOWNLOADED download."""
     feed = sample_download_obj.feed
     download_id = sample_download_obj.id
     sample_download_obj.status = DownloadStatus.DOWNLOADED  # Ensure status is correct
@@ -893,10 +893,10 @@ def test_get_downloads_by_status_queued_pagination(
 
 
 @pytest.mark.unit
-def test_get_downloads_by_status_no_items_found(
+def test_get_downloads_by_status_no_downloads_found(
     coordinator: DataCoordinator, mock_db_manager: MagicMock
 ):
-    """Test behavior when no items are found in the database for a given status."""
+    """Test behavior when no downloads are found in the database for a given status."""
     status_to_fetch = DownloadStatus.SKIPPED
     mock_db_manager.get_downloads_by_status.return_value = []
 
@@ -997,7 +997,7 @@ def test_prune_no_rules_no_candidates(
 def test_prune_no_candidates_found_by_rules(
     coordinator: DataCoordinator, mock_db_manager: MagicMock
 ):
-    """Test pruning when rules are given but no DB items match them."""
+    """Test pruning when rules are given but no DB downloads match them."""
     feed_name = "prune_feed_no_matches"
     keep_rule = 1
     date_rule = datetime.datetime.now(datetime.UTC)
@@ -1036,17 +1036,17 @@ def test_prune_keep_last_archives_and_deletes_files(
 ):
     """Test pruning with 'keep_last', archives records, deletes files for DOWNLOADED."""
     feed_name = "prune_feed"
-    # keep_last=1 means item4_dl_keep and item5_arch_new (newest 2 by published date) are kept based on offset logic.
-    # Candidates for pruning from keep_last: item1, item2, item3 (oldest 3 for the feed)
-    # item1 (DL), item2 (ERR), item3 (Q)
-    # We expect item1's file to be deleted, all 3 to be archived.
+    # keep_last=1 means download4_dl_keep and download5_arch_new (newest 2 by published date) are kept based on offset logic.
+    # Candidates for pruning from keep_last: download1, download2, download3 (oldest 3 for the feed)
+    # download1 (DL), download2 (ERR), download3 (Q)
+    # We expect download1's file to be deleted, all 3 to be archived.
 
     # Simulate DB returning these three as candidates for pruning by keep_last
     candidate_rows = [
         pruning_dl_data[0],
         pruning_dl_data[1],
         pruning_dl_data[2],
-    ]  # item1, item2, item3
+    ]  # download1, download2, download3
     mock_db_manager.get_downloads_to_prune_by_keep_last.return_value = candidate_rows
     mock_db_manager.get_downloads_to_prune_by_since.return_value = []  # No date rule
 
@@ -1062,24 +1062,26 @@ def test_prune_keep_last_archives_and_deletes_files(
     )
 
     assert len(archived_ids) == 3, (
-        "Expected 3 items to be archived based on keep_last rule"
+        "Expected 3 downloads to be archived based on keep_last rule"
     )
     assert len(deleted_file_ids) == 1, (
-        "Expected 1 file to be deleted (only item1 was DOWNLOADED)"
+        "Expected 1 file to be deleted (only download1 was DOWNLOADED)"
     )
 
     mock_db_manager.get_downloads_to_prune_by_keep_last.assert_called_once_with(
         feed_name, 2
     )
 
-    # Check file deletion calls (only for item1)
-    expected_file_name_item1 = f"{candidate_rows[0]['id']}.{candidate_rows[0]['ext']}"
+    # Check file deletion calls (only for download1)
+    expected_file_name_download1 = (
+        f"{candidate_rows[0]['id']}.{candidate_rows[0]['ext']}"
+    )
     mock_file_manager.delete_download_file.assert_any_call(
-        feed_name, expected_file_name_item1
+        feed_name, expected_file_name_download1
     )
     assert mock_file_manager.delete_download_file.call_count == 1
 
-    # Check update_status calls (for item1, item2, item3)
+    # Check update_status calls (for download1, download2, download3)
     for i in range(3):
         mock_db_manager.update_status.assert_any_call(
             feed_name, candidate_rows[i]["id"], DownloadStatus.ARCHIVED
@@ -1094,13 +1096,13 @@ def test_prune_by_date_archives_non_downloaded(
     mock_file_manager: MagicMock,
     pruning_dl_data: list[dict[str, Any]],
 ):
-    """Test pruning with 'prune_before_date', archives non-DOWNLOADED items correctly."""
+    """Test pruning with 'prune_before_date', archives non-DOWNLOADED downloads correctly."""
     feed_name = "prune_feed"
     cutoff_date = datetime.datetime.fromisoformat(
         pruning_dl_data[2]["published"]
-    )  # Date of item3
+    )  # Date of download3
 
-    candidate_rows = [pruning_dl_data[0], pruning_dl_data[1]]  # item1, item2
+    candidate_rows = [pruning_dl_data[0], pruning_dl_data[1]]  # download1, download2
     mock_db_manager.get_downloads_to_prune_by_keep_last.return_value = []
     mock_db_manager.get_downloads_to_prune_by_since.return_value = candidate_rows
 
@@ -1110,17 +1112,19 @@ def test_prune_by_date_archives_non_downloaded(
     archived_ids, deleted_file_ids = coordinator.prune_old_downloads(
         feed=feed_name, keep_last=None, prune_before_date=cutoff_date
     )
-    assert len(archived_ids) == 2, "Expected 2 items to be archived by date rule"
+    assert len(archived_ids) == 2, "Expected 2 downloads to be archived by date rule"
     assert len(deleted_file_ids) == 1, (
-        "Expected 1 file to be deleted (item1 was DOWNLOADED)"
+        "Expected 1 file to be deleted (download1 was DOWNLOADED)"
     )
 
     mock_db_manager.get_downloads_to_prune_by_since.assert_called_once_with(
         feed_name, cutoff_date
     )
-    expected_file_name_item1 = f"{candidate_rows[0]['id']}.{candidate_rows[0]['ext']}"
+    expected_file_name_download1 = (
+        f"{candidate_rows[0]['id']}.{candidate_rows[0]['ext']}"
+    )
     mock_file_manager.delete_download_file.assert_called_once_with(
-        feed_name, expected_file_name_item1
+        feed_name, expected_file_name_download1
     )
     mock_db_manager.update_status.assert_any_call(
         feed_name, candidate_rows[0]["id"], DownloadStatus.ARCHIVED
@@ -1138,17 +1142,20 @@ def test_prune_union_of_rules(
     mock_file_manager: MagicMock,
     pruning_dl_data: list[dict[str, Any]],
 ):
-    """Test pruning considers unique items from both keep_last and date rules."""
+    """Test pruning considers unique downloads from both keep_last and date rules."""
     feed_name = "prune_feed"
-    keep_last_candidates = [pruning_dl_data[0], pruning_dl_data[1]]  # item1, item2
+    keep_last_candidates = [
+        pruning_dl_data[0],
+        pruning_dl_data[1],
+    ]  # download1, download2
     date_candidates = [
         pruning_dl_data[0],
         pruning_dl_data[1],
         pruning_dl_data[2],
-    ]  # item1, item2, item3
+    ]  # download1, download2, download3
     cutoff_date = datetime.datetime.fromisoformat(
         pruning_dl_data[3]["published"]
-    )  # Date of item4
+    )  # Date of download4
 
     mock_db_manager.get_downloads_to_prune_by_keep_last.return_value = (
         keep_last_candidates
@@ -1161,14 +1168,18 @@ def test_prune_union_of_rules(
         feed=feed_name, keep_last=3, prune_before_date=cutoff_date
     )
 
-    assert len(archived_ids) == 3, "Expected 3 items to be archived from union of rules"
+    assert len(archived_ids) == 3, (
+        "Expected 3 downloads to be archived from union of rules"
+    )
     assert len(deleted_file_ids) == 1, (
-        "Expected 1 file to be deleted (item1 was DOWNLOADED)"
+        "Expected 1 file to be deleted (download1 was DOWNLOADED)"
     )
 
-    expected_file_name_item1 = f"{pruning_dl_data[0]['id']}.{pruning_dl_data[0]['ext']}"
+    expected_file_name_download1 = (
+        f"{pruning_dl_data[0]['id']}.{pruning_dl_data[0]['ext']}"
+    )
     mock_file_manager.delete_download_file.assert_called_once_with(
-        feed_name, expected_file_name_item1
+        feed_name, expected_file_name_download1
     )
 
     all_candidate_ids = {
@@ -1215,9 +1226,11 @@ def test_prune_file_delete_file_error_halts(
 
     assert exc_info.type is FileOperationError
     assert exc_info.value.__cause__ is original_file_error
-    expected_file_name_item1 = f"{candidate_rows[0]['id']}.{candidate_rows[0]['ext']}"
+    expected_file_name_download1 = (
+        f"{candidate_rows[0]['id']}.{candidate_rows[0]['ext']}"
+    )
     mock_file_manager.delete_download_file.assert_called_once_with(
-        feed_name, expected_file_name_item1
+        feed_name, expected_file_name_download1
     )
     mock_db_manager.update_status.assert_not_called()
 
@@ -1247,7 +1260,7 @@ def test_prune_row_conversion_error_skips_candidate(
 ):
     """Test ValueError during row conversion skips bad candidate, continues others."""
     feed_name = "prune_feed"
-    valid_candidate_row = pruning_dl_data[0]  # item1 (DL)
+    valid_candidate_row = pruning_dl_data[0]  # download1
     malformed_row = pruning_dl_data[1].copy()
     malformed_row["published"] = (
         "not-a-date"  # Will cause ValueError in _row_to_download
@@ -1269,20 +1282,20 @@ def test_prune_row_conversion_error_skips_candidate(
 
 
 @pytest.mark.unit
-def test_prune_db_update_status_error_skips_item(
+def test_prune_db_update_status_error_skips_download(
     coordinator: DataCoordinator,
     mock_db_manager: MagicMock,
     mock_file_manager: MagicMock,
     pruning_dl_data: list[dict[str, Any]],
 ):
-    """Test sqlite3.Error during update_status for one item skips it, continues others."""
+    """Test sqlite3.Error during update_status for one download skips it, continues others."""
     feed_name = "prune_feed"
-    item1_row = pruning_dl_data[0]
-    item3_row = pruning_dl_data[2]
+    download1_row = pruning_dl_data[0]
+    download3_row = pruning_dl_data[2]
 
     mock_db_manager.get_downloads_to_prune_by_keep_last.return_value = [
-        item1_row,
-        item3_row,
+        download1_row,
+        download3_row,
     ]
     mock_db_manager.get_downloads_to_prune_by_since.return_value = []
 
@@ -1297,13 +1310,13 @@ def test_prune_db_update_status_error_skips_item(
         last_error: str | None = None,
         **kwargs: Any,
     ):
-        if id == item1_row["id"]:
+        if id == download1_row["id"]:
             raise original_update_error
         return True
 
     mock_db_manager.update_status.side_effect = update_status_side_effect
 
-    # Expecting error during the update_status call for item1
+    # Expecting error during the update_status call for download1
     with pytest.raises(DatabaseOperationError) as exc_info:
         coordinator.prune_old_downloads(
             feed=feed_name, keep_last=3, prune_before_date=None
@@ -1314,19 +1327,19 @@ def test_prune_db_update_status_error_skips_item(
 
 
 @pytest.mark.unit
-def test_prune_db_update_status_returns_false_skips_item(
+def test_prune_db_update_status_returns_false_skips_download(
     coordinator: DataCoordinator,
     mock_db_manager: MagicMock,
     mock_file_manager: MagicMock,
     pruning_dl_data: list[dict[str, Any]],
 ):
-    """Test if update_status returns False for one item, it's skipped, continues others."""
+    """Test if update_status returns False for one download, it's skipped, continues others."""
     feed_name = "prune_feed"
-    item1_row = pruning_dl_data[0]
-    item3_row = pruning_dl_data[2]
+    download1_row = pruning_dl_data[0]
+    download3_row = pruning_dl_data[2]
     mock_db_manager.get_downloads_to_prune_by_keep_last.return_value = [
-        item1_row,
-        item3_row,
+        download1_row,
+        download3_row,
     ]
     mock_db_manager.get_downloads_to_prune_by_since.return_value = []
     mock_file_manager.delete_download_file.return_value = True
@@ -1338,18 +1351,18 @@ def test_prune_db_update_status_returns_false_skips_item(
         last_error: str | None = None,
         **kwargs: Any,
     ):
-        return id != item1_row["id"]
+        return id != download1_row["id"]
 
     mock_db_manager.update_status.side_effect = update_status_side_effect
 
     archived_ids, deleted_file_ids = coordinator.prune_old_downloads(
         feed=feed_name, keep_last=3, prune_before_date=None
     )
-    assert archived_ids == [item3_row["id"]], (
-        "Only item3 should be successfully archived"
+    assert archived_ids == [download3_row["id"]], (
+        "Only download3 should be successfully archived"
     )
-    assert deleted_file_ids == [item1_row["id"]], (
-        "Only item1's file should have been deleted"
+    assert deleted_file_ids == [download1_row["id"]], (
+        "Only download1's file should have been deleted"
     )
 
     assert mock_db_manager.update_status.call_count == 2

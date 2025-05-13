@@ -184,7 +184,7 @@ def test_parse_single_video_entry_error_missing_id(
         youtube_handler._parse_single_video_entry(valid_video_entry, FEED_NAME)  # type: ignore
     assert "Missing video ID" in str(e.value)
     assert e.value.feed_name == FEED_NAME
-    assert e.value.entry_id == "<missing_id>"
+    assert e.value.download_id == "<missing_id>"
 
 
 @pytest.mark.unit
@@ -197,7 +197,7 @@ def test_parse_single_video_entry_error_video_filtered_out(
     with pytest.raises(YtdlpYoutubeVideoFilteredOutError) as e:
         youtube_handler._parse_single_video_entry(valid_video_entry, FEED_NAME)  # type: ignore
     assert e.value.feed_name == FEED_NAME
-    assert e.value.entry_id == valid_video_entry["id"]
+    assert e.value.download_id == valid_video_entry["id"]
 
 
 @pytest.mark.unit
@@ -215,7 +215,7 @@ def test_parse_single_video_entry_error_invalid_title(
     with pytest.raises(YtdlpYoutubeDataError) as e:
         youtube_handler._parse_single_video_entry(valid_video_entry, FEED_NAME)  # type: ignore
     assert "Video unavailable or deleted" in str(e.value)
-    assert e.value.entry_id == valid_video_entry["id"]
+    assert e.value.download_id == valid_video_entry["id"]
 
 
 @pytest.mark.unit
@@ -259,7 +259,7 @@ def test_parse_single_video_entry_error_invalid_date_formats_for_dts(
     with pytest.raises(YtdlpYoutubeDataError) as e:
         youtube_handler._parse_single_video_entry(valid_video_entry, FEED_NAME)  # type: ignore
     assert expected_msg_part in str(e.value)
-    assert e.value.entry_id == valid_video_entry["id"]
+    assert e.value.download_id == valid_video_entry["id"]
 
 
 @pytest.mark.unit
@@ -447,7 +447,7 @@ def test_determine_fetch_strategy_playlists_tab_error(youtube_handler: YoutubeHa
             # Other fields might vary
         }
     )
-    with pytest.raises(TypeError):
+    with pytest.raises(YtdlpYoutubeDataError):
         youtube_handler.determine_fetch_strategy(initial_url, mock_ydl_caller)
 
 
@@ -665,7 +665,7 @@ def test_parse_metadata_to_downloads_unknown_type_with_playlist_shape_data(
 ):
     """
     Tests that UNKNOWN ref type with playlist-like data (has 'entries')
-    results in an attempt to parse as a single item, which fails,
+    results in an attempt to parse as a single download, which fails,
     returning an empty list and logging appropriate messages.
     """
     feed_id = "feed_unknown_playlist_shape"
