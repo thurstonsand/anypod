@@ -1,6 +1,5 @@
 import datetime
 import logging
-import sqlite3
 
 from ..db import DatabaseManager, Download, DownloadStatus
 from ..exceptions import (
@@ -74,59 +73,33 @@ class Pruner:
                 "Identifying prune candidates by keep_last rule.", extra=log_params
             )
             try:
-                rows_for_keep_last = (
+                downloads_for_keep_last = (
                     self.db_manager.get_downloads_to_prune_by_keep_last(
                         feed_name, keep_last
                     )
                 )
-            except sqlite3.Error as e:
+            except (DatabaseOperationError, ValueError) as e:
+                # TODO raise a domain specific exception instead
                 raise DatabaseOperationError(
                     message="Database error identifying downloads to prune by keep_last rule.",
                     feed_id=feed_name,
                     download_id=f"keep_last:{keep_last}",
                 ) from e
-
-            for row in rows_for_keep_last:
-                try:
-                    candidate_downloads_to_prune.add(Download.from_row(row))
-                except ValueError as e:
-                    logger.error(
-                        "Data integrity issue: Failed to parse download record from keep_last candidates; skipping this download for pruning.",
-                        extra={
-                            "feed_id": feed_name,
-                            "download_id": row["id"]  # noqa: SIM401 row is actually a Row, not dict
-                            if "id" in row
-                            else "unknown_id_keep_last",
-                        },
-                        exc_info=e,
-                    )
+            candidate_downloads_to_prune.update(downloads_for_keep_last)
 
         if prune_before_date is not None:
             logger.debug("Identifying prune candidates by date rule.", extra=log_params)
             try:
-                rows_for_since = self.db_manager.get_downloads_to_prune_by_since(
+                downloads_for_since = self.db_manager.get_downloads_to_prune_by_since(
                     feed_name, prune_before_date
                 )
-            except sqlite3.Error as e:
+            except (DatabaseOperationError, ValueError) as e:
                 raise DatabaseOperationError(
                     message="Database error identifying downloads to prune by date rule.",
                     feed_id=feed_name,
                     download_id=f"prune_before_date:{prune_before_date.isoformat()}",
                 ) from e
-            for row in rows_for_since:
-                try:
-                    candidate_downloads_to_prune.add(Download.from_row(row))
-                except ValueError as e:
-                    logger.error(
-                        "Data integrity issue: Failed to parse download record from prune_before_date candidates; skipping this download for pruning.",
-                        extra={
-                            "feed_id": feed_name,
-                            "download_id": row["id"]  # noqa: SIM401 row is actually a Row, not dict
-                            if "id" in row
-                            else "unknown_id_prune_date",
-                        },
-                        exc_info=e,
-                    )
+            candidate_downloads_to_prune.update(downloads_for_since)
 
         if not candidate_downloads_to_prune:
             logger.info("No downloads found to prune for feed.", extra=log_params)
@@ -189,7 +162,7 @@ class Pruner:
                 updated_in_db = self.db_manager.update_status(
                     feed_name, id_to_archive, DownloadStatus.ARCHIVED
                 )
-            except sqlite3.Error as e:
+            except DatabaseOperationError as e:
                 raise DatabaseOperationError(
                     message="Database error updating status to ARCHIVED during pruning.",
                     feed_id=feed_name,

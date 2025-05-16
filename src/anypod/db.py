@@ -41,7 +41,7 @@ class Download:
 
     @classmethod
     def from_row(cls, row: sqlite3.Row) -> "Download":
-        """Converts a sqlite3.Row to a Download object."""
+        """Converts a sqlite3.Row to a Download."""
         published_str = row["published"]
         try:
             published_dt = datetime.fromisoformat(published_str)
@@ -199,8 +199,9 @@ class DatabaseManager:
             retries = excluded.retries,
             last_error = excluded.last_error
         """
-        with self._get_connection() as conn:
-            logger.debug("Executing upsert SQL for download.", extra=log_params)
+        try:
+            with self._get_connection() as conn:
+                logger.debug("Executing upsert SQL for download.", extra=log_params)
             conn.execute(
                 sql,
                 (
@@ -217,6 +218,12 @@ class DatabaseManager:
                     download.last_error,
                 ),
             )
+        except sqlite3.Error as e:
+            raise DatabaseOperationError(
+                message="Failed to upsert download",
+                feed_id=download.feed,
+                download_id=download.id,
+            ) from e
         logger.debug("Upsert download record execution complete.", extra=log_params)
 
     def update_status(
@@ -264,16 +271,23 @@ class DatabaseManager:
         sql = f"UPDATE downloads SET {', '.join(updates)} WHERE feed = ? AND id = ?"
         params.extend([feed, id])
 
-        with self._get_connection() as conn:
-            logger.debug("Executing status update SQL.", extra=log_params)
-            cursor = conn.execute(sql, tuple(params))
-            return cursor.rowcount > 0
+        try:
+            with self._get_connection() as conn:
+                logger.debug("Executing status update SQL.", extra=log_params)
+                cursor = conn.execute(sql, tuple(params))
+                return cursor.rowcount > 0
+        except sqlite3.Error as e:
+            raise DatabaseOperationError(
+                message="Failed to update download status",
+                feed_id=feed,
+                download_id=id,
+            ) from e
 
     def get_downloads_to_prune_by_keep_last(
         self, feed: str, keep_last: int
-    ) -> list[sqlite3.Row]:
+    ) -> list[Download]:
         """Identifies downloads to prune based on 'keep_last'.
-        Returns a list of rows.
+        Returns a list of Downloads.
         Excludes downloads with status ARCHIVED or UPCOMING.
         """
         log_params = {"feed_id": feed, "keep_last": keep_last}
@@ -307,16 +321,22 @@ class DatabaseManager:
                     extra=log_params,
                 )
                 cursor.execute(sql, params)
-                return cursor.fetchall()
+                rows = cursor.fetchall()
+        except sqlite3.Error as e:
+            raise DatabaseOperationError(
+                message=f"Failed to get downloads to prune by keep_last for feed '{feed}'",
+                feed_id=feed,
+            ) from e
         finally:
             if cursor:
                 cursor.close()
+        return [Download.from_row(row) for row in rows]
 
     def get_downloads_to_prune_by_since(
         self, feed: str, since: datetime
-    ) -> list[sqlite3.Row]:
+    ) -> list[Download]:
         """Identifies downloads published before the 'since' datetime (UTC).
-        Returns a list of rows.
+        Returns a list of Downloads.
         Excludes downloads with status ARCHIVED or UPCOMING.
         'since' MUST be a timezone-aware datetime object in UTC.
         """
@@ -348,14 +368,20 @@ class DatabaseManager:
                     extra=log_params,
                 )
                 cursor.execute(sql, params)
-                return cursor.fetchall()
+                rows = cursor.fetchall()
+        except sqlite3.Error as e:
+            raise DatabaseOperationError(
+                message=f"Failed to get downloads to prune by since date for feed '{feed}'",
+                feed_id=feed,
+            ) from e
         finally:
             if cursor:
                 cursor.close()
+        return [Download.from_row(row) for row in rows]
 
-    def get_download_by_id(self, feed: str, id: str) -> sqlite3.Row | None:
+    def get_download_by_id(self, feed: str, id: str) -> Download | None:
         """Retrieves a specific download by feed and id.
-        Returns a database row or None if not found.
+        Returns a Download or None if not found.
         """
         log_params = {"feed_id": feed, "download_id": id}
         logger.debug("Attempting to get download by ID.", extra=log_params)
@@ -366,10 +392,17 @@ class DatabaseManager:
                 cursor = conn.cursor()
                 logger.debug("Executing SQL to get download by ID.", extra=log_params)
                 cursor.execute(sql, (feed, id))
-                return cursor.fetchone()
+                row = cursor.fetchone()
+        except sqlite3.Error as e:
+            raise DatabaseOperationError(
+                message=f"Failed to get download by ID for feed '{feed}', id '{id}'",
+                feed_id=feed,
+                download_id=id,
+            ) from e
         finally:
             if cursor:
                 cursor.close()
+        return Download.from_row(row) if row else None
 
     def get_downloads_by_status(
         self,
@@ -377,9 +410,9 @@ class DatabaseManager:
         feed: str | None = None,
         limit: int = 100,
         offset: int = 0,
-    ) -> list[sqlite3.Row]:
+    ) -> list[Download]:
         """Retrieves downloads with a specific status, newest first.
-        Can be filtered by a specific feed. Returns a list of database rows.
+        Can be filtered by a specific feed. Returns a list of Downloads.
         """
         log_params = {
             "status": str(status_to_filter),
@@ -416,10 +449,16 @@ class DatabaseManager:
                     "Executing SQL to get downloads by status.", extra=log_params
                 )
                 cursor.execute(sql, tuple(params))
-                return cursor.fetchall()
+                rows = cursor.fetchall()
+        except sqlite3.Error as e:
+            raise DatabaseOperationError(
+                message="Failed to get downloads by status",
+                feed_id=feed,
+            ) from e
         finally:
             if cursor:
                 cursor.close()
+        return [Download.from_row(row) for row in rows]
 
     def bump_retries(
         self,
@@ -431,7 +470,7 @@ class DatabaseManager:
         """Increments the retry count for a download and potentially updates its status to ERROR.
 
         Args:
-            feed_name: The name of the feed.
+            feed_id: The name of the feed.
             download_id: The ID of the download.
             error_message: The error message to record.
             max_allowed_errors: The maximum number of retries allowed before transitioning to ERROR status.
@@ -447,7 +486,7 @@ class DatabaseManager:
             DatabaseOperationError: If any other database operation fails.
         """
         log_params = {
-            "feed_name": feed_id,
+            "feed_id": feed_id,
             "download_id": download_id,
             "error_message": error_message,
             "max_allowed_errors": max_allowed_errors,
@@ -464,6 +503,7 @@ class DatabaseManager:
                     (feed_id, download_id),
                 )
                 row = cursor.fetchone()
+                cursor.close()
 
                 if row is None:
                     raise DownloadNotFoundError(
@@ -473,15 +513,7 @@ class DatabaseManager:
                     )
 
                 current_retries = row["retries"]
-                current_status_str = row["status"]
-                try:
-                    current_status = DownloadStatus(current_status_str)
-                except ValueError as e:
-                    raise DatabaseOperationError(
-                        message=f"Invalid status '{current_status_str}' in DB.",
-                        feed_id=feed_id,
-                        download_id=download_id,
-                    ) from e
+                current_status = DownloadStatus(row["status"])
 
                 # Calculate new state
                 new_retries = current_retries + 1

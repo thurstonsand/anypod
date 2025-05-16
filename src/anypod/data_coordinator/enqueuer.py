@@ -1,7 +1,6 @@
 from datetime import datetime
 import logging
 import shlex
-import sqlite3
 
 from ..config import FeedConfig
 from ..db import DatabaseManager, Download, DownloadStatus
@@ -44,42 +43,26 @@ class Enqueuer:
         logger.debug("Handling existing upcoming downloads.", extra=log_params)
 
         try:
-            # get_downloads_by_status returns list[sqlite3.Row]
-            upcoming_db_rows: list[sqlite3.Row] = (
-                self.db_manager.get_downloads_by_status(
-                    status_to_filter=DownloadStatus.UPCOMING, feed=feed_name
-                )
+            upcoming_db_downloads = self.db_manager.get_downloads_by_status(
+                status_to_filter=DownloadStatus.UPCOMING, feed=feed_name
             )
-        except DatabaseOperationError as e:
+        except (DatabaseOperationError, ValueError) as e:
             raise EnqueueError(
-                "Database error fetching upcoming downloads.",
+                "Could not fetch upcoming downloads.",
                 feed_name=feed_name,
                 feed_url=feed_config.url,
             ) from e
 
-        if not upcoming_db_rows:
+        if not upcoming_db_downloads:
             logger.debug("No existing upcoming downloads to process.", extra=log_params)
             return 0
 
         logger.info(
-            f"Found {len(upcoming_db_rows)} existing upcoming downloads to re-check.",
+            f"Found {len(upcoming_db_downloads)} existing upcoming downloads to re-check.",
             extra=log_params,
         )
 
-        for db_download_row in upcoming_db_rows:
-            try:
-                db_download = Download.from_row(db_download_row)
-            except ValueError as e:
-                failed_id = (
-                    db_download_row["id"] if "id" in db_download_row else "unknown_id"  # noqa: SIM401 row is a sqlite3.Row, not a dict
-                )
-                logger.warning(
-                    f"Skipping unparsable upcoming download from DB (ID: {failed_id}).",
-                    extra=log_params,
-                    exc_info=e,
-                )
-                continue
-
+        for db_download in upcoming_db_downloads:
             download_log_params = {
                 **log_params,
                 "download_id": db_download.id,
@@ -246,7 +229,7 @@ class Enqueuer:
                         id=db_download.id,
                         status=DownloadStatus.QUEUED,
                     )
-                except sqlite3.Error as e:
+                except DatabaseOperationError as e:
                     logger.error(
                         "Database error updating status to QUEUED for an upcoming download.",
                         extra=download_log_params,
@@ -350,7 +333,7 @@ class Enqueuer:
             }
             logger.debug("Processing fetched download.", extra=download_log_params)
             try:
-                existing_db_dl_row = self.db_manager.get_download_by_id(
+                existing_db_download = self.db_manager.get_download_by_id(
                     feed_name, fetched_dl.id
                 )
             except DatabaseOperationError as e:
@@ -361,14 +344,14 @@ class Enqueuer:
                 )
                 continue
 
-            if existing_db_dl_row is None:
+            if existing_db_download is None:
                 logger.info(
                     "New download found. Inserting.",
                     extra=download_log_params,
                 )
                 try:
                     self.db_manager.upsert_download(fetched_dl)
-                except sqlite3.Error as e:
+                except DatabaseOperationError as e:
                     logger.error(
                         "Database error inserting new download.",
                         extra=download_log_params,
@@ -378,78 +361,68 @@ class Enqueuer:
                     if fetched_dl.status == DownloadStatus.QUEUED:
                         queued_count += 1
             else:
-                try:
-                    existing_download = Download.from_row(existing_db_dl_row)
-                except ValueError as e:
-                    logger.warning(
-                        f"Existing DB download (ID: {fetched_dl.id}) has invalid data. Skipping update logic.",
-                        extra=download_log_params,
-                        exc_info=e,
-                    )
-                else:
-                    download_log_params["existing_db_status"] = existing_download.status
-
-                    match (existing_download.status, fetched_dl.status):
-                        case (DownloadStatus.UPCOMING, DownloadStatus.QUEUED):
-                            logger.info(
-                                "Existing UPCOMING download has transitioned to VOD (QUEUED). Updating status.",
-                                extra=download_log_params,
+                download_log_params["existing_db_status"] = existing_db_download.status
+                match (existing_db_download.status, fetched_dl.status):
+                    case (DownloadStatus.UPCOMING, DownloadStatus.QUEUED):
+                        logger.info(
+                            "Existing UPCOMING download has transitioned to VOD (QUEUED). Updating status.",
+                            extra=download_log_params,
+                        )
+                        try:
+                            updated = self.db_manager.update_status(
+                                feed=feed_name,
+                                id=fetched_dl.id,
+                                status=DownloadStatus.QUEUED,
                             )
-                            try:
-                                updated = self.db_manager.update_status(
-                                    feed=feed_name,
-                                    id=fetched_dl.id,
-                                    status=DownloadStatus.QUEUED,
-                                )
-                            except sqlite3.Error as e:
-                                logger.error(
-                                    "Database error updating status to QUEUED.",
-                                    extra=download_log_params,
-                                    exc_info=e,
-                                )
+                        except DatabaseOperationError as e:
+                            logger.error(
+                                "Failed to update status to QUEUED.",
+                                extra=download_log_params,
+                                exc_info=e,
+                            )
+                        else:
+                            if updated:
+                                queued_count += 1
                             else:
-                                if updated:
-                                    queued_count += 1
-                                else:
-                                    logger.warning(
-                                        "Failed to update status to QUEUED (DB row not changed).",
-                                        extra=download_log_params,
-                                    )
-                        case (DownloadStatus.UPCOMING, DownloadStatus.UPCOMING) | (
-                            DownloadStatus.QUEUED,
-                            DownloadStatus.QUEUED,
-                        ):
-                            logger.debug(
-                                f"Existing download status '{existing_download.status}' matches fetched '{fetched_dl.status}'. No action needed.",
-                                extra=download_log_params,
-                            )
-                        case (DownloadStatus.DOWNLOADED, _):
-                            logger.debug(
-                                f"Existing download already {DownloadStatus.DOWNLOADED}. Skipping.",
-                                extra=download_log_params,
-                            )
-                        case _:
-                            logger.info(
-                                f"Existing download status '{existing_download.status}' differs from fetched '{fetched_dl.status}'. Upserting for consistency.",
-                                extra=download_log_params,
-                            )
-                            try:
-                                self.db_manager.upsert_download(fetched_dl)
-                                if (
-                                    existing_download.status != DownloadStatus.QUEUED
-                                    and fetched_dl.status == DownloadStatus.QUEUED
-                                ):
-                                    queued_count += 1
-                                    logger.debug(
-                                        "Upsert resulted in QUEUED status, incremented count.",
-                                        extra=download_log_params,
-                                    )
-                            except sqlite3.Error as e:
-                                logger.error(
-                                    "Database error upserting download for status consistency.",
+                                logger.warning(
+                                    "Failed to update status to QUEUED (DB row not changed).",
                                     extra=download_log_params,
-                                    exc_info=e,
                                 )
+                    case (DownloadStatus.UPCOMING, DownloadStatus.UPCOMING) | (
+                        DownloadStatus.QUEUED,
+                        DownloadStatus.QUEUED,
+                    ):
+                        logger.debug(
+                            f"Existing download status '{existing_db_download.status}' matches fetched '{fetched_dl.status}'. No action needed.",
+                            extra=download_log_params,
+                        )
+                    case (DownloadStatus.DOWNLOADED, _):
+                        logger.debug(
+                            f"Existing download already {DownloadStatus.DOWNLOADED}. Skipping.",
+                            extra=download_log_params,
+                        )
+                    case _:
+                        logger.info(
+                            f"Existing download status '{existing_db_download.status}' differs from fetched '{fetched_dl.status}'. Upserting for consistency.",
+                            extra=download_log_params,
+                        )
+                        try:
+                            self.db_manager.upsert_download(fetched_dl)
+                            if (
+                                existing_db_download.status != DownloadStatus.QUEUED
+                                and fetched_dl.status == DownloadStatus.QUEUED
+                            ):
+                                queued_count += 1
+                                logger.debug(
+                                    "Upsert resulted in QUEUED status, incremented count.",
+                                    extra=download_log_params,
+                                )
+                        except DatabaseOperationError as e:
+                            logger.error(
+                                "Failed to upsert download for status consistency.",
+                                extra=download_log_params,
+                                exc_info=e,
+                            )
 
         logger.debug(
             f"Identified {queued_count} downloads as newly QUEUED.",

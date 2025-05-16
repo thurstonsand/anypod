@@ -1,6 +1,5 @@
 from datetime import datetime
 import logging
-import sqlite3
 from typing import IO
 
 from anypod.config import FeedConfig
@@ -118,18 +117,19 @@ class DataCoordinator:
             extra={"feed_id": download_to_add.feed, "download_id": download_to_add.id},
         )
         try:
-            existing_db_row = self.db_manager.get_download_by_id(
+            existing_db_download = self.db_manager.get_download_by_id(
                 download_to_add.feed, download_to_add.id
             )
-        except sqlite3.Error as e:
+        except (DatabaseOperationError, ValueError) as e:
             raise DatabaseOperationError(
                 message="Error checking for existing download.",
                 feed_id=download_to_add.feed,
                 download_id=download_to_add.id,
             ) from e
 
-        if existing_db_row and existing_db_row["status"] == str(
-            DownloadStatus.DOWNLOADED
+        if (
+            existing_db_download
+            and existing_db_download.status == DownloadStatus.DOWNLOADED
         ):
             logger.info(
                 "Existing download found, preparing to replace.",
@@ -139,7 +139,7 @@ class DataCoordinator:
                 },
             )
             # Download exists, so we need to replace it.
-            file_name_to_delete = f"{download_to_add.id}.{existing_db_row['ext']}"
+            file_name_to_delete = f"{download_to_add.id}.{existing_db_download.ext}"
             try:
                 deleted = self.file_manager.delete_download_file(
                     feed=download_to_add.feed, file_name=file_name_to_delete
@@ -180,7 +180,7 @@ class DataCoordinator:
                     "status": download_to_add.status,
                 },
             )
-        except sqlite3.Error as e:
+        except DatabaseOperationError as e:
             raise DatabaseOperationError(
                 message="Error adding or updating download record.",
                 feed_id=download_to_add.feed,
@@ -224,7 +224,7 @@ class DataCoordinator:
         )
         try:
             current_download_row = self.db_manager.get_download_by_id(feed, id)
-        except sqlite3.Error as e:
+        except (DatabaseOperationError, ValueError) as e:
             raise DatabaseOperationError(
                 message=f"Error retrieving download for status update to {status}.",
                 feed_id=feed,
@@ -238,18 +238,12 @@ class DataCoordinator:
                 download_id=id,
             )
 
-        current_status_str = current_download_row["status"]
-        current_status_enum = (
-            DownloadStatus(current_status_str) if current_status_str else None
-        )
-
         # If status is changing FROM DOWNLOADED to something else, delete the file.
         if (
-            current_status_enum == DownloadStatus.DOWNLOADED
+            current_download_row.status == DownloadStatus.DOWNLOADED
             and status != DownloadStatus.DOWNLOADED
         ):
-            current_ext = current_download_row["ext"]
-            file_name_to_delete = f"{id}.{current_ext}"
+            file_name_to_delete = f"{id}.{current_download_row.ext}"
             logger.info(
                 "Status changing from DOWNLOADED, attempting to delete associated file.",
                 extra={
@@ -300,7 +294,7 @@ class DataCoordinator:
                         "feed_id": feed,
                         "download_id": id,
                         "new_status": status,
-                        "previous_status": current_status_str,
+                        "previous_status": current_download_row.status,
                     },
                 )
             else:
@@ -313,7 +307,7 @@ class DataCoordinator:
                         "last_error": last_error,
                     },
                 )
-        except sqlite3.Error as e:
+        except DatabaseOperationError as e:
             raise DatabaseOperationError(
                 message=f"Error updating status to {status} for download.",
                 feed_id=feed,
@@ -341,25 +335,19 @@ class DataCoordinator:
             extra={"feed_id": feed, "download_id": id},
         )
         try:
-            row = self.db_manager.get_download_by_id(feed, id)
-            if row is None:
-                logger.debug(
-                    "Download not found by ID.",
-                    extra={"feed_id": feed, "download_id": id},
-                )
-                return None
-            return Download.from_row(row)
-        except sqlite3.Error as e:
+            download = self.db_manager.get_download_by_id(feed, id)
+        except (DatabaseOperationError, ValueError) as e:
             raise DatabaseOperationError(
                 message="Database lookup failed for download.",
                 feed_id=feed,
                 download_id=id,
             ) from e
-        except ValueError as e:
-            # Catch potential ValueError from Download.from_row if data is malformed
-            raise DataCoordinatorError(
-                f"Data integrity issue for download {feed}/{id}: {e}"
-            ) from e
+        if download is None:
+            logger.debug(
+                "Download not found by ID.",
+                extra={"feed_id": feed, "download_id": id},
+            )
+        return download
 
     def stream_download_by_id(self, feed: str, id: str) -> IO[bytes] | None:
         """
@@ -482,38 +470,25 @@ class DataCoordinator:
 
         downloads: list[Download] = []
         try:
-            rows = self.db_manager.get_downloads_by_status(
+            downloads = self.db_manager.get_downloads_by_status(
                 status_to_filter=status_to_filter,
                 feed=feed,
                 limit=limit,
                 offset=offset,
             )
-            for row in rows:
-                try:
-                    downloads.append(Download.from_row(row))
-                except ValueError as e:
-                    logger.error(
-                        "Data integrity issue: Failed to parse download record from database during batch fetch; skipping this download.",
-                        extra={
-                            "feed_id": row["feed"],
-                            "download_id": row["id"],
-                            "status_filter": status_to_filter,
-                        },
-                        exc_info=e,
-                    )
-            logger.debug(
-                f"Retrieved {len(downloads)} downloads by status.",
-                extra={
-                    "status_filter": str(status_to_filter),
-                    "limit": limit,
-                    "offset": offset,
-                    "feed_id": feed or "<all>",
-                },
-            )
-        except sqlite3.Error as e:
+        except (DatabaseOperationError, ValueError) as e:
             raise DatabaseOperationError(
                 message=f"Database query failed for downloads by status {status_to_filter}.",
                 feed_id=feed,
                 download_id=f"limit:{limit}_offset:{offset}",
             ) from e
+        logger.debug(
+            f"Retrieved {len(downloads)} downloads by status.",
+            extra={
+                "status_filter": str(status_to_filter),
+                "limit": limit,
+                "offset": offset,
+                "feed_id": feed or "<all>",
+            },
+        )
         return downloads

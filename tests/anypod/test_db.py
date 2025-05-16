@@ -191,20 +191,18 @@ def test_add_and_get_download(
     )
 
     assert retrieved_download is not None, "Download should be found in DB"
-    assert retrieved_download["feed"] == sample_download_queued.feed
-    assert retrieved_download["id"] == sample_download_queued.id
-    assert retrieved_download["title"] == sample_download_queued.title
-    assert (
-        retrieved_download["published"] == sample_download_queued.published.isoformat()
-    )
-    assert retrieved_download["ext"] == sample_download_queued.ext
-    assert retrieved_download["duration"] == sample_download_queued.duration
-    assert retrieved_download["thumbnail"] == sample_download_queued.thumbnail
-    assert retrieved_download["status"] == str(sample_download_queued.status)
-    assert retrieved_download["retries"] == 0, (
+    assert retrieved_download.feed == sample_download_queued.feed
+    assert retrieved_download.id == sample_download_queued.id
+    assert retrieved_download.title == sample_download_queued.title
+    assert retrieved_download.published == sample_download_queued.published
+    assert retrieved_download.ext == sample_download_queued.ext
+    assert retrieved_download.duration == sample_download_queued.duration
+    assert retrieved_download.thumbnail == sample_download_queued.thumbnail
+    assert retrieved_download.status == sample_download_queued.status
+    assert retrieved_download.retries == 0, (
         "Retries should be 0 for a new download from fixture"
     )
-    assert retrieved_download["last_error"] is None, (
+    assert retrieved_download.last_error is None, (
         "Last_error should be None for a new download from fixture"
     )
 
@@ -242,15 +240,15 @@ def test_upsert_download_updates_existing(
     )
 
     assert retrieved_download is not None, "Download should still be found"
-    assert retrieved_download["title"] == modified_download.title
-    assert retrieved_download["source_url"] == modified_download.source_url
-    assert retrieved_download["published"] == modified_download.published.isoformat()
-    assert retrieved_download["ext"] == modified_download.ext
-    assert retrieved_download["duration"] == modified_download.duration
-    assert retrieved_download["thumbnail"] == modified_download.thumbnail
-    assert retrieved_download["status"] == str(modified_download.status)
-    assert retrieved_download["retries"] == modified_download.retries
-    assert retrieved_download["last_error"] == modified_download.last_error
+    assert retrieved_download.title == modified_download.title
+    assert retrieved_download.source_url == modified_download.source_url
+    assert retrieved_download.published == modified_download.published
+    assert retrieved_download.ext == modified_download.ext
+    assert retrieved_download.duration == modified_download.duration
+    assert retrieved_download.thumbnail == modified_download.thumbnail
+    assert retrieved_download.status == modified_download.status
+    assert retrieved_download.retries == modified_download.retries
+    assert retrieved_download.last_error == modified_download.last_error
 
 
 @pytest.mark.unit
@@ -268,9 +266,9 @@ def test_update_status(db_manager: DatabaseManager, sample_download_queued: Down
         sample_download_queued.feed, sample_download_queued.id
     )
     assert download is not None
-    assert download["status"] == str(DownloadStatus.DOWNLOADED)
-    assert download["retries"] == 0, "Retries should be reset on DOWNLOADED"
-    assert download["last_error"] is None, "Error should be cleared on DOWNLOADED"
+    assert download.status == DownloadStatus.DOWNLOADED
+    assert download.retries == 0, "Retries should be reset on DOWNLOADED"
+    assert download.last_error is None, "Error should be cleared on DOWNLOADED"
 
     # Test: DOWNLOADED -> ERROR
     error_message = "Download failed: Network issue"
@@ -284,11 +282,9 @@ def test_update_status(db_manager: DatabaseManager, sample_download_queued: Down
         sample_download_queued.feed, sample_download_queued.id
     )
     assert download_error is not None
-    assert download_error["status"] == str(DownloadStatus.ERROR)
-    assert download_error["last_error"] == error_message
-    assert download_error["retries"] == 1, (
-        "Retries should be incremented on first ERROR"
-    )
+    assert download_error.status == DownloadStatus.ERROR
+    assert download_error.last_error == error_message
+    assert download_error.retries == 1, "Retries should be incremented on first ERROR"
 
     # Test: ERROR -> ERROR (increment retries)
     error_message_2 = "Download failed again"
@@ -302,10 +298,8 @@ def test_update_status(db_manager: DatabaseManager, sample_download_queued: Down
         sample_download_queued.feed, sample_download_queued.id
     )
     assert download_error_2 is not None
-    assert download_error_2["retries"] == 2, (
-        "Retries should increment on subsequent ERROR"
-    )
-    assert download_error_2["last_error"] == error_message_2
+    assert download_error_2.retries == 2, "Retries should increment on subsequent ERROR"
+    assert download_error_2.last_error == error_message_2
 
     # Test: ERROR -> UPCOMING (retries and error persist)
     db_manager.update_status(
@@ -317,11 +311,11 @@ def test_update_status(db_manager: DatabaseManager, sample_download_queued: Down
         sample_download_queued.feed, sample_download_queued.id
     )
     assert download_upcoming_from_error is not None
-    assert download_upcoming_from_error["status"] == str(DownloadStatus.UPCOMING)
-    assert download_upcoming_from_error["last_error"] == error_message_2, (
+    assert download_upcoming_from_error.status == DownloadStatus.UPCOMING
+    assert download_upcoming_from_error.last_error == error_message_2, (
         "Error message should persist when transitioning to UPCOMING from ERROR"
     )
-    assert download_upcoming_from_error["retries"] == 2, (
+    assert download_upcoming_from_error.retries == 2, (
         "Retries should persist when transitioning to UPCOMING from ERROR"
     )
 
@@ -335,11 +329,11 @@ def test_update_status(db_manager: DatabaseManager, sample_download_queued: Down
         sample_download_queued.feed, sample_download_queued.id
     )
     assert download_requeued_from_upcoming is not None
-    assert download_requeued_from_upcoming["status"] == str(DownloadStatus.QUEUED)
-    assert download_requeued_from_upcoming["last_error"] == error_message_2, (
+    assert download_requeued_from_upcoming.status == DownloadStatus.QUEUED
+    assert download_requeued_from_upcoming.last_error == error_message_2, (
         "Error message should persist when transitioning to QUEUED from UPCOMING"
     )
-    assert download_requeued_from_upcoming["retries"] == 2, (
+    assert download_requeued_from_upcoming.retries == 2, (
         "Retries should persist when transitioning to QUEUED from UPCOMING"
     )
 
@@ -353,11 +347,11 @@ def test_update_status(db_manager: DatabaseManager, sample_download_queued: Down
         sample_download_queued.feed, sample_download_queued.id
     )
     assert download_skipped is not None
-    assert download_skipped["status"] == str(DownloadStatus.SKIPPED)
-    assert download_skipped["last_error"] == error_message_2, (
+    assert download_skipped.status == DownloadStatus.SKIPPED
+    assert download_skipped.last_error == error_message_2, (
         "Error message should persist on SKIPPED"
     )
-    assert download_skipped["retries"] == 2, "Retries should persist on SKIPPED"
+    assert download_skipped.retries == 2, "Retries should persist on SKIPPED"
 
     # Test: SKIPPED -> QUEUED (error and retries persist)
     # Re-using download_requeued variable name for clarity of flow
@@ -370,11 +364,11 @@ def test_update_status(db_manager: DatabaseManager, sample_download_queued: Down
         sample_download_queued.feed, sample_download_queued.id
     )
     assert download_requeued is not None
-    assert download_requeued["status"] == str(DownloadStatus.QUEUED)
-    assert download_requeued["last_error"] == error_message_2, (
+    assert download_requeued.status == DownloadStatus.QUEUED
+    assert download_requeued.last_error == error_message_2, (
         "Error message should persist on re-QUEUE"
     )
-    assert download_requeued["retries"] == 2, "Retries should persist on re-QUEUE"
+    assert download_requeued.retries == 2, "Retries should persist on re-QUEUE"
 
     # Test transitioning to ARCHIVED from an ERROR state
     db_manager.update_status(
@@ -386,11 +380,11 @@ def test_update_status(db_manager: DatabaseManager, sample_download_queued: Down
         sample_download_queued.feed, sample_download_queued.id
     )
     assert download_archived_from_error is not None
-    assert download_archived_from_error["status"] == str(DownloadStatus.ARCHIVED)
-    assert download_archived_from_error["last_error"] == error_message_2, (
+    assert download_archived_from_error.status == DownloadStatus.ARCHIVED
+    assert download_archived_from_error.last_error == error_message_2, (
         "Error message should persist when archiving from ERROR state"
     )
-    assert download_archived_from_error["retries"] == 2, (
+    assert download_archived_from_error.retries == 2, (
         "Retries should persist when archiving from ERROR state"
     )
 
@@ -409,11 +403,11 @@ def test_update_status(db_manager: DatabaseManager, sample_download_queued: Down
         sample_download_queued.feed, sample_download_queued.id
     )
     assert download_archived_from_downloaded is not None
-    assert download_archived_from_downloaded["status"] == str(DownloadStatus.ARCHIVED)
-    assert download_archived_from_downloaded["last_error"] is None, (
+    assert download_archived_from_downloaded.status == DownloadStatus.ARCHIVED
+    assert download_archived_from_downloaded.last_error is None, (
         "Error message should be None when archiving from DOWNLOADED state"
     )
-    assert download_archived_from_downloaded["retries"] == 0, (
+    assert download_archived_from_downloaded.retries == 0, (
         "Retries should be 0 when archiving from DOWNLOADED state"
     )
 
@@ -526,7 +520,7 @@ def test_get_downloads_to_prune_by_keep_last(db_manager: DatabaseManager):
     assert len(prune_keep2) == 2, (
         "Should identify 2 downloads to prune (f1v1_dl_oldest, f1v2_err_mid1)"
     )
-    pruned_ids_keep2 = sorted([row["id"] for row in prune_keep2])
+    pruned_ids_keep2 = sorted([row.id for row in prune_keep2])
     assert "f1v6_upcoming_older" not in pruned_ids_keep2, (
         "UPCOMING download f1v6_upcoming_older should NOT be in the prune list"
     )
@@ -640,9 +634,9 @@ def test_get_downloads_to_prune_by_since(db_manager: DatabaseManager):
         feed=feed_name, since=since_cutoff_1
     )
     assert len(pruned_1) == 1
-    assert pruned_1[0]["id"] == "ps_v1_older_dl"
+    assert pruned_1[0].id == "ps_v1_older_dl"
     # Verify that ps_v5_upcoming_ancient was not pruned
-    pruned_ids_1 = [row["id"] for row in pruned_1]
+    pruned_ids_1 = [row.id for row in pruned_1]
     assert "ps_v5_upcoming_ancient" not in pruned_ids_1, (
         "UPCOMING download should not be pruned by since_cutoff_1"
     )
@@ -658,7 +652,7 @@ def test_get_downloads_to_prune_by_since(db_manager: DatabaseManager):
     pruned_2 = db_manager.get_downloads_to_prune_by_since(
         feed=feed_name, since=since_cutoff_2
     )
-    pruned_ids_2 = sorted([row["id"] for row in pruned_2])
+    pruned_ids_2 = sorted([row.id for row in pruned_2])
     assert len(pruned_2) == 3
     assert pruned_ids_2 == sorted(["ps_v1_older_dl", "ps_v2_mid_err", "ps_v3_newer_q"])
     assert "ps_v5_upcoming_ancient" not in pruned_ids_2, (
@@ -768,21 +762,21 @@ def test_get_downloads_by_status(db_manager: DatabaseManager):
         status_to_filter=DownloadStatus.ERROR
     )
     assert len(all_errors) == 3, "Should fetch all 3 ERROR downloads"
-    assert [row["id"] for row in all_errors] == ["f2e1", "f1e1_old", "f1e2_new"]
+    assert [row.id for row in all_errors] == ["f2e1", "f1e1_old", "f1e2_new"]
     for row in all_errors:
-        assert row["status"] == str(DownloadStatus.ERROR)
+        assert row.status == DownloadStatus.ERROR
 
     feed1_errors = db_manager.get_downloads_by_status(
         status_to_filter=DownloadStatus.ERROR, feed=feed1
     )
     assert len(feed1_errors) == 2, "Should fetch 2 ERROR downloads for feed1"
-    assert [row["id"] for row in feed1_errors] == ["f1e1_old", "f1e2_new"]
+    assert [row.id for row in feed1_errors] == ["f1e1_old", "f1e2_new"]
 
     limited_errors = db_manager.get_downloads_by_status(
         status_to_filter=DownloadStatus.ERROR, limit=1, offset=0
     )
     assert len(limited_errors) == 1, "Should fetch only 1 error with limit=1"
-    assert limited_errors[0]["id"] == "f2e1", "Should be the oldest overall error"
+    assert limited_errors[0].id == "f2e1", "Should be the oldest overall error"
 
     # --- Test UPCOMING status ---
     # Expected order for all UPCOMING: f2upcoming (oldest), f1upcoming (newest)
@@ -790,36 +784,36 @@ def test_get_downloads_by_status(db_manager: DatabaseManager):
         status_to_filter=DownloadStatus.UPCOMING
     )
     assert len(all_upcoming) == 2, "Should fetch all 2 UPCOMING downloads"
-    assert [row["id"] for row in all_upcoming] == ["f2upcoming", "f1upcoming"]
+    assert [row.id for row in all_upcoming] == ["f2upcoming", "f1upcoming"]
     for row in all_upcoming:
-        assert row["status"] == str(DownloadStatus.UPCOMING)
+        assert row.status == DownloadStatus.UPCOMING
 
     feed1_upcoming = db_manager.get_downloads_by_status(
         status_to_filter=DownloadStatus.UPCOMING, feed=feed1
     )
     assert len(feed1_upcoming) == 1, "Should fetch 1 UPCOMING download for feed1"
-    assert feed1_upcoming[0]["id"] == "f1upcoming"
+    assert feed1_upcoming[0].id == "f1upcoming"
 
     # --- Test QUEUED status (feed1 has one) ---
     feed1_queued = db_manager.get_downloads_by_status(
         status_to_filter=DownloadStatus.QUEUED, feed=feed1
     )
     assert len(feed1_queued) == 1, "Should fetch 1 QUEUED download for feed1"
-    assert feed1_queued[0]["id"] == "f1q1"
+    assert feed1_queued[0].id == "f1q1"
 
     # --- Test DOWNLOADED status (feed3_no_match has one) ---
     downloaded_f3 = db_manager.get_downloads_by_status(
         status_to_filter=DownloadStatus.DOWNLOADED, feed="feed3_no_match"
     )
     assert len(downloaded_f3) == 1, "Should fetch 1 DOWNLOADED for feed3_no_match"
-    assert downloaded_f3[0]["id"] == "f3d1"
+    assert downloaded_f3[0].id == "f3d1"
 
     # --- Test with offset and limit for UPCOMING ---
     upcoming_limit1_offset1 = db_manager.get_downloads_by_status(
         status_to_filter=DownloadStatus.UPCOMING, limit=1, offset=1
     )  # Skips f2upcoming, gets f1upcoming
     assert len(upcoming_limit1_offset1) == 1
-    assert upcoming_limit1_offset1[0]["id"] == "f1upcoming"
+    assert upcoming_limit1_offset1[0].id == "f1upcoming"
 
     # --- Test no downloads for a status/feed combination ---
     no_feed2_queued = db_manager.get_downloads_by_status(
@@ -957,9 +951,9 @@ def test_bump_retries_below_max(
         sample_download_upcoming.feed, sample_download_upcoming.id
     )
     assert updated_row is not None
-    assert updated_row["retries"] == 1
-    assert updated_row["status"] == str(DownloadStatus.UPCOMING)
-    assert updated_row["last_error"] == "First error"
+    assert updated_row.retries == 1
+    assert updated_row.status == DownloadStatus.UPCOMING
+    assert updated_row.last_error == "First error"
 
 
 def test_bump_retries_reaches_max(
@@ -984,9 +978,9 @@ def test_bump_retries_reaches_max(
         sample_download_upcoming.feed, sample_download_upcoming.id
     )
     assert updated_row is not None
-    assert updated_row["retries"] == 3
-    assert updated_row["status"] == str(DownloadStatus.ERROR)
-    assert updated_row["last_error"] == "Third error - reaching max"
+    assert updated_row.retries == 3
+    assert updated_row.status == DownloadStatus.ERROR
+    assert updated_row.last_error == "Third error - reaching max"
 
 
 def test_bump_retries_exceeds_max(
@@ -1011,9 +1005,9 @@ def test_bump_retries_exceeds_max(
         sample_download_upcoming.feed, sample_download_upcoming.id
     )
     assert updated_row is not None
-    assert updated_row["retries"] == 4
-    assert updated_row["status"] == str(DownloadStatus.ERROR)
-    assert updated_row["last_error"] == "Fourth error - exceeds max from upcoming"
+    assert updated_row.retries == 4
+    assert updated_row.status == DownloadStatus.ERROR
+    assert updated_row.last_error == "Fourth error - exceeds max from upcoming"
 
 
 def test_bump_retries_already_error_status(
@@ -1040,9 +1034,9 @@ def test_bump_retries_already_error_status(
         sample_download_upcoming.feed, sample_download_upcoming.id
     )
     assert updated_row is not None
-    assert updated_row["retries"] == 6
-    assert updated_row["status"] == str(DownloadStatus.ERROR)
-    assert updated_row["last_error"] == "Another error while already in ERROR state"
+    assert updated_row.retries == 6
+    assert updated_row.status == DownloadStatus.ERROR
+    assert updated_row.last_error == "Another error while already in ERROR state"
 
 
 def test_bump_retries_max_errors_is_one(
@@ -1066,6 +1060,6 @@ def test_bump_retries_max_errors_is_one(
         sample_download_upcoming.feed, sample_download_upcoming.id
     )
     assert updated_row is not None
-    assert updated_row["retries"] == 1
-    assert updated_row["status"] == str(DownloadStatus.ERROR)
-    assert updated_row["last_error"] == "First and only error allowed"
+    assert updated_row.retries == 1
+    assert updated_row.status == DownloadStatus.ERROR
+    assert updated_row.last_error == "First and only error allowed"
