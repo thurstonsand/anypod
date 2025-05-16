@@ -86,7 +86,7 @@ This section details the components that manage the lifecycle of downloads, from
 - [x] Sandbox test using a Creative-Commons short video, covered by integration tests using real URLs.
 - [x] Unit tests for `YtdlpWrapper`.
 
-### 3.5.2.1 Logger
+### 3.5.2.1 Logger Side Quest
 - [x] implement a global logging framework
 
 ### 3.5.3 `Enqueuer` (`data_coordinator/enqueuer.py`)
@@ -100,6 +100,12 @@ This section details the components that manage the lifecycle of downloads, from
         - For each existing 'upcoming' entry now VOD, update status to 'queued'.
     - Returns count of newly enqueued or transitioned-to-queued downloads.
 - [ ] Unit tests for `Enqueuer` with mocked dependencies.
+- [ ] preprocess cli args so you dont do it every time
+- [ ] db should not leak any details about sqlite -- should abstract all that away
+    - for example, remove all references to sqlite.Row, sqlite.Error
+- [ ] consider async'ifying the code base. e.g. https://github.com/omnilib/aiosqlite
+- [ ] retries should apply more widely, and with enough failures, should transition to error state
+    - maybe db.py needs a `bump_error_count` fn that handles this - bumps it until it becomes too high, then marks as error
 
 ### 3.5.4 `Downloader` Service (`data_coordinator/downloader.py`)
 - [ ] Set up tmp dirs for writing data for merge: e.g. `/data/.tmp_completed_downloads/<feed_name>/<download.ext>/` and `/data/.tmp_yt_dlp_parts/<feed_name>/<download.ext>/`
@@ -153,7 +159,7 @@ This section details the components that manage the lifecycle of downloads, from
 - [ ] check for commonalities in generated data in tests and see if we can extract a fixture out of them
 
 ## 4  Feed Generation
-- [ ] Determine if a read/write lock for in-memory feed XML cache is needed for concurrency
+- [ ] Determine if a [read/write lock](https://pypi.org/project/readerwriterlock/) for in-memory feed XML cache is needed for concurrency
 - [ ] Implement `generate_feed_xml(feed_name)` to write to in-memory XML after acquiring write lock
 - [ ] Implement `get_feed_xml(feed_name)` for HTTP handlers to read from in-memory XML after acquiring read lock
 - [ ] On startup, trigger a retrieve-and-update loop for all feeds to generate XML before starting the HTTP server

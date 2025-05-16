@@ -32,6 +32,11 @@ class FeedConfig(BaseModel):
     since: datetime | None = Field(
         None, description="ISO8601 timestamp to ignore older downloads"
     )
+    max_errors: int = Field(
+        default=3,
+        ge=1,
+        description="Max attempts for downloading media before marking as ERROR.",
+    )
 
 
 class YamlFileFromFieldSource(PydanticBaseSettingsSource):

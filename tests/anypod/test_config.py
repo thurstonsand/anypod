@@ -15,11 +15,13 @@ SAMPLE_FEEDS_DATA = {
             "url": "https://example.com/feed1.xml",
             "schedule": "0 0 * * *",
             "keep_last": 10,
+            "max_errors": 5,  # Explicitly set for testing
         },
         "podcast2": {
             "url": "https://example.com/feed2.xml",
             "schedule": "0 12 * * *",
             "yt_args": "--format bestaudio",
+            # max_errors will use default (3) for this one
         },
     }
 }
@@ -69,6 +71,10 @@ def test_load_from_default_location(monkeypatch: MonkeyPatch, tmp_path: Path):
         settings.feeds["podcast1"].keep_last
         == SAMPLE_FEEDS_DATA["feeds"]["podcast1"]["keep_last"]
     )
+    assert (
+        settings.feeds["podcast1"].max_errors
+        == SAMPLE_FEEDS_DATA["feeds"]["podcast1"]["max_errors"]
+    ), "'max_errors' for 'podcast1' should match sample data (5)"
 
     assert "podcast2" in settings.feeds
     assert (
@@ -81,6 +87,9 @@ def test_load_from_default_location(monkeypatch: MonkeyPatch, tmp_path: Path):
     assert (
         settings.feeds["podcast2"].schedule
         == SAMPLE_FEEDS_DATA["feeds"]["podcast2"]["schedule"]
+    )
+    assert settings.feeds["podcast2"].max_errors == 3, (  # Asserting default value
+        "'max_errors' for 'podcast2' should be the default value (3)"
     )
 
     dumped_settings = settings.model_dump()
@@ -152,6 +161,12 @@ def test_override_location_with_init_arg(
         settings.feeds["podcast1"].keep_last
         == SAMPLE_FEEDS_DATA["feeds"]["podcast1"]["keep_last"]
     )
+    assert (
+        settings.feeds["podcast1"].max_errors
+        == SAMPLE_FEEDS_DATA["feeds"]["podcast1"]["max_errors"]
+    ), (
+        "'max_errors' for 'podcast1' should match sample data (5) when overridden by init arg"
+    )
 
     assert "podcast2" in settings.feeds, (
         "Feed 'podcast2' should be loaded when overridden by init arg"
@@ -166,6 +181,9 @@ def test_override_location_with_init_arg(
     assert (
         settings.feeds["podcast2"].schedule
         == SAMPLE_FEEDS_DATA["feeds"]["podcast2"]["schedule"]
+    )
+    assert settings.feeds["podcast2"].max_errors == 3, (  # Asserting default value
+        "'max_errors' for 'podcast2' should be the default value (3) when overridden by init arg"
     )
 
 

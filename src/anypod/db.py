@@ -6,7 +6,7 @@ from pathlib import Path
 import sqlite3
 from typing import Any
 
-from .exceptions import DatabaseOperationError
+from .exceptions import DatabaseOperationError, DownloadNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -420,3 +420,111 @@ class DatabaseManager:
         finally:
             if cursor:
                 cursor.close()
+
+    def bump_retries(
+        self,
+        feed_id: str,
+        download_id: str,
+        error_message: str,
+        max_allowed_errors: int,
+    ) -> tuple[int, DownloadStatus, bool]:
+        """Increments the retry count for a download and potentially updates its status to ERROR.
+
+        Args:
+            feed_name: The name of the feed.
+            download_id: The ID of the download.
+            error_message: The error message to record.
+            max_allowed_errors: The maximum number of retries allowed before transitioning to ERROR status.
+
+        Returns:
+            A tuple containing:
+                - new_retries (int): The updated retry count.
+                - final_status (DownloadStatus): The final status of the download after this operation.
+                - did_transition_to_error (bool): True if the download transitioned to ERROR, False otherwise.
+
+        Raises:
+            DownloadNotFoundError: If the specified download is not found.
+            DatabaseOperationError: If any other database operation fails.
+        """
+        log_params = {
+            "feed_name": feed_id,
+            "download_id": download_id,
+            "error_message": error_message,
+            "max_allowed_errors": max_allowed_errors,
+        }
+        logger.debug("Attempting to bump error count for download.", extra=log_params)
+
+        conn = self._get_connection()
+        try:
+            with conn:
+                # SELECT current state
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT retries, status FROM downloads WHERE feed = ? AND id = ?",
+                    (feed_id, download_id),
+                )
+                row = cursor.fetchone()
+
+                if row is None:
+                    raise DownloadNotFoundError(
+                        message="Download not found.",
+                        feed_id=feed_id,
+                        download_id=download_id,
+                    )
+
+                current_retries = row["retries"]
+                current_status_str = row["status"]
+                try:
+                    current_status = DownloadStatus(current_status_str)
+                except ValueError as e:
+                    raise DatabaseOperationError(
+                        message=f"Invalid status '{current_status_str}' in DB.",
+                        feed_id=feed_id,
+                        download_id=download_id,
+                    ) from e
+
+                # Calculate new state
+                new_retries = current_retries + 1
+                is_error_status = new_retries >= max_allowed_errors
+                final_status = (
+                    DownloadStatus.ERROR if is_error_status else current_status
+                )
+                final_last_error = error_message
+
+                if is_error_status and current_status != DownloadStatus.ERROR:
+                    logger.info(
+                        f"Download transitioning to ERROR state after {new_retries} retries (max: {max_allowed_errors}).",
+                        extra=log_params,
+                    )
+
+                # UPDATE database
+                conn.execute(
+                    """UPDATE downloads
+                       SET retries = ?, status = ?, last_error = ?
+                       WHERE feed = ? AND id = ?""",
+                    (
+                        new_retries,
+                        str(final_status),
+                        final_last_error,
+                        feed_id,
+                        download_id,
+                    ),
+                )
+
+                logger.info(
+                    "Successfully bumped error count for download.",
+                    extra={
+                        **log_params,
+                        "new_retries": new_retries,
+                        "final_status": str(final_status),
+                        "is_error_status": is_error_status,
+                    },
+                )
+                return new_retries, final_status, is_error_status
+
+        except sqlite3.Error as e:
+            raise DatabaseOperationError(
+                message="Failed to bump retries in database",
+                feed_id=feed_id,
+                download_id=download_id,
+            ) from e

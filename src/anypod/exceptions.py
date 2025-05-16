@@ -32,6 +32,20 @@ class DatabaseOperationError(DataCoordinatorError):
         self.download_id = download_id
 
 
+class DownloadNotFoundError(DataCoordinatorError):
+    """Raised when a specific download is not found when expected."""
+
+    def __init__(
+        self,
+        message: str,
+        feed_id: str | None = None,
+        download_id: str | None = None,
+    ):
+        super().__init__(message)
+        self.feed_id = feed_id
+        self.download_id = download_id
+
+
 class FileOperationError(DataCoordinatorError):
     """Raised when a file operation fails within the DataCoordinator."""
 
@@ -48,18 +62,18 @@ class FileOperationError(DataCoordinatorError):
         self.file_name = file_name
 
 
-class DownloadNotFoundError(DataCoordinatorError):
-    """Raised when a specific download is not found when expected."""
+class EnqueueError(DataCoordinatorError):
+    """Raised when an error occurs during the enqueue process."""
 
     def __init__(
         self,
         message: str,
-        feed_id: str | None = None,
-        download_id: str | None = None,
+        feed_name: str | None = None,
+        feed_url: str | None = None,
     ):
         super().__init__(message)
-        self.feed_id = feed_id
-        self.download_id = download_id
+        self.feed_name = feed_name
+        self.feed_url = feed_url
 
 
 class YtdlpError(AnypodError):
