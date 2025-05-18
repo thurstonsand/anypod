@@ -75,7 +75,7 @@ This section details the components that manage the lifecycle of downloads, from
 
 ### 3.5.2 `YtdlpWrapper` (`ytdlp_wrapper.py`)
 - [x] Create `ytdlp_wrapper.py` and class `YtdlpWrapper`.
-- [x] `YtdlpWrapper.fetch_metadata(feed_name: str, url: str, yt_cli_args: list[str]) -> list[Download]`: Fetches metadata for all downloads at the given URL using yt-dlp's metadata extraction capabilities.
+- [x] `YtdlpWrapper.fetch_metadata(feed_id: str, url: str, yt_cli_args: list[str]) -> list[Download]`: Fetches metadata for all downloads at the given URL using yt-dlp's metadata extraction capabilities.
 - [x] `YtdlpWrapper.download_media_to_file(download: Download, yt_cli_args: list[str], download_target_dir: Path) -> Path`:
     - Purpose: Downloads media (video or audio) for the given entry to a specified directory, handling potential merges (e.g., video + audio) via `yt-dlp` and FFmpeg.
     - Arguments:
@@ -90,8 +90,8 @@ This section details the components that manage the lifecycle of downloads, from
 - [x] implement a global logging framework
 
 ### 3.5.3 `Enqueuer` (`data_coordinator/enqueuer.py`)
-- [ ] Constructor accepts `DatabaseManager`, `YtdlpWrapper`.
-- [ ] `enqueue_new_downloads(feed_config: FeedConfig) -> int`:
+- [x] Constructor accepts `DatabaseManager`, `YtdlpWrapper`.
+- [x] `enqueue_new_downloads(feed_config: FeedConfig) -> int`:
     - Phase 1: Re-fetch metadata for existing DB entries with status 'upcoming'; update those now VOD to 'queued'.
     - Phase 2: Fetch metadata for latest N videos via `YtdlpWrapper.fetch_metadata()`.
         - For each download not in DB:
@@ -101,14 +101,14 @@ This section details the components that manage the lifecycle of downloads, from
     - Returns count of newly enqueued or transitioned-to-queued downloads.
 - [ ] Unit tests for `Enqueuer` with mocked dependencies.
 - [ ] preprocess cli args so you dont do it every time
-- [ ] db should not leak any details about sqlite -- should abstract all that away
+- [x] db should not leak any details about sqlite -- should abstract all that away
     - for example, remove all references to sqlite.Row, sqlite.Error
 - [ ] consider async'ifying the code base. e.g. https://github.com/omnilib/aiosqlite
-- [ ] retries should apply more widely, and with enough failures, should transition to error state
+- [x] retries should apply more widely, and with enough failures, should transition to error state
     - maybe db.py needs a `bump_error_count` fn that handles this - bumps it until it becomes too high, then marks as error
 
 ### 3.5.4 `Downloader` Service (`data_coordinator/downloader.py`)
-- [ ] Set up tmp dirs for writing data for merge: e.g. `/data/.tmp_completed_downloads/<feed_name>/<download.ext>/` and `/data/.tmp_yt_dlp_parts/<feed_name>/<download.ext>/`
+- [ ] Set up tmp dirs for writing data for merge: e.g. `/data/.tmp_completed_downloads/<feed_id>/<download.ext>/` and `/data/.tmp_yt_dlp_parts/<feed_id>/<download.ext>/`
 - [ ] Constructor accepts `DatabaseManager`, `FileManager`, `YtdlpWrapper`, and application config (for base data paths).
 - [ ] `download_queued(feed_config: FeedConfig, limit: int = 0) -> tuple[int, int]`: (success_count, failure_count)
     - Gets queued `Download` objects via `DatabaseManager.next_queued_downloads(feed_config.name, limit)`.
@@ -127,7 +127,7 @@ This section details the components that manage the lifecycle of downloads, from
 
 ### 3.5.5 `Pruner` (`data_coordinator/pruner.py`)
 - [ ] Constructor accepts `DatabaseManager`, `FileManager`.
-- [ ] `prune_feed_downloads(feed_name: str, keep_last: int | None, prune_before_date: datetime | None) -> tuple[int, int]`: (archived_count, files_deleted_count)
+- [ ] `prune_feed_downloads(feed_id: str, keep_last: int | None, prune_before_date: datetime | None) -> tuple[int, int]`: (archived_count, files_deleted_count)
     - Implements logic previously in the old `DataCoordinator.prune_old_downloads`.
     - Uses `DatabaseManager` to get candidates, `Download.from_row` to convert rows.
     - Uses `FileManager.delete_download_file()` for download.
@@ -160,8 +160,8 @@ This section details the components that manage the lifecycle of downloads, from
 
 ## 4  Feed Generation
 - [ ] Determine if a [read/write lock](https://pypi.org/project/readerwriterlock/) for in-memory feed XML cache is needed for concurrency
-- [ ] Implement `generate_feed_xml(feed_name)` to write to in-memory XML after acquiring write lock
-- [ ] Implement `get_feed_xml(feed_name)` for HTTP handlers to read from in-memory XML after acquiring read lock
+- [ ] Implement `generate_feed_xml(feed_id)` to write to in-memory XML after acquiring write lock
+- [ ] Implement `get_feed_xml(feed_id)` for HTTP handlers to read from in-memory XML after acquiring read lock
 - [ ] On startup, trigger a retrieve-and-update loop for all feeds to generate XML before starting the HTTP server
 - [ ] Write unit tests to verify enclosure URLs and MIME types in generated feeds
 
@@ -179,6 +179,9 @@ This section details the components that manage the lifecycle of downloads, from
 ## 7  CLI & Flags
 - [ ] `python -m anypod` parses flags: `--ignore-startup-errors`, `--retry-failed`, `--log-level`.
 - [ ] Docstrings and `argparse` help messages.
+- [ ] Evaluate logged statements and make sure that only relevant things get logged
+- [ ] when using `--retry-failed`, should also include a date so that we disregard VERY old failures
+  - errors will be common because live videos may be deleted and reuploaded as regular VODs
 
 ## 8  Docker & Dev Flow
 - [ ] `Dockerfile` (python:3.13-slim, default root, overridable UID/GID).

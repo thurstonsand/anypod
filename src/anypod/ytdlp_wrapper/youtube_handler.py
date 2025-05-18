@@ -13,18 +13,18 @@ class YtdlpYoutubeDataError(YtdlpDataError):
     """Raised when yt-dlp data extraction fails for YouTube."""
 
     def __init__(
-        self, message: str, feed_name: str | None = None, download_id: str | None = None
+        self, message: str, feed_id: str | None = None, download_id: str | None = None
     ):
         super().__init__(f"YouTube Parser: {message}")
-        self.feed_name = feed_name
+        self.feed_id = feed_id
         self.download_id = download_id
 
 
 class YtdlpYoutubeVideoFilteredOutError(YtdlpDataError):
     """Raised when a video is filtered out by yt-dlp."""
 
-    def __init__(self, feed_name: str | None = None, download_id: str | None = None):
-        self.feed_name = feed_name
+    def __init__(self, feed_id: str | None = None, download_id: str | None = None):
+        self.feed_id = feed_id
         self.download_id = download_id
         super().__init__("YouTube: Video filtered out by yt-dlp.")
 
@@ -44,18 +44,18 @@ class YoutubeHandler:
         return {}
 
     def _parse_single_video_entry(
-        self, entry: dict[str, Any], feed_name: str
+        self, entry: dict[str, Any], feed_id: str
     ) -> Download:
         video_id = entry.get("id")
         logger.debug(
             "Parsing single video entry.",
-            extra={"video_id": video_id, "feed_name": feed_name},
+            extra={"video_id": video_id, "feed_id": feed_id},
         )
 
         if not video_id:
             raise YtdlpYoutubeDataError(
                 f"Missing video ID. Data: {str(entry)[:200]}.",
-                feed_name=feed_name,
+                feed_id=feed_id,
                 download_id="<missing_id>",
             )
         logger.debug("Video ID found.", extra={"video_id": video_id})
@@ -64,7 +64,7 @@ class YoutubeHandler:
         # yt-dlp will return a partial set of data that excludes the fields
         # on how to download the video. Check for that here
         if not entry.get("ext") and not entry.get("url") and not entry.get("format_id"):
-            raise YtdlpYoutubeVideoFilteredOutError(feed_name, video_id)
+            raise YtdlpYoutubeVideoFilteredOutError(feed_id, video_id)
 
         source_url = (
             entry.get("webpage_url")
@@ -80,7 +80,7 @@ class YoutubeHandler:
         if not title or title in ("[Deleted video]", "[Private video]"):
             raise YtdlpYoutubeDataError(
                 f"Video unavailable or deleted (title: '{title}').",
-                feed_name=feed_name,
+                feed_id=feed_id,
                 download_id=str(video_id),
             )
         logger.debug("Title found.", extra={"video_id": video_id, "title": title})
@@ -92,7 +92,7 @@ class YoutubeHandler:
             except (TypeError, ValueError, OSError) as e:
                 raise YtdlpYoutubeDataError(
                     f"Invalid 'timestamp' {ts_val}.",
-                    feed_name=feed_name,
+                    feed_id=feed_id,
                     download_id=str(video_id),
                 ) from e
         elif (upload_date_str := entry.get("upload_date")) is not None:
@@ -104,7 +104,7 @@ class YoutubeHandler:
             except (TypeError, ValueError) as e:
                 raise YtdlpYoutubeDataError(
                     f"Invalid 'upload_date' {upload_date_str}.",
-                    feed_name=feed_name,
+                    feed_id=feed_id,
                     download_id=str(video_id),
                 ) from e
         elif (release_ts_val := entry.get("release_timestamp")) is not None:
@@ -114,13 +114,13 @@ class YoutubeHandler:
             except (TypeError, ValueError, OSError) as e:
                 raise YtdlpYoutubeDataError(
                     f"Invalid 'release_timestamp' {release_ts_val}.",
-                    feed_name=feed_name,
+                    feed_id=feed_id,
                     download_id=str(video_id),
                 ) from e
         else:
             raise YtdlpYoutubeDataError(
                 "Missing published datetime.",
-                feed_name=feed_name,
+                feed_id=feed_id,
                 download_id=str(video_id),
             )
 
@@ -161,7 +161,7 @@ class YoutubeHandler:
             if not extension:
                 raise YtdlpYoutubeDataError(
                     "Missing extension.",
-                    feed_name=feed_name,
+                    feed_id=feed_id,
                     download_id=str(video_id),
                 )
             duration_val = entry.get("duration")
@@ -169,7 +169,7 @@ class YoutubeHandler:
             if isinstance(duration_val, bool):
                 raise YtdlpYoutubeDataError(
                     f"Duration had unexpected type: '({type(duration_val)}){duration_val}'.",
-                    feed_name=feed_name,
+                    feed_id=feed_id,
                     download_id=str(video_id),
                 )
             elif isinstance(duration_val, int | float):
@@ -180,13 +180,13 @@ class YoutubeHandler:
                 except ValueError as e:
                     raise YtdlpYoutubeDataError(
                         f"Unparsable duration '{duration_val}'.",
-                        feed_name=feed_name,
+                        feed_id=feed_id,
                         download_id=str(video_id),
                     ) from e
             else:
                 raise YtdlpYoutubeDataError(
                     f"Duration had unexpected type: '({type(duration_val)}){duration_val}'.",
-                    feed_name=feed_name,
+                    feed_id=feed_id,
                     download_id=str(video_id),
                 )
             logger.debug(
@@ -209,7 +209,7 @@ class YoutubeHandler:
             logger.debug("No thumbnail found.", extra={"video_id": video_id})
 
         parsed_download = Download(
-            feed=str(feed_name),
+            feed=str(feed_id),
             id=str(video_id),
             source_url=str(source_url),
             title=str(title),
@@ -221,7 +221,7 @@ class YoutubeHandler:
         )
         logger.debug(
             "Successfully parsed single video entry.",
-            extra={"video_id": video_id, "title": title, "feed_name": feed_name},
+            extra={"video_id": video_id, "title": title, "feed_id": feed_id},
         )
         return parsed_download
 
@@ -362,7 +362,6 @@ class YoutubeHandler:
             extra={
                 "source_identifier": source_identifier,
                 "ref_type": ref_type,
-                "info_dict_empty": not info_dict,
             },
         )
         if not info_dict:
@@ -403,6 +402,12 @@ class YoutubeHandler:
             )
             if isinstance(entries, list):
                 for i, entry_data in enumerate(entries):  # type: ignore
+                    if entry_data is None:
+                        logger.warning(
+                            "Entry in collection returned nothing. Skipping.",
+                            extra={"source_identifier": source_identifier},
+                        )
+                        continue
                     entry_id_for_log = entry_data.get("id", f"entry_{i}")  # type: ignore
                     try:
                         parsed_download = self._parse_single_video_entry(

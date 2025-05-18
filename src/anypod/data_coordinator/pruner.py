@@ -19,7 +19,7 @@ class Pruner:
 
     def prune_feed_downloads(
         self,
-        feed_name: str,
+        feed_id: str,
         keep_last: int | None,
         prune_before_date: datetime.datetime | None,
     ) -> tuple[list[str], list[str]]:
@@ -38,7 +38,7 @@ class Pruner:
         Malformed database records encountered during candidate selection are logged and skipped.
 
         Args:
-            feed_name: The unique identifier of the feed to prune.
+            feed_id: The unique identifier of the feed to prune.
             keep_last: The number of most recent downloaded items to retain. If None, this rule is ignored.
             prune_before_date: A datetime object. Downloads published before this date are pruned.
                                If None, this rule is ignored.
@@ -56,7 +56,7 @@ class Pruner:
                                 if the error is isolated.
         """
         log_params = {
-            "feed_id": feed_name,
+            "feed_id": feed_id,
             "keep_last": keep_last,
             "prune_before_date": (
                 prune_before_date.isoformat() if prune_before_date else None
@@ -75,14 +75,14 @@ class Pruner:
             try:
                 downloads_for_keep_last = (
                     self.db_manager.get_downloads_to_prune_by_keep_last(
-                        feed_name, keep_last
+                        feed_id, keep_last
                     )
                 )
             except (DatabaseOperationError, ValueError) as e:
                 # TODO raise a domain specific exception instead
                 raise DatabaseOperationError(
                     message="Database error identifying downloads to prune by keep_last rule.",
-                    feed_id=feed_name,
+                    feed_id=feed_id,
                     download_id=f"keep_last:{keep_last}",
                 ) from e
             candidate_downloads_to_prune.update(downloads_for_keep_last)
@@ -91,12 +91,12 @@ class Pruner:
             logger.debug("Identifying prune candidates by date rule.", extra=log_params)
             try:
                 downloads_for_since = self.db_manager.get_downloads_to_prune_by_since(
-                    feed_name, prune_before_date
+                    feed_id, prune_before_date
                 )
             except (DatabaseOperationError, ValueError) as e:
                 raise DatabaseOperationError(
                     message="Database error identifying downloads to prune by date rule.",
-                    feed_id=feed_name,
+                    feed_id=feed_id,
                     download_id=f"prune_before_date:{prune_before_date.isoformat()}",
                 ) from e
             candidate_downloads_to_prune.update(downloads_for_since)
@@ -114,7 +114,7 @@ class Pruner:
 
         for download_to_prune in candidate_downloads_to_prune:
             download_prune_log_params = {
-                "feed_id": feed_name,
+                "feed_id": feed_id,
                 "download_id": download_to_prune.id,
                 "download_status": download_to_prune.status,
             }
@@ -128,7 +128,7 @@ class Pruner:
                 )
                 try:
                     deleted_on_fs = self.file_manager.delete_download_file(
-                        feed_name, file_name_to_delete
+                        feed_id, file_name_to_delete
                     )
                     if deleted_on_fs:
                         logger.info(
@@ -144,7 +144,7 @@ class Pruner:
                 except FileOperationError as e_fs:
                     raise FileOperationError(
                         message="Error deleting file during pruning. Download not modified.",
-                        feed_id=feed_name,
+                        feed_id=feed_id,
                         download_id=download_to_prune.id,
                         file_name=file_name_to_delete,
                     ) from e_fs
@@ -154,18 +154,18 @@ class Pruner:
         if successfully_processed_ids_for_db_deletion:
             logger.debug(
                 f"Attempting to archive {len(successfully_processed_ids_for_db_deletion)} download records.",
-                extra={"feed_id": feed_name},
+                extra={"feed_id": feed_id},
             )
         for id_to_archive in successfully_processed_ids_for_db_deletion:
-            archive_log_params = {"feed_id": feed_name, "download_id": id_to_archive}
+            archive_log_params = {"feed_id": feed_id, "download_id": id_to_archive}
             try:
                 updated_in_db = self.db_manager.update_status(
-                    feed_name, id_to_archive, DownloadStatus.ARCHIVED
+                    feed_id, id_to_archive, DownloadStatus.ARCHIVED
                 )
             except DatabaseOperationError as e:
                 raise DatabaseOperationError(
                     message="Database error updating status to ARCHIVED during pruning.",
-                    feed_id=feed_name,
+                    feed_id=feed_id,
                     download_id=id_to_archive,
                 ) from e
             if updated_in_db:

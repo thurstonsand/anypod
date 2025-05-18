@@ -68,11 +68,11 @@ class EnqueueError(DataCoordinatorError):
     def __init__(
         self,
         message: str,
-        feed_name: str | None = None,
+        feed_id: str | None = None,
         feed_url: str | None = None,
     ):
         super().__init__(message)
-        self.feed_name = feed_name
+        self.feed_id = feed_id
         self.feed_url = feed_url
 
 
@@ -90,9 +90,9 @@ class YtdlpApiError(YtdlpError):
     def __init__(
         self,
         message: str,
-        feed_name: str | None = None,
+        feed_id: str | None = None,
         url: str | None = None,
     ):
         super().__init__(message)
-        self.feed_name = feed_name
+        self.feed_id = feed_id
         self.url = url

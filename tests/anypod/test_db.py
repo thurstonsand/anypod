@@ -546,10 +546,10 @@ def test_get_downloads_to_prune_by_keep_last(db_manager: DatabaseManager):
 def test_get_downloads_to_prune_by_since(db_manager: DatabaseManager):
     """Test fetching downloads to prune by 'since' date."""
     base_time = datetime.datetime(2023, 1, 1, 12, 0, 0, tzinfo=datetime.UTC)
-    feed_name = "prune_since_feed"
+    feed_id = "prune_since_feed"
 
     dl_ps_v1_older_dl = Download(
-        feed=feed_name,
+        feed=feed_id,
         id="ps_v1_older_dl",
         published=base_time - datetime.timedelta(days=5),
         status=DownloadStatus.DOWNLOADED,
@@ -559,7 +559,7 @@ def test_get_downloads_to_prune_by_since(db_manager: DatabaseManager):
         duration=1,
     )
     dl_ps_v2_mid_err = Download(
-        feed=feed_name,
+        feed=feed_id,
         id="ps_v2_mid_err",
         published=base_time - datetime.timedelta(days=2),
         status=DownloadStatus.ERROR,
@@ -569,7 +569,7 @@ def test_get_downloads_to_prune_by_since(db_manager: DatabaseManager):
         duration=1,
     )
     dl_ps_v3_newer_q = Download(
-        feed=feed_name,
+        feed=feed_id,
         id="ps_v3_newer_q",
         published=base_time + datetime.timedelta(days=1),
         status=DownloadStatus.QUEUED,
@@ -579,7 +579,7 @@ def test_get_downloads_to_prune_by_since(db_manager: DatabaseManager):
         duration=1,
     )
     dl_ps_v4_arch = Download(
-        feed=feed_name,
+        feed=feed_id,
         id="ps_v4_arch",
         published=base_time,
         status=DownloadStatus.ARCHIVED,
@@ -589,7 +589,7 @@ def test_get_downloads_to_prune_by_since(db_manager: DatabaseManager):
         duration=1,
     )
     dl_ps_v5_upcoming_ancient = Download(  # New UPCOMING download, very old
-        feed=feed_name,
+        feed=feed_id,
         id="ps_v5_upcoming_ancient",
         published=base_time - datetime.timedelta(days=10),  # Much older than cutoff
         status=DownloadStatus.UPCOMING,
@@ -622,7 +622,7 @@ def test_get_downloads_to_prune_by_since(db_manager: DatabaseManager):
     for dl in downloads_to_add:
         db_manager.upsert_download(dl)
 
-    # Prune downloads older than 'base_time - 3 days' for feed_name
+    # Prune downloads older than 'base_time - 3 days' for feed_id
     # Candidates for pruning (ignoring ARCHIVED and UPCOMING):
     # - ps_v1_older_dl (day -5) -> YES
     # - ps_v2_mid_err (day -2) -> NO (not older than day -3)
@@ -631,7 +631,7 @@ def test_get_downloads_to_prune_by_since(db_manager: DatabaseManager):
     # - ps_v5_upcoming_ancient (day -10) -> NO (upcoming, due to db.py change)
     since_cutoff_1 = base_time - datetime.timedelta(days=3)
     pruned_1 = db_manager.get_downloads_to_prune_by_since(
-        feed=feed_name, since=since_cutoff_1
+        feed=feed_id, since=since_cutoff_1
     )
     assert len(pruned_1) == 1
     assert pruned_1[0].id == "ps_v1_older_dl"
@@ -641,7 +641,7 @@ def test_get_downloads_to_prune_by_since(db_manager: DatabaseManager):
         "UPCOMING download should not be pruned by since_cutoff_1"
     )
 
-    # Prune downloads older than 'base_time + 2 days' for feed_name
+    # Prune downloads older than 'base_time + 2 days' for feed_id
     # Candidates for pruning (ignoring ARCHIVED and UPCOMING):
     # - ps_v1_older_dl (day -5) -> YES
     # - ps_v2_mid_err (day -2) -> YES
@@ -650,7 +650,7 @@ def test_get_downloads_to_prune_by_since(db_manager: DatabaseManager):
     # - ps_v5_upcoming_ancient (day -10) -> NO (upcoming, due to db.py change)
     since_cutoff_2 = base_time + datetime.timedelta(days=2)
     pruned_2 = db_manager.get_downloads_to_prune_by_since(
-        feed=feed_name, since=since_cutoff_2
+        feed=feed_id, since=since_cutoff_2
     )
     pruned_ids_2 = sorted([row.id for row in pruned_2])
     assert len(pruned_2) == 3

@@ -94,23 +94,23 @@ def run_debug_ytdlp_mode(debug_yaml_path: Path) -> None:
     else:
         logger.info("Downloading is disabled. Fetching metadata only.")
 
-    for feed_name, url in feed_urls_dict.items():
+    for feed_id, url in feed_urls_dict.items():
         # Create a simple feed name for context. This is not a stored feed_id from a DB.
         logger.info(
             "Fetching metadata for feed.",
-            extra={"feed_url": url, "feed_name": feed_name},
+            extra={"feed_url": url, "feed_id": feed_id},
         )
         try:
             logger.debug(
                 "Calling YtdlpWrapper.fetch_metadata.",
                 extra={
-                    "feed_name": feed_name,
+                    "feed_id": feed_id,
                     "feed_url": url,
                     "yt_cli_args": cli_args,
                 },
             )
             downloads = ytdlp_wrapper.fetch_metadata(
-                feed_name=feed_name, url=url, yt_cli_args=cli_args
+                feed_id=feed_id, url=url, yt_cli_args=cli_args
             )
 
             if downloads:
@@ -126,7 +126,7 @@ def run_debug_ytdlp_mode(debug_yaml_path: Path) -> None:
                                 "Attempting to download.",
                                 extra={
                                     "feed_url": url,
-                                    "feed_name": feed_name,
+                                    "feed_id": feed_id,
                                     "download_title": download.title,
                                     "download_id": download.id,
                                 },
@@ -141,7 +141,7 @@ def run_debug_ytdlp_mode(debug_yaml_path: Path) -> None:
                                     "Successfully downloaded.",
                                     extra={
                                         "feed_url": url,
-                                        "feed_name": feed_name,
+                                        "feed_id": feed_id,
                                         "download_title": download.title,
                                         "download_id": download.id,
                                         "file_path": file_path,
@@ -153,7 +153,7 @@ def run_debug_ytdlp_mode(debug_yaml_path: Path) -> None:
                                     exc_info=e,
                                     extra={
                                         "feed_url": url,
-                                        "feed_name": feed_name,
+                                        "feed_id": feed_id,
                                         "download_title": download.title,
                                         "download_id": download.id,
                                     },
@@ -163,7 +163,7 @@ def run_debug_ytdlp_mode(debug_yaml_path: Path) -> None:
                                 "Skipping download due to status.",
                                 extra={
                                     "feed_url": url,
-                                    "feed_name": feed_name,
+                                    "feed_id": feed_id,
                                     "download_title": download.title,
                                     "download_id": download.id,
                                     "download_status": download.status,
@@ -174,7 +174,7 @@ def run_debug_ytdlp_mode(debug_yaml_path: Path) -> None:
                             "Fetched download details.",
                             extra={
                                 "feed_url": url,
-                                "feed_name": feed_name,
+                                "feed_id": feed_id,
                                 "download_title": download.title,
                                 "download_id": download.id,
                                 "download_source_url": download.source_url,
@@ -190,19 +190,19 @@ def run_debug_ytdlp_mode(debug_yaml_path: Path) -> None:
             else:
                 logger.info(
                     "No downloads found or parsed for feed.",
-                    extra={"feed_url": url, "feed_name": feed_name},
+                    extra={"feed_url": url, "feed_id": feed_id},
                 )
         except RuntimeError:
             logger.error(
                 "Error processing feed. See application logs for details.",
                 exc_info=True,
-                extra={"feed_url": url, "feed_name": feed_name},
+                extra={"feed_url": url, "feed_id": feed_id},
             )
         except Exception:
             logger.error(
                 "Unexpected error processing feed. See application logs for details.",
                 exc_info=True,
-                extra={"feed_url": url, "feed_name": feed_name},
+                extra={"feed_url": url, "feed_id": feed_id},
             )
 
     logger.info("Debug mode processing complete.")

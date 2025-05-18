@@ -117,7 +117,7 @@ def test_prepare_ydl_options_media_download(
     user_cli_args: list[str] = []
     purpose = FetchPurpose.MEDIA_DOWNLOAD
     source_specific_opts: dict[str, Any] = {}
-    mock_target_path = Path("/tmp/downloads/feed_name/video_id.mp4")
+    mock_target_path = Path("/tmp/downloads/feed_id/video_id.mp4")
 
     prepared_opts = ytdlp_wrapper._prepare_ydl_options(  # type: ignore
         user_cli_args,

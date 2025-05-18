@@ -22,7 +22,7 @@ class Downloader:
 
     def download_queued(
         self,
-        feed_name: str,
+        feed_id: str,
         feed_config: FeedConfig,
         limit: int = 0,
     ) -> tuple[int, int]:
@@ -41,7 +41,7 @@ class Downloader:
         5. Temporary files are cleaned up regardless of the outcome for the individual download.
 
         Args:
-            feed_name: The unique identifier for the feed whose queued items are to be processed.
+            feed_id: The unique identifier for the feed whose queued items are to be processed.
             feed_config: The configuration object for the feed, containing yt-dlp arguments.
             limit: The maximum number of queued items to process in this run.
                    If 0 (default), processes all queued items for the feed.
@@ -59,7 +59,7 @@ class Downloader:
         logger.info(
             "download_queued called (stub).",
             extra={
-                "feed_name": feed_name,
+                "feed_id": feed_id,
                 "feed_url": feed_config.url,
                 "limit": limit,
             },

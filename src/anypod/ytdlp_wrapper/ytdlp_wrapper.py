@@ -254,14 +254,30 @@ class YtdlpWrapper:
 
     def fetch_metadata(
         self,
-        feed_name: str,
+        feed_id: str,
         url: str,
         yt_cli_args: list[str],
     ) -> list[Download]:
+        """Fetches metadata for a given feed and URL using yt-dlp.
+
+        This method determines the appropriate fetch strategy for the provided URL,
+        acquires metadata, and parses it into a list of Download objects.
+
+        Args:
+            feed_id: The identifier for the feed.
+            url: The URL to fetch metadata from.
+            yt_cli_args: Additional command-line arguments for yt-dlp.
+
+        Returns:
+            A list of Download objects containing the fetched metadata.
+
+        Raises:
+            YtdlpApiError: If no fetchable URL is determined or if no information is extracted.
+        """
         logger.info(
             "Fetching metadata for feed.",
             extra={
-                "feed_name": feed_name,
+                "feed_id": feed_id,
                 "url": url,
                 "num_yt_cli_args": len(yt_cli_args),
             },
@@ -271,14 +287,13 @@ class YtdlpWrapper:
             self._source_handler.get_source_specific_ydl_options(FetchPurpose.DISCOVERY)
         )
 
-        # TODO: I'm understanding, but this is not the most clear code
         def discovery_caller(
             handler_discovery_opts: dict[str, Any], url_to_discover: str
         ) -> dict[str, Any] | None:
             logger.debug(
                 "Discovery caller invoked by strategy handler.",
                 extra={
-                    "feed_name": feed_name,
+                    "feed_id": feed_id,
                     "original_url": url,
                     "url_to_discover": url_to_discover,
                     "handler_discovery_opts": list(handler_discovery_opts.keys()),
@@ -297,24 +312,23 @@ class YtdlpWrapper:
         fetch_url, ref_type = self._source_handler.determine_fetch_strategy(
             url, discovery_caller
         )
-        # Fallback to original if strategy returns None for URL
         actual_fetch_url = fetch_url or url
         if ref_type == ReferenceType.UNKNOWN_DIRECT_FETCH and not fetch_url:
             logger.info(
                 "Discovery indicated direct fetch, using original URL.",
-                extra={"feed_name": feed_name, "url": url},
+                extra={"feed_id": feed_id, "url": url},
             )
         elif not fetch_url:
             raise YtdlpApiError(
                 message="Strategy determination returned no fetchable URL. Aborting.",
-                feed_name=feed_name,
+                feed_id=feed_id,
                 url=url,
             )
 
         logger.info(
             "Acquiring metadata.",
             extra={
-                "feed_name": feed_name,
+                "feed_id": feed_id,
                 "actual_fetch_url": actual_fetch_url,
                 "original_url": url,
                 "reference_type": ref_type.name,
@@ -337,19 +351,19 @@ class YtdlpWrapper:
         if raw_info_dict is None:
             raise YtdlpApiError(
                 message="No information extracted by yt-dlp. This might be due to filters or content unavailability.",
-                feed_name=feed_name,
+                feed_id=feed_id,
                 url=actual_fetch_url,
             )
 
         parsed_downloads = self._source_handler.parse_metadata_to_downloads(
             raw_info_dict,
-            source_identifier=feed_name,
+            source_identifier=feed_id,
             ref_type=ref_type,
         )
         logger.info(
             "Successfully processed metadata.",
             extra={
-                "feed_name": feed_name,
+                "feed_id": feed_id,
                 "fetch_url": actual_fetch_url,
                 "original_url": url,
                 "num_downloads_identified": len(parsed_downloads),
@@ -388,7 +402,7 @@ class YtdlpWrapper:
         logger.info(
             "Downloading media.",
             extra={
-                "feed_name": download.feed,
+                "feed_id": download.feed,
                 "download_id": download.id,
                 "target_path": target_path,
             },
@@ -415,7 +429,7 @@ class YtdlpWrapper:
                 "Download failed during internal download call.",
                 exc_info=e,
                 extra={
-                    "feed_name": download.feed,
+                    "feed_id": download.feed,
                     "download_id": download.id,
                     "url": url_to_download,
                     "file_path": target_path,
@@ -427,7 +441,7 @@ class YtdlpWrapper:
                 "Unexpected error during internal download call wrapper.",
                 exc_info=e,
                 extra={
-                    "feed_name": download.feed,
+                    "feed_id": download.feed,
                     "download_id": download.id,
                     "url": url_to_download,
                     "file_path": target_path,
@@ -435,21 +449,21 @@ class YtdlpWrapper:
             )
             raise YtdlpApiError(
                 message="Failed to download media.",
-                feed_name=download.feed,
+                feed_id=download.feed,
                 url=url_to_download,
             ) from e
 
         if not target_path.exists():
             raise YtdlpApiError(
                 message=f"File not downloaded to {target_path}; may have been filtered out by yt-dlp.",
-                feed_name=download.feed,
+                feed_id=download.feed,
                 url=url_to_download,
             )
 
         logger.info(
             "Download complete.",
             extra={
-                "feed_name": download.feed,
+                "feed_id": download.feed,
                 "download_id": download.id,
                 "file_path": target_path,
             },

@@ -68,9 +68,9 @@ def test_fetch_metadata_success(ytdlp_wrapper: YtdlpWrapper, url_type: str, url:
     Asserts that at least one download is returned (or exactly one due to --playlist-items 1)
     and that basic metadata fields are populated.
     """
-    feed_name = f"test_{url_type}"
+    feed_id = f"test_{url_type}"
     downloads = ytdlp_wrapper.fetch_metadata(
-        feed_name=feed_name, url=url, yt_cli_args=YT_DLP_MINIMAL_ARGS
+        feed_id=feed_id, url=url, yt_cli_args=YT_DLP_MINIMAL_ARGS
     )
 
     assert len(downloads) == 1, (
@@ -103,11 +103,11 @@ def test_fetch_metadata_non_existent_video(ytdlp_wrapper: YtdlpWrapper):
     """
     Tests that fetching metadata for a non-existent video URL raises YtdlpApiError.
     """
-    feed_name = "test_non_existent"
+    feed_id = "test_non_existent"
 
     with pytest.raises(YtdlpApiError):
         ytdlp_wrapper.fetch_metadata(
-            feed_name=feed_name,
+            feed_id=feed_id,
             url=INVALID_VIDEO_URL,
             yt_cli_args=YT_DLP_MINIMAL_ARGS,
         )
@@ -121,7 +121,7 @@ def test_fetch_metadata_with_impossible_filter(
     """
     Tests that fetching metadata with a filter that matches no videos returns an empty list.
     """
-    feed_name = f"test_impossible_filter_{url_type}"
+    feed_id = f"test_impossible_filter_{url_type}"
 
     impossible_filter_args = [
         "-f",
@@ -131,7 +131,7 @@ def test_fetch_metadata_with_impossible_filter(
     ]
 
     downloads = ytdlp_wrapper.fetch_metadata(
-        feed_name=feed_name, url=url, yt_cli_args=impossible_filter_args
+        feed_id=feed_id, url=url, yt_cli_args=impossible_filter_args
     )
     assert len(downloads) == 0, (
         f"Expected 0 downloads for impossible filter, got {len(downloads)}"
@@ -144,13 +144,13 @@ def test_fetch_metadata_invalid_cli_arg(ytdlp_wrapper: YtdlpWrapper):
     Tests that providing an invalid yt-dlp CLI argument raises a ValueError.
     This error originates from _prepare_ydl_options.
     """
-    feed_name = "test_invalid_cli_arg"
+    feed_id = "test_invalid_cli_arg"
     test_url = "https://www.youtube.com/@coletdjnz/videos"
     invalid_cli_args = ["--this-is-not-a-real-yt-dlp-option"]
 
     with pytest.raises(YtdlpApiError) as excinfo:
         ytdlp_wrapper.fetch_metadata(
-            feed_name=feed_name, url=test_url, yt_cli_args=invalid_cli_args
+            feed_id=feed_id, url=test_url, yt_cli_args=invalid_cli_args
         )
 
     assert "Invalid yt-dlp CLI arguments provided" in str(excinfo.value)

@@ -42,55 +42,55 @@ class DataCoordinator:
         logger.debug("DataCoordinator (orchestrator) initialized.")
 
     def process_feed(
-        self, feed_name: str, feed_config: FeedConfig, last_processed_date: datetime
+        self, feed_id: str, feed_config: FeedConfig, last_processed_date: datetime
     ) -> None:  # feed_config type placeholder
         """
         Orchestrates the processing of a single feed.
         """
         # Orchestration logic to be implemented fully later
-        logger.info("Starting feed processing.", extra={"feed_id": feed_name})
+        logger.info("Starting feed processing.", extra={"feed_id": feed_id})
         try:
             # 1. Enqueue new downloads
-            logger.info("Enqueueing new downloads...", extra={"feed_id": feed_name})
+            logger.info("Enqueueing new downloads...", extra={"feed_id": feed_id})
             self.enqueuer.enqueue_new_downloads(
-                feed_name, feed_config, last_processed_date
+                feed_id, feed_config, last_processed_date
             )
 
             # 2. Download queued items
-            logger.info("Downloading queued items...", extra={"feed_id": feed_name})
+            logger.info("Downloading queued items...", extra={"feed_id": feed_id})
             # Assuming download_queued takes the feed config directly
             self.downloader.download_queued(
-                feed_name, feed_config
+                feed_id, feed_config
             )  # Limit can be added if needed
 
             # 3. Prune old downloads
 
             if feed_config.keep_last is not None or feed_config.since is not None:
-                logger.info("Pruning old downloads...", extra={"feed_id": feed_name})
-                # Assuming prune_feed_downloads takes feed_name, keep_last, prune_before_date
+                logger.info("Pruning old downloads...", extra={"feed_id": feed_id})
+                # Assuming prune_feed_downloads takes feed_id, keep_last, prune_before_date
                 self.pruner.prune_feed_downloads(
-                    feed_name, feed_config.keep_last, feed_config.since
+                    feed_id, feed_config.keep_last, feed_config.since
                 )
             else:
                 logger.info(
                     "Skipping pruning (no policy defined).",
-                    extra={"feed_id": feed_name},
+                    extra={"feed_id": feed_id},
                 )
 
             # 4. Generate Feed XML
-            logger.info("Generating feed XML...", extra={"feed_id": feed_name})
+            logger.info("Generating feed XML...", extra={"feed_id": feed_id})
             # Assuming feed_gen has a method like this. Adjust based on actual FeedGen design.
-            # await self.feed_gen.generate_feed_xml(feed_name)
+            # await self.feed_gen.generate_feed_xml(feed_id)
 
             logger.info(
-                "Feed processing completed successfully.", extra={"feed_id": feed_name}
+                "Feed processing completed successfully.", extra={"feed_id": feed_id}
             )
 
         except Exception as e:
             # Catching general Exception for now, specific errors should be handled by services
             logger.critical(
                 "Unhandled error during feed processing pipeline.",
-                extra={"feed_id": feed_name},
+                extra={"feed_id": feed_id},
                 exc_info=e,
             )
             # Optionally re-raise or handle specific orchestration failures

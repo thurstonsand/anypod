@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from enum import Enum
 import logging
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -18,6 +19,11 @@ import yaml
 from .exceptions import ConfigLoadError
 
 logger = logging.getLogger(__name__)
+
+
+class DebugMode(str, Enum):
+    YTDLP = "ytdlp"
+    ENQUEUER = "enqueuer"
 
 
 class FeedConfig(BaseModel):
@@ -47,8 +53,6 @@ class YamlFileFromFieldSource(PydanticBaseSettingsSource):
     This source should be run after all other sources that might populate the path field.
     """
 
-    path_field_name: str = "config_file"
-
     def _get_current_state_of(self, field_name: str) -> Any:
         """Get the current state of a field from the settings model."""
         value = self.current_state.get(field_name)
@@ -73,11 +77,10 @@ class YamlFileFromFieldSource(PydanticBaseSettingsSource):
 
     def _get_yaml_path(self) -> Path | None:
         """Determines the YAML path from the already processed settings state."""
-        path_value = self._get_current_state_of(self.path_field_name)
+        path_value = self._get_current_state_of("config_file")
         logger.debug(
             "Attempting to resolve YAML configuration file path.",
             extra={
-                "path_field_name": self.path_field_name,
                 "current_path_value_type": type(path_value).__name__,
                 "current_path_value": "None" if path_value is None else str(path_value),
             },
@@ -89,7 +92,7 @@ class YamlFileFromFieldSource(PydanticBaseSettingsSource):
             return Path(path_value).expanduser()
         elif path_value is not None:
             raise TypeError(
-                f"Field '{self.path_field_name}' (or its string alias) must resolve to a Path or string, "
+                f"Field 'config_file' must resolve to a Path or string, "
                 f"received type '{type(path_value).__name__}'"
             )
         else:  # path_value is None
@@ -132,12 +135,19 @@ class YamlFileFromFieldSource(PydanticBaseSettingsSource):
 
     def __call__(self) -> dict[str, Any]:
         """Load YAML data from file specified in the config_file field,
-        unless debug_ytdlp is true."""
+        unless debug_mode is 'ytdlp'."""
 
-        if self._get_current_state_of("debug_ytdlp"):
+        current_debug_mode_value = self._get_current_state_of("debug_mode")
+        # Check against the enum member or its string value
+        if (
+            current_debug_mode_value == DebugMode.YTDLP
+            or current_debug_mode_value == DebugMode.YTDLP.value
+        ):
             logger.info(
-                "YAML configuration loading skipped due to debug_ytdlp flag.",
-                extra={"debug_ytdlp_status": True},
+                "YAML configuration loading skipped due to debug_mode='ytdlp'.",
+                extra={
+                    "debug_mode_status": f"({type(current_debug_mode_value).__name__}) {current_debug_mode_value}"
+                },
             )
             return {}
 
@@ -162,24 +172,20 @@ class YamlFileFromFieldSource(PydanticBaseSettingsSource):
         else:
             logger.info(
                 "No YAML configuration file specified or resolved; skipping YAML loading.",
-                extra={"path_field_name": self.path_field_name},
             )
             self.yaml_data = {}
 
         return self.yaml_data.copy()
-
-    def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(path_field_name={self.path_field_name})"
 
 
 class AppSettings(BaseSettings):
     """Holds all feed configurations."""
 
     # Global settings
-    debug_ytdlp: bool = Field(
-        default=False,
-        validation_alias="DEBUG_YTDLP",
-        description="Run in yt-dlp debug mode, using a debug.yaml configuration file in the workspace root directory.",
+    debug_mode: DebugMode | None = Field(
+        default=None,
+        validation_alias="DEBUG_MODE",
+        description="Specifies the debug mode to run ('ytdlp', 'enqueuer', or None for default).",
     )
     log_format: Literal["human", "json"] = Field(
         default="human",
@@ -199,7 +205,7 @@ class AppSettings(BaseSettings):
 
     # Feeds config
     config_file: Path = Field(
-        Path("/config/feeds.yaml"),
+        default=Path("/config/feeds.yaml"),
         validation_alias="CONFIG_FILE",
         description="Path to the YAML config file.",
     )
@@ -212,7 +218,7 @@ class AppSettings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="",
         env_nested_delimiter="__",
-        yaml_file=None,
+        # yaml_file=None, # Removed as we handle YAML via YamlFileFromFieldSource
         yaml_file_encoding="utf-8",
         cli_parse_args=True,
         cli_ignore_unknown_args=True,
