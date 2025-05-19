@@ -1,16 +1,12 @@
-from collections.abc import Callable
 import logging
 from pathlib import Path
 from typing import Any
-
-import yt_dlp  # type: ignore
-import yt_dlp.options  # type: ignore
-from yt_dlp.utils import NO_DEFAULT, function_with_repr  # type: ignore
 
 from ..db import Download
 from ..exceptions import YtdlpApiError
 from .base_handler import FetchPurpose, ReferenceType, SourceHandlerBase
 from .youtube_handler import YoutubeHandler
+from .ytdlp_core import YtdlpCore
 
 logger = logging.getLogger(__name__)
 
@@ -21,67 +17,6 @@ class YtdlpWrapper:
     """
 
     _source_handler: SourceHandlerBase = YoutubeHandler()
-
-    FilterFunctionType = Callable[  # type: ignore
-        [dict[str, Any], bool | set[str]], (NO_DEFAULT | str) | None
-    ]
-
-    # I may not need this function, but leaving it here for now.
-    def _compose_match_filters_and(  # type: ignore
-        self,
-        *funcs: FilterFunctionType | None,  # type: ignore
-        name: str = "composed_filter_and",
-    ) -> FilterFunctionType | None:
-        """
-        Composes multiple filter functions (typically from yt_dlp.utils.match_filter_func)
-        with AND logic. The composed filter passes only if all underlying filters pass.
-
-        Args:
-            *funcs: The filter functions to compose.
-            name: An optional name for the composed filter, used for its representation.
-
-        Returns:
-            A new filter function that combines all provided filters with AND logic.
-        """
-        logger.debug(
-            "Composing match filters.",
-            extra={"num_funcs_to_compose": len(funcs), "requested_name": name},  # type: ignore
-        )
-        active_funcs = [f for f in funcs if f is not None]  # type: ignore
-        if not active_funcs:
-            logger.debug("No active filter functions to compose.")
-            return None
-        elif len(active_funcs) == 1:  # type: ignore
-            logger.debug("Only one active filter function, returning it directly.")
-            return active_funcs[0]  # type: ignore
-        else:
-            # Create a meaningful repr for the composed function.
-            # repr() on the function_with_repr instances should provide good strings.
-            reprs = ", ".join(repr(f) for f in active_funcs)  # type: ignore
-            composed_repr = f"ytdlp_wrapper.{name}({reprs})"
-            logger.debug(
-                "Composing multiple filter functions.",
-                extra={"composed_repr": composed_repr},
-            )
-
-            @function_with_repr.set_repr(composed_repr)  # type: ignore
-            def combined_filter(  # type: ignore
-                info_dict: dict[str, Any], incomplete: bool | set[str] = False
-            ) -> None | NO_DEFAULT | str:
-                """
-                The actual combined filter.
-                It passes if all underlying filters pass, respecting breaking conditions
-                and interactive prompts (NO_DEFAULT).
-                """
-                results = []
-                for f in active_funcs:  # type: ignore
-                    res = f(info_dict, incomplete)  # type: ignore
-                    if res not in (None, NO_DEFAULT):
-                        return res  # type: ignore
-                    results.append(res)  # type: ignore
-                return NO_DEFAULT if any(r is NO_DEFAULT for r in results) else None  # type: ignore
-
-            return combined_filter  # type: ignore
 
     def _prepare_ydl_options(
         self,
@@ -99,10 +34,10 @@ class YtdlpWrapper:
         logger.debug("Preparing yt-dlp options.", extra=log_params)
 
         try:
-            _, _, _, parsed_user_opts = yt_dlp.parse_options(user_cli_args)  # type: ignore
+            parsed_user_opts = YtdlpCore.parse_options(user_cli_args)
             logger.debug(
                 "Successfully parsed user CLI arguments for yt-dlp options.",
-                extra={**log_params, "parsed_user_opts": list(parsed_user_opts.keys())},  # type: ignore
+                extra={**log_params, "parsed_user_opts": list(parsed_user_opts.keys())},
             )
         except Exception as e:
             raise YtdlpApiError(
@@ -117,14 +52,6 @@ class YtdlpWrapper:
             "verbose": False,
             **source_specific_opts,
         }
-
-        match_filter = self._compose_match_filters_and(  # type: ignore
-            parsed_user_opts.pop("match_filter", None),  # type: ignore
-            base_opts.pop("match_filter", None),
-            name="final_match_filter",
-        )
-        if match_filter:
-            base_opts["match_filter"] = match_filter
 
         match purpose:
             case FetchPurpose.DISCOVERY:
@@ -167,90 +94,6 @@ class YtdlpWrapper:
                 )
 
         return final_opts  # type: ignore
-
-    def _extract_yt_dlp_info_internal(
-        self, ydl_opts: dict[str, Any], url: str
-    ) -> dict[str, Any] | None:
-        """Internal helper to call yt-dlp extract_info for metadata retrieval only."""
-
-        try:
-            ydl_instance = yt_dlp.YoutubeDL(ydl_opts)  # type: ignore
-        except Exception as e:
-            raise YtdlpApiError(
-                message="Failed to instantiate yt_dlp.YoutubeDL to extract metadata.",
-                url=url,
-            ) from e
-
-        logger.debug(
-            "Calling yt-dlp extract_info.",
-            extra={"url": url, "ydl_opts": list(ydl_opts.keys())},
-        )
-        try:
-            extracted_info = ydl_instance.extract_info(url, download=False)  # type: ignore
-            logger.debug(
-                "yt-dlp extract_info call successful.",
-                extra={
-                    "url": url,
-                    "info_extracted": extracted_info is not None,
-                    "type": type(extracted_info).__name__ if extracted_info else None,  # type: ignore
-                },
-            )
-            return extracted_info  # type: ignore
-        except yt_dlp.utils.DownloadError as e:  # type: ignore
-            logger.warning(
-                "yt-dlp extract_info failed with DownloadError.",
-                exc_info=e,  # type: ignore
-                extra={"url": url},
-            )
-            raise YtdlpApiError(
-                message="yt-dlp failed to process metadata.", url=url
-            ) from e
-        except Exception as e:
-            raise YtdlpApiError(
-                message="Unexpected failure during yt_dlp.extract_info.", url=url
-            ) from e
-
-    def _download_media_internal(self, ydl_opts: dict[str, Any], url: str) -> None:
-        """Internal helper to call yt-dlp download()."""
-        try:
-            ydl_instance = yt_dlp.YoutubeDL(ydl_opts)  # type: ignore
-        except Exception as e:
-            raise YtdlpApiError(
-                message="Failed to instantiate yt_dlp.YoutubeDL for download.",
-                url=url,
-            ) from e
-
-        logger.debug(
-            "Calling yt-dlp download().",
-            extra={
-                "url": url,
-                "ydl_opts": list(ydl_opts.keys()),
-            },
-        )
-        try:
-            retcode = ydl_instance.download([url])  # type: ignore
-        except yt_dlp.utils.DownloadError as e:  # type: ignore
-            # Handle specific download errors (network issues, unavailable formats, etc.)
-            logger.warning(
-                "yt-dlp download() failed with DownloadError.",
-                exc_info=e,  # type: ignore
-                extra={"url": url},
-            )
-            raise YtdlpApiError(message="yt-dlp download failed.", url=url) from e
-        except Exception as e:
-            # Catch other potential exceptions during download
-            raise YtdlpApiError(
-                message="Unexpected failure during yt_dlp.download().", url=url
-            ) from e
-        logger.debug(
-            "yt-dlp download() call finished.",
-            extra={"url": url, "retcode": retcode},  # type: ignore
-        )
-        if retcode != 0:
-            raise YtdlpApiError(
-                message=f"yt-dlp download() failed with non-zero exit code: {retcode}; download may not exist",
-                url=url,
-            )
 
     def fetch_metadata(
         self,
@@ -305,9 +148,7 @@ class YtdlpWrapper:
                 source_specific_opts=source_specific_discovery_opts,
             )
             effective_discovery_opts.update(handler_discovery_opts)
-            return self._extract_yt_dlp_info_internal(
-                effective_discovery_opts, url_to_discover
-            )
+            return YtdlpCore.extract_info(effective_discovery_opts, url_to_discover)
 
         fetch_url, ref_type = self._source_handler.determine_fetch_strategy(
             url, discovery_caller
@@ -344,9 +185,7 @@ class YtdlpWrapper:
             yt_cli_args, FetchPurpose.METADATA_FETCH, source_specific_metadata_opts
         )
 
-        raw_info_dict = self._extract_yt_dlp_info_internal(
-            main_fetch_opts, actual_fetch_url
-        )
+        raw_info_dict = YtdlpCore.extract_info(main_fetch_opts, actual_fetch_url)
 
         if raw_info_dict is None:
             raise YtdlpApiError(
@@ -423,7 +262,7 @@ class YtdlpWrapper:
         url_to_download = download.source_url
 
         try:
-            self._download_media_internal(download_opts, url_to_download)
+            YtdlpCore.download(download_opts, url_to_download)
         except YtdlpApiError as e:
             logger.error(
                 "Download failed during internal download call.",
