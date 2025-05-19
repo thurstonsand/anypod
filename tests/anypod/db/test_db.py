@@ -6,16 +6,16 @@ from typing import Any
 
 import pytest
 
-from anypod.db import DatabaseManager, Download, DownloadNotFoundError, DownloadStatus
+from anypod.db import DatabaseManager, Download, DownloadStatus
+from anypod.exceptions import DownloadNotFoundError
 
 # --- Fixtures ---
 
 
 @pytest.fixture
 def db_manager(tmp_path: Path) -> Iterator[DatabaseManager]:
-    db_path = tmp_path / "test.db"
-    manager = DatabaseManager(db_path)
-    manager._get_connection()  # type: ignore create the schema
+    # db_path = tmp_path / "test.db"
+    manager = DatabaseManager(db_path=None, memory_name="test_db")
     yield manager
     manager.close()  # Ensure connection is closed after test
 
@@ -154,7 +154,7 @@ def test_download_equality_and_hash(sample_download_queued: Download):
 @pytest.mark.unit
 def test_db_manager_initialization_and_schema(db_manager: DatabaseManager):
     """Test that the schema (tables and indices) is created upon first DB interaction."""
-    conn = db_manager._get_connection()  # type: ignore
+    conn: sqlite3.Connection = db_manager._db.db.conn  # type: ignore
     assert conn is not None, "Connection should have been established"
 
     cursor: sqlite3.Cursor | None = None
@@ -185,6 +185,8 @@ def test_add_and_get_download(
     """Test adding a new download and then retrieving it."""
     db_manager.upsert_download(sample_download_queued)
 
+    # assert 1 == 0, f"{sqlite3.sqlite_version}, {sqlite3.sqlite_version_info}"
+    # assert 1 == 0, f"rows: {list(db_manager._db.db['downloads'].rows)}"
     retrieved_download = db_manager.get_download_by_id(
         feed=sample_download_queued.feed,
         id=sample_download_queued.id,

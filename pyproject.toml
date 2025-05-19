@@ -13,6 +13,7 @@ dependencies = [
     "pydantic-settings>=2.9.1",
     "python-json-logger>=3.3.0",
     "pyyaml>=6.0.2",
+    "sqlite-utils>=3.38",
     "yt-dlp>=2025.4.30",
 ]
 

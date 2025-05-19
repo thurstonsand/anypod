@@ -116,7 +116,7 @@ class HumanReadableExtrasFormatter(logging.Formatter):
         combined_extras: dict[str, Any] = {}
         exc_custom_attributes = getattr(record, "exc_custom_attrs", None)
         if isinstance(exc_custom_attributes, dict):
-            combined_extras.update(exc_custom_attributes)  # type: ignore[arg-type]
+            combined_extras.update(exc_custom_attributes)  # type: ignore
 
         for key, value in record.__dict__.items():
             if key not in standard_attrs and not key.startswith("_"):
@@ -188,7 +188,7 @@ LOGGING_CONFIG: dict[str, Any] = {
             "datefmt": "%Y-%m-%d %H:%M:%S",
         },
         "json_formatter": {
-            "()": "pythonjsonlogger.jsonlogger.JsonFormatter",
+            "()": "pythonjsonlogger.json.JsonFormatter",
             "format": "%(asctime)s %(levelname)s %(name)s %(message)s %(context_id)s",
         },
     },

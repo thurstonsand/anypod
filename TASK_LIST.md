@@ -57,6 +57,7 @@ src/
   - [x] `get_downloads_to_prune_by_since`
   - [x] `delete_downloads`
 - [x] Tests with tmp in-memory DB.
+- [ ] Tests to make sure db access is optimized (e.g. uses indexes)
 
 ## 3.2 File Manager Layer
 - [x] Abstraction seam: encapsulate base directory so future S3/GCS back‑ends can subclass
