@@ -56,7 +56,7 @@ def test_load_from_default_location(monkeypatch: MonkeyPatch, tmp_path: Path):
     # Clear environment variables that might interfere
     monkeypatch.delenv("CONFIG_FILE", raising=False)
 
-    settings = AppSettings()  # type: ignore[call-arg]
+    settings = AppSettings()  # type: ignore
 
     assert len(settings.feeds) == len(SAMPLE_FEEDS_DATA["feeds"])
     assert "podcast1" in settings.feeds
@@ -109,7 +109,7 @@ def test_override_location_with_env_var(
     """
     monkeypatch.setenv("CONFIG_FILE", str(sample_config_file))
 
-    settings = AppSettings()  # type: ignore[call-arg]
+    settings = AppSettings()  # type: ignore
 
     assert len(settings.feeds) == len(SAMPLE_FEEDS_DATA["feeds"])
     assert "podcast1" in settings.feeds, (
@@ -199,7 +199,7 @@ def test_nonexistent_config_file_raises_error(monkeypatch: MonkeyPatch):
     with pytest.raises(
         ConfigLoadError, match="Failed to load or parse YAML configuration file"
     ) as exc_info:
-        AppSettings()  # type: ignore[call-arg]
+        AppSettings()  # type: ignore
 
     assert isinstance(exc_info.value.__cause__, FileNotFoundError), (
         f"Cause of OSError should be FileNotFoundError, got {type(exc_info.value.__cause__).__name__}"

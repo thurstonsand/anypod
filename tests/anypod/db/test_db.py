@@ -884,7 +884,7 @@ def test_download_from_row_success(sample_download_row_data: dict[str, Any]):
         last_error=mock_row["last_error"],
     )
 
-    converted_download = Download.from_row(mock_row)  # type: ignore[arg-type] # dict approximates sqlite3.Row
+    converted_download = Download.from_row(mock_row)
     assert converted_download == expected_download
     assert converted_download.published == expected_published_dt
     assert converted_download.status == expected_status_enum
@@ -893,30 +893,25 @@ def test_download_from_row_success(sample_download_row_data: dict[str, Any]):
 
 @pytest.mark.unit
 @pytest.mark.parametrize(
-    "malformed_field, malformed_value, expected_error_message_part",
+    "malformed_field, malformed_value",
     [
-        ("published", "not-a-date-string", "Invalid date format"),
-        ("published", None, "Invalid date format"),
-        ("status", "unknown_status", "Invalid status value"),
-        (
-            "duration",
-            "not-a-float",
-            "could not convert string to float",
-        ),  # Assuming direct float conversion error
+        ("published", "not-a-date-string"),
+        ("published", None),
+        ("status", "unknown_status"),
+        ("duration", "not-a-float"),
     ],
 )
 def test_download_from_row_malformed_data(
     sample_download_row_data: dict[str, Any],
     malformed_field: str,
     malformed_value: Any,
-    expected_error_message_part: str,
 ):
-    """Test ValueError is raised for malformed data fields during Download.from_row()."""
+    """Test that Download.from_row raises ValueError for malformed data."""
     corrupted_row_data = sample_download_row_data.copy()
     corrupted_row_data[malformed_field] = malformed_value
 
     with pytest.raises(ValueError):
-        Download.from_row(corrupted_row_data)  # type: ignore[arg-type]
+        Download.from_row(corrupted_row_data)
 
 
 def test_bump_retries_non_existent_download(db_manager: DatabaseManager):

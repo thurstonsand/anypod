@@ -1,3 +1,6 @@
+from typing import Any
+
+
 class AnypodError(Exception):
     """Base class for application-specific errors."""
 
@@ -82,6 +85,37 @@ class YtdlpError(AnypodError):
 
 class YtdlpDataError(YtdlpError):
     """Raised when yt-dlp data extraction fails."""
+
+
+class YtdlpFieldMissingError(YtdlpDataError):
+    """Raised when a required field is missing from yt-dlp data."""
+
+    def __init__(
+        self,
+        field_name: str,
+    ):
+        super().__init__("Field is required")
+        self.field_name = field_name
+
+
+class YtdlpFieldInvalidError(YtdlpDataError):
+    """Raised when a field has an invalid type."""
+
+    def __init__(
+        self,
+        field_name: str,
+        expected_type: type | tuple[type, ...],
+        actual_value: Any,
+    ):
+        super().__init__("Invalid type for field.")
+        self.field_name = field_name
+        self.actual_value = actual_value
+        self.actual_type = str(type(actual_value).__name__)
+
+        if isinstance(expected_type, tuple):
+            self.expected_type = ", ".join(t.__name__ for t in expected_type)
+        else:
+            self.expected_type = expected_type.__name__
 
 
 class YtdlpApiError(YtdlpError):

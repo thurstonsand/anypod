@@ -29,7 +29,7 @@ def ytdlp_wrapper(mock_youtube_handler: MagicMock) -> YtdlpWrapper:
 
 
 @pytest.mark.unit
-@patch("anypod.ytdlp_wrapper.ytdlp_core.yt_dlp.parse_options")
+@patch("anypod.ytdlp_wrapper.ytdlp_core.YtdlpCore.parse_options")
 def test_prepare_ydl_options_discovery_basic(
     mock_parse_options: MagicMock,
     ytdlp_wrapper: YtdlpWrapper,
@@ -38,12 +38,7 @@ def test_prepare_ydl_options_discovery_basic(
     Tests basic option preparation for DISCOVERY purpose with no user CLI args
     and no source-specific options.
     """
-    mock_parse_options.return_value = (
-        None,
-        None,
-        None,
-        {},
-    )
+    mock_parse_options.return_value = {}
 
     user_cli_args: list[str] = []
     purpose = FetchPurpose.DISCOVERY
@@ -67,7 +62,7 @@ def test_prepare_ydl_options_discovery_basic(
 
 
 @pytest.mark.unit
-@patch("anypod.ytdlp_wrapper.ytdlp_core.yt_dlp.parse_options")
+@patch("anypod.ytdlp_wrapper.ytdlp_core.YtdlpCore.parse_options")
 def test_prepare_ydl_options_metadata_fetch_basic(
     mock_parse_options: MagicMock,
     ytdlp_wrapper: YtdlpWrapper,
@@ -76,12 +71,7 @@ def test_prepare_ydl_options_metadata_fetch_basic(
     Tests basic option preparation for METADATA_FETCH purpose with no user CLI args
     and no source-specific options.
     """
-    mock_parse_options.return_value = (
-        None,
-        None,
-        None,
-        {},
-    )
+    mock_parse_options.return_value = {}
 
     user_cli_args: list[str] = []
     purpose = FetchPurpose.METADATA_FETCH
@@ -105,7 +95,7 @@ def test_prepare_ydl_options_metadata_fetch_basic(
 
 
 @pytest.mark.unit
-@patch("anypod.ytdlp_wrapper.ytdlp_core.yt_dlp.parse_options")
+@patch("anypod.ytdlp_wrapper.ytdlp_core.YtdlpCore.parse_options")
 def test_prepare_ydl_options_media_download(
     mock_parse_options: MagicMock,
     ytdlp_wrapper: YtdlpWrapper,
@@ -113,7 +103,7 @@ def test_prepare_ydl_options_media_download(
     """
     Tests option preparation for MEDIA_DOWNLOAD purpose.
     """
-    mock_parse_options.return_value = (None, None, None, {})
+    mock_parse_options.return_value = {}
     user_cli_args: list[str] = []
     purpose = FetchPurpose.MEDIA_DOWNLOAD
     source_specific_opts: dict[str, Any] = {}
@@ -133,7 +123,7 @@ def test_prepare_ydl_options_media_download(
 
 
 @pytest.mark.unit
-@patch("anypod.ytdlp_wrapper.ytdlp_core.yt_dlp.parse_options")
+@patch("anypod.ytdlp_wrapper.ytdlp_core.YtdlpCore.parse_options")
 def test_prepare_ydl_options_with_user_cli_args_and_source_opts(
     mock_parse_options: MagicMock,
     ytdlp_wrapper: YtdlpWrapper,
@@ -145,7 +135,7 @@ def test_prepare_ydl_options_with_user_cli_args_and_source_opts(
     parsed_user_cli_opts = {
         "format": "bestvideo",
     }
-    mock_parse_options.return_value = (None, None, None, parsed_user_cli_opts)
+    mock_parse_options.return_value = parsed_user_cli_opts
 
     user_cli_args = [
         "-f",
@@ -177,13 +167,13 @@ def test_prepare_ydl_options_with_user_cli_args_and_source_opts(
 
 
 @pytest.mark.unit
-@patch("anypod.ytdlp_wrapper.ytdlp_core.yt_dlp.parse_options")
+@patch("anypod.ytdlp_wrapper.ytdlp_core.YtdlpCore.parse_options")
 def test_prepare_ydl_options_parse_options_failure(
     mock_parse_options: MagicMock,
     ytdlp_wrapper: YtdlpWrapper,
 ):
     """
-    Tests that a YtdlpApiError is raised if yt_dlp.parse_options fails.
+    Tests that a YtdlpApiError is raised if YtdlpCore.parse_options fails.
     """
     mock_parse_options.side_effect = Exception("CLI parsing failed")
 

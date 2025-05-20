@@ -3,6 +3,7 @@ from enum import Enum
 from typing import Any, Protocol
 
 from ..db import Download
+from .ytdlp_core import YtdlpInfo
 
 
 class ReferenceType(Enum):
@@ -29,7 +30,7 @@ class FetchPurpose(Enum):
 
 
 # Type alias for the function YtdlpWrapper passes to handlers for discovery calls
-YdlApiCaller = Callable[[dict[str, Any], str], dict[str, Any] | None]
+YdlApiCaller = Callable[[dict[str, Any], str], YtdlpInfo | None]
 
 
 class SourceHandlerBase(Protocol):
@@ -45,7 +46,10 @@ class SourceHandlerBase(Protocol):
         ...
 
     def determine_fetch_strategy(
-        self, initial_url: str, ydl_caller_for_discovery: YdlApiCaller
+        self,
+        feed_id: str,
+        initial_url: str,
+        ydl_caller_for_discovery: YdlApiCaller,
     ) -> tuple[str | None, ReferenceType]:
         """
         Classifies the initial URL and determines the final URL to fetch downloads from.
@@ -54,7 +58,8 @@ class SourceHandlerBase(Protocol):
 
     def parse_metadata_to_downloads(
         self,
-        info_dict: dict[str, Any],
+        feed_id: str,
+        ytdlp_info: YtdlpInfo,
         source_identifier: str,
         ref_type: ReferenceType,
     ) -> list[Download]:

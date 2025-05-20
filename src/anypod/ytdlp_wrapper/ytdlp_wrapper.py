@@ -6,7 +6,7 @@ from ..db import Download
 from ..exceptions import YtdlpApiError
 from .base_handler import FetchPurpose, ReferenceType, SourceHandlerBase
 from .youtube_handler import YoutubeHandler
-from .ytdlp_core import YtdlpCore
+from .ytdlp_core import YtdlpCore, YtdlpInfo
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +66,7 @@ class YtdlpWrapper:
                     extra={**log_params, "final_opts": list(final_opts.keys())},
                 )
             case FetchPurpose.METADATA_FETCH:
-                final_opts = {  # type: ignore
+                final_opts = {
                     **parsed_user_opts,
                     **base_opts,
                     "skip_download": True,
@@ -74,14 +74,14 @@ class YtdlpWrapper:
                 }
                 logger.debug(
                     "Prepared METADATA_FETCH options.",
-                    extra={**log_params, "final_opts": list(final_opts.keys())},  # type: ignore
+                    extra={**log_params, "final_opts": list(final_opts.keys())},
                 )
             case FetchPurpose.MEDIA_DOWNLOAD:
                 if not download_target_path:
                     raise ValueError(
                         "download_target_path is required for MEDIA_DOWNLOAD purpose"
                     )
-                final_opts = {  # type: ignore
+                final_opts = {
                     **parsed_user_opts,
                     **base_opts,
                     "skip_download": False,
@@ -90,10 +90,10 @@ class YtdlpWrapper:
                 }
                 logger.debug(
                     "Prepared MEDIA_DOWNLOAD options.",
-                    extra={**log_params, "final_opts": list(final_opts.keys())},  # type: ignore
+                    extra={**log_params, "final_opts": list(final_opts.keys())},
                 )
 
-        return final_opts  # type: ignore
+        return final_opts
 
     def fetch_metadata(
         self,
@@ -132,7 +132,7 @@ class YtdlpWrapper:
 
         def discovery_caller(
             handler_discovery_opts: dict[str, Any], url_to_discover: str
-        ) -> dict[str, Any] | None:
+        ) -> YtdlpInfo | None:
             logger.debug(
                 "Discovery caller invoked by strategy handler.",
                 extra={
@@ -151,7 +151,7 @@ class YtdlpWrapper:
             return YtdlpCore.extract_info(effective_discovery_opts, url_to_discover)
 
         fetch_url, ref_type = self._source_handler.determine_fetch_strategy(
-            url, discovery_caller
+            feed_id, url, discovery_caller
         )
         actual_fetch_url = fetch_url or url
         if ref_type == ReferenceType.UNKNOWN_DIRECT_FETCH and not fetch_url:
@@ -185,9 +185,8 @@ class YtdlpWrapper:
             yt_cli_args, FetchPurpose.METADATA_FETCH, source_specific_metadata_opts
         )
 
-        raw_info_dict = YtdlpCore.extract_info(main_fetch_opts, actual_fetch_url)
-
-        if raw_info_dict is None:
+        ytdlp_info = YtdlpCore.extract_info(main_fetch_opts, actual_fetch_url)
+        if ytdlp_info is None:
             raise YtdlpApiError(
                 message="No information extracted by yt-dlp. This might be due to filters or content unavailability.",
                 feed_id=feed_id,
@@ -195,7 +194,8 @@ class YtdlpWrapper:
             )
 
         parsed_downloads = self._source_handler.parse_metadata_to_downloads(
-            raw_info_dict,
+            feed_id,
+            ytdlp_info,
             source_identifier=feed_id,
             ref_type=ref_type,
         )
