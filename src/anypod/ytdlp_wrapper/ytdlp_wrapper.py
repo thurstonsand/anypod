@@ -45,6 +45,7 @@ class YtdlpWrapper:
         match purpose:
             case FetchPurpose.DISCOVERY:
                 final_opts = {
+                    **user_cli_args,
                     **base_opts,
                     "skip_download": True,
                     "extract_flat": "in_playlist",

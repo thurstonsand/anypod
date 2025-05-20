@@ -102,7 +102,8 @@ This section details the components that manage the lifecycle of downloads, from
     - Returns count of newly enqueued or transitioned-to-queued downloads.
 - [ ] Unit tests for `Enqueuer` with mocked dependencies.
 - [x] preprocess cli args so you dont do it every time
-- [ ] handle cookies differently? they need to be included even at discovery stage
+- [x] handle cookies differently? they need to be included even at discovery stage
+  - just include all args for all stages, including discovery; user will have limitations that need to be outlined in docs
 - [x] db should not leak any details about sqlite -- should abstract all that away
     - for example, remove all references to sqlite.Row, sqlite.Error
 - [x] retries should apply more widely, and with enough failures, should transition to error state
@@ -183,6 +184,9 @@ This section details the components that manage the lifecycle of downloads, from
 - [ ] Evaluate logged statements and make sure that only relevant things get logged
 - [ ] when using `--retry-failed`, should also include a date so that we disregard VERY old failures
   - errors will be common because live videos may be deleted and reuploaded as regular VODs
+- [ ] write README
+  - outline limitations with using ytdlp flags -- which ones do you have to avoid using?
+  - look up some well established open source projects and follow their documentation style
 
 ## 8  Docker & Dev Flow
 - [ ] `Dockerfile` (python:3.13-slim, default root, overridable UID/GID).

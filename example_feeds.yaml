@@ -1,27 +1,27 @@
 feeds:
   channel:
     url: https://www.youtube.com/@coletdjnz
-    yt_args: "-f "worst[ext=mp4] --playlist-items 1-3"
+    yt_args: "-f worst[ext=mp4] --playlist-items 1-3"
     schedule: "0 3 * * *"
     since: "2022-01-01T00:00:00Z"
   channel_tab:
     url: https://www.youtube.com/@coletdjnz/shorts
-    yt_args: "-f "worst[ext=mp4] --playlist-items 1-3"
+    yt_args: "-f worst[ext=mp4] --playlist-items 1-3"
     schedule: "0 3 * * *"
     since: "2022-01-01T00:00:00Z"
   videos_tab:
     url: https://www.youtube.com/@coletdjnz/videos
-    yt_args: "-f "worst[ext=mp4] --playlist-items 1-3"
+    yt_args: "-f worst[ext=mp4] --playlist-items 1-3"
     schedule: "0 3 * * *"
     since: "2022-01-01T00:00:00Z"
   playlist:
     url: https://youtube.com/playlist?list=PLt5yu3-wZAlSLRHmI1qNm0wjyVNWw1pCU&si=ZSBBgcLWYf2bxd5l
-    yt_args: "-f "worst[ext=mp4] --playlist-items 1-3"
+    yt_args: "-f worst[ext=mp4] --playlist-items 1-3"
     schedule: "0 3 * * *"
     since: "2022-01-01T00:00:00Z"
   video_short_link:
     url: https://youtu.be/aqz-KE-bpKQ?si=gggSJ6WU2A1w7_FL
-    yt_args: "-f "worst[ext=mp4] --playlist-items 1-3"
+    yt_args: "-f worst[ext=mp4] --playlist-items 1-3"
     schedule: "0 3 * * *"
     since: "2022-01-01T00:00:00Z"
   video:
