@@ -4,9 +4,10 @@ from datetime import datetime
 from enum import Enum
 import logging
 from pathlib import Path
+import shlex
 from typing import Any, Literal, cast
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from pydantic.fields import FieldInfo
 from pydantic_core import PydanticUndefined
 from pydantic_settings import (
@@ -17,6 +18,7 @@ from pydantic_settings import (
 import yaml
 
 from .exceptions import ConfigLoadError
+from .ytdlp_wrapper.ytdlp_core import YtdlpCore
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +32,10 @@ class FeedConfig(BaseModel):
     """Configuration for a single podcast feed."""
 
     url: str = Field(..., min_length=1, description="Feed source URL")
-    yt_args: str | None = Field(None, description="Arguments passed verbatim to yt-dlp")
+    yt_args: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Parsed arguments for yt-dlp, from user-provided string in config.",
+    )
     schedule: str = Field(..., min_length=1, description="Cron schedule string")
     keep_last: int | None = Field(
         None, ge=1, description="Prune policy - number of latest downloads to keep"
@@ -43,6 +48,24 @@ class FeedConfig(BaseModel):
         ge=1,
         description="Max attempts for downloading media before marking as ERROR.",
     )
+
+    @field_validator("yt_args", mode="before")
+    @classmethod
+    def parse_yt_args_string(cls, v: Any) -> dict[str, Any]:
+        if v is None:
+            return {}
+        if isinstance(v, str):
+            if not v.strip():  # Handle empty string
+                return {}
+            try:
+                args_list = shlex.split(v)
+                parsed_opts = YtdlpCore.parse_options(args_list)
+                return parsed_opts
+            except Exception as e:
+                raise ValueError(
+                    f"Invalid yt_args string '{v}'. Failed to parse."
+                ) from e
+        raise TypeError(f"yt_args must be a string, got {type(v).__name__}")
 
 
 class YamlFileFromFieldSource(PydanticBaseSettingsSource):

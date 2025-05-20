@@ -20,29 +20,18 @@ class YtdlpWrapper:
 
     def _prepare_ydl_options(
         self,
-        user_cli_args: list[str],
+        user_cli_args: dict[str, Any],
         purpose: FetchPurpose,
         source_specific_opts: dict[str, Any],
         download_target_path: Path | None = None,
     ) -> dict[str, Any]:
         log_params: dict[str, Any] = {
             "purpose": purpose,
-            "num_user_cli_args": len(user_cli_args),
+            "num_user_provided_opts": len(user_cli_args),
             "source_specific_opts": list(source_specific_opts.keys()),
             "download_target_path": download_target_path,
         }
         logger.debug("Preparing yt-dlp options.", extra=log_params)
-
-        try:
-            parsed_user_opts = YtdlpCore.parse_options(user_cli_args)
-            logger.debug(
-                "Successfully parsed user CLI arguments for yt-dlp options.",
-                extra={**log_params, "parsed_user_opts": list(parsed_user_opts.keys())},
-            )
-        except Exception as e:
-            raise YtdlpApiError(
-                message="Invalid yt-dlp CLI arguments provided.",
-            ) from e
 
         base_opts: dict[str, Any] = {
             "logger": logger,
@@ -63,18 +52,24 @@ class YtdlpWrapper:
                 }
                 logger.debug(
                     "Prepared DISCOVERY options.",
-                    extra={**log_params, "final_opts": list(final_opts.keys())},
+                    extra={
+                        **log_params,
+                        "final_opts": list(final_opts.keys()),
+                    },
                 )
             case FetchPurpose.METADATA_FETCH:
                 final_opts = {
-                    **parsed_user_opts,
+                    **user_cli_args,
                     **base_opts,
                     "skip_download": True,
                     "extract_flat": False,
                 }
                 logger.debug(
                     "Prepared METADATA_FETCH options.",
-                    extra={**log_params, "final_opts": list(final_opts.keys())},
+                    extra={
+                        **log_params,
+                        "final_opts": list(final_opts.keys()),
+                    },
                 )
             case FetchPurpose.MEDIA_DOWNLOAD:
                 if not download_target_path:
@@ -82,7 +77,7 @@ class YtdlpWrapper:
                         "download_target_path is required for MEDIA_DOWNLOAD purpose"
                     )
                 final_opts = {
-                    **parsed_user_opts,
+                    **user_cli_args,
                     **base_opts,
                     "skip_download": False,
                     "outtmpl": str(download_target_path),
@@ -90,7 +85,10 @@ class YtdlpWrapper:
                 }
                 logger.debug(
                     "Prepared MEDIA_DOWNLOAD options.",
-                    extra={**log_params, "final_opts": list(final_opts.keys())},
+                    extra={
+                        **log_params,
+                        "final_opts": list(final_opts.keys()),
+                    },
                 )
 
         return final_opts
@@ -99,7 +97,7 @@ class YtdlpWrapper:
         self,
         feed_id: str,
         url: str,
-        yt_cli_args: list[str],
+        yt_cli_args: dict[str, Any],
     ) -> list[Download]:
         """Fetches metadata for a given feed and URL using yt-dlp.
 
@@ -143,7 +141,7 @@ class YtdlpWrapper:
                 },
             )
             effective_discovery_opts = self._prepare_ydl_options(
-                user_cli_args=[],  # Pass empty because this is just for discovery
+                user_cli_args={},  # Pass empty because this is just for discovery
                 purpose=FetchPurpose.DISCOVERY,
                 source_specific_opts=source_specific_discovery_opts,
             )
@@ -213,7 +211,7 @@ class YtdlpWrapper:
     def download_media_to_file(
         self,
         download: Download,
-        yt_cli_args: list[str],
+        yt_cli_args: dict[str, Any],
         download_target_dir: Path,
     ) -> Path:
         """Downloads the media for a given Download to a target directory.

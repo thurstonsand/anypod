@@ -101,10 +101,10 @@ This section details the components that manage the lifecycle of downloads, from
         - For each existing 'upcoming' entry now VOD, update status to 'queued'.
     - Returns count of newly enqueued or transitioned-to-queued downloads.
 - [ ] Unit tests for `Enqueuer` with mocked dependencies.
-- [ ] preprocess cli args so you dont do it every time
+- [x] preprocess cli args so you dont do it every time
+- [ ] handle cookies differently? they need to be included even at discovery stage
 - [x] db should not leak any details about sqlite -- should abstract all that away
     - for example, remove all references to sqlite.Row, sqlite.Error
-- [ ] consider async'ifying the code base. e.g. https://github.com/omnilib/aiosqlite
 - [x] retries should apply more widely, and with enough failures, should transition to error state
     - maybe db.py needs a `bump_error_count` fn that handles this - bumps it until it becomes too high, then marks as error
 

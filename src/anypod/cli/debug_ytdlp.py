@@ -7,6 +7,7 @@ import yaml
 from ..db import DownloadStatus
 from ..exceptions import YtdlpApiError
 from ..ytdlp_wrapper import YtdlpWrapper
+from ..ytdlp_wrapper.ytdlp_core import YtdlpCore
 
 # Import Download for potential type hinting if we pretty print, though not strictly needed if just printing raw output.
 # from ..db import Download
@@ -110,7 +111,9 @@ def run_debug_ytdlp_mode(debug_yaml_path: Path) -> None:
                 },
             )
             downloads = ytdlp_wrapper.fetch_metadata(
-                feed_id=feed_id, url=url, yt_cli_args=cli_args
+                feed_id=feed_id,
+                url=url,
+                yt_cli_args=YtdlpCore.parse_options(cli_args),
             )
 
             if downloads:
@@ -134,7 +137,7 @@ def run_debug_ytdlp_mode(debug_yaml_path: Path) -> None:
                             try:
                                 file_path = ytdlp_wrapper.download_media_to_file(
                                     download=download,
-                                    yt_cli_args=cli_args,
+                                    yt_cli_args=YtdlpCore.parse_options(cli_args),
                                     download_target_dir=download_dir,
                                 )
                                 logger.info(

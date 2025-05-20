@@ -6,7 +6,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from anypod.db import Download, DownloadStatus
-from anypod.exceptions import YtdlpApiError
 from anypod.ytdlp_wrapper import YtdlpWrapper
 from anypod.ytdlp_wrapper.base_handler import FetchPurpose
 from anypod.ytdlp_wrapper.youtube_handler import YoutubeHandler
@@ -29,26 +28,21 @@ def ytdlp_wrapper(mock_youtube_handler: MagicMock) -> YtdlpWrapper:
 
 
 @pytest.mark.unit
-@patch("anypod.ytdlp_wrapper.ytdlp_core.YtdlpCore.parse_options")
 def test_prepare_ydl_options_discovery_basic(
-    mock_parse_options: MagicMock,
     ytdlp_wrapper: YtdlpWrapper,
 ):
     """
     Tests basic option preparation for DISCOVERY purpose with no user CLI args
     and no source-specific options.
     """
-    mock_parse_options.return_value = {}
 
-    user_cli_args: list[str] = []
+    user_cli_args: dict[str, Any] = {}
     purpose = FetchPurpose.DISCOVERY
     source_specific_opts: dict[str, Any] = {}
 
     prepared_opts = ytdlp_wrapper._prepare_ydl_options(  # type: ignore
         user_cli_args, purpose, source_specific_opts, None
     )
-
-    mock_parse_options.assert_called_once_with(user_cli_args)
 
     assert prepared_opts["skip_download"] is True
     assert prepared_opts["quiet"] is True
@@ -62,26 +56,21 @@ def test_prepare_ydl_options_discovery_basic(
 
 
 @pytest.mark.unit
-@patch("anypod.ytdlp_wrapper.ytdlp_core.YtdlpCore.parse_options")
 def test_prepare_ydl_options_metadata_fetch_basic(
-    mock_parse_options: MagicMock,
     ytdlp_wrapper: YtdlpWrapper,
 ):
     """
     Tests basic option preparation for METADATA_FETCH purpose with no user CLI args
     and no source-specific options.
     """
-    mock_parse_options.return_value = {}
 
-    user_cli_args: list[str] = []
+    user_cli_args: dict[str, Any] = {}
     purpose = FetchPurpose.METADATA_FETCH
     source_specific_opts: dict[str, Any] = {}
 
     prepared_opts = ytdlp_wrapper._prepare_ydl_options(  # type: ignore
         user_cli_args, purpose, source_specific_opts, None
     )
-
-    mock_parse_options.assert_called_once_with(user_cli_args)
 
     assert prepared_opts["skip_download"] is True
     assert prepared_opts["quiet"] is True
@@ -95,16 +84,13 @@ def test_prepare_ydl_options_metadata_fetch_basic(
 
 
 @pytest.mark.unit
-@patch("anypod.ytdlp_wrapper.ytdlp_core.YtdlpCore.parse_options")
 def test_prepare_ydl_options_media_download(
-    mock_parse_options: MagicMock,
     ytdlp_wrapper: YtdlpWrapper,
 ):
     """
     Tests option preparation for MEDIA_DOWNLOAD purpose.
     """
-    mock_parse_options.return_value = {}
-    user_cli_args: list[str] = []
+    user_cli_args: dict[str, Any] = {}
     purpose = FetchPurpose.MEDIA_DOWNLOAD
     source_specific_opts: dict[str, Any] = {}
     mock_target_path = Path("/tmp/downloads/feed_id/video_id.mp4")
@@ -123,24 +109,14 @@ def test_prepare_ydl_options_media_download(
 
 
 @pytest.mark.unit
-@patch("anypod.ytdlp_wrapper.ytdlp_core.YtdlpCore.parse_options")
 def test_prepare_ydl_options_with_user_cli_args_and_source_opts(
-    mock_parse_options: MagicMock,
     ytdlp_wrapper: YtdlpWrapper,
 ):
     """
     Tests option preparation with user CLI args and source-specific options,
     ensuring they are merged correctly.
     """
-    parsed_user_cli_opts = {
-        "format": "bestvideo",
-    }
-    mock_parse_options.return_value = parsed_user_cli_opts
-
-    user_cli_args = [
-        "-f",
-        "bestvideo",
-    ]
+    user_cli_args: dict[str, Any] = {"format": "bestvideo"}
     purpose = FetchPurpose.METADATA_FETCH
     source_specific_opts = {
         "cookies": "cookies.txt",
@@ -150,8 +126,6 @@ def test_prepare_ydl_options_with_user_cli_args_and_source_opts(
     prepared_opts = ytdlp_wrapper._prepare_ydl_options(  # type: ignore
         user_cli_args, purpose, source_specific_opts, None
     )
-
-    mock_parse_options.assert_called_once_with(user_cli_args)
 
     assert prepared_opts["skip_download"] is True
     assert prepared_opts["quiet"] is True
@@ -164,29 +138,6 @@ def test_prepare_ydl_options_with_user_cli_args_and_source_opts(
     assert prepared_opts["extract_flat"] is False
     assert "logger" in prepared_opts
     assert "match_filter" not in prepared_opts
-
-
-@pytest.mark.unit
-@patch("anypod.ytdlp_wrapper.ytdlp_core.YtdlpCore.parse_options")
-def test_prepare_ydl_options_parse_options_failure(
-    mock_parse_options: MagicMock,
-    ytdlp_wrapper: YtdlpWrapper,
-):
-    """
-    Tests that a YtdlpApiError is raised if YtdlpCore.parse_options fails.
-    """
-    mock_parse_options.side_effect = Exception("CLI parsing failed")
-
-    user_cli_args = ["--invalid-arg"]
-    purpose = FetchPurpose.DISCOVERY
-    source_specific_opts: dict[str, Any] = {}
-
-    with pytest.raises(YtdlpApiError):
-        ytdlp_wrapper._prepare_ydl_options(  # type: ignore
-            user_cli_args, purpose, source_specific_opts, None
-        )
-
-    mock_parse_options.assert_called_once_with(user_cli_args)
 
 
 @pytest.mark.unit
@@ -211,7 +162,7 @@ def test_download_media_to_file_success(
         duration=120.0,
         status=DownloadStatus.QUEUED,
     )
-    yt_cli_args = ["-f", "best"]
+    yt_cli_args: dict[str, Any] = {"format": "best"}
     download_target_dir = Path("/tmp/test_downloads")
     expected_target_path = (
         download_target_dir

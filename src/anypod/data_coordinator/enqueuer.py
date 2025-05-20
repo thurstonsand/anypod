@@ -1,6 +1,5 @@
 from datetime import datetime
 import logging
-import shlex
 from typing import Any
 
 from ..config import FeedConfig
@@ -233,7 +232,6 @@ class Enqueuer:
         db_download: Download,
         feed_id: str,
         feed_config: FeedConfig,
-        yt_cli_args: list[str],
         feed_log_params: dict[str, Any],
     ) -> bool:
         """Processes a single upcoming download, re-fetching metadata and updating status if necessary.
@@ -253,7 +251,7 @@ class Enqueuer:
             fetched_downloads = self.ytdlp_wrapper.fetch_metadata(
                 feed_id,
                 db_download.source_url,
-                yt_cli_args,
+                feed_config.yt_args,
             )
         except YtdlpApiError as e:
             error_message = "Failed to re-fetch metadata for upcoming download."
@@ -261,7 +259,7 @@ class Enqueuer:
                 error_message,
                 extra={
                     **download_log_params,
-                    "cli_args": yt_cli_args,
+                    "cli_args": feed_config.yt_args,
                 },
                 exc_info=e,
             )
@@ -300,17 +298,16 @@ class Enqueuer:
         self,
         feed_id: str,
         feed_config: FeedConfig,
-        base_yt_cli_args: list[str],
         fetch_since_date: datetime,
         log_params: dict[str, Any],
     ) -> list[Download]:
         """Fetches all media metadata for the feed URL, applying date filter.
         Raises EnqueueError if the main ytdlp fetch fails.
         """
-        current_yt_cli_args = list(base_yt_cli_args)  # Make a copy
+        current_yt_cli_args = dict(feed_config.yt_args)  # Make a copy
         if fetch_since_date:
             date_str = fetch_since_date.strftime("%Y%m%d")
-            current_yt_cli_args.extend(["--dateafter", date_str])
+            current_yt_cli_args["dateafter"] = date_str
             logger.info(
                 f"Fetching feed downloads --dateafter {date_str}.", extra=log_params
             )
@@ -436,7 +433,7 @@ class Enqueuer:
             )
 
     def _handle_existing_upcoming_downloads(
-        self, feed_id: str, feed_config: FeedConfig, yt_cli_args: list[str]
+        self, feed_id: str, feed_config: FeedConfig
     ) -> int:
         """
         Re-fetches metadata for existing DB entries with status `UPCOMING`.
@@ -447,7 +444,6 @@ class Enqueuer:
         Args:
             feed_id: The unique identifier for the feed.
             feed_config: The configuration object for the feed.
-            yt_cli_args: Parsed yt-dlp CLI arguments for the feed.
 
         Returns:
             The count of downloads successfully transitioned from 'upcoming' to 'queued'.
@@ -473,7 +469,7 @@ class Enqueuer:
         queued_count = 0
         for db_download in upcoming_db_downloads:
             if self._process_single_upcoming_download(
-                db_download, feed_id, feed_config, yt_cli_args, feed_log_params
+                db_download, feed_id, feed_config, feed_log_params
             ):
                 queued_count += 1
 
@@ -483,7 +479,6 @@ class Enqueuer:
         self,
         feed_id: str,
         feed_config: FeedConfig,
-        yt_cli_args: list[str],
         fetch_since_date: datetime,
     ) -> int:
         """
@@ -494,7 +489,6 @@ class Enqueuer:
         Args:
             feed_id: The unique identifier for the feed.
             feed_config: The configuration object for the feed.
-            yt_cli_args: Parsed yt-dlp CLI arguments for the feed.
             fetch_since_date: If provided, fetches downloads published after this date.
 
         Returns:
@@ -508,7 +502,7 @@ class Enqueuer:
         )
 
         all_fetched_downloads = self._fetch_all_metadata_for_feed_url(
-            feed_id, feed_config, yt_cli_args, fetch_since_date, feed_log_params
+            feed_id, feed_config, fetch_since_date, feed_log_params
         )
 
         queued_count = 0
@@ -558,12 +552,9 @@ class Enqueuer:
         feed_log_params = {"feed_id": feed_id, "feed_url": feed_config.url}
         logger.info("Starting enqueue_new_downloads process.", extra=feed_log_params)
 
-        # TODO: is this needed or can ytdlp just accept the string?
-        yt_cli_args_list = shlex.split(feed_config.yt_args or "")
-
         # Handle existing UPCOMING downloads
         queued_from_upcoming = self._handle_existing_upcoming_downloads(
-            feed_id, feed_config, yt_cli_args_list
+            feed_id, feed_config
         )
         logger.info(
             "Upcoming downloads transitioned to QUEUED.",
@@ -572,7 +563,7 @@ class Enqueuer:
 
         # Fetch and process all feed downloads
         queued_from_feed_fetch = self._fetch_and_process_new_feed_downloads(
-            feed_id, feed_config, yt_cli_args_list, fetch_since_date
+            feed_id, feed_config, fetch_since_date
         )
         logger.info(
             "New/updated downloads set to QUEUED.",

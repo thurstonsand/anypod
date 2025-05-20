@@ -6,6 +6,7 @@ import pytest
 from anypod.db import Download, DownloadStatus
 from anypod.exceptions import YtdlpApiError
 from anypod.ytdlp_wrapper import YtdlpWrapper
+from anypod.ytdlp_wrapper.ytdlp_core import YtdlpCore
 
 # some CC-BY licensed urls to test with
 TEST_URLS_SINGLE_AND_PLAYLIST = [
@@ -31,12 +32,9 @@ TEST_URLS_PARAMS = [
 INVALID_VIDEO_URL = "https://www.youtube.com/watch?v=thisvideodoesnotexistxyz"
 
 # CLI args for minimal quality and limited playlist downloads
-YT_DLP_MINIMAL_ARGS = [
-    "--playlist-items",
-    "1",  # Fetch only one download from playlists/channels
-    "-f",
-    "worst[ext=mp4]",
-]
+YT_DLP_MINIMAL_ARGS = YtdlpCore.parse_options(
+    ["--playlist-items", "1", "--format", "worst[ext=mp4]"]
+)
 
 # Metadata for Big Buck Bunny video - used in several tests
 BIG_BUCK_BUNNY_DOWNLOAD = Download(
@@ -123,12 +121,9 @@ def test_fetch_metadata_with_impossible_filter(
     """
     feed_id = f"test_impossible_filter_{url_type}"
 
-    impossible_filter_args = [
-        "-f",
-        "worst[ext=mp4]",
-        "--match-filter",
-        "duration > 10000000",  # will not match any video from the link
-    ]
+    impossible_filter_args = YtdlpCore.parse_options(
+        ["--format", "worst[ext=mp4]", "--match-filter", "duration > 10000000"]
+    )
 
     downloads = ytdlp_wrapper.fetch_metadata(
         feed_id=feed_id, url=url, yt_cli_args=impossible_filter_args
@@ -136,24 +131,6 @@ def test_fetch_metadata_with_impossible_filter(
     assert len(downloads) == 0, (
         f"Expected 0 downloads for impossible filter, got {len(downloads)}"
     )
-
-
-@pytest.mark.integration
-def test_fetch_metadata_invalid_cli_arg(ytdlp_wrapper: YtdlpWrapper):
-    """
-    Tests that providing an invalid yt-dlp CLI argument raises a ValueError.
-    This error originates from _prepare_ydl_options.
-    """
-    feed_id = "test_invalid_cli_arg"
-    test_url = "https://www.youtube.com/@coletdjnz/videos"
-    invalid_cli_args = ["--this-is-not-a-real-yt-dlp-option"]
-
-    with pytest.raises(YtdlpApiError) as excinfo:
-        ytdlp_wrapper.fetch_metadata(
-            feed_id=feed_id, url=test_url, yt_cli_args=invalid_cli_args
-        )
-
-    assert "Invalid yt-dlp CLI arguments provided" in str(excinfo.value)
 
 
 @pytest.mark.integration
@@ -244,12 +221,9 @@ def test_download_media_to_file_impossible_filter(
     """
     Tests that download fails with YtdlpApiError when an impossible filter is applied.
     """
-    impossible_filter_args = [
-        "-f",
-        "worst[ext=mp4]",
-        "--match-filter",
-        "duration > 99999999",
-    ]
+    impossible_filter_args = YtdlpCore.parse_options(
+        ["--format", "worst[ext=mp4]", "--match-filter", "duration > 99999999"]
+    )
     base_download_dir = tmp_path / "test_dl_impossible_filter"
     base_download_dir.mkdir(parents=True, exist_ok=True)
 
@@ -262,25 +236,3 @@ def test_download_media_to_file_impossible_filter(
 
     # Expecting failure because no format matches the filter during download attempt
     assert "may have been filtered out" in str(excinfo.value).lower()
-
-
-@pytest.mark.integration
-def test_download_media_to_file_invalid_cli_arg(
-    ytdlp_wrapper: YtdlpWrapper, tmp_path: Path
-):
-    """
-    Tests that download fails with YtdlpApiError when invalid CLI args are passed.
-    """
-    invalid_cli_args = ["--this-argument-is-clearly-invalid"]
-    base_download_dir = tmp_path / "test_dl_invalid_arg"
-    base_download_dir.mkdir(parents=True, exist_ok=True)
-
-    with pytest.raises(YtdlpApiError) as e:
-        ytdlp_wrapper.download_media_to_file(
-            download=BIG_BUCK_BUNNY_DOWNLOAD,
-            yt_cli_args=invalid_cli_args,
-            download_target_dir=base_download_dir,
-        )
-
-    # Error should come from parse_options within _prepare_ydl_options
-    assert "Invalid yt-dlp CLI arguments provided" in str(e.value)

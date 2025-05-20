@@ -304,4 +304,5 @@ This resolution logic aims to simplify configuration for the end-user, as they c
 * enable a podcast feed that accepts requests to an endpoint to add individual videos to the feed; basically manually curated
   * also include manual audio file uploads
 * performance testing once both server and cron exist -- does the cron being active cause slow down for the server?
-* allow for download-time quality settings AND feed-time quality settings; you can download in high quality, deliver in low quality (for archival purposes)
+* allow for download-time quality settings AND feed-time quality settings; you can download in high quality, deliver in low quality (for archival purposes
+* consider async'ifying the code base. e.g. https://github.com/omnilib/aiosqlite)

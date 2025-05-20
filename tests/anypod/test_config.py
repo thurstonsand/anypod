@@ -1,12 +1,14 @@
 # tests/test_config.py
 from pathlib import Path
 
+from pydantic import ValidationError
 import pytest
 from pytest import MonkeyPatch
 import yaml
 
-from anypod.config import AppSettings, YamlFileFromFieldSource
+from anypod.config import AppSettings, FeedConfig, YamlFileFromFieldSource
 from anypod.exceptions import ConfigLoadError
+from anypod.ytdlp_wrapper.ytdlp_core import YtdlpCore
 
 # Sample valid feed configuration data for testing
 SAMPLE_FEEDS_DATA = {
@@ -20,11 +22,16 @@ SAMPLE_FEEDS_DATA = {
         "podcast2": {
             "url": "https://example.com/feed2.xml",
             "schedule": "0 12 * * *",
-            "yt_args": "--format bestaudio",
+            "yt_args": "--format bestaudio --playlist-items 1-3",
             # max_errors will use default (3) for this one
         },
     }
 }
+
+# Expected parsed yt_args for podcast2
+EXPECTED_PODCAST2_YT_ARGS = YtdlpCore.parse_options(
+    ["--format", "bestaudio", "--playlist-items", "1-3"]
+)
 
 
 @pytest.fixture
@@ -80,10 +87,7 @@ def test_load_from_default_location(monkeypatch: MonkeyPatch, tmp_path: Path):
     assert (
         settings.feeds["podcast2"].url == SAMPLE_FEEDS_DATA["feeds"]["podcast2"]["url"]
     )
-    assert (
-        settings.feeds["podcast2"].yt_args
-        == SAMPLE_FEEDS_DATA["feeds"]["podcast2"]["yt_args"]
-    ), "'yt_args' for 'podcast2' should match sample data"
+    assert settings.feeds["podcast2"].yt_args == EXPECTED_PODCAST2_YT_ARGS
     assert (
         settings.feeds["podcast2"].schedule
         == SAMPLE_FEEDS_DATA["feeds"]["podcast2"]["schedule"]
@@ -174,10 +178,7 @@ def test_override_location_with_init_arg(
     assert (
         settings.feeds["podcast2"].url == SAMPLE_FEEDS_DATA["feeds"]["podcast2"]["url"]
     )
-    assert (
-        settings.feeds["podcast2"].yt_args
-        == SAMPLE_FEEDS_DATA["feeds"]["podcast2"]["yt_args"]
-    )
+    assert settings.feeds["podcast2"].yt_args == EXPECTED_PODCAST2_YT_ARGS
     assert (
         settings.feeds["podcast2"].schedule
         == SAMPLE_FEEDS_DATA["feeds"]["podcast2"]["schedule"]
@@ -300,3 +301,72 @@ def test_invalid_yaml_returns_non_dict_type_raises_error(tmp_path: Path):
     assert "Invalid YAML config format: expected dict, got list" in str(
         exc_info.value.__cause__
     ), "TypeError message did not match expected format for list input"
+
+
+# New tests for FeedConfig.yt_args validator
+@pytest.mark.unit
+def test_feed_config_yt_args_valid_string():
+    """Tests that a valid yt_args string is correctly parsed."""
+    feed = FeedConfig(  # type: ignore
+        url="http://example.com",
+        schedule="* * * * *",
+        yt_args="-f best --verbose --retries 5",
+    )
+    expected_args = YtdlpCore.parse_options(
+        ["-f", "best", "--verbose", "--retries", "5"]
+    )
+    assert feed.yt_args == expected_args
+
+
+@pytest.mark.unit
+def test_feed_config_yt_args_empty_string():
+    """Tests that an empty yt_args string results in an empty dict."""
+    feed = FeedConfig(url="http://example.com", schedule="* * * * *", yt_args="")  # type: ignore
+    assert feed.yt_args == {}
+
+
+@pytest.mark.unit
+def test_feed_config_yt_args_invalid_string_shlex_raises_validation_error():
+    """Tests that a malformed yt_args string (shlex error) raises ValidationError."""
+    with pytest.raises(ValidationError) as exc_info:
+        FeedConfig(  # type: ignore
+            url="http://example.com",
+            schedule="* * * * *",
+            yt_args="--format 'incomplete quote",
+        )
+    assert len(exc_info.value.errors()) == 1
+    assert exc_info.value.errors()[0]["type"] == "value_error"
+    assert "invalid yt_args string" in exc_info.value.errors()[0]["msg"].lower()
+    assert "failed to parse" in exc_info.value.errors()[0]["msg"].lower()
+
+
+@pytest.mark.unit
+def test_feed_config_yt_args_unsupported_ytdlp_option_raises_validation_error():
+    """
+    Tests that a yt_args string with an option not recognized by yt-dlp
+    raises a ValidationError. This assumes YtdlpCore.parse_options will fail.
+    """
+    with pytest.raises(ValidationError) as exc_info:
+        FeedConfig(  # type: ignore
+            url="http://example.com",
+            schedule="* * * * *",
+            yt_args="--this-is-definitely-not-a-real-yt-dlp-option",
+        )
+    assert len(exc_info.value.errors()) == 1
+    assert exc_info.value.errors()[0]["type"] == "value_error"
+    assert "invalid yt_args string" in exc_info.value.errors()[0]["msg"].lower()
+    assert "failed to parse" in exc_info.value.errors()[0]["msg"].lower()
+
+
+@pytest.mark.unit
+def test_feed_config_yt_args_invalid_type_raises_type_error():
+    """Tests that a non-string/non-None yt_args type raises ValidationError (wrapping TypeError)."""
+    with pytest.raises(TypeError):
+        FeedConfig(url="http://example.com", schedule="* * * * *", yt_args=123)  # type: ignore
+
+
+@pytest.mark.unit
+def test_feed_config_no_yt_args_uses_default_factory():
+    """Tests that if yt_args is not provided, it defaults to an empty dict."""
+    feed = FeedConfig(url="http://example.com", schedule="* * * * *")  # type: ignore
+    assert feed.yt_args == {}
