@@ -34,13 +34,11 @@ YdlApiCaller = Callable[[dict[str, Any], str], YtdlpInfo | None]
 
 
 class SourceHandlerBase(Protocol):
-    """
-    Protocol defining the interface for source-specific strategy and parsing logic.
-    """
+    """Protocol defining the interface for source-specific strategy and parsing logic."""
 
     def get_source_specific_ydl_options(self, purpose: FetchPurpose) -> dict[str, Any]:
-        """
-        Returns source-specific options to be merged into yt-dlp opts.
+        """Returns source-specific options to be merged into yt-dlp opts.
+
         Example: {'match_filter': '!is_live'} for YouTube.
         """
         ...
@@ -51,9 +49,7 @@ class SourceHandlerBase(Protocol):
         initial_url: str,
         ydl_caller_for_discovery: YdlApiCaller,
     ) -> tuple[str | None, ReferenceType]:
-        """
-        Classifies the initial URL and determines the final URL to fetch downloads from.
-        """
+        """Classifies the initial URL and determines the final URL to fetch downloads from."""
         ...
 
     def parse_metadata_to_downloads(
@@ -63,7 +59,5 @@ class SourceHandlerBase(Protocol):
         source_identifier: str,
         ref_type: ReferenceType,
     ) -> list[Download]:
-        """
-        Parses the full metadata dictionary from yt-dlp into a list of Download objects.
-        """
+        """Parses the full metadata dictionary from yt-dlp into a list of Download objects."""
         ...

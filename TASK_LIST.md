@@ -110,6 +110,63 @@ This section details the components that manage the lifecycle of downloads, from
 - [x] Unit tests for `Enqueuer` with mocked dependencies.
 
 ### 3.5.3.1 TODO Side Quest
+- [ ] **Refactor Download Status Management (State Machine Implementation)**
+    - **Phase 1: Database Layer (`db.py`)**
+        - [x] Remove the existing `DatabaseManager.update_status` method.
+        - [ ] Implement `DatabaseManager.mark_as_queued_from_upcoming(feed: str, id: str) -> None`:
+            - Checks that the current status is in fact `UPCOMING`
+            - Sets `status = QUEUED`.
+            - Preserves `retries` and `last_error`.
+        - [ ] Implement `DatabaseManager.requeue_download(feed: str, id: str) -> None`:
+            - Add a note that this will happen due to:
+              - manually requeueing an ERROR'd download,
+              - manually requeueing in order to get the latest version of a download (i.e. it was previously DOWNLOAD)
+              - un-SKIPping a video
+              - don't implement this as logic, but just as a note on the docstring
+            - Sets `status = QUEUED`.
+            - Sets `retries = 0`, `last_error = NULL`.
+        - [ ] Implement `DatabaseManager.mark_as_downloaded(feed: str, id: str) -> None`:
+            - Sets `status = DOWNLOADED`.
+            - Sets `retries = 0`, `last_error = NULL`.
+        - [ ] Implement `DatabaseManager.skip_download(feed: str, id: str) -> None`:
+            - Sets `status = SKIPPED`.
+            - Preserves `retries` and `last_error`.
+            - Raises `DownloadNotFoundError` or `DatabaseOperationError` on failure.
+        - [ ] Implement `DatabaseManager.unskip_download(feed_id: str, download_id: str) -> DownloadStatus`:
+            - Checks that the download is currently `SKIPPED`.
+            - Calls `requeue_download(feed_id, download_id)`.
+            - Returns `DownloadStatus.QUEUED`.
+            - Raises `DownloadNotFoundError` or `DatabaseOperationError` on failure.
+        - [ ] Implement `DatabaseManager.archive_download(feed: str, id: str) -> None`:
+            - Sets `status = ARCHIVED`.
+            - Preserves `retries` and `last_error`.
+            - Raises `DownloadNotFoundError` or `DatabaseOperationError` on failure.
+        - [ ] Modify `DatabaseManager.get_download_by_id(feed: str, id: str) -> Download`:
+            - Change return type from `Download | None` to `Download`.
+            - Raises `DownloadNotFoundError` if not found.
+            - Raises `DatabaseOperationError` for other DB issues.
+            - Raises `ValueError` if row parsing fails.
+        - [ ] Verify `DatabaseManager.upsert_download` correctly handles initial setting of `UPCOMING` or `QUEUED` status based on the input `Download` object, ensuring `retries` and `last_error` are appropriate for new items.
+        - [ ] Verify `DatabaseManager.bump_retries` remains the sole mechanism for incrementing retries and transitioning to `ERROR` status (and handles `DownloadNotFoundError` from `get_download_by_id`).
+    - **Phase 2: Service Layer Updates**
+        - [ ] **`Enqueuer` (`data_coordinator/enqueuer.py`)**:
+            - [x] Update `_process_single_download` to correctly handle `DownloadNotFoundError` from `get_download_by_id`.
+            - [ ] Refactor `_update_download_status_in_db` (or remove it) and its call sites (`_update_status_to_queued_if_vod`, `_handle_existing_fetched_download`):
+                - When an `UPCOMING` download becomes a VOD, call `db_manager.mark_as_queued_from_upcoming`. Adapt to its new signature (returns `None`, raises exceptions).
+                - For other status changes previously handled by `_update_download_status_in_db` (e.g., an existing `ERROR` record being re-processed from feed and needing to be `QUEUED`), evaluate if `db_manager.requeue_download` should be used or if current `upsert_download` logic in `_handle_existing_fetched_download` is sufficient.
+            - Ensure `bump_retries` calls remain correct for metadata fetch failures.
+        - [ ] **`Pruner` (`data_coordinator/pruner.py`)**:
+            - When pruning items, call `db_manager.archive_download`. Adapt to its new signature (returns `None`, raises exceptions). File deletion logic is already handled by `Pruner` correctly before this step.
+    - **Phase 3: Test Updates**
+        - [ ] **`tests/anypod/db/test_db.py`**:
+            - Remove tests for the old `db_manager.update_status`.
+            - Add/Update comprehensive unit tests for all new/modified `db_manager.mark_as_*`, `db_manager.requeue_*`, `db_manager.unskip_download`, and `db_manager.get_download_by_id` methods, including exception checking.
+            - Ensure tests for `upsert_download` cover setting initial `UPCOMING` and `QUEUED` states.
+            - Ensure tests for `bump_retries` are still valid and cover its role, especially `DownloadNotFoundError` handling.
+        - [ ] **`tests/anypod/data_coordinator/test_enqueuer.py`**:
+            - Update mocks and assertions for `db_manager.get_download_by_id` to reflect new exception-raising behavior.
+            - Update mocks for status update calls to the new `db_manager.mark_as_queued_from_upcoming` or `db_manager.requeue_download` methods. Verify correct arguments and exception handling.
+            - Verify `upsert_download` is called with correctly statused `Download` objects.
 - [ ] address various TODOs throughout code base
 
 ### 3.5.4 `Downloader` Service (`data_coordinator/downloader.py`)

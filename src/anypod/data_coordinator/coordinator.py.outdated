@@ -44,9 +44,7 @@ class DataCoordinator:
     def process_feed(
         self, feed_id: str, feed_config: FeedConfig, last_processed_date: datetime
     ) -> None:  # feed_config type placeholder
-        """
-        Orchestrates the processing of a single feed.
-        """
+        """Orchestrates the processing of a single feed."""
         # Orchestration logic to be implemented fully later
         logger.info("Starting feed processing.", extra={"feed_id": feed_id})
         try:
@@ -98,8 +96,7 @@ class DataCoordinator:
     # --- Migrated methods from old DataCoordinator ---
 
     def add_download(self, download_to_add: Download) -> None:
-        """
-        Adds or replaces a download.
+        """Adds or replaces a download.
 
         If a download with the same feed and id already exists, this method
         will first delete its associated downloaded file (if the status was DOWNLOADED),
@@ -194,8 +191,8 @@ class DataCoordinator:
         status: DownloadStatus,
         last_error: str | None = None,
     ) -> bool:
-        """
-        Updates the status of a download in the database.
+        """Updates the status of a download in the database.
+
         If the status changes from DOWNLOADED to any other state, this method
         will attempt to delete the associated media file.
 
@@ -317,8 +314,7 @@ class DataCoordinator:
         return updated_in_db
 
     def get_download_by_id(self, feed: str, id: str) -> Download | None:
-        """
-        Retrieves a specific download by its feed and ID.
+        """Retrieves a specific download by its feed and ID.
 
         Args:
             feed: The feed name of the download.
@@ -350,8 +346,7 @@ class DataCoordinator:
         return download
 
     def stream_download_by_id(self, feed: str, id: str) -> IO[bytes] | None:
-        """
-        Retrieves a readable stream for a downloaded file.
+        """Retrieves a readable stream for a downloaded file.
 
         Checks if the download exists in the database and has a status of DOWNLOADED.
         If so, it requests the file stream from the FileManager.
@@ -442,8 +437,8 @@ class DataCoordinator:
         limit: int = 100,
         offset: int = 0,
     ) -> list[Download]:
-        """
-        Retrieves downloads with a specific status.
+        """Retrieves downloads with a specific status.
+
         Malformed records from the database will be logged and skipped.
 
         Args:

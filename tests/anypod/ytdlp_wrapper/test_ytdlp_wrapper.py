@@ -31,11 +31,7 @@ def ytdlp_wrapper(mock_youtube_handler: MagicMock) -> YtdlpWrapper:
 def test_prepare_ydl_options_discovery_basic(
     ytdlp_wrapper: YtdlpWrapper,
 ):
-    """
-    Tests basic option preparation for DISCOVERY purpose with no user CLI args
-    and no source-specific options.
-    """
-
+    """Tests basic option preparation for DISCOVERY purpose with no user CLI args and no source-specific options."""
     user_cli_args: dict[str, Any] = {}
     purpose = FetchPurpose.DISCOVERY
     source_specific_opts: dict[str, Any] = {}
@@ -59,11 +55,7 @@ def test_prepare_ydl_options_discovery_basic(
 def test_prepare_ydl_options_metadata_fetch_basic(
     ytdlp_wrapper: YtdlpWrapper,
 ):
-    """
-    Tests basic option preparation for METADATA_FETCH purpose with no user CLI args
-    and no source-specific options.
-    """
-
+    """Tests basic option preparation for METADATA_FETCH purpose with no user CLI args and no source-specific options."""
     user_cli_args: dict[str, Any] = {}
     purpose = FetchPurpose.METADATA_FETCH
     source_specific_opts: dict[str, Any] = {}
@@ -87,9 +79,7 @@ def test_prepare_ydl_options_metadata_fetch_basic(
 def test_prepare_ydl_options_media_download(
     ytdlp_wrapper: YtdlpWrapper,
 ):
-    """
-    Tests option preparation for MEDIA_DOWNLOAD purpose.
-    """
+    """Tests option preparation for MEDIA_DOWNLOAD purpose."""
     user_cli_args: dict[str, Any] = {}
     purpose = FetchPurpose.MEDIA_DOWNLOAD
     source_specific_opts: dict[str, Any] = {}
@@ -112,10 +102,7 @@ def test_prepare_ydl_options_media_download(
 def test_prepare_ydl_options_with_user_cli_args_and_source_opts(
     ytdlp_wrapper: YtdlpWrapper,
 ):
-    """
-    Tests option preparation with user CLI args and source-specific options,
-    ensuring they are merged correctly.
-    """
+    """Tests option preparation with user CLI args and source-specific options, ensuring they are merged correctly."""
     user_cli_args: dict[str, Any] = {"format": "bestvideo"}
     purpose = FetchPurpose.METADATA_FETCH
     source_specific_opts = {

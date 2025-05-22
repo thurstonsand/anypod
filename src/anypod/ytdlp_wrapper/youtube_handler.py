@@ -37,9 +37,7 @@ class YtdlpYoutubeVideoFilteredOutError(YtdlpDataError):
 
 
 class YoutubeEntry:
-    """
-    Represents a single YouTube video entry.
-    """
+    """Represents a single YouTube video entry."""
 
     def __init__(self, ytdlp_info: YtdlpInfo, feed_id: str):
         self._ytdlp_info = ytdlp_info
@@ -232,8 +230,8 @@ class YoutubeEntry:
 
 
 class YoutubeHandler:
-    """
-    YouTube-specific implementation for fetching strategy and parsing.
+    """YouTube-specific implementation for fetching strategy and parsing.
+
     Implements the SourceHandlerBase protocol.
     """
 

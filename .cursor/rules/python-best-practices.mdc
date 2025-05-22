@@ -14,15 +14,107 @@ alwaysApply: false
 - Place tests in parallel structure
 
 ## Code Style & Quality
+- **IMPORTANT**: Above all else, follow existing style in the code base
+- **IMPORTANT**: As you implement changes, keep the focus on the functionality being requested.
+    - Do not randomly change existing variable names
+    - Do not restructure existing code, unless necessary to implement the requested changes
+    - Do not modify the comments or docstrings, unless directly related to the requested changes
 - Follow PEP 8 style guide
 - Use type hints consistently
 - Employ dataclasses or Pydantic models for data structures
 - Keep functions/methods focused and under 50 lines
 - Use descriptive variable names
-- Document with clear docstrings (Google style)
 - Add typing stubs for complex interfaces
 - Prefer `<type> | None` over `Optional[<type>]`
 - When opening files, use `Path.open`
+
+## Docstring Functions/Methods (Google style)
+- Use triple **double** quotes.
+- **Summary line**
+   - Imperative mood, ≤ 72 chars.
+   - Ends with “.”.
+- Blank line after summary, then optional extended description.
+- Sections in this order (omit when empty):
+  ```
+  Args:
+  Keyword Args: # only when kwargs are numerous
+  Returns: # or Yields:
+  Raises:
+  Notes: # optional extras
+  ```
+
+  - Each section title ends with “:”.
+  - Indent body by 4 spaces.
+- **Parameter lines**
+  ```
+  name: description…
+  ```
+- Don't document `self` or `cls`.
+- Keep the closing `"""` on its own line.
+- Non-public helpers (`_internal_method`) may use a single inline `# comment` if trivial; otherwise follow the same full docstring style.
+- **Template**
+  ```python
+  def fetch_metadata(
+   feed_id: str,
+   url: str,
+   yt_cli_args: list[str] | None = None,
+  ) -> list[Download]:
+   """Return metadata for *url* using **yt‑dlp**.
+
+   Select the best extraction strategy, call `yt‑dlp`, and convert its
+   JSON output into :class:`Download` objects.
+
+   Args:
+       feed_id: Unique identifier of the parent feed.
+       url: Media or playlist URL to inspect.
+       yt_cli_args: Extra flags forwarded verbatim to ``yt‑dlp``.
+
+   Returns:
+       List of populated :class:`Download` instances.
+
+   Raises:
+       YtdlpApiError: When no extractable media is found or yt‑dlp fails.
+   ```
+
+## Docstring Classes (Google style)
+- Use triple **double** quotes.
+- **Summary line**
+   - Imperative mood, ≤ 72 chars.
+   - Ends with “.”.
+- Blank line after summary, then optional extended description.
+- **Attributes**
+  ```
+  name: description
+  other: other description
+  ```
+  - list all public instance attributes (exclude `self`)
+- **Template**
+  ```python
+  class MyProcessor:
+    """Initialize and run the data processor.
+
+    MyProcessor handles data ingestion, transformation, and
+    storage according to configured parameters.
+
+    Attributes:
+        source: Path or URL of the data source.
+        retries: Maximum retry attempts on transient failures.
+        timeout: Timeout in seconds for network calls.
+    """
+    def __init__(
+        self,
+        source: str,
+        retries: int = 3,
+        timeout: float = 5.0,
+    ) -> None:
+        self.source = source
+        self.retries = retries
+        self.timeout = timeout
+
+    def process(self) -> None:
+        """<method docstring goes here>"""
+        ...
+  ```
 
 ## Dependencies & Environment
 - All project dependencies and environments should be managed through `uv`

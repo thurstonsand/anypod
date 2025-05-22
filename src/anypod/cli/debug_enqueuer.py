@@ -14,11 +14,11 @@ DEFAULT_DEBUG_DB_PATH = Path("enqueuer_debug.db")
 
 
 def run_debug_enqueuer_mode(settings: AppSettings) -> None:
-    """
-    Runs the Enqueuer debug mode.
+    """Runs the Enqueuer debug mode.
 
     Initializes the Enqueuer, processes all configured feeds by calling
-    enqueue_new_downloads, and then logs the state of downloads in the database.
+    enqueue_new_downloads, and then logs the state of downloads in the
+    database.
     """
     logger.info(
         "Initializing Anypod in Enqueuer debug mode.",

@@ -69,11 +69,10 @@ class FeedConfig(BaseModel):
 
 
 class YamlFileFromFieldSource(PydanticBaseSettingsSource):
-    """
-    A settings source that loads configuration from a YAML file specified
-    by a field within the settings model itself.
+    """A settings source that loads configuration from a YAML file specified by a field within the settings model itself.
 
-    This source should be run after all other sources that might populate the path field.
+    This source should be run after all other sources that might
+    populate the path field.
     """
 
     def _get_current_state_of(self, field_name: str) -> Any:
@@ -152,14 +151,12 @@ class YamlFileFromFieldSource(PydanticBaseSettingsSource):
     def get_field_value(
         self, field: FieldInfo, field_name: str
     ) -> tuple[Any, str, bool]:
-        """Get value from loaded YAML data"""
+        """Get value from loaded YAML data."""
         field_value = self.yaml_data.get(field_name)
         return field_value, field_name, self.field_is_complex(field)
 
     def __call__(self) -> dict[str, Any]:
-        """Load YAML data from file specified in the config_file field,
-        unless debug_mode is 'ytdlp'."""
-
+        """Load YAML data from file specified in the config_file field, unless debug_mode is 'ytdlp'."""
         current_debug_mode_value = self._get_current_state_of("debug_mode")
         # Check against the enum member or its string value
         if (

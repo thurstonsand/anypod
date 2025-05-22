@@ -142,12 +142,105 @@ CREATE INDEX idx_feed_status ON downloads(feed, status);
 * `ext` is **NOT NULL**; absence indicates a metadata-extraction bug.
 * `mime` is derived from `ext` at feed-generation time via lookup table.
 
-### Status lifecycle
-1. **upcoming** – scheduled premiere or live; waiting for VOD
-2. **queued** – metadata accepted; waiting to download
-3. **downloaded** – file saved
-4. **error** – last attempt failed; requires `--retry-failed`
-5. **skipped** – outside current `since` window; excluded from RSS
+### Status Lifecycle
+The `status` field in the `downloads` table tracks the state of each download.
+
+```mermaid
+---
+theme: 'dark'
+---
+graph TD
+    subgraph Initialization
+        %%direction LR
+        New[New Media Discovered] --> A1{Is Live/Scheduled?}
+        A1 -- Yes --> UPCOMING
+        A1 -- No  --> QUEUED
+    end
+
+    subgraph Processing
+        %%direction TB
+        UPCOMING --> |VOD Ready| QUEUED
+        QUEUED   --> |Download Start| DL_IP[Downloading In Progress]
+
+        DL_IP    --> |Success| DOWNLOADED
+        DL_IP    --> |Failure| ERR_BH["Error (via bump_retries)"]
+    end
+
+    subgraph ErrorHandling
+        %%direction LR
+        ERR_BH --> |Retry Limit Not Reached| PREV_S{Previous Status}
+        PREV_S ----> QUEUED
+        ERR_BH --> |Retry Limit Reached| ERROR["ERROR (Max Retries)"]
+        ERROR  --> |Manual Requeue| QUEUED
+    end
+
+    subgraph Management & Pruning
+        %%direction TB
+        DOWNLOADED --> |Pruning Rule| ARCHIVED
+        UPCOMING   --> |Outside 'since'| ARCHIVED
+        ERROR      --> |Pruning Rule| ARCHIVED
+        QUEUED     --> |Manual Skip| SKIPPED
+    end
+
+    %% Explicit states
+    UPCOMING((Upcoming))
+    QUEUED((Queued))
+    DOWNLOADED((Downloaded))
+    ERROR((Error))
+    SKIPPED((Skipped))
+    ARCHIVED((Archived))
+
+    %% Class assignments
+    class New,A1 initialState;
+    class UPCOMING,Q1,Q2,Q3,DL_IP activeState;
+    class DOWNLOADED,SKIPPED,ARCHIVED finalState;
+    class ERROR,ERR_BH errorState;
+
+  %% Styling for dark mode
+    classDef initialState fill:#2e2e2e,stroke:#888888,stroke-width:2px,color:#ffffff;
+    classDef activeState  fill:#3e3e3e,stroke:#aaaaaa,stroke-width:2px,color:#ffffff;
+    classDef finalState   fill:#264653,stroke:#1b3a4b,stroke-width:2px,color:#ffffff;
+    classDef errorState   fill:#c0392b,stroke:#992d22,stroke-width:2px,color:#ffffff;
+```
+
+**State Definitions and Transitions:**
+
+**1. UPCOMING**
+* **When set:** A newly discovered item is known to be a future live stream or scheduled premiere.
+* **Transitions to:**
+  * **QUEUED** — as soon as its VOD becomes available.
+  * **ARCHIVED** — if it falls outside the “since” or "keep_last" window without ever queuing.
+
+**2. QUEUED**
+* **When set:**
+  * A new VOD is first discovered.
+  * An UPCOMING item transitions to VOD-ready.
+  * An ERROR item is manually re-queued.
+* **Transitions to:**
+  * **DOWNLOADED** — on successful download.
+  * **ERROR** — if a download attempt exceeds max retries.
+  * **(remains QUEUED)** — if a retryable failure occurs (retries bump, but not max).
+
+**3. DOWNLOADED**
+* **When set:** A media file has been fetched and stored successfully.
+* **Transitions to:**
+  * **ARCHIVED** — later pruned per retention rules.
+
+**4. ERROR**
+* **When set:** A fetch or download failure has hit the retry limit.
+* **Transitions to:**
+  * **QUEUED** — if manually re-queued for another attempt.
+  * **ARCHIVED** — when the pruner applies retention.
+
+**5. SKIPPED**
+* **When set:** A user explicitly marks a download as “skip.” Any other state can be transitioned to this one.
+* **Transitions to:**
+  * **QUEUED** - if it is unskipped, automatically transitions back to the queue to be downloaded again
+  * **ARCHIVED** - if it is unskipped but falls out of `since` or `keep_last`, transition to ARCHIVED; we may need a way in the future to be able to "bookmark" downloads so that they never get archived; but for now, leaving that out of scope
+
+**6. ARCHIVED**
+* **When set:** Pruner moves UPCOMING, DOWNLOADED, or ERROR items out of active retention (`keep_last` or `since`).
+* **Terminal:** No automatic re-activation.
 
 ---
 
@@ -235,7 +328,7 @@ This resolution logic aims to simplify configuration for the end-user, as they c
 
 ---
 
-## 14 Logging Guidelines
+## 10 Logging Guidelines
 
 *   **Structured Logging:** add relevant context to the `extra` dictionary instead of in the message directly.
 *   **Context is Key:**
@@ -253,7 +346,7 @@ This resolution logic aims to simplify configuration for the end-user, as they c
 
 ---
 
-## 10  Command-Line Flags (MVP)
+## 11  Command-Line Flags (MVP)
 * `--config-file PATH` – custom YAML path (default `/config/feeds.yml`)
 * `--ignore-startup-errors` – keep running if validation fails (feed disabled in memory)
 * `--retry-failed` – reset `error` → `queued` rows before scheduler starts
@@ -261,7 +354,7 @@ This resolution logic aims to simplify configuration for the end-user, as they c
 
 ---
 
-## 11  Deployment
+## 12  Deployment
 | Aspect | Setting |
 |--------|---------|
 | **Image** | `ghcr.io/thurstonsand/anypod:latest` |
@@ -272,14 +365,14 @@ This resolution logic aims to simplify configuration for the end-user, as they c
 
 ---
 
-## 12  Dependencies & Tooling
+## 13  Dependencies & Tooling
 * Managed by **uv** (`pyproject.toml` + `uv.lock`).
 * yt-dlp pinned to specific commit.
 * Dev deps: ruff · pytest-asyncio · pytest-cov · pyright · pre-commit
 
 ---
 
-## 13  Future Work
+## 14  Future Work
 * Admin dashboard (React + shadcn/ui)
 * Automatic retries with jitter
 * Transcoding fallback (ffmpeg) for non-MP4/M4A sources

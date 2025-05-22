@@ -73,10 +73,26 @@ class EnqueueError(DataCoordinatorError):
         message: str,
         feed_id: str | None = None,
         feed_url: str | None = None,
+        download_id: str | None = None,
     ):
         super().__init__(message)
         self.feed_id = feed_id
         self.feed_url = feed_url
+        self.download_id = download_id
+
+
+class PruneError(DataCoordinatorError):
+    """Raised when an error occurs during the pruning process."""
+
+    def __init__(
+        self,
+        message: str,
+        feed_id: str | None = None,
+        download_id: str | None = None,
+    ):
+        super().__init__(message)
+        self.feed_id = feed_id
+        self.download_id = download_id
 
 
 class YtdlpError(AnypodError):

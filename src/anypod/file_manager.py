@@ -9,18 +9,18 @@ logger = logging.getLogger(__name__)
 
 
 class FileManager:
-    """
-    Manages download files on the filesystem.
+    """Manages download files on the filesystem.
+
     This class provides an abstraction layer for file operations.
     """
 
     def __init__(self, base_download_path: Path):
-        """
-        Initializes the FileManager with the base directory for download storage.
+        """Initializes the FileManager with the base directory for download storage.
 
         Args:
             base_download_path: The root path where all download files will be stored.
                                Feed-specific subdirectories will be created under this path.
+
         Raises:
             FileOperationError: If the base download directory cannot be created.
         """
@@ -45,9 +45,7 @@ class FileManager:
     def save_download_file(
         self, feed: str, file_name: str, data_stream: IO[bytes]
     ) -> Path:
-        """
-        Saves a binary data stream to a file in a feed-specific directory,
-        ensuring atomicity by using an '.incomplete' suffix during writing.
+        """Saves a binary data stream to a file in a feed-specific directory, ensuring atomicity by using an '.incomplete' suffix during writing.
 
         The method first writes the data to a file named 'file_name.incomplete'.
         If successful, it renames this file to the final 'file_name'.
@@ -114,8 +112,7 @@ class FileManager:
         return final_path
 
     def delete_download_file(self, feed: str, file_name: str) -> bool:
-        """
-        Deletes a download file from the filesystem.
+        """Deletes a download file from the filesystem.
 
         Args:
             feed: The name of the feed.
@@ -153,8 +150,7 @@ class FileManager:
             ) from e
 
     def download_exists(self, feed: str, file_name: str) -> bool:
-        """
-        Checks if a specific download file exists.
+        """Checks if a specific download file exists.
 
         Args:
             feed: The name of the feed (subdirectory).
@@ -184,10 +180,7 @@ class FileManager:
             ) from e
 
     def get_download_stream(self, feed: str, file_name: str) -> IO[bytes]:
-        """
-        Opens and returns a binary read stream for a download file.
-        Raises FileNotFoundError if the file does not exist or is not a file.
-        Propagates PermissionError if file opening fails due to permissions.
+        """Opens and returns a binary read stream for a download file.
 
         Args:
             feed: The name of the feed (subdirectory).

@@ -8,10 +8,7 @@ from ..exceptions import YtdlpApiError, YtdlpFieldInvalidError, YtdlpFieldMissin
 
 
 class YtdlpInfo:
-    """
-    A wrapper around the output of yt-dlp extract_info
-    to provide strongly-typed access to its fields.
-    """
+    """A wrapper around the output of yt-dlp extract_info to provide strongly-typed access to its fields."""
 
     def __init__(self, info_dict: dict[str, Any]):
         self._info_dict = info_dict
@@ -22,10 +19,7 @@ class YtdlpInfo:
         return self._info_dict == other._info_dict
 
     def get_raw(self, field_name: str) -> Any | None:
-        """
-        Retrieves a field's value directly from the dictionary
-        without any type checking or validation by this class.
-        Returns None if the field is not found.
+        """Retrieves a field's value directly from the dictionary without any type checking or validation by this class.
 
         Args:
             field_name: The name of the field to retrieve.
@@ -36,8 +30,7 @@ class YtdlpInfo:
         return self._info_dict.get(field_name, None)
 
     def get[T](self, field_name: str, tpe: type[T] | tuple[type[T], ...]) -> T | None:
-        """
-        Retrieves a field value if it exists and matches the expected type(s).
+        """Retrieves a field value if it exists and matches the expected type(s).
 
         Args:
             field_name: The name of the field to retrieve.
@@ -70,8 +63,7 @@ class YtdlpInfo:
             )
 
     def required[T](self, field_name: str, tpe: type[T] | tuple[type[T], ...]) -> T:
-        """
-        Retrieves a required field value, ensuring it exists and matches the expected type(s).
+        """Retrieves a required field value, ensuring it exists and matches the expected type(s).
 
         Args:
             field_name: The name of the field to retrieve.

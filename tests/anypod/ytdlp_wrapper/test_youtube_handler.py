@@ -54,10 +54,7 @@ def valid_video_entry(valid_video_entry_data: dict[str, Any]) -> YoutubeEntry:
 def test_get_source_specific_ydl_options_returns_empty_dict(
     youtube_handler: YoutubeHandler, purpose: FetchPurpose
 ):
-    """
-    Tests that get_source_specific_ydl_options currently returns an empty dict
-    for all purposes.
-    """
+    """Tests that get_source_specific_ydl_options currently returns an empty dict for all purposes."""
     options = youtube_handler.get_source_specific_ydl_options(purpose)
     assert options == {}, f"Expected empty dict for purpose {purpose}, got {options}"
 
@@ -138,9 +135,7 @@ def test_parse_single_video_entry_live_upcoming_video(
 def test_parse_single_video_entry_source_url_priority(
     youtube_handler: YoutubeHandler, valid_video_entry_data: dict[str, Any]
 ):
-    """
-    Tests the priority for source_url: webpage_url > original_url > default.
-    """
+    """Tests the priority for source_url: webpage_url > original_url > default."""
     entry_base_data = valid_video_entry_data.copy()
     del entry_base_data["webpage_url"]
     # TODO: entry_base_data["id"] = valid_video_entry_data.get("id", "unique_id_default")
@@ -382,10 +377,7 @@ def test_determine_fetch_strategy_channel_main_page_finds_videos_tab(
 def test_determine_fetch_strategy_channel_main_page_no_videos_tab(
     youtube_handler: YoutubeHandler,
 ):
-    """
-    Tests strategy for a main channel page where 'Videos' tab is not found,
-    defaulting to the resolved URL.
-    """
+    """Tests strategy for a main channel page where 'Videos' tab is not found, defaulting to the resolved URL."""
     initial_url = "https://www.youtube.com/channel/UCxxxx"
     resolved_channel_url = (
         "https://www.youtube.com/channel/UCxxxx/resolved"  # Mock a resolved URL
@@ -555,9 +547,7 @@ def test_parse_metadata_to_downloads_single_parse_error(
     mock_parse_single: MagicMock,
     youtube_handler: YoutubeHandler,
 ):
-    """
-    Tests ReferenceType.SINGLE when _parse_single_video_entry raises YtdlpYoutubeDataError.
-    """
+    """Tests ReferenceType.SINGLE when _parse_single_video_entry raises YtdlpYoutubeDataError."""
     feed_id = "feed_single_err"
     download_id = "video_err"
     mock_parse_single.side_effect = YtdlpYoutubeDataError(
@@ -581,9 +571,7 @@ def test_parse_metadata_to_downloads_single_filtered_out(
     mock_parse_single: MagicMock,
     youtube_handler: YoutubeHandler,
 ):
-    """
-    Tests ReferenceType.SINGLE when _parse_single_video_entry raises YtdlpYoutubeVideoFilteredOutError.
-    """
+    """Tests ReferenceType.SINGLE when _parse_single_video_entry raises YtdlpYoutubeVideoFilteredOutError."""
     feed_id = "feed_single_filter"
     download_id = "video_filter"
     mock_parse_single.side_effect = YtdlpYoutubeVideoFilteredOutError(
@@ -640,9 +628,7 @@ def test_parse_metadata_to_downloads_collection_with_errors(
     mock_parse_single: MagicMock,
     youtube_handler: YoutubeHandler,
 ):
-    """
-    Tests ReferenceType.COLLECTION where some entries parse successfully and others fail.
-    """
+    """Tests ReferenceType.COLLECTION where some entries parse successfully and others fail."""
     mock_download1 = MagicMock(spec=Download)
     feed_id = "feed_coll_err"
     entry1_data = {"id": "v1", "title": "Video 1"}
@@ -702,10 +688,7 @@ def test_parse_metadata_to_downloads_unknown_type_behaves_as_single(
     youtube_handler: YoutubeHandler,
     unknown_ref_type: ReferenceType,
 ):
-    """
-    Tests that UNKNOWN reference types are parsed as if they were SINGLE,
-    and logs a warning.
-    """
+    """Tests that UNKNOWN reference types are parsed as if they were SINGLE, and logs a warning."""
     mock_download = MagicMock(spec=Download)
     mock_parse_single.return_value = mock_download
     info_dict = {"id": "unknown_video", "title": "Unknown Type Video"}
@@ -732,8 +715,8 @@ def test_parse_metadata_to_downloads_unknown_type_with_playlist_shape_data(
     youtube_handler: YoutubeHandler,
     unknown_ref_type: ReferenceType,
 ):
-    """
-    Tests that UNKNOWN ref type with playlist-like data (has 'entries')
+    """Tests that UNKNOWN ref type with playlist-like data (has 'entries').
+
     results in an attempt to parse as a single download, which fails,
     returning an empty list and logging appropriate messages.
     """

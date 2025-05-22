@@ -12,9 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 class YtdlpWrapper:
-    """
-    Wrapper around yt-dlp for fetching and parsing metadata.
-    """
+    """Wrapper around yt-dlp for fetching and parsing metadata."""
 
     _source_handler: SourceHandlerBase = YoutubeHandler()
 

@@ -16,14 +16,14 @@ logger = logging.getLogger(__name__)
 
 
 class DataCoordinator:
-    """
-    Orchestrates operations between the DatabaseManager and FileManager.
-    Handles the business logic involving both database records and filesystem files.
+    """Orchestrates operations between the DatabaseManager and FileManager.
+
+    Handles the business logic involving both database records and
+    filesystem files.
     """
 
     def __init__(self, db_manager: DatabaseManager, file_manager: FileManager):
-        """
-        Initializes the DataCoordinator.
+        """Initializes the DataCoordinator.
 
         Args:
             db_manager: An instance of DatabaseManager.
@@ -34,8 +34,7 @@ class DataCoordinator:
         logger.debug("DataCoordinator initialized.")
 
     def add_download(self, download_to_add: Download) -> None:
-        """
-        Adds or replaces a download.
+        """Adds or replaces a download.
 
         If a download with the same feed and id already exists, this method
         will first delete its associated downloaded file (if the status was DOWNLOADED),
@@ -129,10 +128,7 @@ class DataCoordinator:
         status: DownloadStatus,
         last_error: str | None = None,
     ) -> bool:
-        """
-        Updates the status of a download in the database.
-        If the status changes from DOWNLOADED to any other state, this method
-        will attempt to delete the associated media file.
+        """Updates the status of a download in the database. If the status changes from DOWNLOADED to any other state, this method will attempt to delete the associated media file.
 
         Args:
             feed: The feed name of the download.
@@ -260,8 +256,7 @@ class DataCoordinator:
         return updated_in_db
 
     def get_download_by_id(self, feed: str, id: str) -> Download | None:
-        """
-        Retrieves a specific download by its feed and ID.
+        """Retrieves a specific download by its feed and ID.
 
         Args:
             feed: The feed name of the download.
@@ -300,8 +295,7 @@ class DataCoordinator:
             ) from e
 
     def stream_download_by_id(self, feed: str, id: str) -> IO[bytes] | None:
-        """
-        Retrieves a readable stream for a downloaded file.
+        """Retrieves a readable stream for a downloaded file.
 
         Checks if the download exists in the database and has a status of DOWNLOADED.
         If so, it requests the file stream from the FileManager.
@@ -382,9 +376,7 @@ class DataCoordinator:
         limit: int = 100,
         offset: int = 0,
     ) -> list[Download]:
-        """
-        Retrieves downloads with a specific status.
-        Malformed records from the database will be logged and skipped.
+        """Retrieves downloads with a specific status. Malformed records from the database will be logged and skipped.
 
         Args:
             status_to_filter: The DownloadStatus to filter by.
@@ -452,9 +444,7 @@ class DataCoordinator:
         keep_last: int | None,
         prune_before_date: datetime.datetime | None,
     ) -> tuple[list[str], list[str]]:
-        """
-        Prunes old downloads for a given feed based on retention rules.
-        Malformed records identified as candidates will be logged and skipped for pruning.
+        """Prunes old downloads for a given feed based on retention rules. Malformed records identified as candidates will be logged and skipped for pruning.
 
         Deletion Logic:
         1. Identifies downloads to prune based on `keep_last` (number of latest downloads to keep).

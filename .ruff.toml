@@ -14,10 +14,12 @@ select = [
     "SIM", # flake8-simplify
     "PTH", # flake8-use-pathlib
     "RUF", # ruff-specific rules
+    "D",   # pydocstyle checks
 ]
 ignore = [
     "E501", # line too long (handled by line-length)
     "E203", # whitespace before ':'
+    "D107", # missing docstring in init
 ]
 exclude = [
     ".venv",
@@ -29,7 +31,6 @@ exclude = [
     "lib",
     "deps",
     "build",
-    "custom_components/old_godspeed/**", # TODO: Remove this exclusion once old_godspeed folder is deleted
 ]
 
 [lint.isort]
@@ -42,3 +43,6 @@ quote-style = "double"
 indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "auto"
+
+[lint.pydocstyle]
+convention = "google"

@@ -10,7 +10,7 @@ from typing import Any
 from sqlite_utils import Database
 from sqlite_utils.db import NotFoundError
 
-from ..exceptions import DatabaseOperationError
+from ..exceptions import DatabaseOperationError, DownloadNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +112,10 @@ class SqliteUtilsCore:
     ) -> None:
         try:
             self.db[table_name].update(pk_values, updates)  # type: ignore
+        except NotFoundError as e:
+            raise DownloadNotFoundError(
+                message="Download not found.",
+            ) from e
         except sqlite3.Error as e:
             raise DatabaseOperationError("Failed to update.") from e
 
@@ -139,12 +143,12 @@ class SqliteUtilsCore:
         except sqlite3.Error as e:
             raise DatabaseOperationError("Failed to get rows.") from e
 
-    def get(
-        self, table_name: str, pk_values: str | tuple[str, ...]
-    ) -> dict[str, Any] | None:
+    def get(self, table_name: str, pk_values: str | tuple[str, ...]) -> dict[str, Any]:
         try:
             return self.db[table_name].get(pk_values)  # type: ignore
         except sqlite3.Error as e:
             raise DatabaseOperationError("Failed to get row.") from e
-        except NotFoundError:
-            return None
+        except NotFoundError as e:
+            raise DownloadNotFoundError(
+                message="Download not found.",
+            ) from e

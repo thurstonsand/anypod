@@ -45,9 +45,9 @@ def sample_config_file(tmp_path: Path) -> Path:
 
 @pytest.mark.unit
 def test_load_from_default_location(monkeypatch: MonkeyPatch, tmp_path: Path):
-    """
-    Tests if AppSettings loads configuration from the default file path
-    when no overrides are provided. We monkeypatch _get_yaml_path.
+    """Tests if AppSettings loads configuration from the default file path when no overrides are provided.
+
+    We monkeypatch _get_yaml_path.
     """
     default_config_path = tmp_path / "default_feeds.yaml"
     with Path.open(default_config_path, "w", encoding="utf-8") as f:
@@ -107,10 +107,7 @@ def test_load_from_default_location(monkeypatch: MonkeyPatch, tmp_path: Path):
 def test_override_location_with_env_var(
     monkeypatch: MonkeyPatch, sample_config_file: Path
 ):
-    """
-    Tests if AppSettings loads configuration from the path specified
-    by the CONFIG_FILE environment variable.
-    """
+    """Tests if AppSettings loads configuration from the path specified by the CONFIG_FILE environment variable."""
     monkeypatch.setenv("CONFIG_FILE", str(sample_config_file))
 
     settings = AppSettings()  # type: ignore
@@ -135,10 +132,7 @@ def test_override_location_with_env_var(
 def test_override_location_with_init_arg(
     monkeypatch: MonkeyPatch, sample_config_file: Path
 ):
-    """
-    Tests if AppSettings loads configuration from the path specified
-    via an initialization argument, overriding defaults and env vars.
-    """
+    """Tests if AppSettings loads configuration from the path specified via an initialization argument, overriding defaults and env vars."""
     # Set an env var to ensure the init arg takes precedence
     monkeypatch.setenv("CONFIG_FILE", "/path/to/nonexistent/file.yaml")
 
@@ -190,10 +184,7 @@ def test_override_location_with_init_arg(
 
 @pytest.mark.unit
 def test_nonexistent_config_file_raises_error(monkeypatch: MonkeyPatch):
-    """
-    Tests that instantiating AppSettings raises an error if the
-    specified config file does not exist, and that the cause is FileNotFoundError.
-    """
+    """Tests that instantiating AppSettings raises an error if the specified config file does not exist, and that the cause is FileNotFoundError."""
     non_existent_path = "/path/to/hopefully/nonexistent/feeds.yaml"
     monkeypatch.setenv("CONFIG_FILE", non_existent_path)
 
@@ -209,10 +200,7 @@ def test_nonexistent_config_file_raises_error(monkeypatch: MonkeyPatch):
 
 @pytest.mark.unit
 def test_invalid_yaml_format_raises_error(tmp_path: Path):
-    """
-    Tests that instantiating AppSettings raises an error if the
-    config file contains invalid YAML, checking the chain of causes.
-    """
+    """Tests that instantiating AppSettings raises an error if the specified config file contains invalid YAML, and that the cause is a yaml.YAMLError."""
     invalid_yaml_path = tmp_path / "invalid_feeds.yaml"
     # This specific invalid YAML causes a ScannerError from PyYAML
     invalid_content = "this: is: not: valid: yaml:"
@@ -231,9 +219,7 @@ def test_invalid_yaml_format_raises_error(tmp_path: Path):
 
 @pytest.mark.unit
 def test_empty_yaml_file_loads_defaults(tmp_path: Path):
-    """
-    Tests that an empty YAML file results in default settings values.
-    """
+    """Tests that an empty YAML file results in default settings values."""
     empty_yaml_path = tmp_path / "empty_feeds.yaml"
     with Path.open(empty_yaml_path, "w", encoding="utf-8") as f:
         f.write("")  # Empty file
@@ -245,10 +231,7 @@ def test_empty_yaml_file_loads_defaults(tmp_path: Path):
 
 @pytest.mark.unit
 def test_yaml_file_with_only_other_keys(tmp_path: Path):
-    """
-    Tests that a YAML file with keys not defined in AppSettings is ignored
-    for the main settings, but the 'feeds' key is still processed if present.
-    """
+    """Tests that a YAML file with keys not defined in AppSettings is ignored for the main settings, but the 'feeds' key is still processed if present."""
     config_path = tmp_path / "other_keys.yaml"
     data = {
         "some_other_key": "value",
@@ -280,10 +263,7 @@ def test_yaml_file_with_only_other_keys(tmp_path: Path):
 
 @pytest.mark.unit
 def test_invalid_yaml_returns_non_dict_type_raises_error(tmp_path: Path):
-    """
-    Tests that AppSettings raises an OSError with a TypeError cause if the
-    YAML content is valid YAML but not a dictionary (e.g., a list).
-    """
+    """Tests that AppSettings raises an OSError with a TypeError cause if the YAML content is valid YAML but not a dictionary (e.g., a list)."""
     invalid_type_yaml_path = tmp_path / "invalid_type.yaml"
     # YAML content that is a list, not a dictionary
     list_content = "- download1\n- download2"
@@ -342,9 +322,11 @@ def test_feed_config_yt_args_invalid_string_shlex_raises_validation_error():
 
 @pytest.mark.unit
 def test_feed_config_yt_args_unsupported_ytdlp_option_raises_validation_error():
-    """
-    Tests that a yt_args string with an option not recognized by yt-dlp
-    raises a ValidationError. This assumes YtdlpCore.parse_options will fail.
+    """Tests that a yt_args string with an option not recognized by yt-dlp.
+
+    raises a ValidationError.
+
+    This assumes YtdlpCore.parse_options will fail.
     """
     with pytest.raises(ValidationError) as exc_info:
         FeedConfig(  # type: ignore

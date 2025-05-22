@@ -61,10 +61,10 @@ def ytdlp_wrapper() -> YtdlpWrapper:
 @pytest.mark.integration
 @pytest.mark.parametrize("url_type, url", TEST_URLS_PARAMS)
 def test_fetch_metadata_success(ytdlp_wrapper: YtdlpWrapper, url_type: str, url: str):
-    """
-    Tests successful metadata fetching for various URL types.
-    Asserts that at least one download is returned (or exactly one due to --playlist-items 1)
-    and that basic metadata fields are populated.
+    """Tests successful metadata fetching for various URL types.
+
+    Asserts that at least one download is returned (or exactly one due
+    to --playlist-items 1) and that basic metadata fields are populated.
     """
     feed_id = f"test_{url_type}"
     downloads = ytdlp_wrapper.fetch_metadata(
@@ -98,9 +98,7 @@ def test_fetch_metadata_success(ytdlp_wrapper: YtdlpWrapper, url_type: str, url:
 
 @pytest.mark.integration
 def test_fetch_metadata_non_existent_video(ytdlp_wrapper: YtdlpWrapper):
-    """
-    Tests that fetching metadata for a non-existent video URL raises YtdlpApiError.
-    """
+    """Tests that fetching metadata for a non-existent video URL raises YtdlpApiError."""
     feed_id = "test_non_existent"
 
     with pytest.raises(YtdlpApiError):
@@ -116,9 +114,7 @@ def test_fetch_metadata_non_existent_video(ytdlp_wrapper: YtdlpWrapper):
 def test_fetch_metadata_with_impossible_filter(
     ytdlp_wrapper: YtdlpWrapper, url_type: str, url: str
 ):
-    """
-    Tests that fetching metadata with a filter that matches no videos returns an empty list.
-    """
+    """Tests that fetching metadata with a filter that matches no videos returns an empty list."""
     feed_id = f"test_impossible_filter_{url_type}"
 
     impossible_filter_args = YtdlpCore.parse_options(
@@ -135,9 +131,10 @@ def test_fetch_metadata_with_impossible_filter(
 
 @pytest.mark.integration
 def test_download_media_to_file_success(ytdlp_wrapper: YtdlpWrapper, tmp_path: Path):
-    """
-    Tests successful media download for a specific video.
-    Asserts that the file is downloaded to the correct location and exists.
+    """Tests successful media download for a specific video.
+
+    Asserts that the file is downloaded to the correct location and
+    exists.
     """
     # Metadata for Big Buck Bunny video
     download = Download(
@@ -184,9 +181,7 @@ def test_download_media_to_file_success(ytdlp_wrapper: YtdlpWrapper, tmp_path: P
 def test_download_media_to_file_non_existent(
     ytdlp_wrapper: YtdlpWrapper, tmp_path: Path
 ):
-    """
-    Tests that download fails with YtdlpApiError for a non-existent video URL.
-    """
+    """Tests that download fails with YtdlpApiError for a non-existent video URL."""
     non_existent_download = Download(
         feed="non_existent_feed",
         id="non_existent_id",
@@ -218,9 +213,7 @@ def test_download_media_to_file_non_existent(
 def test_download_media_to_file_impossible_filter(
     ytdlp_wrapper: YtdlpWrapper, tmp_path: Path
 ):
-    """
-    Tests that download fails with YtdlpApiError when an impossible filter is applied.
-    """
+    """Tests that download fails with YtdlpApiError when an impossible filter is applied."""
     impossible_filter_args = YtdlpCore.parse_options(
         ["--format", "worst[ext=mp4]", "--match-filter", "duration > 99999999"]
     )

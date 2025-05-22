@@ -41,9 +41,7 @@ _context_id_var: ContextVar[str | None] = ContextVar("context_id", default=None)
 
 
 class ContextIdFilter(logging.Filter):
-    """
-    A logging filter that injects the current context_id into log records.
-    """
+    """A logging filter that injects the current context_id into log records."""
 
     def filter(self, record: logging.LogRecord) -> bool:
         record.context_id = _context_id_var.get()
@@ -54,9 +52,8 @@ _should_include_stacktrace: bool = False
 
 
 class HumanReadableExtrasFormatter(logging.Formatter):
-    """
-    A custom formatter that includes a base human-readable format and
-    dynamically appends any 'extra' fields passed to the logger.
+    """A custom formatter that includes a base human-readable format and dynamically appends any 'extra' fields passed to the logger.
+
     It also includes the context_id if set.
     """
 
@@ -229,9 +226,7 @@ def setup_logging(
     app_log_level_name: str,
     include_stacktrace: bool,
 ) -> None:
-    """
-    Configures logging for the application based on provided settings.
-    """
+    """Configures logging for the application based on provided settings."""
     global _should_include_stacktrace
     _should_include_stacktrace = include_stacktrace
 

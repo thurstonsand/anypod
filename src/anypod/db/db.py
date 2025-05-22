@@ -37,7 +37,7 @@ class Download:
     title: str
     published: datetime  # Should be UTC
     ext: str
-    duration: float  # in seconds # TODO: should be int?
+    duration: float  # in seconds
     status: DownloadStatus
     thumbnail: str | None = None
     retries: int = 0
@@ -152,7 +152,9 @@ class DatabaseManager:
         download: Download,
     ) -> None:
         """Inserts or updates a download in the downloads table (upsert behavior).
-        If a download with the same (feed, id) exists, it will be replaced.
+
+        If a download with the same (feed, id) exists, it will be
+        replaced.
         """
         log_params = {
             "feed_id": download.feed,
@@ -183,184 +185,232 @@ class DatabaseManager:
             raise e
         logger.debug("Upsert download record execution complete.", extra=log_params)
 
-    # TODO: this logic is wrong for ERROR; retries should be handled by bump_retries
-    def update_status(
-        self,
-        feed: str,
-        id: str,
-        status: DownloadStatus,
-        last_error: str | None = None,
-    ) -> bool:
-        """Updates the status of a download.
-        - If status is DOWNLOADED: retries and last_error are cleared.
-        - If status is ERROR: last_error is set, retries are incremented.
-        - If status is QUEUED: retries and last_error persist.
-        - If status is SKIPPED: only status is updated. retries and last_error persist.
-        - If status is ARCHIVED: only status is updated. retries and last_error persist.
-        - If status is UPCOMING: only status is updated. retries and last_error persist.
-        Returns True if a row was updated, False otherwise.
+    # --- Status Transition Methods ---
+
+    def mark_as_queued_from_upcoming(self, feed: str, id: str) -> None:
+        """Transitions a download from UPCOMING to QUEUED.
+
+        - Checks that the current status is UPCOMING.
+        - Sets status = QUEUED.
+        - Preserves retries and last_error.
+
+        Raises:
+            DownloadNotFoundError: If the download is not found.
+            DatabaseOperationError: If the database operation fails.
         """
         log_params = {
             "feed_id": feed,
             "download_id": id,
-            "new_status": str(status),
-            "last_error_param": last_error,
+            "target_status": str(DownloadStatus.QUEUED),
         }
-        logger.debug("Attempting to update download status.", extra=log_params)
-
-        set_clauses: list[str] = ["status = :status"]
-        params: dict[str, Any] = {"feed": feed, "id": id, "status": str(status)}
-
-        match status:
-            case DownloadStatus.DOWNLOADED:
-                set_clauses.append("last_error = NULL")
-                set_clauses.append("retries = 0")
-            case DownloadStatus.ERROR:
-                set_clauses.append("retries = retries + 1")
-                set_clauses.append("last_error = :last_error")
-                params["last_error"] = last_error
-            case (
-                DownloadStatus.UPCOMING
-                | DownloadStatus.QUEUED
-                | DownloadStatus.SKIPPED
-                | DownloadStatus.ARCHIVED
-            ):
-                pass
-
-        sql = (
-            f"UPDATE {self._download_table_name} "
-            f"SET {', '.join(set_clauses)} "
-            f"WHERE feed = :feed AND id = :id"
+        logger.debug(
+            "Attempting to mark download as QUEUED from UPCOMING.", extra=log_params
         )
 
+        current_download = self.get_download_by_id(feed, id)
+        if current_download.status != DownloadStatus.UPCOMING:
+            raise DatabaseOperationError(
+                f"Download status is not UPCOMING (is {current_download.status}), cannot transition.",
+                feed_id=feed,
+                download_id=id,
+            )
+
         try:
-            rows_updated = self._db.execute(sql, params)
+            self._db.update(
+                self._download_table_name,
+                (feed, id),
+                {"status": str(DownloadStatus.QUEUED)},
+            )
+        except DownloadNotFoundError as e:
+            e.feed_id = feed
+            e.download_id = id
+            raise e
         except DatabaseOperationError as e:
             e.feed_id = feed
             e.download_id = id
             raise e
-        logger.debug(
-            "Updated Download status.",
-            extra={**log_params, "rows_updated": rows_updated},
-        )
-        return rows_updated > 0
-
-    def get_downloads_to_prune_by_keep_last(
-        self, feed: str, keep_last: int
-    ) -> list[Download]:
-        """Identifies downloads to prune based on 'keep_last'.
-        Returns a list of Downloads.
-        Excludes downloads with status ARCHIVED or UPCOMING.
-        """
-        log_params = {"feed_id": feed, "keep_last": keep_last}
-        logger.debug(
-            "Attempting to get downloads to prune by keep_last rule.", extra=log_params
-        )
-        if keep_last <= 0:
-            logger.debug(
-                "'keep_last' is 0 or negative, returning empty list.", extra=log_params
-            )
-            return []
-
-        try:
-            rows = self._db.rows_where(
-                self._download_table_name,
-                "feed = :feed AND status NOT IN (:archived, :upcoming)",
-                where_args={
-                    "feed": feed,
-                    "archived": str(DownloadStatus.ARCHIVED),
-                    "upcoming": str(DownloadStatus.UPCOMING),
-                },
-                order_by="published DESC",
-                limit=-1,
-                offset=keep_last,
-            )
-        except DatabaseOperationError as e:
-            e.feed_id = feed
-            raise e
-        return [Download.from_row(row) for row in rows]
-
-    def get_downloads_to_prune_by_since(
-        self, feed: str, since: datetime
-    ) -> list[Download]:
-        """Identifies downloads published before the 'since' datetime (UTC).
-        Returns a list of Downloads.
-        Excludes downloads with status ARCHIVED or UPCOMING.
-        'since' MUST be a timezone-aware datetime object in UTC.
-        """
-        log_params = {"feed_id": feed, "prune_before_date": since.isoformat()}
-        logger.debug(
-            "Attempting to get downloads to prune by 'since' date rule.",
+        logger.info(
+            "Download marked as QUEUED from UPCOMING.",
             extra=log_params,
         )
-        try:
-            rows = self._db.rows_where(
-                self._download_table_name,
-                "feed = :feed AND published < :since AND status NOT IN (:archived, :upcoming)",
-                where_args={
-                    "feed": feed,
-                    "since": since,
-                    "archived": str(DownloadStatus.ARCHIVED),
-                    "upcoming": str(DownloadStatus.UPCOMING),
-                },
-                order_by="published ASC",
-            )
-        except DatabaseOperationError as e:
-            e.feed_id = feed
-            raise e
-        return [Download.from_row(row) for row in rows]
 
-    def get_download_by_id(self, feed: str, id: str) -> Download | None:
-        """Retrieves a specific download by feed and id.
-        Returns a Download or None if not found.
+    def requeue_download(self, feed: str, id: str) -> None:
+        """Re-queues a download.
+
+        This can happen due to:
+        - Manually re-queueing an ERROR'd download.
+        - Manually re-queueing to get the latest version of a download (i.e., it was previously DOWNLOADED).
+        - Un-SKIPPING a video (if it doesn't get ARCHIVED).
+        - Sets status = QUEUED.
+        - Sets retries = 0, last_error = NULL.
         """
-        log_params = {"feed_id": feed, "download_id": id}
-        logger.debug("Attempting to get download by ID.", extra=log_params)
+        log_params = {
+            "feed_id": feed,
+            "download_id": id,
+            "target_status": str(DownloadStatus.QUEUED),
+        }
+        logger.debug("Attempting to re-queue download.", extra=log_params)
         try:
-            row = self._db.get(self._download_table_name, (feed, id))
+            self._db.update(
+                self._download_table_name,
+                (feed, id),
+                {
+                    "status": str(DownloadStatus.QUEUED),
+                    "retries": 0,
+                    "last_error": None,
+                },
+            )
+        except DownloadNotFoundError as e:
+            e.feed_id = feed
+            e.download_id = id
+            raise e
         except DatabaseOperationError as e:
             e.feed_id = feed
             e.download_id = id
             raise e
-        return Download.from_row(row) if row else None
+        logger.info("Download re-queued.", extra=log_params)
 
-    def get_downloads_by_status(
-        self,
-        status_to_filter: DownloadStatus,
-        feed: str | None = None,
-        limit: int = 100,
-        offset: int = 0,
-    ) -> list[Download]:
-        """Retrieves downloads with a specific status, newest first.
-        Can be filtered by a specific feed. Returns a list of Downloads.
+    def mark_as_downloaded(self, feed: str, id: str) -> None:
+        """Marks a download as DOWNLOADED.
+
+        - Checks that the current status is QUEUED.
+        - Sets status = DOWNLOADED.
+        - Sets retries = 0, last_error = NULL.
+
+        Raises:
+            DownloadNotFoundError: If the download is not found.
+            DatabaseOperationError: If the current status is not QUEUED or DB update fails.
         """
         log_params = {
-            "status": str(status_to_filter),
-            "feed_id": feed if feed else "<all>",
-            "limit": limit,
-            "offset": offset,
+            "feed_id": feed,
+            "download_id": id,
+            "target_status": str(DownloadStatus.DOWNLOADED),
         }
-        logger.debug("Attempting to get downloads by status.", extra=log_params)
+        logger.debug("Attempting to mark download as DOWNLOADED.", extra=log_params)
 
-        where = ["status = :status"]
-        where_args = {"status": str(status_to_filter)}
-        if feed:
-            where.append("feed = :feed")
-            where_args["feed"] = feed
+        current_download = self.get_download_by_id(feed, id)
+        if current_download.status != DownloadStatus.QUEUED:
+            raise DatabaseOperationError(
+                f"Download status is not QUEUED (is {current_download.status}), cannot mark as DOWNLOADED.",
+                feed_id=feed,
+                download_id=id,
+            )
 
         try:
-            rows = self._db.rows_where(
+            self._db.update(
                 self._download_table_name,
-                " AND ".join(where),
-                where_args=where_args,
-                order_by="published ASC",
-                limit=limit,
-                offset=offset,
+                (feed, id),
+                {
+                    "status": str(DownloadStatus.DOWNLOADED),
+                    "retries": 0,
+                    "last_error": None,
+                },
             )
+        except DownloadNotFoundError as e:
+            e.feed_id = feed
+            e.download_id = id
+            raise e
         except DatabaseOperationError as e:
             e.feed_id = feed
+            e.download_id = id
             raise e
-        return [Download.from_row(row) for row in rows]
+        logger.info("Download marked as DOWNLOADED.", extra=log_params)
+
+    def skip_download(self, feed: str, id: str) -> None:
+        """Skips a download.
+
+        - Sets status = SKIPPED.
+        - Preserves retries and last_error.
+        """
+        log_params = {
+            "feed_id": feed,
+            "download_id": id,
+            "target_status": str(DownloadStatus.SKIPPED),
+        }
+        logger.debug("Attempting to mark download as SKIPPED.", extra=log_params)
+        try:
+            self._db.update(
+                self._download_table_name,
+                (feed, id),
+                {"status": str(DownloadStatus.SKIPPED)},
+            )
+        except DownloadNotFoundError as e:
+            e.feed_id = feed
+            e.download_id = id
+            raise e
+        except DatabaseOperationError as e:
+            e.feed_id = feed
+            e.download_id = id
+            raise e
+        logger.info("Download marked as SKIPPED.", extra=log_params)
+
+    def unskip_download(
+        self,
+        feed_id: str,
+        download_id: str,
+    ) -> DownloadStatus:
+        """Unskips a download by re-queueing it. The Pruner will later determine if it should be archived based on retention rules.
+
+        - Checks that the current status is SKIPPED.
+        - Calls self.requeue_download() to set status to QUEUED and reset retries/errors.
+
+        Args:
+            feed_id: The ID of the feed.
+            download_id: The ID of the download.
+
+        Returns:
+            DownloadStatus.QUEUED if successful.
+
+        Raises:
+            DownloadNotFoundError: If the download is not found.
+            DatabaseOperationError: If the download is not in SKIPPED status or DB update fails.
+        """
+        log_params = {"feed_id": feed_id, "download_id": download_id}
+        logger.debug("Attempting to unskip download by re-queueing.", extra=log_params)
+
+        current_download = self.get_download_by_id(feed_id, download_id)
+
+        if current_download.status != DownloadStatus.SKIPPED:
+            raise DatabaseOperationError(
+                f"Download status is not SKIPPED (is {current_download.status}), cannot unskip.",
+                feed_id=feed_id,
+                download_id=download_id,
+            )
+
+        self.requeue_download(feed_id, download_id)
+        logger.info("Download unskipped and re-queued.", extra=log_params)
+        return DownloadStatus.QUEUED
+
+    def archive_download(self, feed: str, id: str) -> None:
+        """Archives a download.
+
+        - Sets status = ARCHIVED.
+        - Preserves retries and last_error.
+        """
+        log_params = {
+            "feed_id": feed,
+            "download_id": id,
+            "target_status": str(DownloadStatus.ARCHIVED),
+        }
+        logger.debug("Attempting to mark download as ARCHIVED.", extra=log_params)
+        try:
+            self._db.update(
+                self._download_table_name,
+                (feed, id),
+                {"status": str(DownloadStatus.ARCHIVED)},
+            )
+        except DownloadNotFoundError as e:
+            e.feed_id = feed
+            e.download_id = id
+            raise e
+        except DatabaseOperationError as e:
+            e.feed_id = feed
+            e.download_id = id
+            raise e
+        logger.info(
+            "Download marked as ARCHIVED.",
+            extra=log_params,
+        )
 
     def bump_retries(
         self,
@@ -398,24 +448,39 @@ class DatabaseManager:
         try:
             with self._db.transaction():
                 current_download = self.get_download_by_id(feed_id, download_id)
-                if current_download is None:
-                    raise DownloadNotFoundError(
-                        message="Download not found.",
-                        feed_id=feed_id,
-                        download_id=download_id,
-                    )
 
                 # Calculate new state
                 new_retries = current_download.retries + 1
-                is_error_status = new_retries >= max_allowed_errors
+
+                # Determine if the status should change to ERROR
+                # It should only change to ERROR if it's not already DOWNLOADED
+                should_transition_to_error = (
+                    new_retries >= max_allowed_errors
+                    and current_download.status != DownloadStatus.DOWNLOADED
+                )
+
                 final_status = (
-                    DownloadStatus.ERROR if is_error_status else current_download.status
+                    DownloadStatus.ERROR
+                    if should_transition_to_error
+                    else current_download.status
                 )
                 final_last_error = error_message
+                did_transition_to_error_state = (
+                    final_status == DownloadStatus.ERROR
+                    and current_download.status != DownloadStatus.ERROR
+                )
 
-                if is_error_status and current_download.status != DownloadStatus.ERROR:
+                if did_transition_to_error_state:
                     logger.info(
                         f"Download transitioning to ERROR state after {new_retries} retries (max: {max_allowed_errors}).",
+                        extra=log_params,
+                    )
+                elif (
+                    new_retries >= max_allowed_errors
+                    and current_download.status == DownloadStatus.DOWNLOADED
+                ):
+                    logger.warning(
+                        f"Max retries reached for already DOWNLOADED item. Status remains DOWNLOADED. Retries: {new_retries}",
                         extra=log_params,
                     )
 
@@ -429,13 +494,147 @@ class DatabaseManager:
                             "last_error": final_last_error,
                         },
                     )
+                except DownloadNotFoundError as e:
+                    e.feed_id = feed_id
+                    e.download_id = download_id
+                    raise e
                 except DatabaseOperationError as e:
                     e.feed_id = feed_id
                     e.download_id = download_id
                     raise e
-                return new_retries, final_status, is_error_status
+                return new_retries, final_status, did_transition_to_error_state
 
         except DatabaseOperationError as e:
             e.feed_id = feed_id
             e.download_id = download_id
             raise e
+
+    # --- Query Methods ---
+
+    def get_downloads_to_prune_by_keep_last(
+        self, feed: str, keep_last: int
+    ) -> list[Download]:
+        """Identifies downloads to prune based on 'keep_last'.
+
+        Returns a list of Downloads. Excludes downloads with status
+        ARCHIVED or UPCOMING.
+        """
+        log_params = {"feed_id": feed, "keep_last": keep_last}
+        logger.debug(
+            "Attempting to get downloads to prune by keep_last rule.", extra=log_params
+        )
+        if keep_last <= 0:
+            logger.debug(
+                "'keep_last' is 0 or negative, returning empty list.", extra=log_params
+            )
+            return []
+
+        try:
+            rows = self._db.rows_where(
+                self._download_table_name,
+                "feed = :feed AND status NOT IN (:archived, :upcoming)",
+                where_args={
+                    "feed": feed,
+                    "archived": str(DownloadStatus.ARCHIVED),
+                    "upcoming": str(DownloadStatus.UPCOMING),
+                },
+                order_by="published DESC",
+                limit=-1,
+                offset=keep_last,
+            )
+        except DatabaseOperationError as e:
+            e.feed_id = feed
+            raise e
+        return [Download.from_row(row) for row in rows]
+
+    def get_downloads_to_prune_by_since(
+        self, feed: str, since: datetime
+    ) -> list[Download]:
+        """Identifies downloads published before the 'since' datetime (UTC).
+
+        Returns a list of Downloads. Excludes downloads with status
+        ARCHIVED or UPCOMING. 'since' MUST be a timezone-aware datetime
+        object in UTC.
+        """
+        log_params = {"feed_id": feed, "prune_before_date": since.isoformat()}
+        logger.debug(
+            "Attempting to get downloads to prune by 'since' date rule.",
+            extra=log_params,
+        )
+        try:
+            rows = self._db.rows_where(
+                self._download_table_name,
+                "feed = :feed AND published < :since AND status NOT IN (:archived, :upcoming)",
+                where_args={
+                    "feed": feed,
+                    "since": since,
+                    "archived": str(DownloadStatus.ARCHIVED),
+                    "upcoming": str(DownloadStatus.UPCOMING),
+                },
+                order_by="published ASC",
+            )
+        except DatabaseOperationError as e:
+            e.feed_id = feed
+            raise e
+        return [Download.from_row(row) for row in rows]
+
+    def get_download_by_id(self, feed: str, id: str) -> Download:
+        """Retrieves a specific download by feed and id. Returns a Download object.
+
+        Raises:
+            DownloadNotFoundError: If the download is not found.
+            DatabaseOperationError: If the database operation fails.
+            ValueError: If unable to parse row into a Download
+        """
+        log_params = {"feed_id": feed, "download_id": id}
+        logger.debug("Attempting to get download by ID.", extra=log_params)
+        try:
+            row = self._db.get(self._download_table_name, (feed, id))
+        except DownloadNotFoundError as e:
+            e.feed_id = feed
+            e.download_id = id
+            raise e
+        except DatabaseOperationError as e:
+            e.feed_id = feed
+            e.download_id = id
+            raise e
+        return Download.from_row(row)
+
+    def get_downloads_by_status(
+        self,
+        status_to_filter: DownloadStatus,
+        feed: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[Download]:
+        """Retrieves downloads with a specific status, newest first.
+
+        Can be filtered by a specific feed. Returns a list of Downloads.
+        """
+        log_params = {
+            "status": str(status_to_filter),
+            "feed_id": feed if feed else "<all>",
+            "limit": limit,
+            "offset": offset,
+        }
+        logger.debug("Attempting to get downloads by status.", extra=log_params)
+
+        where = ["status = :status"]
+        where_args = {"status": str(status_to_filter)}
+        if feed:
+            where.append("feed = :feed")
+            where_args["feed"] = feed
+
+        try:
+            rows = self._db.rows_where(
+                self._download_table_name,
+                " AND ".join(where),
+                where_args=where_args,
+                order_by="published ASC",
+                limit=limit,
+                offset=offset,
+            )
+        except DatabaseOperationError as e:
+            e.feed_id = feed
+            raise e
+        return [Download.from_row(row) for row in rows]

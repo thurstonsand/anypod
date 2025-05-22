@@ -26,8 +26,7 @@ class Downloader:
         feed_config: FeedConfig,
         limit: int = 0,
     ) -> tuple[int, int]:
-        """
-        Processes and downloads media items that are in the 'queued' status for a specific feed.
+        """Processes and downloads media items that are in the 'queued' status for a specific feed.
 
         This method retrieves 'queued' Download objects from the database. For each item:
         1. It attempts to download the media content using `YtdlpWrapper.download_media_to_file()`,

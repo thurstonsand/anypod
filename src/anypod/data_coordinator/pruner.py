@@ -4,7 +4,9 @@ import logging
 from ..db import DatabaseManager, Download, DownloadStatus
 from ..exceptions import (
     DatabaseOperationError,
+    DownloadNotFoundError,
     FileOperationError,
+    PruneError,
 )
 from ..file_manager import FileManager
 
@@ -23,8 +25,8 @@ class Pruner:
         keep_last: int | None,
         prune_before_date: datetime.datetime | None,
     ) -> tuple[list[str], list[str]]:
-        """
-        Prunes old downloads for a given feed based on specified retention rules.
+        """Prunes old downloads for a given feed based on specified retention
+        rules.
 
         This method identifies download candidates for pruning based on two criteria:
         1.  `keep_last`: Retains only the specified number of the most recent DOWNLOADED downloads.
@@ -159,26 +161,18 @@ class Pruner:
         for id_to_archive in successfully_processed_ids_for_db_deletion:
             archive_log_params = {"feed_id": feed_id, "download_id": id_to_archive}
             try:
-                updated_in_db = self.db_manager.update_status(
-                    feed_id, id_to_archive, DownloadStatus.ARCHIVED
-                )
-            except DatabaseOperationError as e:
-                raise DatabaseOperationError(
-                    message="Database error updating status to ARCHIVED during pruning.",
-                    feed_id=feed_id,
-                    download_id=id_to_archive,
-                ) from e
-            if updated_in_db:
+                self.db_manager.archive_download(feed_id, id_to_archive)
                 logger.info(
                     "Download record archived successfully.",
                     extra=archive_log_params,
                 )
                 ids_of_downloads_archived.append(id_to_archive)
-            else:
-                logger.warning(
-                    "Attempted to archive download record, but DB reported no rows changed.",
-                    extra=archive_log_params,
-                )
+            except (DownloadNotFoundError, DatabaseOperationError) as e:
+                raise PruneError(
+                    "Failed to archive download record.",
+                    feed_id=feed_id,
+                    download_id=id_to_archive,
+                ) from e
 
         logger.info(
             "Pruning process completed for feed.",

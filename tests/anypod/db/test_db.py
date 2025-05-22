@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 
 from anypod.db import DatabaseManager, Download, DownloadStatus
-from anypod.exceptions import DownloadNotFoundError
+from anypod.exceptions import DatabaseOperationError, DownloadNotFoundError
 
 # --- Fixtures ---
 
@@ -254,171 +254,142 @@ def test_upsert_download_updates_existing(
 
 
 @pytest.mark.unit
-def test_update_status(db_manager: DatabaseManager, sample_download_queued: Download):
-    """Test updating the status of a download, including new re-queue logic."""
-    db_manager.upsert_download(sample_download_queued)  # Initial status is QUEUED
+def test_status_transitions(
+    db_manager: DatabaseManager,
+    sample_download_queued: Download,
+    sample_download_upcoming: Download,
+):
+    """Test various status transition methods."""
+    # Start with an UPCOMING download
+    db_manager.upsert_download(sample_download_upcoming)
+    feed_id = sample_download_upcoming.feed
+    dl_id = sample_download_upcoming.id
 
-    # Test: QUEUED -> DOWNLOADED
-    db_manager.update_status(
-        feed=sample_download_queued.feed,
-        id=sample_download_queued.id,
-        status=DownloadStatus.DOWNLOADED,
-    )
-    download = db_manager.get_download_by_id(
-        sample_download_queued.feed, sample_download_queued.id
-    )
-    assert download is not None
+    # UPCOMING -> QUEUED
+    db_manager.mark_as_queued_from_upcoming(feed_id, dl_id)
+    download = db_manager.get_download_by_id(feed_id, dl_id)
+    assert download.status == DownloadStatus.QUEUED
+    assert download.retries == 0  # Preserved from initial UPCOMING
+    assert download.last_error is None  # Preserved from initial UPCOMING
+
+    # QUEUED -> DOWNLOADED
+    db_manager.mark_as_downloaded(feed_id, dl_id)
+    download = db_manager.get_download_by_id(feed_id, dl_id)
     assert download.status == DownloadStatus.DOWNLOADED
     assert download.retries == 0, "Retries should be reset on DOWNLOADED"
     assert download.last_error is None, "Error should be cleared on DOWNLOADED"
 
-    # Test: DOWNLOADED -> ERROR
-    error_message = "Download failed: Network issue"
-    db_manager.update_status(
-        feed=sample_download_queued.feed,
-        id=sample_download_queued.id,
-        status=DownloadStatus.ERROR,
-        last_error=error_message,
+    # Attempt to bump retries on DOWNLOADED: should increment retries, set last_error, but NOT change status to ERROR
+    db_manager.bump_retries(
+        feed_id, dl_id, "Simulated error on downloaded item", 1
+    )  # max_errors = 1
+    download = db_manager.get_download_by_id(feed_id, dl_id)
+    assert download.status == DownloadStatus.DOWNLOADED, (
+        "Status should remain DOWNLOADED"
     )
-    download_error = db_manager.get_download_by_id(
-        sample_download_queued.feed, sample_download_queued.id
+    assert download.retries == 1, (
+        "Retries should increment even if status doesn't change"
     )
-    assert download_error is not None
-    assert download_error.status == DownloadStatus.ERROR
-    assert download_error.last_error == error_message
-    assert download_error.retries == 1, "Retries should be incremented on first ERROR"
+    assert download.last_error == "Simulated error on downloaded item"
 
-    # Test: ERROR -> ERROR (increment retries)
-    error_message_2 = "Download failed again"
-    db_manager.update_status(
-        feed=sample_download_queued.feed,
-        id=sample_download_queued.id,
-        status=DownloadStatus.ERROR,
-        last_error=error_message_2,
-    )
-    download_error_2 = db_manager.get_download_by_id(
-        sample_download_queued.feed, sample_download_queued.id
-    )
-    assert download_error_2 is not None
-    assert download_error_2.retries == 2, "Retries should increment on subsequent ERROR"
-    assert download_error_2.last_error == error_message_2
+    # DOWNLOADED (with error info) -> REQUEUED
+    db_manager.requeue_download(feed_id, dl_id)
+    download = db_manager.get_download_by_id(feed_id, dl_id)
+    assert download.status == DownloadStatus.QUEUED
+    assert download.retries == 0, "Retries should be reset on REQUEUE"
+    assert download.last_error is None, "Error should be cleared on REQUEUE"
 
-    # Test: ERROR -> UPCOMING (retries and error persist)
-    db_manager.update_status(
-        feed=sample_download_queued.feed,
-        id=sample_download_queued.id,
-        status=DownloadStatus.UPCOMING,
-    )
-    download_upcoming_from_error = db_manager.get_download_by_id(
-        sample_download_queued.feed, sample_download_queued.id
-    )
-    assert download_upcoming_from_error is not None
-    assert download_upcoming_from_error.status == DownloadStatus.UPCOMING
-    assert download_upcoming_from_error.last_error == error_message_2, (
-        "Error message should persist when transitioning to UPCOMING from ERROR"
-    )
-    assert download_upcoming_from_error.retries == 2, (
-        "Retries should persist when transitioning to UPCOMING from ERROR"
+    # QUEUED -> SKIPPED
+    # To test preservation of error/retries, let's set them via bump_retries first
+    # (though skip_download itself preserves whatever is there)
+    db_manager.bump_retries(feed_id, dl_id, "Error before skip", 3)
+    db_manager.skip_download(feed_id, dl_id)
+    download = db_manager.get_download_by_id(feed_id, dl_id)
+    assert download.status == DownloadStatus.SKIPPED
+    assert download.retries == 1, (
+        "Retries should be preserved on SKIP"
+    )  # from bump_retries
+    assert download.last_error == "Error before skip", (
+        "Error should be preserved on SKIP"
     )
 
-    # Test: UPCOMING -> QUEUED (retries and error persist)
-    db_manager.update_status(
-        feed=sample_download_queued.feed,
-        id=sample_download_queued.id,
-        status=DownloadStatus.QUEUED,
-    )
-    download_requeued_from_upcoming = db_manager.get_download_by_id(
-        sample_download_queued.feed, sample_download_queued.id
-    )
-    assert download_requeued_from_upcoming is not None
-    assert download_requeued_from_upcoming.status == DownloadStatus.QUEUED
-    assert download_requeued_from_upcoming.last_error == error_message_2, (
-        "Error message should persist when transitioning to QUEUED from UPCOMING"
-    )
-    assert download_requeued_from_upcoming.retries == 2, (
-        "Retries should persist when transitioning to QUEUED from UPCOMING"
+    # SKIPPED -> UNSKIP (which re-queues)
+    returned_status = db_manager.unskip_download(feed_id, dl_id)
+    assert returned_status == DownloadStatus.QUEUED
+    download = db_manager.get_download_by_id(feed_id, dl_id)
+    assert download.status == DownloadStatus.QUEUED
+    assert download.retries == 0, "Retries should be reset on UNSKIP (via REQUEUE)"
+    assert download.last_error is None, (
+        "Error should be cleared on UNSKIP (via REQUEUE)"
     )
 
-    # Test: QUEUED -> SKIPPED (retries and error persist)
-    db_manager.update_status(
-        feed=sample_download_queued.feed,
-        id=sample_download_queued.id,
-        status=DownloadStatus.SKIPPED,
-    )
-    download_skipped = db_manager.get_download_by_id(
-        sample_download_queued.feed, sample_download_queued.id
-    )
-    assert download_skipped is not None
-    assert download_skipped.status == DownloadStatus.SKIPPED
-    assert download_skipped.last_error == error_message_2, (
-        "Error message should persist on SKIPPED"
-    )
-    assert download_skipped.retries == 2, "Retries should persist on SKIPPED"
+    # QUEUED -> ARCHIVED (from a clean QUEUED state)
+    db_manager.archive_download(feed_id, dl_id)
+    download = db_manager.get_download_by_id(feed_id, dl_id)
+    assert download.status == DownloadStatus.ARCHIVED
+    assert download.retries == 0  # Preserved from last requeue
+    assert download.last_error is None  # Preserved from last requeue
 
-    # Test: SKIPPED -> QUEUED (error and retries persist)
-    # Re-using download_requeued variable name for clarity of flow
-    db_manager.update_status(
-        feed=sample_download_queued.feed,
-        id=sample_download_queued.id,
-        status=DownloadStatus.QUEUED,
-    )
-    download_requeued = db_manager.get_download_by_id(
-        sample_download_queued.feed, sample_download_queued.id
-    )
-    assert download_requeued is not None
-    assert download_requeued.status == DownloadStatus.QUEUED
-    assert download_requeued.last_error == error_message_2, (
-        "Error message should persist on re-QUEUE"
-    )
-    assert download_requeued.retries == 2, "Retries should persist on re-QUEUE"
+    # Re-insert a fresh download to test archiving from an ERROR state
+    sample_download_queued.status = DownloadStatus.QUEUED
+    sample_download_queued.retries = 0
+    sample_download_queued.last_error = None
+    db_manager.upsert_download(sample_download_queued)
+    q_feed_id = sample_download_queued.feed
+    q_dl_id = sample_download_queued.id
 
-    # Test transitioning to ARCHIVED from an ERROR state
-    db_manager.update_status(
-        feed=sample_download_queued.feed,
-        id=sample_download_queued.id,
-        status=DownloadStatus.ARCHIVED,
-    )
-    download_archived_from_error = db_manager.get_download_by_id(
-        sample_download_queued.feed, sample_download_queued.id
-    )
-    assert download_archived_from_error is not None
+    # Transition to ERROR
+    _, _, _ = db_manager.bump_retries(
+        q_feed_id, q_dl_id, "Maxed out errors", 1
+    )  # Max errors = 1
+    download_error_state = db_manager.get_download_by_id(q_feed_id, q_dl_id)
+    assert download_error_state.status == DownloadStatus.ERROR
+    assert download_error_state.retries == 1
+    assert download_error_state.last_error == "Maxed out errors"
+
+    # ERROR -> ARCHIVED
+    db_manager.archive_download(q_feed_id, q_dl_id)
+    download_archived_from_error = db_manager.get_download_by_id(q_feed_id, q_dl_id)
     assert download_archived_from_error.status == DownloadStatus.ARCHIVED
-    assert download_archived_from_error.last_error == error_message_2, (
-        "Error message should persist when archiving from ERROR state"
-    )
-    assert download_archived_from_error.retries == 2, (
-        "Retries should persist when archiving from ERROR state"
+    assert download_archived_from_error.retries == 1, "Retries should be preserved"
+    assert download_archived_from_error.last_error == "Maxed out errors", (
+        "Error should be preserved"
     )
 
-    # Test transitioning to ARCHIVED from a DOWNLOADED state (error/retries should be null/0)
-    db_manager.update_status(
-        feed=sample_download_queued.feed,
-        id=sample_download_queued.id,
-        status=DownloadStatus.DOWNLOADED,  # First set to DOWNLOADED to clear errors/retries
-    )
-    db_manager.update_status(
-        feed=sample_download_queued.feed,
-        id=sample_download_queued.id,
-        status=DownloadStatus.ARCHIVED,
-    )
-    download_archived_from_downloaded = db_manager.get_download_by_id(
+    # Test non_existent_download for each relevant method
+    with pytest.raises(DownloadNotFoundError):
+        db_manager.mark_as_queued_from_upcoming("bad", "bad")
+    with pytest.raises(DownloadNotFoundError):
+        db_manager.requeue_download("bad", "bad")
+    with pytest.raises(DownloadNotFoundError):
+        db_manager.mark_as_downloaded("bad", "bad")
+    with pytest.raises(DownloadNotFoundError):
+        db_manager.skip_download("bad", "bad")
+    with pytest.raises(DownloadNotFoundError):
+        db_manager.unskip_download("bad", "bad")
+    with pytest.raises(DownloadNotFoundError):
+        db_manager.archive_download("bad", "bad")
+
+    # Test mark_as_downloaded from a non-QUEUED state (e.g., UPCOMING)
+    db_manager.upsert_download(sample_download_upcoming)  # dl_id is now UPCOMING
+    with pytest.raises(DatabaseOperationError, match="Download status is not QUEUED"):
+        db_manager.mark_as_downloaded(feed_id, sample_download_upcoming.id)
+
+    # Test mark_as_downloaded from ERROR state
+    # First, set an item to ERROR
+    db_manager.upsert_download(sample_download_queued)  # dl_id is now QUEUED
+    db_manager.bump_retries(
+        sample_download_queued.feed, sample_download_queued.id, "Error to test from", 1
+    )  # max_errors = 1, so it becomes ERROR
+    error_download = db_manager.get_download_by_id(
         sample_download_queued.feed, sample_download_queued.id
     )
-    assert download_archived_from_downloaded is not None
-    assert download_archived_from_downloaded.status == DownloadStatus.ARCHIVED
-    assert download_archived_from_downloaded.last_error is None, (
-        "Error message should be None when archiving from DOWNLOADED state"
-    )
-    assert download_archived_from_downloaded.retries == 0, (
-        "Retries should be 0 when archiving from DOWNLOADED state"
-    )
+    assert error_download.status == DownloadStatus.ERROR
 
-    non_existent_update = db_manager.update_status(
-        feed="other_feed", id="non_existent_id", status=DownloadStatus.DOWNLOADED
-    )
-    assert non_existent_update is False, (
-        "Updating non-existent download should return False"
-    )
+    with pytest.raises(DatabaseOperationError, match="Download status is not QUEUED"):
+        db_manager.mark_as_downloaded(
+            sample_download_queued.feed, sample_download_queued.id
+        )
 
 
 @pytest.mark.unit
@@ -835,11 +806,10 @@ def test_get_downloads_by_status(db_manager: DatabaseManager):
     assert len(offset_too_high_error) == 0
 
     # --- Test no downloads at all (after updating existing downloads to a different status) ---
-    db_manager.update_status(feed=feed1, id="f1e1_old", status=DownloadStatus.QUEUED)
-    db_manager.update_status(
-        feed=feed1, id="f1e2_new", status=DownloadStatus.DOWNLOADED
-    )
-    db_manager.update_status(feed=feed2, id="f2e1", status=DownloadStatus.SKIPPED)
+    db_manager.requeue_download(feed=feed1, id="f1e1_old")  # ERROR -> QUEUED
+    db_manager.requeue_download(feed=feed1, id="f1e2_new")  # ERROR -> QUEUED
+    db_manager.skip_download(feed=feed2, id="f2e1")  # ERROR -> SKIPPED
+
     all_errors_cleared = db_manager.get_downloads_by_status(
         status_to_filter=DownloadStatus.ERROR
     )
@@ -848,8 +818,12 @@ def test_get_downloads_by_status(db_manager: DatabaseManager):
     )
 
     # Test original upcoming downloads are also gone if we query for them after updates
-    db_manager.update_status(feed=feed1, id="f1upcoming", status=DownloadStatus.QUEUED)
-    db_manager.update_status(feed=feed2, id="f2upcoming", status=DownloadStatus.QUEUED)
+    db_manager.mark_as_queued_from_upcoming(
+        feed=feed1, id="f1upcoming"
+    )  # UPCOMING -> QUEUED
+    db_manager.mark_as_queued_from_upcoming(
+        feed=feed2, id="f2upcoming"
+    )  # UPCOMING -> QUEUED
     all_upcoming_cleared = db_manager.get_downloads_by_status(
         status_to_filter=DownloadStatus.UPCOMING
     )
@@ -1011,12 +985,13 @@ def test_bump_retries_already_error_status(
     db_manager: DatabaseManager, sample_download_upcoming: Download
 ):
     """Test bumping retries when the item is already in ERROR state."""
+    # Modify fixture to be in ERROR state initially
     sample_download_upcoming.status = DownloadStatus.ERROR
     sample_download_upcoming.retries = 5
     sample_download_upcoming.last_error = "Previous major error"
     db_manager.upsert_download(sample_download_upcoming)
 
-    new_retries, final_status, is_error_after_bump = db_manager.bump_retries(
+    new_retries, final_status, did_transition_to_error_state = db_manager.bump_retries(
         feed_id=sample_download_upcoming.feed,
         download_id=sample_download_upcoming.id,
         error_message="Another error while already in ERROR state",
@@ -1025,7 +1000,7 @@ def test_bump_retries_already_error_status(
 
     assert new_retries == 6
     assert final_status == DownloadStatus.ERROR
-    assert is_error_after_bump
+    assert not did_transition_to_error_state  # Should be False as it was already ERROR
 
     updated_row = db_manager.get_download_by_id(
         sample_download_upcoming.feed, sample_download_upcoming.id
@@ -1060,3 +1035,52 @@ def test_bump_retries_max_errors_is_one(
     assert updated_row.retries == 1
     assert updated_row.status == DownloadStatus.ERROR
     assert updated_row.last_error == "First and only error allowed"
+
+
+@pytest.mark.unit
+def test_bump_retries_downloaded_item_does_not_become_error(
+    db_manager: DatabaseManager, sample_download_queued: Download
+):
+    """Test that bumping retries on a DOWNLOADED item does not change its status to ERROR, even if retries reach max."""
+    # Setup: Insert a download and mark it as DOWNLOADED
+    feed_id = sample_download_queued.feed
+    dl_id = sample_download_queued.id
+    db_manager.upsert_download(sample_download_queued)  # Initially QUEUED
+    db_manager.mark_as_downloaded(feed_id, dl_id)
+
+    download = db_manager.get_download_by_id(feed_id, dl_id)
+    assert download.status == DownloadStatus.DOWNLOADED
+    assert download.retries == 0
+
+    # Bump retries enough times to exceed max_allowed_errors
+    max_errors = 2
+    new_retries, final_status, did_transition = db_manager.bump_retries(
+        feed_id, dl_id, "Error 1 on downloaded", max_errors
+    )
+    assert new_retries == 1
+    assert final_status == DownloadStatus.DOWNLOADED
+    assert not did_transition
+
+    new_retries, final_status, did_transition = db_manager.bump_retries(
+        feed_id, dl_id, "Error 2 on downloaded (max reached)", max_errors
+    )
+    assert new_retries == 2
+    assert final_status == DownloadStatus.DOWNLOADED  # Should still be DOWNLOADED
+    assert not did_transition  # Should not transition to ERROR
+
+    updated_download = db_manager.get_download_by_id(feed_id, dl_id)
+    assert updated_download.status == DownloadStatus.DOWNLOADED
+    assert updated_download.retries == 2
+    assert updated_download.last_error == "Error 2 on downloaded (max reached)"
+
+    # One more bump, still should not change status
+    new_retries, final_status, did_transition = db_manager.bump_retries(
+        feed_id, dl_id, "Error 3 on downloaded (exceeds max)", max_errors
+    )
+    assert new_retries == 3
+    assert final_status == DownloadStatus.DOWNLOADED
+    assert not did_transition
+
+    updated_download = db_manager.get_download_by_id(feed_id, dl_id)
+    assert updated_download.status == DownloadStatus.DOWNLOADED
+    assert updated_download.retries == 3

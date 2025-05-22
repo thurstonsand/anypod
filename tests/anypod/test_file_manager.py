@@ -31,9 +31,10 @@ def file_manager(temp_base_download_path: Path) -> FileManager:
 def test_save_download_file_success(
     file_manager: FileManager, temp_base_download_path: Path
 ):
-    """
-    Tests successful saving of a download file.
-    Verifies directory creation, .incomplete handling, final file content, and return path.
+    """Tests successful saving of a download file.
+
+    Verifies directory creation, .incomplete handling, final file
+    content, and return path.
     """
     feed_id = "my_test_feed"
     file_name = "episode1.mp3"
@@ -71,9 +72,7 @@ def test_save_download_file_success(
 def test_save_download_file_creates_base_directory(
     tmp_path_factory: pytest.TempPathFactory,
 ):
-    """
-    Tests that FileManager creates the base_download_path if it doesn't exist.
-    """
+    """Tests that FileManager creates the base_download_path if it doesn't exist."""
     non_existent_base_path = tmp_path_factory.mktemp("base") / "download_files"
     assert not non_existent_base_path.exists(), (
         "Ensure path doesn't exist before FileManager init"
@@ -90,9 +89,7 @@ def test_save_download_file_creates_base_directory(
 def test_save_download_file_overwrites_existing_file(
     file_manager: FileManager, temp_base_download_path: Path
 ):
-    """
-    Tests that save_download_file overwrites an existing file with the same name.
-    """
+    """Tests that save_download_file overwrites an existing file with the same name."""
     feed_id = "overwrite_feed"
     file_name = "track.mp3"
     initial_content = b"Initial version."
@@ -123,9 +120,7 @@ def test_save_download_file_overwrites_existing_file(
 def test_save_download_file_overwrites_existing_incomplete_file(
     file_manager: FileManager, temp_base_download_path: Path
 ):
-    """
-    Tests that save_download_file correctly handles and overwrites an existing .incomplete file.
-    """
+    """Tests that save_download_file correctly handles and overwrites an existing .incomplete file."""
     feed_id = "overwrite_incomplete_feed"
     file_name = "podcast.mp3"
     old_incomplete_content = b"Stale incomplete data."
@@ -159,10 +154,7 @@ def test_save_download_file_overwrites_existing_incomplete_file(
 def test_save_download_file_error_during_write_cleans_up(
     file_manager: FileManager, temp_base_download_path: Path, mocker: MockerFixture
 ):
-    """
-    Tests that if an error occurs during shutil.copyfileobj (writing to .incomplete),
-    the .incomplete file is cleaned up.
-    """
+    """Tests that if an error occurs during shutil.copyfileobj (writing to .incomplete), the .incomplete file is cleaned up."""
     feed_id = "error_write_feed"
     file_name = "broken_stream.dat"
     data_stream = io.BytesIO(b"Some data before error.")

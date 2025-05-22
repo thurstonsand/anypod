@@ -29,7 +29,10 @@ class Enqueuer:
         max_errors: int,
         log_params_base: dict[str, Any],
     ) -> bool:
-        """Attempts to bump retries and logs the outcome. Returns True if transitioned to ERROR."""
+        """Attempts to bump retries and logs the outcome.
+
+        Returns True if transitioned to ERROR.
+        """
         transitioned_to_error_state = False
         try:
             _, _, transitioned_to_error = self.db_manager.bump_retries(
@@ -57,40 +60,6 @@ class Enqueuer:
                     extra=log_params_base,
                 )
         return transitioned_to_error_state
-
-    def _update_download_status_in_db(
-        self,
-        feed_id: str,
-        download_id: str,
-        new_status: DownloadStatus,
-        log_params: dict[str, Any],
-    ) -> bool:
-        """Updates download status in DB and logs outcome. Returns True if updated."""
-        try:
-            updated = self.db_manager.update_status(
-                feed=feed_id,
-                id=download_id,
-                status=new_status,
-            )
-        except DatabaseOperationError as e:
-            logger.error(
-                f"Database error updating status to {new_status}.",
-                extra=log_params,
-                exc_info=e,
-            )
-            return False
-        else:
-            if updated:
-                logger.info(
-                    f"Successfully updated status to {new_status}.",
-                    extra=log_params,
-                )
-            else:
-                logger.warning(
-                    f"Failed to update status to {new_status} (DB row not changed).",
-                    extra=log_params,
-                )
-            return updated
 
     # TODO: if this fails, download is lost forever
     def _upsert_download_in_db(
@@ -137,8 +106,8 @@ class Enqueuer:
         feed_id: str,
         download_log_params: dict[str, Any],
     ) -> Download | None:
-        """
-        Searches for a matching download in the fetched list.
+        """Searches for a matching download in the fetched list.
+
         Logs warnings for mismatches or multiple results.
         """
         match fetched_downloads:
@@ -183,26 +152,38 @@ class Enqueuer:
         refetched_download: Download,
         download_log_params: dict[str, Any],
     ) -> bool:
-        """Checks if refetched download is VOD and updates DB status to QUEUED. Returns True if status updated."""
+        """Checks if refetched download is VOD and updates DB status to QUEUED.
+
+        Returns True if status updated.
+        """
         match refetched_download.status:
             case DownloadStatus.QUEUED:
                 logger.info(
                     "Upcoming download has transitioned to VOD (QUEUED). Updating status.",
                     extra=download_log_params,
                 )
-                return self._update_download_status_in_db(
-                    feed_id=feed_id,
-                    download_id=db_download_id,
-                    new_status=DownloadStatus.QUEUED,
-                    log_params=download_log_params,
-                )
+                try:
+                    self.db_manager.mark_as_queued_from_upcoming(
+                        feed_id, db_download_id
+                    )
+                except (DownloadNotFoundError, DatabaseOperationError) as e:
+                    raise EnqueueError(
+                        "Video became ready to download, but could not update status to QUEUED.",
+                        feed_id=feed_id,
+                        download_id=db_download_id,
+                    ) from e
+                else:
+                    logger.info(
+                        "Successfully updated upcoming to QUEUED.",
+                        extra=download_log_params,
+                    )
+                    return True
             case DownloadStatus.UPCOMING:
                 logger.info(
                     f"Re-fetched download status is still {DownloadStatus.UPCOMING}. No change needed.",
                     extra=download_log_params,
                 )
-            # above should be the only possible cases
-            case _:
+            case _:  # Should ideally not happen if ytdlp_wrapper returns consistent Download objects
                 logger.warning(
                     f"Re-fetched upcoming download has unexpected status: {refetched_download.status}. Skipping.",
                     extra=download_log_params,
@@ -216,8 +197,11 @@ class Enqueuer:
         feed_config: FeedConfig,
         feed_log_params: dict[str, Any],
     ) -> bool:
-        """Processes a single upcoming download, re-fetching metadata and updating status if necessary.
-        Returns True if the download was successfully transitioned to QUEUED.
+        """Processes a single upcoming download, re-fetching metadata and
+        updating status if necessary.
+
+        Returns True if the download was successfully transitioned to
+        QUEUED.
         """
         download_log_params = {
             **feed_log_params,
@@ -288,6 +272,7 @@ class Enqueuer:
         log_params: dict[str, Any],
     ) -> list[Download]:
         """Fetches all media metadata for the feed URL, applying date filter.
+
         Raises EnqueueError if the main ytdlp fetch fails.
         """
         current_yt_cli_args = dict(feed_config.yt_args)  # Make a copy
@@ -326,7 +311,10 @@ class Enqueuer:
     def _handle_newly_fetched_download(
         self, download: Download, log_params: dict[str, Any]
     ) -> bool:
-        """Handles a new download by upserting it. Returns True if download is QUEUED."""
+        """Handles a new download by upserting it.
+
+        Returns True if download is QUEUED.
+        """
         logger.info(
             "New download found. Inserting.",
             extra=log_params,
@@ -341,24 +329,53 @@ class Enqueuer:
         feed_id: str,
         log_params: dict[str, Any],
     ) -> bool:
-        """Handles an existing download based on status comparison. Returns True if download newly QUEUED."""
+        """Handles an existing download based on status comparison.
+
+        Returns True if download newly QUEUED.
+        """
         current_log_params = {
             **log_params,
             "existing_db_status": existing_db_download.status,
         }
 
         match (existing_db_download.status, fetched_download.status):
-            case (DownloadStatus.UPCOMING, DownloadStatus.QUEUED):
+            case (DownloadStatus.UPCOMING, DownloadStatus.QUEUED as fetched_status):
                 logger.info(
-                    "Existing UPCOMING download has transitioned to VOD (QUEUED). Updating status.",
+                    f"Existing UPCOMING download has transitioned to VOD ({fetched_status}). Updating status.",
                     extra=current_log_params,
                 )
-                return self._update_download_status_in_db(
-                    feed_id=feed_id,
-                    download_id=fetched_download.id,
-                    new_status=DownloadStatus.QUEUED,
-                    log_params=current_log_params,
+                try:
+                    self.db_manager.mark_as_queued_from_upcoming(
+                        feed_id, fetched_download.id
+                    )
+                    return True
+                except (DownloadNotFoundError, DatabaseOperationError) as e:
+                    raise EnqueueError(
+                        "Download became ready to download, but could not update status to QUEUED.",
+                        feed_id=feed_id,
+                        download_id=fetched_download.id,
+                    ) from e
+            case (
+                DownloadStatus.DOWNLOADED | DownloadStatus.ERROR as existing_status,
+                DownloadStatus.QUEUED,
+            ):
+                logger.debug(
+                    f"Existing {existing_status} download set to be requeued.",
+                    extra=current_log_params,
                 )
+                try:
+                    self.db_manager.requeue_download(feed_id, fetched_download.id)
+                    logger.info(
+                        "Successfully re-queued existing DOWNLOADED item.",
+                        extra=current_log_params,
+                    )
+                    return True
+                except (DownloadNotFoundError, DatabaseOperationError) as e:
+                    raise EnqueueError(
+                        "Download was set to be redownloaded, but could not update status to QUEUED.",
+                        feed_id=feed_id,
+                        download_id=fetched_download.id,
+                    ) from e
             case (
                 DownloadStatus.UPCOMING as existing_status,
                 DownloadStatus.UPCOMING as fetched_status,
@@ -371,19 +388,13 @@ class Enqueuer:
                     extra=current_log_params,
                 )
                 return False
-            case (DownloadStatus.DOWNLOADED, _):
-                logger.debug(
-                    f"Existing download already {DownloadStatus.DOWNLOADED}. Skipping.",
-                    extra=current_log_params,
-                )
-                return False
             case (existing_status, fetched_status):
                 logger.info(
                     f"Existing download status '{existing_status}' differs from fetched '{fetched_status}'. Upserting for consistency.",
                     extra=current_log_params,
                 )
                 self._upsert_download_in_db(fetched_download, current_log_params)
-                return fetched_status == DownloadStatus.QUEUED
+                return fetched_download.status == DownloadStatus.QUEUED
 
     def _process_single_download(
         self,
@@ -391,7 +402,10 @@ class Enqueuer:
         feed_id: str,
         feed_log_params: dict[str, Any],
     ) -> bool:
-        """Processes a single fetched download. Returns True if it's newly QUEUED."""
+        """Processes a single fetched download.
+
+        Returns True if it's newly QUEUED.
+        """
         log_params = {
             **feed_log_params,
             "download_id": fetched_dl.id,
@@ -410,8 +424,7 @@ class Enqueuer:
                 exc_info=e,
             )
             return False  # Did not result in a new QUEUED download
-
-        if existing_db_download is None:
+        except DownloadNotFoundError:
             return self._handle_newly_fetched_download(fetched_dl, log_params)
         else:
             return self._handle_existing_fetched_download(
@@ -421,11 +434,11 @@ class Enqueuer:
     def _handle_existing_upcoming_downloads(
         self, feed_id: str, feed_config: FeedConfig
     ) -> int:
-        """
-        Re-fetches metadata for existing DB entries with status `UPCOMING`.
-        If a download is now a VOD, its status is updated to `QUEUED`.
-        If metadata re-fetch fails repeatedly (controlled by `feed_config.max_errors`),
-        the download's status is transitioned to `ERROR`.
+        """Re-fetches metadata for existing DB entries with status `UPCOMING`.
+        If a download is now a VOD, its status is updated to `QUEUED`. If
+        metadata re-fetch fails repeatedly (controlled by
+        `feed_config.max_errors`), the download's status is transitioned to
+        `ERROR`.
 
         Args:
             feed_id: The unique identifier for the feed.
@@ -467,8 +480,8 @@ class Enqueuer:
         feed_config: FeedConfig,
         fetch_since_date: datetime,
     ) -> int:
-        """
-        Fetches all media metadata for the feed URL after the given date.
+        """Fetches all media metadata for the feed URL after the given date.
+
         For each download:
         - If new: inserts with status `QUEUED` (if VOD) or `UPCOMING` (if live/scheduled).
 
@@ -508,8 +521,8 @@ class Enqueuer:
         feed_config: FeedConfig,
         fetch_since_date: datetime,
     ) -> int:
-        """
-        Fetches media metadata for a given feed and enqueues new downloads into the database.
+        """Fetches media metadata for a given feed and enqueues new downloads
+        into the database.
 
         This method performs two main phases:
         1. Re-polls existing database entries with status `UPCOMING` for the given feed.
