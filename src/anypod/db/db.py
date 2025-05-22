@@ -183,6 +183,7 @@ class DatabaseManager:
             raise e
         logger.debug("Upsert download record execution complete.", extra=log_params)
 
+    # TODO: this logic is wrong for ERROR; retries should be handled by bump_retries
     def update_status(
         self,
         feed: str,
@@ -394,53 +395,46 @@ class DatabaseManager:
         }
         logger.debug("Attempting to bump error count for download.", extra=log_params)
 
-        def _bump_retries() -> tuple[int, DownloadStatus, bool]:
-            try:
-                row = self._db.get(self._download_table_name, (feed_id, download_id))
-            except DatabaseOperationError as e:
-                e.feed_id = feed_id
-                e.download_id = download_id
-                raise e
-            if row is None:
-                raise DownloadNotFoundError(
-                    message="Download not found.",
-                    feed_id=feed_id,
-                    download_id=download_id,
-                )
-            current_download = Download.from_row(row)
-
-            # Calculate new state
-            new_retries = current_download.retries + 1
-            is_error_status = new_retries >= max_allowed_errors
-            final_status = (
-                DownloadStatus.ERROR if is_error_status else current_download.status
-            )
-            final_last_error = error_message
-
-            if is_error_status and current_download.status != DownloadStatus.ERROR:
-                logger.info(
-                    f"Download transitioning to ERROR state after {new_retries} retries (max: {max_allowed_errors}).",
-                    extra=log_params,
-                )
-
-            try:
-                self._db.update(
-                    self._download_table_name,
-                    (feed_id, download_id),
-                    {
-                        "retries": new_retries,
-                        "status": str(final_status),
-                        "last_error": final_last_error,
-                    },
-                )
-            except DatabaseOperationError as e:
-                e.feed_id = feed_id
-                e.download_id = download_id
-                raise e
-            return new_retries, final_status, is_error_status
-
         try:
-            return self._db.with_transaction(_bump_retries)
+            with self._db.transaction():
+                current_download = self.get_download_by_id(feed_id, download_id)
+                if current_download is None:
+                    raise DownloadNotFoundError(
+                        message="Download not found.",
+                        feed_id=feed_id,
+                        download_id=download_id,
+                    )
+
+                # Calculate new state
+                new_retries = current_download.retries + 1
+                is_error_status = new_retries >= max_allowed_errors
+                final_status = (
+                    DownloadStatus.ERROR if is_error_status else current_download.status
+                )
+                final_last_error = error_message
+
+                if is_error_status and current_download.status != DownloadStatus.ERROR:
+                    logger.info(
+                        f"Download transitioning to ERROR state after {new_retries} retries (max: {max_allowed_errors}).",
+                        extra=log_params,
+                    )
+
+                try:
+                    self._db.update(
+                        self._download_table_name,
+                        (feed_id, download_id),
+                        {
+                            "retries": new_retries,
+                            "status": str(final_status),
+                            "last_error": final_last_error,
+                        },
+                    )
+                except DatabaseOperationError as e:
+                    e.feed_id = feed_id
+                    e.download_id = download_id
+                    raise e
+                return new_retries, final_status, is_error_status
+
         except DatabaseOperationError as e:
             e.feed_id = feed_id
             e.download_id = download_id

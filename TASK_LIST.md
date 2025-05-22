@@ -100,7 +100,6 @@ This section details the components that manage the lifecycle of downloads, from
             - If live or scheduled (`live_status=='upcoming'` or `is_live==True`), insert with status 'upcoming'.
         - For each existing 'upcoming' entry now VOD, update status to 'queued'.
     - Returns count of newly enqueued or transitioned-to-queued downloads.
-- [ ] Unit tests for `Enqueuer` with mocked dependencies.
 - [x] preprocess cli args so you dont do it every time
 - [x] handle cookies differently? they need to be included even at discovery stage
   - just include all args for all stages, including discovery; user will have limitations that need to be outlined in docs
@@ -108,6 +107,10 @@ This section details the components that manage the lifecycle of downloads, from
     - for example, remove all references to sqlite.Row, sqlite.Error
 - [x] retries should apply more widely, and with enough failures, should transition to error state
     - maybe db.py needs a `bump_error_count` fn that handles this - bumps it until it becomes too high, then marks as error
+- [x] Unit tests for `Enqueuer` with mocked dependencies.
+
+### 3.5.3.1 TODO Side Quest
+- [ ] address various TODOs throughout code base
 
 ### 3.5.4 `Downloader` Service (`data_coordinator/downloader.py`)
 - [ ] Set up tmp dirs for writing data for merge: e.g. `/data/.tmp_completed_downloads/<feed_id>/<download.ext>/` and `/data/.tmp_yt_dlp_parts/<feed_id>/<download.ext>/`

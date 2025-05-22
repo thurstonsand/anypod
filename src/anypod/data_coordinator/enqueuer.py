@@ -176,24 +176,6 @@ class Enqueuer:
                 )
                 return None
 
-    def _handle_upcoming_refetch_issue(
-        self,
-        db_download: Download,
-        feed_id: str,
-        max_errors: int,
-        issue_message: str,
-        log_params: dict[str, Any],
-    ) -> None:
-        """Handles issues during refetch of an upcoming download by bumping retries."""
-        current_log_params = {**log_params, "error_message": issue_message}
-        self._try_bump_retries_and_log(
-            feed_id=feed_id,
-            download_id=db_download.id,
-            error_message=issue_message,
-            max_errors=max_errors,
-            log_params_base=current_log_params,
-        )
-
     def _update_status_to_queued_if_vod(
         self,
         feed_id: str,
@@ -264,11 +246,11 @@ class Enqueuer:
                 exc_info=e,
             )
             self._try_bump_retries_and_log(
-                feed_id=feed_id,
-                download_id=db_download.id,
-                error_message=error_message,
-                max_errors=feed_config.max_errors,
-                log_params_base=download_log_params,
+                feed_id,
+                db_download.id,
+                error_message,
+                feed_config.max_errors,
+                download_log_params,
             )
             return False
 
@@ -278,12 +260,16 @@ class Enqueuer:
 
         if not refetched_download:
             error_message = "Original ID not found in re-fetched metadata, or mismatched/multiple downloads found."
-
-            self._handle_upcoming_refetch_issue(
-                db_download,
-                feed_id,
-                feed_config.max_errors,
+            logger.warning(
                 error_message,
+                extra=download_log_params,
+            )
+
+            self._try_bump_retries_and_log(
+                feed_id,
+                db_download.id,
+                error_message,
+                feed_config.max_errors,
                 download_log_params,
             )
             return False

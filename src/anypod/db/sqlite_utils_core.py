@@ -1,4 +1,5 @@
-from collections.abc import Callable
+from collections.abc import Callable, Generator
+from contextlib import contextmanager
 import logging
 from pathlib import Path
 
@@ -38,10 +39,11 @@ class SqliteUtilsCore:
         except sqlite3.Error as e:
             raise DatabaseOperationError("Failed to initialize database.") from e
 
-    def with_transaction[T](self, func: Callable[[], T]) -> T:
+    @contextmanager
+    def transaction(self) -> Generator[None]:
         try:
             with self.db.conn:  # type: ignore
-                return func()
+                yield
         except sqlite3.Error as e:
             raise DatabaseOperationError("Database transaction failed.") from e
 
