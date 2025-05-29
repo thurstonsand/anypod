@@ -1,5 +1,6 @@
+from collections.abc import Generator
 from datetime import UTC, datetime
-from pathlib import Path
+import shutil
 
 import pytest
 
@@ -53,9 +54,16 @@ BIG_BUCK_BUNNY_DOWNLOAD = Download(
 
 
 @pytest.fixture
-def ytdlp_wrapper() -> YtdlpWrapper:
+def ytdlp_wrapper(tmp_path_factory: pytest.TempPathFactory) -> Generator[YtdlpWrapper]:
     """Provides a YtdlpWrapper instance for the tests."""
-    return YtdlpWrapper()
+    app_tmp_dir = tmp_path_factory.mktemp("tmp")
+    app_data_dir = tmp_path_factory.mktemp("data")
+
+    yield YtdlpWrapper(app_tmp_dir=app_tmp_dir, app_data_dir=app_data_dir)
+
+    # Teardown: remove temporary directories
+    shutil.rmtree(app_tmp_dir)
+    shutil.rmtree(app_data_dir)
 
 
 @pytest.mark.integration
@@ -130,7 +138,7 @@ def test_fetch_metadata_with_impossible_filter(
 
 
 @pytest.mark.integration
-def test_download_media_to_file_success(ytdlp_wrapper: YtdlpWrapper, tmp_path: Path):
+def test_download_media_to_file_success(ytdlp_wrapper: YtdlpWrapper):
     """Tests successful media download for a specific video.
 
     Asserts that the file is downloaded to the correct location and
@@ -154,23 +162,11 @@ def test_download_media_to_file_success(ytdlp_wrapper: YtdlpWrapper, tmp_path: P
     # Use the same minimal args as other tests, could be customized if needed
     cli_args = YT_DLP_MINIMAL_ARGS
 
-    # The download_media_to_file method constructs the full path including feed/id.ext
-    # So we pass the base directory where the `video` subfolder will be created.
-    base_download_dir = tmp_path / "test_dl_integration"
-
-    expected_file_path = (
-        base_download_dir / download.feed / f"{download.id}.{download.ext}"
-    )
-
     downloaded_file_path = ytdlp_wrapper.download_media_to_file(
         download=download,
         yt_cli_args=cli_args,
-        download_target_dir=base_download_dir,  # Pass the base directory
     )
 
-    assert downloaded_file_path == expected_file_path, (
-        f"Expected path {expected_file_path}, but got {downloaded_file_path}"
-    )
     assert downloaded_file_path.exists(), (
         f"Downloaded file does not exist at {downloaded_file_path}"
     )
@@ -178,9 +174,7 @@ def test_download_media_to_file_success(ytdlp_wrapper: YtdlpWrapper, tmp_path: P
 
 
 @pytest.mark.integration
-def test_download_media_to_file_non_existent(
-    ytdlp_wrapper: YtdlpWrapper, tmp_path: Path
-):
+def test_download_media_to_file_non_existent(ytdlp_wrapper: YtdlpWrapper):
     """Tests that download fails with YtdlpApiError for a non-existent video URL."""
     non_existent_download = Download(
         feed="non_existent_feed",
@@ -193,14 +187,11 @@ def test_download_media_to_file_non_existent(
         status=DownloadStatus.QUEUED,
     )
     cli_args = YT_DLP_MINIMAL_ARGS
-    base_download_dir = tmp_path / "test_dl_non_existent"
-    base_download_dir.mkdir(parents=True, exist_ok=True)
 
     with pytest.raises(YtdlpApiError) as excinfo:
         ytdlp_wrapper.download_media_to_file(
             download=non_existent_download,
             yt_cli_args=cli_args,
-            download_target_dir=base_download_dir,
         )
 
     # Check for messages indicating download failure from yt-dlp
@@ -210,22 +201,17 @@ def test_download_media_to_file_non_existent(
 
 
 @pytest.mark.integration
-def test_download_media_to_file_impossible_filter(
-    ytdlp_wrapper: YtdlpWrapper, tmp_path: Path
-):
+def test_download_media_to_file_impossible_filter(ytdlp_wrapper: YtdlpWrapper):
     """Tests that download fails with YtdlpApiError when an impossible filter is applied."""
     impossible_filter_args = YtdlpCore.parse_options(
         ["--format", "worst[ext=mp4]", "--match-filter", "duration > 99999999"]
     )
-    base_download_dir = tmp_path / "test_dl_impossible_filter"
-    base_download_dir.mkdir(parents=True, exist_ok=True)
 
     with pytest.raises(YtdlpApiError) as excinfo:
         ytdlp_wrapper.download_media_to_file(
             download=BIG_BUCK_BUNNY_DOWNLOAD,
             yt_cli_args=impossible_filter_args,
-            download_target_dir=base_download_dir,
         )
 
     # Expecting failure because no format matches the filter during download attempt
-    assert "may have been filtered out" in str(excinfo.value).lower()
+    assert "might have filtered" in str(excinfo.value).lower()

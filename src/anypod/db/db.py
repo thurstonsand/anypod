@@ -40,6 +40,7 @@ class Download:
     duration: float  # in seconds
     status: DownloadStatus
     thumbnail: str | None = None
+    filesize: int | None = None  # Bytes
     retries: int = 0
     last_error: str | None = None
 
@@ -69,6 +70,7 @@ class Download:
             ext=row["ext"],
             duration=float(row["duration"]),
             thumbnail=row["thumbnail"],
+            filesize=row.get("filesize"),
             status=status_enum,
             retries=row["retries"],
             last_error=row["last_error"],
@@ -107,6 +109,7 @@ class DatabaseManager:
                 "ext": str,
                 "duration": float,
                 "thumbnail": str,
+                "filesize": int,
                 "status": str,
                 "retries": int,
                 "last_error": str,
@@ -270,12 +273,19 @@ class DatabaseManager:
             raise e
         logger.info("Download re-queued.", extra=log_params)
 
-    def mark_as_downloaded(self, feed: str, id: str) -> None:
-        """Marks a download as DOWNLOADED.
+    def mark_as_downloaded(self, feed: str, id: str, ext: str, filesize: int) -> None:
+        """Marks a download as DOWNLOADED, optionally updating its extension and filesize.
 
         - Checks that the current status is QUEUED.
         - Sets status = DOWNLOADED.
         - Sets retries = 0, last_error = NULL.
+        - Updates ext and filesize if provided.
+
+        Args:
+            feed: The feed ID of the download.
+            id: The ID of the download.
+            ext: The new file extension (optional).
+            filesize: The new file size in bytes (optional).
 
         Raises:
             DownloadNotFoundError: If the download is not found.
@@ -285,6 +295,8 @@ class DatabaseManager:
             "feed_id": feed,
             "download_id": id,
             "target_status": str(DownloadStatus.DOWNLOADED),
+            "ext": ext,
+            "filesize": filesize,
         }
         logger.debug("Attempting to mark download as DOWNLOADED.", extra=log_params)
 
@@ -304,6 +316,8 @@ class DatabaseManager:
                     "status": str(DownloadStatus.DOWNLOADED),
                     "retries": 0,
                     "last_error": None,
+                    "ext": ext,
+                    "filesize": filesize,
                 },
             )
         except DownloadNotFoundError as e:
@@ -604,7 +618,7 @@ class DatabaseManager:
         self,
         status_to_filter: DownloadStatus,
         feed: str | None = None,
-        limit: int = 100,
+        limit: int = -1,
         offset: int = 0,
     ) -> list[Download]:
         """Retrieves downloads with a specific status, newest first.

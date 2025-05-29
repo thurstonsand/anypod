@@ -19,6 +19,7 @@ select = [
 ignore = [
     "E501", # line too long (handled by line-length)
     "E203", # whitespace before ':'
+    "D105", # missing docstring in magic method
     "D107", # missing docstring in init
 ]
 exclude = [
@@ -46,3 +47,7 @@ line-ending = "auto"
 
 [lint.pydocstyle]
 convention = "google"
+
+[lint.per-file-ignores]
+"**/__init__.py" = ["D100", "D104"]
+"**/__main__.py" = ["D100", "D104"]

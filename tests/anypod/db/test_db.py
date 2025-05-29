@@ -273,7 +273,7 @@ def test_status_transitions(
     assert download.last_error is None  # Preserved from initial UPCOMING
 
     # QUEUED -> DOWNLOADED
-    db_manager.mark_as_downloaded(feed_id, dl_id)
+    db_manager.mark_as_downloaded(feed_id, dl_id, "mp4", 1024)
     download = db_manager.get_download_by_id(feed_id, dl_id)
     assert download.status == DownloadStatus.DOWNLOADED
     assert download.retries == 0, "Retries should be reset on DOWNLOADED"
@@ -362,7 +362,7 @@ def test_status_transitions(
     with pytest.raises(DownloadNotFoundError):
         db_manager.requeue_download("bad", "bad")
     with pytest.raises(DownloadNotFoundError):
-        db_manager.mark_as_downloaded("bad", "bad")
+        db_manager.mark_as_downloaded("bad", "bad", "mp4", 0)
     with pytest.raises(DownloadNotFoundError):
         db_manager.skip_download("bad", "bad")
     with pytest.raises(DownloadNotFoundError):
@@ -373,13 +373,16 @@ def test_status_transitions(
     # Test mark_as_downloaded from a non-QUEUED state (e.g., UPCOMING)
     db_manager.upsert_download(sample_download_upcoming)  # dl_id is now UPCOMING
     with pytest.raises(DatabaseOperationError, match="Download status is not QUEUED"):
-        db_manager.mark_as_downloaded(feed_id, sample_download_upcoming.id)
+        db_manager.mark_as_downloaded(feed_id, sample_download_upcoming.id, "mp4", 1024)
 
     # Test mark_as_downloaded from ERROR state
     # First, set an item to ERROR
     db_manager.upsert_download(sample_download_queued)  # dl_id is now QUEUED
     db_manager.bump_retries(
-        sample_download_queued.feed, sample_download_queued.id, "Error to test from", 1
+        sample_download_queued.feed,
+        sample_download_queued.id,
+        "Error to test from",
+        1,
     )  # max_errors = 1, so it becomes ERROR
     error_download = db_manager.get_download_by_id(
         sample_download_queued.feed, sample_download_queued.id
@@ -388,7 +391,10 @@ def test_status_transitions(
 
     with pytest.raises(DatabaseOperationError, match="Download status is not QUEUED"):
         db_manager.mark_as_downloaded(
-            sample_download_queued.feed, sample_download_queued.id
+            sample_download_queued.feed,
+            sample_download_queued.id,
+            "mp4",
+            1024,
         )
 
 
@@ -1046,7 +1052,7 @@ def test_bump_retries_downloaded_item_does_not_become_error(
     feed_id = sample_download_queued.feed
     dl_id = sample_download_queued.id
     db_manager.upsert_download(sample_download_queued)  # Initially QUEUED
-    db_manager.mark_as_downloaded(feed_id, dl_id)
+    db_manager.mark_as_downloaded(feed_id, dl_id, "mp4", 1024)
 
     download = db_manager.get_download_by_id(feed_id, dl_id)
     assert download.status == DownloadStatus.DOWNLOADED

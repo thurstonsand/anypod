@@ -81,6 +81,20 @@ class EnqueueError(DataCoordinatorError):
         self.download_id = download_id
 
 
+class DownloaderError(DataCoordinatorError):
+    """Raised when an error occurs during the download process."""
+
+    def __init__(
+        self,
+        message: str,
+        feed_id: str | None = None,
+        download_id: str | None = None,
+    ):
+        super().__init__(message)
+        self.feed_id = feed_id
+        self.download_id = download_id
+
+
 class PruneError(DataCoordinatorError):
     """Raised when an error occurs during the pruning process."""
 
@@ -141,8 +155,10 @@ class YtdlpApiError(YtdlpError):
         self,
         message: str,
         feed_id: str | None = None,
+        download_id: str | None = None,
         url: str | None = None,
     ):
         super().__init__(message)
         self.feed_id = feed_id
+        self.download_id = download_id
         self.url = url

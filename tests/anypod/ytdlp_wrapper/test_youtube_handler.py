@@ -138,7 +138,6 @@ def test_parse_single_video_entry_source_url_priority(
     """Tests the priority for source_url: webpage_url > original_url > default."""
     entry_base_data = valid_video_entry_data.copy()
     del entry_base_data["webpage_url"]
-    # TODO: entry_base_data["id"] = valid_video_entry_data.get("id", "unique_id_default")
     entry_base_data["id"] = valid_video_entry_data.get("id")
 
     # Case 1: webpage_url present

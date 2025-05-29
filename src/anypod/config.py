@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 class DebugMode(str, Enum):
     YTDLP = "ytdlp"
     ENQUEUER = "enqueuer"
+    DOWNLOADER = "downloader"
 
 
 class FeedConfig(BaseModel):

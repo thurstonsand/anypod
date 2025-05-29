@@ -12,22 +12,49 @@ logger = logging.getLogger(__name__)
 
 
 class YtdlpWrapper:
-    """Wrapper around yt-dlp for fetching and parsing metadata."""
+    """Wrapper around yt-dlp for fetching and parsing metadata and downloading media."""
 
     _source_handler: SourceHandlerBase = YoutubeHandler()
+
+    def __init__(self, app_tmp_dir: Path, app_data_dir: Path):
+        self._app_tmp_dir = app_tmp_dir.resolve()
+        self._app_data_dir = app_data_dir.resolve()
+        logger.debug(
+            "YtdlpWrapper initialized.",
+            extra={
+                "app_tmp_dir": str(self._app_tmp_dir),
+                "app_data_dir": str(self._app_data_dir),
+            },
+        )
+
+    def _prepare_download_dir(self, feed_id: str) -> tuple[Path, Path]:
+        feed_temp_path = self._app_tmp_dir / feed_id
+        feed_data_path = self._app_data_dir / feed_id
+
+        try:
+            feed_temp_path.mkdir(parents=True, exist_ok=True)
+            feed_data_path.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            raise YtdlpApiError(
+                message=f"Failed to create directories for yt-dlp paths (temp: {feed_temp_path}, data: {feed_data_path})",
+                feed_id=feed_id,
+            ) from e
+
+        return feed_temp_path, feed_data_path
 
     def _prepare_ydl_options(
         self,
         user_cli_args: dict[str, Any],
         purpose: FetchPurpose,
         source_specific_opts: dict[str, Any],
-        download_target_path: Path | None = None,
+        download_temp_dir: Path | None = None,
+        download_data_dir: Path | None = None,
+        download_id: str | None = None,
     ) -> dict[str, Any]:
         log_params: dict[str, Any] = {
             "purpose": purpose,
             "num_user_provided_opts": len(user_cli_args),
             "source_specific_opts": list(source_specific_opts.keys()),
-            "download_target_path": download_target_path,
         }
         logger.debug("Preparing yt-dlp options.", extra=log_params)
 
@@ -49,13 +76,6 @@ class YtdlpWrapper:
                     "extract_flat": "in_playlist",
                     "playlist_items": "1-5",
                 }
-                logger.debug(
-                    "Prepared DISCOVERY options.",
-                    extra={
-                        **log_params,
-                        "final_opts": list(final_opts.keys()),
-                    },
-                )
             case FetchPurpose.METADATA_FETCH:
                 final_opts = {
                     **user_cli_args,
@@ -63,33 +83,35 @@ class YtdlpWrapper:
                     "skip_download": True,
                     "extract_flat": False,
                 }
-                logger.debug(
-                    "Prepared METADATA_FETCH options.",
-                    extra={
-                        **log_params,
-                        "final_opts": list(final_opts.keys()),
-                    },
-                )
             case FetchPurpose.MEDIA_DOWNLOAD:
-                if not download_target_path:
-                    raise ValueError(
-                        "download_target_path is required for MEDIA_DOWNLOAD purpose"
+                if (
+                    download_temp_dir is None
+                    or download_data_dir is None
+                    or download_id is None
+                ):
+                    raise YtdlpApiError(
+                        message="download_temp_dir, download_data_dir, and download_id are required for MEDIA_DOWNLOAD purpose",
+                        download_id=download_id,
                     )
                 final_opts = {
                     **user_cli_args,
                     **base_opts,
                     "skip_download": False,
-                    "outtmpl": str(download_target_path),
+                    "outtmpl": f"{download_id}.%(ext)s",
+                    "paths": {
+                        "temp": str(download_temp_dir),
+                        "home": str(download_data_dir),
+                    },
                     "extract_flat": False,
                 }
-                logger.debug(
-                    "Prepared MEDIA_DOWNLOAD options.",
-                    extra={
-                        **log_params,
-                        "final_opts": list(final_opts.keys()),
-                    },
-                )
 
+        logger.debug(
+            f"Prepared {purpose!s} options.",
+            extra={
+                **log_params,
+                "final_opts_keys": list(final_opts.keys()),
+            },
+        )
         return final_opts
 
     def fetch_metadata(
@@ -211,36 +233,31 @@ class YtdlpWrapper:
         self,
         download: Download,
         yt_cli_args: dict[str, Any],
-        download_target_dir: Path,
     ) -> Path:
         """Downloads the media for a given Download to a target directory.
 
-        Uses yt-dlp's download() method.
+        yt-dlp will place the final file in a feed-specific subdirectory within
+        the application's configured data directory.
 
         Args:
             download: The Download object containing metadata.
             yt_cli_args: User-provided yt-dlp CLI arguments for this feed.
-            download_target_dir: The temporary directory path to download into.
 
         Returns:
-            A tuple containing:
-                - str: The absolute path to the downloaded media file.
-                - dict: A dictionary of potentially updated metadata fields
-                        (e.g., filesize, ext) obtained after download.
+            The absolute path to the successfully downloaded media file.
 
         Raises:
-            YtdlpApiError: If the download or subsequent metadata fetch fails.
-            ValueError: If download_target_dir is not provided.
+            YtdlpApiError: If the download fails or the downloaded file is not found.
         """
-        target_path = (
-            download_target_dir / download.feed / f"{download.id}.{download.ext}"
-        )
+        download_temp_dir, download_data_dir = self._prepare_download_dir(download.feed)
+
         logger.info(
-            "Downloading media.",
+            "Requesting media download via yt-dlp.",
             extra={
                 "feed_id": download.feed,
                 "download_id": download.id,
-                "target_path": target_path,
+                "download_target_dir": str(download_data_dir),
+                "source_url": download.source_url,
             },
         )
 
@@ -249,50 +266,80 @@ class YtdlpWrapper:
                 FetchPurpose.MEDIA_DOWNLOAD
             )
         )
-        download_opts = self._prepare_ydl_options(
-            user_cli_args=yt_cli_args,
-            purpose=FetchPurpose.MEDIA_DOWNLOAD,
-            source_specific_opts=source_specific_download_opts,
-            download_target_path=target_path,
-        )
+        try:
+            download_opts = self._prepare_ydl_options(
+                user_cli_args=yt_cli_args,
+                purpose=FetchPurpose.MEDIA_DOWNLOAD,
+                source_specific_opts=source_specific_download_opts,
+                download_temp_dir=download_temp_dir,
+                download_data_dir=download_data_dir,
+                download_id=download.id,
+            )
+        except YtdlpApiError as e:
+            e.feed_id = download.feed
+            e.url = download.source_url
+            raise
 
         url_to_download = download.source_url
 
         try:
+            # TODO: maybe we can get the filepath from here?
             YtdlpCore.download(download_opts, url_to_download)
         except YtdlpApiError as e:
             logger.error(
-                "Download failed during internal download call.",
+                "yt-dlp download call failed.",
                 exc_info=e,
                 extra={
                     "feed_id": download.feed,
                     "download_id": download.id,
                     "url": url_to_download,
-                    "file_path": target_path,
+                    "download_target_dir": str(download_data_dir),
                 },
             )
             raise
         except Exception as e:
             logger.error(
-                "Unexpected error during internal download call wrapper.",
+                "Unexpected error during yt-dlp download call.",
                 exc_info=e,
                 extra={
                     "feed_id": download.feed,
                     "download_id": download.id,
                     "url": url_to_download,
-                    "file_path": target_path,
                 },
             )
             raise YtdlpApiError(
-                message="Failed to download media.",
+                message="Unexpected error during media download.",
                 feed_id=download.feed,
+                download_id=download.id,
                 url=url_to_download,
             ) from e
 
-        if not target_path.exists():
+        downloaded_files = list(download_data_dir.glob(f"{download.id}.*"))
+
+        if not downloaded_files:
             raise YtdlpApiError(
-                message=f"File not downloaded to {target_path}; may have been filtered out by yt-dlp.",
+                message="Downloaded file not found after attempted download. yt-dlp might have filtered.",
                 feed_id=download.feed,
+                download_id=download.id,
+                url=url_to_download,
+            )
+        if len(downloaded_files) > 1:
+            logger.warning(
+                "Multiple files found after attempting download. Using the first one.",
+                extra={
+                    "feed_id": download.feed,
+                    "download_id": download.id,
+                    "files_found": [str(f) for f in downloaded_files],
+                },
+            )
+
+        downloaded_file = downloaded_files[0]
+
+        if not downloaded_file.is_file() or downloaded_file.stat().st_size == 0:
+            raise YtdlpApiError(
+                message="Downloaded file is invalid (not a file or empty).",
+                feed_id=download.feed,
+                download_id=download.id,
                 url=url_to_download,
             )
 
@@ -301,8 +348,8 @@ class YtdlpWrapper:
             extra={
                 "feed_id": download.feed,
                 "download_id": download.id,
-                "file_path": target_path,
+                "file_path": str(downloaded_file),
             },
         )
 
-        return target_path
+        return downloaded_file

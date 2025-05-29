@@ -10,10 +10,13 @@ from ..ytdlp_wrapper import YtdlpWrapper
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_DEBUG_DB_PATH = Path("enqueuer_debug.db")
 
-
-def run_debug_enqueuer_mode(settings: AppSettings) -> None:
+def run_debug_enqueuer_mode(
+    settings: AppSettings,
+    debug_db_path: Path,
+    app_data_dir: Path,
+    app_tmp_dir: Path,
+) -> None:
     """Runs the Enqueuer debug mode.
 
     Initializes the Enqueuer, processes all configured feeds by calling
@@ -24,13 +27,17 @@ def run_debug_enqueuer_mode(settings: AppSettings) -> None:
         "Initializing Anypod in Enqueuer debug mode.",
         extra={
             "config_file": str(settings.config_file),
-            "debug_db_path": str(DEFAULT_DEBUG_DB_PATH.resolve()),
+            "debug_db_path": str(debug_db_path.resolve()),
         },
     )
 
     try:
-        db_manager = DatabaseManager(db_path=DEFAULT_DEBUG_DB_PATH)
-        ytdlp_wrapper = YtdlpWrapper()
+        db_manager = DatabaseManager(db_path=debug_db_path)
+
+        ytdlp_wrapper = YtdlpWrapper(
+            app_tmp_dir,
+            app_data_dir,
+        )
         enqueuer = Enqueuer(db_manager, ytdlp_wrapper)
     except Exception as e:
         logger.critical(

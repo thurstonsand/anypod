@@ -15,7 +15,9 @@ from ..ytdlp_wrapper.ytdlp_core import YtdlpCore
 logger = logging.getLogger(__name__)
 
 
-def run_debug_ytdlp_mode(debug_yaml_path: Path) -> None:
+def run_debug_ytdlp_mode(
+    debug_yaml_path: Path, app_data_dir: Path, app_tmp_dir: Path
+) -> None:
     """Loads feed URLs and yt-dlp CLI args from a YAML file and fetches metadata.
 
     Assumes the YAML file is correctly formatted for debugging purposes.
@@ -61,7 +63,7 @@ def run_debug_ytdlp_mode(debug_yaml_path: Path) -> None:
         )
         return
 
-    ytdlp_wrapper = YtdlpWrapper()
+    ytdlp_wrapper = YtdlpWrapper(app_tmp_dir, app_data_dir)
     logger.debug("YtdlpWrapper initialized for debug mode.")
 
     logger.info(
@@ -139,7 +141,6 @@ def run_debug_ytdlp_mode(debug_yaml_path: Path) -> None:
                                 file_path = ytdlp_wrapper.download_media_to_file(
                                     download=download,
                                     yt_cli_args=YtdlpCore.parse_options(cli_args),
-                                    download_target_dir=download_dir,
                                 )
                                 logger.info(
                                     "Successfully downloaded.",

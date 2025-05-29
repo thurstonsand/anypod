@@ -29,6 +29,7 @@ alwaysApply: false
 - When opening files, use `Path.open`
 
 ## Docstring Functions/Methods (Google style)
+- Every function and method needs a docstring, except for magic methods (e.g. `__init__()`, `__eq__()`)
 - Use triple **double** quotes.
 - **Summary line**
    - Imperative mood, ≤ 72 chars.
@@ -77,6 +78,7 @@ alwaysApply: false
    ```
 
 ## Docstring Classes (Google style)
+- Every class needs a docstring
 - Use triple **double** quotes.
 - **Summary line**
    - Imperative mood, ≤ 72 chars.
@@ -115,6 +117,10 @@ alwaysApply: false
         """<method docstring goes here>"""
         ...
   ```
+
+## Docstring Top of Files (Google Style)
+- every file needs a docstring, except for magic files (e.g. `__init__.py`, `__main__.py`)
+- Follow standard Google style to describe the high level purpose of the contents of the file
 
 ## Dependencies & Environment
 - All project dependencies and environments should be managed through `uv`
