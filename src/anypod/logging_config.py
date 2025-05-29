@@ -1,8 +1,15 @@
+"""Logging configuration and custom formatters for Anypod.
+
+This module provides custom logging formatters, filters, and configuration
+setup for the Anypod application, supporting both human-readable and JSON
+output formats with enhanced error information and context tracking.
+"""
+
 from collections.abc import Mapping
 from contextvars import ContextVar
 import json
 import logging
-import logging.config
+from logging.config import dictConfig
 import sys
 from typing import Any, Literal
 
@@ -10,6 +17,18 @@ _original_log_record_factory = logging.getLogRecordFactory()
 
 
 def custom_record_factory(*args: Any, **kwargs: Any) -> logging.LogRecord:
+    """Create a custom log record with enhanced exception information.
+
+    Extends the default log record with custom exception attributes and
+    semantic trace information for better error reporting.
+
+    Args:
+        *args: Arguments passed to the original log record factory.
+        **kwargs: Keyword arguments passed to the original log record factory.
+
+    Returns:
+        Enhanced LogRecord with additional exception information.
+    """
     record = _original_log_record_factory(*args, **kwargs)
 
     record.exc_custom_attrs = {}
@@ -41,9 +60,21 @@ _context_id_var: ContextVar[str | None] = ContextVar("context_id", default=None)
 
 
 class ContextIdFilter(logging.Filter):
-    """A logging filter that injects the current context_id into log records."""
+    """A logging filter that injects the current context_id into log records.
+
+    Retrieves the context_id from a context variable and adds it to each
+    log record for correlation across related operations.
+    """
 
     def filter(self, record: logging.LogRecord) -> bool:
+        """Inject the current context_id into the log record.
+
+        Args:
+            record: The log record to modify.
+
+        Returns:
+            Always True to allow the record to be processed.
+        """
         record.context_id = _context_id_var.get()
         return True
 
@@ -52,9 +83,14 @@ _should_include_stacktrace: bool = False
 
 
 class HumanReadableExtrasFormatter(logging.Formatter):
-    """A custom formatter that includes a base human-readable format and dynamically appends any 'extra' fields passed to the logger.
+    """A custom formatter for human-readable logs with extra fields.
 
-    It also includes the context_id if set.
+    Includes a base human-readable format and dynamically appends any 'extra'
+    fields passed to the logger. Also includes the context_id if set and
+    provides enhanced exception formatting with semantic trace information.
+
+    Attributes:
+        Standard logging.Formatter attributes plus custom formatting logic.
     """
 
     def __init__(
@@ -69,6 +105,18 @@ class HumanReadableExtrasFormatter(logging.Formatter):
         super().__init__(fmt, datefmt, style, validate, defaults=defaults)
 
     def format(self, record: logging.LogRecord) -> str:
+        """Format a log record with human-readable output and extra fields.
+
+        Creates a formatted log message that includes timestamp, level, logger name,
+        context ID, extra fields, and the main message, with enhanced exception
+        formatting when available.
+
+        Args:
+            record: The log record to format.
+
+        Returns:
+            Formatted log message string.
+        """
         prefix_parts: list[str] = []
         prefix_parts.append(self.formatTime(record, self.datefmt))
         prefix_parts.append(record.levelname)
@@ -226,7 +274,17 @@ def setup_logging(
     app_log_level_name: str,
     include_stacktrace: bool,
 ) -> None:
-    """Configures logging for the application based on provided settings."""
+    """Configure logging for the application based on provided settings.
+
+    Sets up the logging system with the specified format, log level, and
+    stacktrace inclusion preferences. Configures both custom formatters
+    and the overall logging hierarchy.
+
+    Args:
+        log_format_type: Format for logs ('human' or 'json').
+        app_log_level_name: Logging level name (e.g., 'INFO', 'DEBUG').
+        include_stacktrace: Whether to include full stack traces in error logs.
+    """
     global _should_include_stacktrace
     _should_include_stacktrace = include_stacktrace
 
@@ -251,4 +309,4 @@ def setup_logging(
             "human_readable_formatter"
         )
 
-    logging.config.dictConfig(LOGGING_CONFIG)
+    dictConfig(LOGGING_CONFIG)

@@ -20,9 +20,13 @@ def mock_youtube_handler() -> MagicMock:
 
 
 @pytest.fixture
-def ytdlp_wrapper(mock_youtube_handler: MagicMock) -> YtdlpWrapper:
-    """Fixture to provide a YtdlpWrapper instance with a mocked YoutubeHandler."""
-    wrapper = YtdlpWrapper()
+def ytdlp_wrapper(
+    mock_youtube_handler: MagicMock, tmp_path_factory: pytest.TempPathFactory
+) -> YtdlpWrapper:
+    """Fixture to provide a YtdlpWrapper instance with a mocked YoutubeHandler and temp paths."""
+    app_tmp_dir = tmp_path_factory.mktemp("app_tmp")
+    app_data_dir = tmp_path_factory.mktemp("app_data")
+    wrapper = YtdlpWrapper(app_tmp_dir, app_data_dir)
     wrapper._source_handler = mock_youtube_handler  # type: ignore
     return wrapper
 
@@ -84,16 +88,23 @@ def test_prepare_ydl_options_media_download(
     purpose = FetchPurpose.MEDIA_DOWNLOAD
     source_specific_opts: dict[str, Any] = {}
     mock_target_path = Path("/tmp/downloads/feed_id/video_id.mp4")
+    mock_download_id = "video_id"
 
     prepared_opts = ytdlp_wrapper._prepare_ydl_options(  # type: ignore
         user_cli_args,
         purpose,
         source_specific_opts,
         mock_target_path,
+        mock_target_path,
+        download_id=mock_download_id,
     )
 
     assert prepared_opts["skip_download"] is False
-    assert prepared_opts["outtmpl"] == str(mock_target_path)
+    assert prepared_opts["outtmpl"] == f"{mock_download_id}.%(ext)s"
+    assert prepared_opts["paths"] == {
+        "temp": str(mock_target_path),
+        "home": str(mock_target_path),
+    }
     assert prepared_opts["extract_flat"] is False
     assert "logger" in prepared_opts
 
@@ -130,63 +141,92 @@ def test_prepare_ydl_options_with_user_cli_args_and_source_opts(
 @pytest.mark.unit
 @patch.object(YtdlpWrapper, "_prepare_ydl_options")
 @patch.object(YtdlpCore, "download")
-@patch("pathlib.Path.exists", return_value=True)
-def test_download_media_to_file_success(
-    mock_exists: MagicMock,
-    mock_download: MagicMock,
+@patch("pathlib.Path.is_file", return_value=True)
+@patch("pathlib.Path.stat")
+@patch.object(YtdlpWrapper, "_prepare_download_dir")
+@patch.object(Path, "glob", return_value=[])
+def test_download_media_to_file_success_simplified(
+    mock_path_glob: MagicMock,
+    mock_prep_dl_dir: MagicMock,
+    mock_stat: MagicMock,
+    mock_is_file: MagicMock,
+    mock_ytdlcore_download: MagicMock,
     mock_prepare_options: MagicMock,
     ytdlp_wrapper: YtdlpWrapper,
     mock_youtube_handler: MagicMock,
 ):
-    """Tests the success path of download_media_to_file."""
+    """Tests the happy path of download_media_to_file."""
+    feed_id = "test_feed_happy"
+    download_id = "test_id_happy"
+
     dummy_download = Download(
-        feed="test_feed",
-        id="test_id",
-        source_url="http://example.com/video_to_dl",
-        title="Test Download Video",
-        published=datetime.fromisoformat("2023-01-01T00:00:00Z".replace("Z", "+00:00")),
-        ext="mp4",
-        duration=120.0,
+        feed=feed_id,
+        id=download_id,
+        source_url="http://example.com/video_happy",
+        title="Test Happy Video",
+        published=datetime.fromisoformat("2023-02-01T00:00:00Z".replace("Z", "+00:00")),
+        ext="mkv",
+        duration=60.0,
         status=DownloadStatus.QUEUED,
     )
-    yt_cli_args: dict[str, Any] = {"format": "best"}
-    download_target_dir = Path("/tmp/test_downloads")
-    expected_target_path = (
-        download_target_dir
-        / dummy_download.feed
-        / f"{dummy_download.id}.{dummy_download.ext}"
-    )
+    yt_cli_args: dict[str, Any] = {"format": "bestvideo+bestaudio/best"}
 
-    mock_download_opts = {"outtmpl": str(expected_target_path), "skip_download": False}
-    mock_prepare_options.return_value = mock_download_opts
+    feed_temp_path = ytdlp_wrapper._app_tmp_dir / feed_id  # type: ignore
+    feed_home_path = ytdlp_wrapper._app_data_dir / feed_id  # type: ignore
 
-    mock_download.return_value = None
+    expected_final_file = feed_home_path / f"{download_id}.{dummy_download.ext}"
+
+    mock_ydl_opts_for_core_download = {
+        "outtmpl": f"{download_id}.%(ext)s",
+        "paths": {"temp": str(feed_temp_path), "home": str(feed_home_path)},
+        "skip_download": False,
+        "format": "bestvideo+bestaudio/best",
+    }
+    mock_prepare_options.return_value = mock_ydl_opts_for_core_download
+    mock_ytdlcore_download.return_value = None
     mock_youtube_handler.get_source_specific_ydl_options.return_value = {
-        "handler_opt": "val"
+        "source_opt": "youtube_specific"
     }
 
-    result_path = ytdlp_wrapper.download_media_to_file(
-        dummy_download, yt_cli_args, download_target_dir
-    )
+    expected_final_file.parent.mkdir(parents=True, exist_ok=True)
+    expected_final_file.touch()
 
-    mock_prepare_options.assert_called_once_with(
-        user_cli_args=yt_cli_args,
-        purpose=FetchPurpose.MEDIA_DOWNLOAD,
-        source_specific_opts={"handler_opt": "val"},
-        download_target_path=expected_target_path,
-    )
+    mock_stat_instance = mock_stat.return_value
+    mock_stat_instance.st_size = 12345
 
-    mock_download.assert_called_once_with(mock_download_opts, dummy_download.source_url)
+    mock_prep_dl_dir.return_value = (feed_temp_path, feed_home_path)
+    mock_path_glob.return_value = [expected_final_file]
 
-    assert result_path == expected_target_path
+    returned_path = ytdlp_wrapper.download_media_to_file(dummy_download, yt_cli_args)
+
+    # --- Assertions ---
+    assert returned_path == expected_final_file
+
+    mock_prep_dl_dir.assert_called_once_with(feed_id)
 
     mock_youtube_handler.get_source_specific_ydl_options.assert_called_once_with(
         FetchPurpose.MEDIA_DOWNLOAD
     )
-    mock_exists.assert_called()
+    mock_prepare_options.assert_called_once_with(
+        user_cli_args=yt_cli_args,
+        purpose=FetchPurpose.MEDIA_DOWNLOAD,
+        source_specific_opts={"source_opt": "youtube_specific"},
+        download_temp_dir=feed_temp_path,
+        download_data_dir=feed_home_path,
+        download_id=download_id,
+    )
+    mock_ytdlcore_download.assert_called_once_with(
+        mock_ydl_opts_for_core_download, dummy_download.source_url
+    )
+
+    mock_path_glob.assert_called_once_with(f"{download_id}.*")
+
+    mock_is_file.assert_called_with()
+    mock_stat.assert_called_with()
+
+    assert mock_is_file.call_count >= 1
+    assert mock_stat.call_count >= 1
 
 
 # NOTE: fetch_metadata is not tested here because it is too complex to mock
 # it is covered by integration tests
-
-# NOTE: _compose_match_filters_and may not be needed, so skipping tests for it.

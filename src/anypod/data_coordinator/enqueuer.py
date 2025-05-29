@@ -1,3 +1,10 @@
+"""Handles the enqueueing of new downloads for configured feeds.
+
+This module defines the Enqueuer class, which is responsible for fetching
+feed metadata, identifying new downloads, and managing their status in the
+database for subsequent processing by the Downloader.
+"""
+
 from datetime import datetime
 import logging
 from typing import Any
@@ -16,6 +23,17 @@ logger = logging.getLogger(__name__)
 
 
 class Enqueuer:
+    """Manage the enqueueing of new downloads from feed sources.
+
+    The Enqueuer fetches metadata from feed URLs, identifies new downloadable
+    items, and manages their initial database states. It handles both new
+    items and existing items that need status updates.
+
+    Attributes:
+        db_manager: Database manager for download record operations.
+        ytdlp_wrapper: Wrapper for yt-dlp metadata extraction operations.
+    """
+
     def __init__(self, db_manager: DatabaseManager, ytdlp_wrapper: YtdlpWrapper):
         self.db_manager = db_manager
         self.ytdlp_wrapper = ytdlp_wrapper
@@ -29,9 +47,17 @@ class Enqueuer:
         max_errors: int,
         log_params_base: dict[str, Any],
     ) -> bool:
-        """Attempts to bump retries and logs the outcome.
+        """Attempt to bump retries and log the outcome.
 
-        Returns True if transitioned to ERROR.
+        Args:
+            feed_id: The feed identifier.
+            download_id: The download identifier.
+            error_message: The error message to record.
+            max_errors: Maximum allowed errors before transitioning to ERROR.
+            log_params_base: Relevant logging parameters.
+
+        Returns:
+            True if transitioned to ERROR state.
         """
         transitioned_to_error_state = False
         try:
@@ -65,7 +91,12 @@ class Enqueuer:
     def _upsert_download_in_db(
         self, download: Download, log_params_base: dict[str, Any]
     ) -> None:
-        """Upserts a download in DB and logs outcome."""
+        """Upsert a download in the database.
+
+        Args:
+            download: The Download object to upsert.
+            log_params_base: Relevant logging parameters.
+        """
         try:
             self.db_manager.upsert_download(download)
             logger.debug(
@@ -85,7 +116,18 @@ class Enqueuer:
         feed_id: str,
         feed_url: str,
     ) -> list[Download]:
-        """Fetches UPCOMING downloads for a feed from the database."""
+        """Fetch UPCOMING downloads for a feed from the database.
+
+        Args:
+            feed_id: The feed identifier.
+            feed_url: The feed URL (for error reporting).
+
+        Returns:
+            List of Download objects with UPCOMING status.
+
+        Raises:
+            EnqueueError: If the database fetch fails.
+        """
         log_params = {"feed_id": feed_id}
         logger.debug("Fetching upcoming downloads from DB.", extra=log_params)
         try:
@@ -106,9 +148,18 @@ class Enqueuer:
         feed_id: str,
         download_log_params: dict[str, Any],
     ) -> Download | None:
-        """Searches for a matching download in the fetched list.
+        """Search for a matching download in the fetched list.
 
         Logs warnings for mismatches or multiple results.
+
+        Args:
+            fetched_downloads: List of fetched downloads to search.
+            original_download_id: The original download ID to find.
+            feed_id: The feed identifier for matching.
+            download_log_params: Relevant logging parameters.
+
+        Returns:
+            Matching Download object if found, None otherwise.
         """
         match fetched_downloads:
             case []:
@@ -152,9 +203,16 @@ class Enqueuer:
         refetched_download: Download,
         download_log_params: dict[str, Any],
     ) -> bool:
-        """Checks if refetched download is VOD and updates DB status to QUEUED.
+        """Check if refetched download is VOD and update DB status to QUEUED.
 
-        Returns True if status updated.
+        Args:
+            feed_id: The feed identifier.
+            db_download_id: The download ID in the database.
+            refetched_download: The refetched Download object.
+            download_log_params: Relevant logging parameters.
+
+        Returns:
+            True if status was updated to QUEUED.
         """
         match refetched_download.status:
             case DownloadStatus.QUEUED:
@@ -197,11 +255,19 @@ class Enqueuer:
         feed_config: FeedConfig,
         feed_log_params: dict[str, Any],
     ) -> bool:
-        """Processes a single upcoming download, re-fetching metadata and
-        updating status if necessary.
+        """Process a single upcoming download by re-fetching metadata.
 
-        Returns True if the download was successfully transitioned to
-        QUEUED.
+        Re-fetches metadata and updates status if the download has transitioned
+        to a downloadable state.
+
+        Args:
+            db_download: The upcoming Download object from the database.
+            feed_id: The feed identifier.
+            feed_config: The feed configuration object.
+            feed_log_params: Relevant logging parameters.
+
+        Returns:
+            True if the download was successfully transitioned to QUEUED.
         """
         download_log_params = {
             **feed_log_params,
@@ -271,9 +337,19 @@ class Enqueuer:
         fetch_since_date: datetime,
         log_params: dict[str, Any],
     ) -> list[Download]:
-        """Fetches all media metadata for the feed URL, applying date filter.
+        """Fetch all media metadata for the feed URL with date filtering.
 
-        Raises EnqueueError if the main ytdlp fetch fails.
+        Args:
+            feed_id: The feed identifier.
+            feed_config: The feed configuration object.
+            fetch_since_date: Only fetch downloads published after this date.
+            log_params: Relevant logging parameters.
+
+        Returns:
+            List of Download objects fetched from the feed.
+
+        Raises:
+            EnqueueError: If the main ytdlp fetch fails.
         """
         current_yt_cli_args = dict(feed_config.yt_args)  # Make a copy
         if fetch_since_date:
@@ -311,9 +387,14 @@ class Enqueuer:
     def _handle_newly_fetched_download(
         self, download: Download, log_params: dict[str, Any]
     ) -> bool:
-        """Handles a new download by upserting it.
+        """Handle a new download by upserting it to the database.
 
-        Returns True if download is QUEUED.
+        Args:
+            download: The new Download object.
+            log_params: Relevant logging parameters.
+
+        Returns:
+            True if download status is QUEUED.
         """
         logger.info(
             "New download found. Inserting.",
@@ -329,9 +410,16 @@ class Enqueuer:
         feed_id: str,
         log_params: dict[str, Any],
     ) -> bool:
-        """Handles an existing download based on status comparison.
+        """Handle an existing download based on status comparison.
 
-        Returns True if download newly QUEUED.
+        Args:
+            existing_db_download: The existing Download from the database.
+            fetched_download: The newly fetched Download object.
+            feed_id: The feed identifier.
+            log_params: Logging parameters.
+
+        Returns:
+            True if download is newly QUEUED.
         """
         current_log_params = {
             **log_params,
@@ -402,9 +490,15 @@ class Enqueuer:
         feed_id: str,
         feed_log_params: dict[str, Any],
     ) -> bool:
-        """Processes a single fetched download.
+        """Process a single fetched download.
 
-        Returns True if it's newly QUEUED.
+        Args:
+            fetched_dl: The fetched Download object.
+            feed_id: The feed identifier.
+            feed_log_params: Relevant logging parameters.
+
+        Returns:
+            True if it results in a newly QUEUED download.
         """
         log_params = {
             **feed_log_params,
@@ -434,11 +528,11 @@ class Enqueuer:
     def _handle_existing_upcoming_downloads(
         self, feed_id: str, feed_config: FeedConfig
     ) -> int:
-        """Re-fetches metadata for existing DB entries with status `UPCOMING`.
-        If a download is now a VOD, its status is updated to `QUEUED`. If
-        metadata re-fetch fails repeatedly (controlled by
-        `feed_config.max_errors`), the download's status is transitioned to
-        `ERROR`.
+        """Re-fetch metadata for existing DB entries with UPCOMING status.
+
+        If a download is now a VOD, its status is updated to QUEUED. If
+        metadata re-fetch fails repeatedly (controlled by feed_config.max_errors),
+        the download's status is transitioned to ERROR.
 
         Args:
             feed_id: The unique identifier for the feed.
@@ -480,19 +574,19 @@ class Enqueuer:
         feed_config: FeedConfig,
         fetch_since_date: datetime,
     ) -> int:
-        """Fetches all media metadata for the feed URL after the given date.
+        """Fetch all media metadata for the feed URL after the given date.
 
         For each download:
-        - If new: inserts with status `QUEUED` (if VOD) or `UPCOMING` (if live/scheduled).
+        - If new: inserts with status QUEUED (if VOD) or UPCOMING (if live/scheduled).
 
         Args:
             feed_id: The unique identifier for the feed.
             feed_config: The configuration object for the feed.
-            fetch_since_date: If provided, fetches downloads published after this date.
+            fetch_since_date: Fetches downloads published after this date.
 
         Returns:
-            The count of downloads newly set to `QUEUED` status (either new VODs or
-            `UPCOMING` downloads that transitioned to `QUEUED`).
+            The count of downloads newly set to QUEUED status (either new VODs or
+            UPCOMING downloads that transitioned to QUEUED).
         """
         feed_log_params = {"feed_id": feed_id, "feed_url": feed_config.url}
         logger.debug(
@@ -521,28 +615,27 @@ class Enqueuer:
         feed_config: FeedConfig,
         fetch_since_date: datetime,
     ) -> int:
-        """Fetches media metadata for a given feed and enqueues new downloads
-        into the database.
+        """Fetch media metadata for a feed and enqueue new downloads.
 
         This method performs two main phases:
-        1. Re-polls existing database entries with status `UPCOMING` for the given feed.
-           If an `UPCOMING`' download is now a VOD (Video on Demand), its status is updated to `QUEUED`.
-        2. Fetches the latest media metadata from the feed source using `YtdlpWrapper`,
-           optionally filtered by `fetch_since_date`.
+        1. Re-polls existing database entries with status UPCOMING for the given feed.
+           If an UPCOMING download is now a VOD (Video on Demand), its status is updated to QUEUED.
+        2. Fetches the latest media metadata from the feed source using YtdlpWrapper,
+           optionally filtered by fetch_since_date.
            - For each new download not already in the database:
-             - If its parsed status is `QUEUED` (VOD), it's inserted as `QUEUED`.
-             - If its parsed status is `UPCOMING` (live/scheduled), it's inserted as `UPCOMING`.
-           - For existing `UPCOMING` entries that are now found to be VOD (`QUEUED` status from fetch),
-             their status is updated to `QUEUED`.
+             - If its parsed status is QUEUED (VOD), it's inserted as QUEUED.
+             - If its parsed status is UPCOMING (live/scheduled), it's inserted as UPCOMING.
+           - For existing UPCOMING entries that are now found to be VOD (QUEUED status from fetch),
+             their status is updated to QUEUED.
 
         Args:
             feed_id: The unique identifier for the feed.
             feed_config: The configuration object for the feed, containing URL and yt-dlp arguments.
-            fetch_since_date: fetching will only look for downloads published after this date.
+            fetch_since_date: Fetching will only look for downloads published after this date.
 
         Returns:
-            The total count of downloads that were newly set to `QUEUED` status
-            (either new downloads or `UPCOMING` downloads that transitioned to `QUEUED`).
+            The total count of downloads that were newly set to QUEUED status
+            (either new downloads or UPCOMING downloads that transitioned to QUEUED).
 
         Raises:
             EnqueueError: If a critical, non-recoverable error occurs during the enqueue process.

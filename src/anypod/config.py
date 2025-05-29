@@ -1,3 +1,10 @@
+"""Application configuration management for Anypod.
+
+This module defines configuration models and settings sources for the Anypod
+application, including feed configurations, application settings, and custom
+YAML file loading capabilities.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -24,12 +31,28 @@ logger = logging.getLogger(__name__)
 
 
 class DebugMode(str, Enum):
+    """Represent available debug modes for the application.
+
+    Debug modes provide isolated testing of specific application components
+    without running the full application workflow.
+    """
+
     YTDLP = "ytdlp"
     ENQUEUER = "enqueuer"
+    DOWNLOADER = "downloader"
 
 
 class FeedConfig(BaseModel):
-    """Configuration for a single podcast feed."""
+    """Configuration for a single podcast feed.
+
+    Attributes:
+        url: Feed source URL.
+        yt_args: Parsed arguments for yt-dlp from user-provided string.
+        schedule: Cron schedule string for feed processing.
+        keep_last: Number of latest downloads to keep (prune policy).
+        since: Only download newer downloads since this ISO8601 timestamp (prune policy).
+        max_errors: Max attempts for downloading before marking as ERROR.
+    """
 
     url: str = Field(..., min_length=1, description="Feed source URL")
     yt_args: dict[str, Any] = Field(
@@ -52,27 +75,46 @@ class FeedConfig(BaseModel):
     @field_validator("yt_args", mode="before")
     @classmethod
     def parse_yt_args_string(cls, v: Any) -> dict[str, Any]:
-        if v is None:
-            return {}
-        if isinstance(v, str):
-            if not v.strip():  # Handle empty string
+        """Parse yt_args string into a dictionary of yt-dlp options.
+
+        Args:
+            v: Value to parse, can be string or None.
+
+        Returns:
+            Dictionary of parsed yt-dlp options.
+
+        Raises:
+            ValueError: If the string cannot be parsed.
+            TypeError: If the value is not a string or None.
+        """
+        match v:
+            case None:
                 return {}
-            try:
-                args_list = shlex.split(v)
-                parsed_opts = YtdlpCore.parse_options(args_list)
-                return parsed_opts
-            except Exception as e:
-                raise ValueError(
-                    f"Invalid yt_args string '{v}'. Failed to parse."
-                ) from e
-        raise TypeError(f"yt_args must be a string, got {type(v).__name__}")
+            case str() if not v.strip():  # Handle empty string
+                return {}
+            case str():
+                try:
+                    args_list = shlex.split(v)
+                    parsed_opts = YtdlpCore.parse_options(args_list)
+                    return parsed_opts
+                except Exception as e:
+                    raise ValueError(
+                        f"Invalid yt_args string '{v}'. Failed to parse."
+                    ) from e
+            case _:
+                raise TypeError(f"yt_args must be a string, got {type(v).__name__}")
 
 
 class YamlFileFromFieldSource(PydanticBaseSettingsSource):
-    """A settings source that loads configuration from a YAML file specified by a field within the settings model itself.
+    """Load configuration from a YAML file specified by a field.
 
-    This source should be run after all other sources that might
-    populate the path field.
+    A settings source that loads configuration from a YAML file specified
+    by a field within the settings model itself. This source should be run
+    after all other sources that might populate the path field.
+
+    Attributes:
+        yaml_file_encoding: Encoding to use when reading the YAML file.
+        yaml_data: Cached YAML data loaded from the file.
     """
 
     def _get_current_state_of(self, field_name: str) -> Any:
@@ -199,7 +241,20 @@ class YamlFileFromFieldSource(PydanticBaseSettingsSource):
 
 
 class AppSettings(BaseSettings):
-    """Holds all feed configurations."""
+    """Application settings and feed configurations.
+
+    Holds all feed configurations and global application settings.
+    Configuration is loaded from environment variables, CLI arguments,
+    and YAML files.
+
+    Attributes:
+        debug_mode: Debug mode to run (ytdlp, enqueuer, downloader, or None).
+        log_format: Format for application logs (human or json).
+        log_level: Logging level for the application.
+        log_include_stacktrace: Include full stack traces in error logs.
+        config_file: Path to the YAML config file.
+        feeds: Configuration for all podcast feeds.
+    """
 
     # Global settings
     debug_mode: DebugMode | None = Field(
@@ -255,8 +310,23 @@ class AppSettings(BaseSettings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
-        # Order matters: Env vars/init args should be processed first to potentially set config_file
-        # Then YamlFileFromFieldSource reads the config_file field and loads the YAML
+        """Customize the order and sources for settings loading.
+
+        This method customizes the order in which settings sources are processed.
+        Environment variables and initialization parameters are processed first to
+        potentially set the `config_file`. After that, the `YamlFileFromFieldSource`
+        reads the `config_file` field and loads the YAML configuration.
+
+        Args:
+            settings_cls: The settings class being configured.
+            init_settings: Settings from initialization parameters.
+            env_settings: Settings from environment variables.
+            dotenv_settings: Settings from .env files.
+            file_secret_settings: Settings from secret files.
+
+        Returns:
+            Tuple of settings sources in the order they should be processed.
+        """
         return (
             init_settings,
             env_settings,

@@ -32,11 +32,11 @@ tests/
 - Follow Arrange-Act-Assert pattern but don't leave comments saying that you are
 - One assertion per test when possible
 - Test both success and failure paths
-- Keep tests independent
 - Avoid test interdependence
 - If an assert is non-obvious, add a descriptive message to make failures clear
 - Calling a private method from a test will cause the type checker to complain about protected access; silence with `# type: ignore`
 - If you encounter linter issues, take one or two tries to address, but then move on; as long as the tests execute, that is more important
+- Avoid doing string checks on error messages (`assert "error message" in str(exc.value)`)
 
 ## Fixtures
 - Use fixtures for setup/teardown

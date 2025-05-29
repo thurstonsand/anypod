@@ -1,3 +1,10 @@
+"""Database management for Anypod downloads.
+
+This module provides database operations for managing download records,
+including the Download dataclass, DownloadStatus enum, and DatabaseManager
+class for all database interactions.
+"""
+
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from enum import Enum
@@ -12,6 +19,12 @@ logger = logging.getLogger(__name__)
 
 
 class DownloadStatus(Enum):
+    """Represent the status of a download in the processing lifecycle.
+
+    Indicates the current state of a download item as it progresses through
+    the system from discovery to completion or archival.
+    """
+
     UPCOMING = "upcoming"
     QUEUED = "queued"
     DOWNLOADED = "downloaded"
@@ -29,7 +42,22 @@ register_adapter(datetime, lambda dt: dt.isoformat())  # type: ignore # not sure
 
 @dataclass(eq=False)
 class Download:
-    """Represents a download's data, used for adding/updating."""
+    """Represent a download's data for adding and updating.
+
+    Attributes:
+        feed: The feed identifier.
+        id: The download identifier.
+        source_url: The source URL for the download.
+        title: The download title.
+        published: Publication datetime (UTC).
+        ext: File extension.
+        duration: Duration in seconds.
+        status: Current download status.
+        thumbnail: Optional thumbnail URL.
+        filesize: Optional file size in bytes.
+        retries: Number of retry attempts.
+        last_error: Last error message if any.
+    """
 
     feed: str
     id: str
@@ -40,12 +68,23 @@ class Download:
     duration: float  # in seconds
     status: DownloadStatus
     thumbnail: str | None = None
+    filesize: int | None = None  # Bytes
     retries: int = 0
     last_error: str | None = None
 
     @classmethod
     def from_row(cls, row: dict[str, Any]) -> "Download":
-        """Converts a sqlite3.Row to a Download."""
+        """Converts a row from the database to a Download.
+
+        Args:
+            row: A dictionary representing a row from the database.
+
+        Returns:
+            A Download object.
+
+        Raises:
+            ValueError: If the date format is invalid or the status value is invalid.
+        """
         published_str = row["published"]
         try:
             published_dt = datetime.fromisoformat(published_str)
@@ -69,6 +108,7 @@ class Download:
             ext=row["ext"],
             duration=float(row["duration"]),
             thumbnail=row["thumbnail"],
+            filesize=row.get("filesize"),
             status=status_enum,
             retries=row["retries"],
             last_error=row["last_error"],
@@ -86,6 +126,17 @@ class Download:
 
 
 class DatabaseManager:
+    """Manage all database operations for downloads.
+
+    Handles database initialization, CRUD operations, status transitions,
+    and queries for download records using SQLite as the backend.
+
+    Attributes:
+        _db_path: Path to the database file.
+        _db: Core SQLite database wrapper.
+        _download_table_name: Name of the downloads table.
+    """
+
     def __init__(self, db_path: Path | None, memory_name: str | None = None):
         """Initializes the DatabaseManager with the path to the SQLite database."""
         self._db_path = db_path
@@ -107,6 +158,7 @@ class DatabaseManager:
                 "ext": str,
                 "duration": float,
                 "thumbnail": str,
+                "filesize": int,
                 "status": str,
                 "retries": int,
                 "last_error": str,
@@ -151,10 +203,15 @@ class DatabaseManager:
         self,
         download: Download,
     ) -> None:
-        """Inserts or updates a download in the downloads table (upsert behavior).
+        """Insert or update a download in the downloads table.
 
-        If a download with the same (feed, id) exists, it will be
-        replaced.
+        If a download with the same (feed, id) exists, it will be replaced.
+
+        Args:
+            download: The Download object to insert or update.
+
+        Raises:
+            DatabaseOperationError: If the database operation fails.
         """
         log_params = {
             "feed_id": download.feed,
@@ -188,15 +245,18 @@ class DatabaseManager:
     # --- Status Transition Methods ---
 
     def mark_as_queued_from_upcoming(self, feed: str, id: str) -> None:
-        """Transitions a download from UPCOMING to QUEUED.
+        """Transition a download from UPCOMING to QUEUED status.
 
-        - Checks that the current status is UPCOMING.
-        - Sets status = QUEUED.
-        - Preserves retries and last_error.
+        Checks that the current status is UPCOMING, then sets status to QUEUED.
+        Preserves retries and last_error values.
+
+        Args:
+            feed: The feed identifier.
+            id: The download identifier.
 
         Raises:
             DownloadNotFoundError: If the download is not found.
-            DatabaseOperationError: If the database operation fails.
+            DatabaseOperationError: If the database operation fails or current status is not UPCOMING.
         """
         log_params = {
             "feed_id": feed,
@@ -235,14 +295,22 @@ class DatabaseManager:
         )
 
     def requeue_download(self, feed: str, id: str) -> None:
-        """Re-queues a download.
+        """Re-queue a download by resetting its status and error counters.
 
         This can happen due to:
         - Manually re-queueing an ERROR'd download.
-        - Manually re-queueing to get the latest version of a download (i.e., it was previously DOWNLOADED).
+        - Manually re-queueing to get the latest version of a download (previously DOWNLOADED).
         - Un-SKIPPING a video (if it doesn't get ARCHIVED).
-        - Sets status = QUEUED.
-        - Sets retries = 0, last_error = NULL.
+
+        Sets status to QUEUED and resets retries to 0 and last_error to NULL.
+
+        Args:
+            feed: The feed identifier.
+            id: The download identifier.
+
+        Raises:
+            DownloadNotFoundError: If the download is not found.
+            DatabaseOperationError: If the database operation fails.
         """
         log_params = {
             "feed_id": feed,
@@ -270,12 +338,17 @@ class DatabaseManager:
             raise e
         logger.info("Download re-queued.", extra=log_params)
 
-    def mark_as_downloaded(self, feed: str, id: str) -> None:
-        """Marks a download as DOWNLOADED.
+    def mark_as_downloaded(self, feed: str, id: str, ext: str, filesize: int) -> None:
+        """Mark a download as DOWNLOADED with updated metadata.
 
-        - Checks that the current status is QUEUED.
-        - Sets status = DOWNLOADED.
-        - Sets retries = 0, last_error = NULL.
+        Checks that the current status is QUEUED, then sets status to DOWNLOADED.
+        Resets retries to 0, last_error to NULL, and updates ext and filesize.
+
+        Args:
+            feed: The feed identifier.
+            id: The download identifier.
+            ext: The new file extension.
+            filesize: The new file size in bytes.
 
         Raises:
             DownloadNotFoundError: If the download is not found.
@@ -285,6 +358,8 @@ class DatabaseManager:
             "feed_id": feed,
             "download_id": id,
             "target_status": str(DownloadStatus.DOWNLOADED),
+            "ext": ext,
+            "filesize": filesize,
         }
         logger.debug("Attempting to mark download as DOWNLOADED.", extra=log_params)
 
@@ -304,6 +379,8 @@ class DatabaseManager:
                     "status": str(DownloadStatus.DOWNLOADED),
                     "retries": 0,
                     "last_error": None,
+                    "ext": ext,
+                    "filesize": filesize,
                 },
             )
         except DownloadNotFoundError as e:
@@ -317,10 +394,17 @@ class DatabaseManager:
         logger.info("Download marked as DOWNLOADED.", extra=log_params)
 
     def skip_download(self, feed: str, id: str) -> None:
-        """Skips a download.
+        """Skip a download by setting its status to SKIPPED.
 
-        - Sets status = SKIPPED.
-        - Preserves retries and last_error.
+        Preserves retries and last_error values.
+
+        Args:
+            feed: The feed identifier.
+            id: The download identifier.
+
+        Raises:
+            DownloadNotFoundError: If the download is not found.
+            DatabaseOperationError: If the database operation fails.
         """
         log_params = {
             "feed_id": feed,
@@ -349,14 +433,15 @@ class DatabaseManager:
         feed_id: str,
         download_id: str,
     ) -> DownloadStatus:
-        """Unskips a download by re-queueing it. The Pruner will later determine if it should be archived based on retention rules.
+        """Unskip a download by re-queueing it.
 
-        - Checks that the current status is SKIPPED.
-        - Calls self.requeue_download() to set status to QUEUED and reset retries/errors.
+        Checks that the current status is SKIPPED, then calls requeue_download()
+        to set status to QUEUED and reset retries/errors. The Pruner will later
+        determine if it should be archived based on retention rules.
 
         Args:
-            feed_id: The ID of the feed.
-            download_id: The ID of the download.
+            feed_id: The feed identifier.
+            download_id: The download identifier.
 
         Returns:
             DownloadStatus.QUEUED if successful.
@@ -382,10 +467,17 @@ class DatabaseManager:
         return DownloadStatus.QUEUED
 
     def archive_download(self, feed: str, id: str) -> None:
-        """Archives a download.
+        """Archive a download by setting its status to ARCHIVED.
 
-        - Sets status = ARCHIVED.
-        - Preserves retries and last_error.
+        Preserves retries and last_error values.
+
+        Args:
+            feed: The feed identifier.
+            id: The download identifier.
+
+        Raises:
+            DownloadNotFoundError: If the download is not found.
+            DatabaseOperationError: If the database operation fails.
         """
         log_params = {
             "feed_id": feed,
@@ -419,11 +511,11 @@ class DatabaseManager:
         error_message: str,
         max_allowed_errors: int,
     ) -> tuple[int, DownloadStatus, bool]:
-        """Increments the retry count for a download and potentially updates its status to ERROR.
+        """Increment the retry count and potentially update status to ERROR.
 
         Args:
-            feed_id: The name of the feed.
-            download_id: The ID of the download.
+            feed_id: The feed identifier.
+            download_id: The download identifier.
             error_message: The error message to record.
             max_allowed_errors: The maximum number of retries allowed before transitioning to ERROR status.
 
@@ -514,10 +606,20 @@ class DatabaseManager:
     def get_downloads_to_prune_by_keep_last(
         self, feed: str, keep_last: int
     ) -> list[Download]:
-        """Identifies downloads to prune based on 'keep_last'.
+        """Identify downloads to prune based on 'keep_last' rule.
 
-        Returns a list of Downloads. Excludes downloads with status
-        ARCHIVED or UPCOMING.
+        Returns downloads that exceed the keep_last limit, excluding
+        downloads with status ARCHIVED or UPCOMING.
+
+        Args:
+            feed: The feed identifier.
+            keep_last: The number of most recent downloads to keep.
+
+        Returns:
+            List of Download objects that should be pruned.
+
+        Raises:
+            DatabaseOperationError: If the database query fails.
         """
         log_params = {"feed_id": feed, "keep_last": keep_last}
         logger.debug(
@@ -550,11 +652,21 @@ class DatabaseManager:
     def get_downloads_to_prune_by_since(
         self, feed: str, since: datetime
     ) -> list[Download]:
-        """Identifies downloads published before the 'since' datetime (UTC).
+        """Identify downloads published before the 'since' datetime (UTC).
 
-        Returns a list of Downloads. Excludes downloads with status
-        ARCHIVED or UPCOMING. 'since' MUST be a timezone-aware datetime
-        object in UTC.
+        Returns downloads published before the given datetime, excluding
+        downloads with status ARCHIVED or UPCOMING. The 'since' parameter
+        must be a timezone-aware datetime object in UTC.
+
+        Args:
+            feed: The feed identifier.
+            since: The cutoff datetime (must be timezone-aware UTC).
+
+        Returns:
+            List of Download objects that should be pruned.
+
+        Raises:
+            DatabaseOperationError: If the database query fails.
         """
         log_params = {"feed_id": feed, "prune_before_date": since.isoformat()}
         logger.debug(
@@ -579,12 +691,19 @@ class DatabaseManager:
         return [Download.from_row(row) for row in rows]
 
     def get_download_by_id(self, feed: str, id: str) -> Download:
-        """Retrieves a specific download by feed and id. Returns a Download object.
+        """Retrieve a specific download by feed and id.
+
+        Args:
+            feed: The feed identifier.
+            id: The download identifier.
+
+        Returns:
+            Download object for the specified feed and id.
 
         Raises:
             DownloadNotFoundError: If the download is not found.
             DatabaseOperationError: If the database operation fails.
-            ValueError: If unable to parse row into a Download
+            ValueError: If unable to parse row into a Download object.
         """
         log_params = {"feed_id": feed, "download_id": id}
         logger.debug("Attempting to get download by ID.", extra=log_params)
@@ -604,12 +723,24 @@ class DatabaseManager:
         self,
         status_to_filter: DownloadStatus,
         feed: str | None = None,
-        limit: int = 100,
+        limit: int = -1,
         offset: int = 0,
     ) -> list[Download]:
-        """Retrieves downloads with a specific status, newest first.
+        """Retrieve downloads with a specific status, newest first.
 
-        Can be filtered by a specific feed. Returns a list of Downloads.
+        Can be filtered by a specific feed.
+
+        Args:
+            status_to_filter: The DownloadStatus to filter by.
+            feed: Optional feed name to filter by.
+            limit: Maximum number of records to return (-1 for no limit).
+            offset: Number of records to skip (for pagination).
+
+        Returns:
+            List of Download objects matching the status and other criteria.
+
+        Raises:
+            DatabaseOperationError: If the database query fails.
         """
         log_params = {
             "status": str(status_to_filter),
