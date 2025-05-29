@@ -1,3 +1,10 @@
+"""YouTube-specific handler for yt-dlp operations.
+
+This module provides YouTube-specific implementations for fetch strategy
+determination and metadata parsing, including handling of different YouTube
+URL types (videos, channels, playlists) and status detection.
+"""
+
 from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -17,7 +24,12 @@ logger = logging.getLogger(__name__)
 
 
 class YtdlpYoutubeDataError(YtdlpDataError):
-    """Raised when yt-dlp data extraction fails for YouTube."""
+    """Raised when yt-dlp data extraction fails for YouTube.
+
+    Attributes:
+        feed_id: The feed identifier associated with the error.
+        download_id: The download identifier associated with the error.
+    """
 
     def __init__(
         self, message: str, feed_id: str | None = None, download_id: str | None = None
@@ -28,7 +40,12 @@ class YtdlpYoutubeDataError(YtdlpDataError):
 
 
 class YtdlpYoutubeVideoFilteredOutError(YtdlpDataError):
-    """Raised when a video is filtered out by yt-dlp."""
+    """Raised when a video is filtered out by yt-dlp.
+
+    Attributes:
+        feed_id: The feed identifier associated with the error.
+        download_id: The download identifier associated with the error.
+    """
 
     def __init__(self, feed_id: str | None = None, download_id: str | None = None):
         self.feed_id = feed_id
@@ -37,7 +54,16 @@ class YtdlpYoutubeVideoFilteredOutError(YtdlpDataError):
 
 
 class YoutubeEntry:
-    """Represents a single YouTube video entry."""
+    """Represent a single YouTube video entry with field extraction.
+
+    Provides typed access to YouTube-specific fields from yt-dlp metadata,
+    with error handling and data validation for common YouTube video properties.
+
+    Attributes:
+        feed_id: The feed identifier this entry belongs to.
+        download_id: The YouTube video ID.
+        _ytdlp_info: The underlying yt-dlp metadata.
+    """
 
     def __init__(self, ytdlp_info: YtdlpInfo, feed_id: str):
         self._ytdlp_info = ytdlp_info
@@ -73,17 +99,20 @@ class YoutubeEntry:
 
     @property
     def webpage_url(self) -> str | None:
+        """Get the webpage URL for the video."""
         with self._annotate_exceptions():
             return self._ytdlp_info.get("webpage_url", str)
 
     @property
     def extractor(self) -> str | None:
+        """Get the extractor name (normalized to lowercase)."""
         with self._annotate_exceptions():
             extractor = self._ytdlp_info.get("extractor", str)
             return extractor.lower() if extractor else None
 
     @property
     def type(self) -> str | None:
+        """Get the entry type from yt-dlp metadata."""
         with self._annotate_exceptions():
             return self._ytdlp_info.get("_type", str)
 
@@ -91,6 +120,7 @@ class YoutubeEntry:
 
     @property
     def entries(self) -> list["YoutubeEntry | None"] | None:
+        """Get playlist entries as YoutubeEntry objects."""
         with self._annotate_exceptions():
             entries = self._ytdlp_info.entries()
             if entries is None:
@@ -104,16 +134,19 @@ class YoutubeEntry:
 
     @property
     def format_id(self) -> str | None:
+        """Get the format ID for the video."""
         with self._annotate_exceptions():
             return self._ytdlp_info.get("format_id", str)
 
     @property
     def original_url(self) -> str | None:
+        """Get the original URL for the video."""
         with self._annotate_exceptions():
             return self._ytdlp_info.get("original_url", str)
 
     @property
     def title(self) -> str:
+        """Get the video title, raising an error for deleted/private videos."""
         with self._annotate_exceptions():
             title = self._ytdlp_info.required("title", str)
 
@@ -127,11 +160,13 @@ class YoutubeEntry:
 
     @property
     def ext(self) -> str | None:
+        """Get the file extension for the video."""
         with self._annotate_exceptions():
             return self._ytdlp_info.get("ext", str)
 
     @property
     def timestamp(self) -> datetime | None:
+        """Get the timestamp as a UTC datetime object."""
         with self._annotate_exceptions():
             timestamp = self._ytdlp_info.get("timestamp", (int, float))
         if timestamp is None:
@@ -147,6 +182,7 @@ class YoutubeEntry:
 
     @property
     def upload_date(self) -> datetime | None:
+        """Get the upload date as a UTC datetime object."""
         with self._annotate_exceptions():
             upload_date_str = self._ytdlp_info.get("upload_date", str)
         if upload_date_str is None:
@@ -162,6 +198,7 @@ class YoutubeEntry:
 
     @property
     def release_timestamp(self) -> datetime | None:
+        """Get the release timestamp as a UTC datetime object."""
         with self._annotate_exceptions():
             release_ts = self._ytdlp_info.get("release_timestamp", (int, float))
         if release_ts is None:
@@ -177,6 +214,7 @@ class YoutubeEntry:
 
     @property
     def published_source_field(self) -> str:
+        """Get the source field name used for determining the published datetime."""
         if self.timestamp:
             return "timestamp"
         elif self.upload_date:
@@ -189,16 +227,19 @@ class YoutubeEntry:
 
     @property
     def is_live(self) -> bool | None:
+        """Check if the video is currently live."""
         with self._annotate_exceptions():
             return self._ytdlp_info.get("is_live", bool)
 
     @property
     def live_status(self) -> str | None:
+        """Get the live status of the video."""
         with self._annotate_exceptions():
             return self._ytdlp_info.get("live_status", str)
 
     @property
     def duration(self) -> float:
+        """Get the video duration in seconds as a float."""
         # Explicitly check for bool first, as bool is a subclass of int
         raw_duration = self._ytdlp_info.get_raw("duration")
         if isinstance(raw_duration, bool):
@@ -225,6 +266,7 @@ class YoutubeEntry:
 
     @property
     def thumbnail(self) -> str | None:
+        """Get the thumbnail URL for the video."""
         with self._annotate_exceptions():
             return self._ytdlp_info.get("thumbnail", str)
 
@@ -232,14 +274,20 @@ class YoutubeEntry:
 class YoutubeHandler:
     """YouTube-specific implementation for fetching strategy and parsing.
 
-    Implements the SourceHandlerBase protocol.
+    Implements the SourceHandlerBase protocol to provide YouTube-specific
+    behavior for URL classification, option customization, and metadata
+    parsing into Download objects.
     """
 
     def get_source_specific_ydl_options(self, purpose: FetchPurpose) -> dict[str, Any]:
-        logger.debug(
-            "No source specific ydl options for Youtube.",
-            extra={"purpose": purpose},
-        )
+        """Get YouTube-specific yt-dlp options for the given purpose.
+
+        Args:
+            purpose: The purpose of the fetch operation.
+
+        Returns:
+            Dictionary of YouTube-specific yt-dlp options.
+        """
         # No filtering at discovery, metadata fetch, or media download needed from here
         return {}
 
@@ -328,6 +376,22 @@ class YoutubeHandler:
         initial_url: str,
         ydl_caller_for_discovery: YdlApiCaller,
     ) -> tuple[str | None, ReferenceType]:
+        """Determine the fetch strategy for a YouTube URL.
+
+        Analyzes the URL to determine if it represents a single video,
+        a collection (playlist/channel), or requires special handling.
+
+        Args:
+            feed_id: The feed identifier.
+            initial_url: The initial URL to analyze.
+            ydl_caller_for_discovery: Function to call yt-dlp for discovery.
+
+        Returns:
+            Tuple of (final_url_to_fetch, reference_type).
+
+        Raises:
+            YtdlpYoutubeDataError: If the URL is a playlists tab or other unsupported format.
+        """
         logger.info(
             "Determining fetch strategy for URL.", extra={"initial_url": initial_url}
         )
@@ -458,6 +522,17 @@ class YoutubeHandler:
         source_identifier: str,
         ref_type: ReferenceType,
     ) -> list[Download]:
+        """Parse yt-dlp metadata into Download objects.
+
+        Args:
+            feed_id: The feed identifier.
+            ytdlp_info: The yt-dlp metadata information.
+            source_identifier: Identifier for the source being parsed.
+            ref_type: The type of reference being parsed.
+
+        Returns:
+            List of successfully parsed Download objects.
+        """
         logger.debug(
             "Parsing metadata to downloads.",
             extra={

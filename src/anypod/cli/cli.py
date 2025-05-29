@@ -1,3 +1,10 @@
+"""Command-line interface entry points for Anypod.
+
+This module provides the main CLI function that handles application
+initialization, logging setup, and routing to different execution modes
+based on configuration settings.
+"""
+
 import logging
 from pathlib import Path
 
@@ -14,6 +21,12 @@ DEBUG_DOWNLOADS_DIR = Path.cwd() / "debug_downloads"
 
 
 def main_cli():
+    """Initialize and run the Anypod application based on configuration.
+
+    Sets up logging, loads application settings, and routes execution
+    to the appropriate mode (default, ytdlp debug, enqueuer debug, or
+    downloader debug) based on the DEBUG_MODE setting.
+    """
     settings = AppSettings()  # type: ignore
 
     setup_logging(

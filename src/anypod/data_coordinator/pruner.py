@@ -1,3 +1,10 @@
+"""Handles the pruning of old downloads based on retention policies.
+
+This module defines the Pruner class, which is responsible for identifying
+and removing old downloads according to configured retention rules, including
+file deletion and database record archiving.
+"""
+
 import datetime
 import logging
 
@@ -14,6 +21,17 @@ logger = logging.getLogger(__name__)
 
 
 class Pruner:
+    """Manage the pruning of old downloads based on retention policies.
+
+    The Pruner identifies downloads that should be removed according to
+    configured retention rules (keep_last count and prune_before_date),
+    deletes associated files, and archives database records.
+
+    Attributes:
+        db_manager: Database manager for download record operations.
+        file_manager: File manager for file system operations.
+    """
+
     def __init__(self, db_manager: DatabaseManager, file_manager: FileManager):
         self.db_manager = db_manager
         self.file_manager = file_manager
@@ -25,29 +43,27 @@ class Pruner:
         keep_last: int | None,
         prune_before_date: datetime.datetime | None,
     ) -> tuple[list[str], list[str]]:
-        """Prunes old downloads for a given feed based on specified retention
-        rules.
+        """Prune old downloads for a feed based on retention rules.
 
         This method identifies download candidates for pruning based on two criteria:
-        1.  `keep_last`: Retains only the specified number of the most recent DOWNLOADED downloads.
-            Older DOWNLOADED items become candidates for pruning.
-        2.  `prune_before_date`: DOWNLOADED downloads published before this timestamp become candidates.
+        1. keep_last: Retains only the specified number of the most recent DOWNLOADED downloads.
+           Older DOWNLOADED items become candidates for pruning.
+        2. prune_before_date: DOWNLOADED downloads published before this timestamp become candidates.
 
         The union of downloads identified by both criteria is processed. For each candidate:
-        - If its status is `DOWNLOADED`, its associated media file is deleted from the filesystem.
-        - The download's database record status is then updated to `ARCHIVED`.
+        - If its status is DOWNLOADED, its associated media file is deleted from the filesystem.
+        - The download's database record status is then updated to ARCHIVED.
 
         Malformed database records encountered during candidate selection are logged and skipped.
 
         Args:
             feed_id: The unique identifier of the feed to prune.
             keep_last: The number of most recent downloaded items to retain. If None, this rule is ignored.
-            prune_before_date: A datetime object. Downloads published before this date are pruned.
-                               If None, this rule is ignored.
+            prune_before_date: Downloads published before this date are pruned. If None, this rule is ignored.
 
         Returns:
             A tuple containing two lists of strings:
-            - The first list contains the IDs of download records successfully updated to `ARCHIVED` status.
+            - The first list contains the IDs of download records successfully updated to ARCHIVED status.
             - The second list contains the IDs of downloads whose associated media files were successfully deleted.
 
         Raises:

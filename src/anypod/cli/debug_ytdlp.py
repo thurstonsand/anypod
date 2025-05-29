@@ -1,3 +1,10 @@
+"""Debug mode for testing yt-dlp functionality directly.
+
+This module provides functionality to test yt-dlp operations in isolation,
+loading configuration from a YAML file and fetching metadata or downloading
+media based on the configuration.
+"""
+
 import logging
 from pathlib import Path
 import sys
@@ -18,9 +25,15 @@ logger = logging.getLogger(__name__)
 def run_debug_ytdlp_mode(
     debug_yaml_path: Path, app_data_dir: Path, app_tmp_dir: Path
 ) -> None:
-    """Loads feed URLs and yt-dlp CLI args from a YAML file and fetches metadata.
+    """Load feed URLs from YAML and fetch metadata using yt-dlp.
 
-    Assumes the YAML file is correctly formatted for debugging purposes.
+    Loads feed URLs and yt-dlp CLI args from a YAML file and fetches metadata.
+    Optionally downloads media if enabled in the configuration.
+
+    Args:
+        debug_yaml_path: Path to the YAML configuration file.
+        app_data_dir: Data directory for downloaded files.
+        app_tmp_dir: Temporary directory for yt-dlp operations.
     """
     logger.debug(
         "Entered yt-dlp debug mode execution.",
