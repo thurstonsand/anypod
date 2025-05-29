@@ -1,6 +1,7 @@
+"""Tests for the DatabaseManager and Download model functionality."""
+
 from collections.abc import Iterator
 import datetime
-from pathlib import Path
 import sqlite3
 from typing import Any
 
@@ -13,7 +14,8 @@ from anypod.exceptions import DatabaseOperationError, DownloadNotFoundError
 
 
 @pytest.fixture
-def db_manager(tmp_path: Path) -> Iterator[DatabaseManager]:
+def db_manager() -> Iterator[DatabaseManager]:
+    """Provides a DatabaseManager instance for testing with a temporary in-memory database."""
     # db_path = tmp_path / "test.db"
     manager = DatabaseManager(db_path=None, memory_name="test_db")
     yield manager
@@ -60,6 +62,7 @@ def sample_download_row_data() -> dict[str, Any]:
 
 @pytest.fixture
 def sample_download_upcoming() -> Download:
+    """Provides a sample Download instance with UPCOMING status for testing."""
     return Download(
         feed="test_feed",
         id="test_id_upcoming",

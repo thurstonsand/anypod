@@ -1,3 +1,5 @@
+"""Tests for the YtdlpWrapper class and its yt-dlp integration functionality."""
+
 from datetime import datetime
 from pathlib import Path
 from typing import Any

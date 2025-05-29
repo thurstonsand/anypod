@@ -52,7 +52,7 @@ alwaysApply: false
   ```
 - Don't document `self` or `cls`.
 - Keep the closing `"""` on its own line.
-- Non-public helpers (`_internal_method`) may use a single inline `# comment` if trivial; otherwise follow the same full docstring style.
+- Tests (in the `tests/` folder) may use a simplified one-line summary as their docstring
 - **Template**
   ```python
   def fetch_metadata(
