@@ -26,6 +26,7 @@ dev = [
     "pytest-cov>=5.0.0",
     "ruff>=0.11.7",
     "pyright>=1.1.400",
+    "pytest-xdist>=3.7.0",
 ]
 
 [project.scripts]
@@ -38,7 +39,7 @@ managed = true
 minversion = "7.0"
 pythonpath = ["src"]
 testpaths = ["tests"]
-addopts = "-ra -q --tb=short --disable-warnings --strict-markers --cov=src --cov-report=html --cov-report=term-missing"
+addopts = "-ra -q --tb=short --disable-warnings --strict-markers -n auto --cov=src --cov-report=html --cov-report=term-missing"
 filterwarnings = ["error"]
 markers = [
     "integration: mark slow integration tests",

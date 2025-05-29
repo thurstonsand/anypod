@@ -443,18 +443,21 @@ class Enqueuer:
                         feed_id=feed_id,
                         download_id=fetched_download.id,
                     ) from e
-            case (
-                DownloadStatus.DOWNLOADED | DownloadStatus.ERROR as existing_status,
-                DownloadStatus.QUEUED,
-            ):
+            case (DownloadStatus.DOWNLOADED, DownloadStatus.QUEUED):
                 logger.debug(
-                    f"Existing {existing_status} download set to be requeued.",
+                    "Existing DOWNLOADED item found in feed, ignoring.",
+                    extra=current_log_params,
+                )
+                return False
+            case (DownloadStatus.ERROR, DownloadStatus.QUEUED):
+                logger.debug(
+                    "Existing ERROR download set to be requeued.",
                     extra=current_log_params,
                 )
                 try:
                     self.db_manager.requeue_download(feed_id, fetched_download.id)
                     logger.info(
-                        "Successfully re-queued existing DOWNLOADED item.",
+                        "Successfully re-queued existing ERROR item.",
                         extra=current_log_params,
                     )
                     return True

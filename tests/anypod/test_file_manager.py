@@ -40,9 +40,7 @@ def save_file(
 
 
 @pytest.mark.unit
-def test_delete_download_file_success(
-    file_manager: FileManager, temp_base_download_path: Path
-):
+def test_delete_download_file_success(file_manager: FileManager):
     """Tests successful deletion of an existing file."""
     feed_id = "delete_feed"
     file_name = "to_delete.txt"
@@ -52,9 +50,8 @@ def test_delete_download_file_success(
 
     assert file_to_delete_path.exists()
 
-    result = file_manager.delete_download_file(feed_id, file_name)
+    file_manager.delete_download_file(feed_id, file_name)
 
-    assert result is True, "delete_download_file should return True on success."
     assert not file_to_delete_path.exists(), "File should be deleted from disk."
 
 
@@ -64,11 +61,10 @@ def test_delete_download_file_not_found(file_manager: FileManager):
     feed_id = "delete_feed_not_found"
     file_name = "non_existent.txt"
 
-    result = file_manager.delete_download_file(feed_id, file_name)
+    with pytest.raises(FileNotFoundError) as e:
+        file_manager.delete_download_file(feed_id, file_name)
 
-    assert result is False, (
-        "delete_download_file should return False if file not found."
-    )
+    assert file_name in str(e.value)
 
 
 # --- Tests for download_exists ---

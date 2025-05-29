@@ -370,13 +370,13 @@ def test_fetch_and_process_new_feed_downloads_existing_upcoming_now_vod(
 
 
 @pytest.mark.unit
-def test_fetch_and_process_new_feed_downloads_existing_downloaded_requeued(
+def test_fetch_and_process_new_feed_downloads_existing_downloaded_ignored(
     enqueuer: Enqueuer,
     mock_ytdlp_wrapper: MagicMock,
     mock_db_manager: MagicMock,
     sample_feed_config: FeedConfig,
 ):
-    """Test that an already DOWNLOADED item is re-queued if fetched again as QUEUED."""
+    """Test that an already DOWNLOADED item is ignored (not requeued) if fetched again as QUEUED."""
     existing_downloaded_in_db = create_download("video_done", DownloadStatus.DOWNLOADED)
     fetched_again_as_queued = create_download("video_done", DownloadStatus.QUEUED)
 
@@ -387,9 +387,9 @@ def test_fetch_and_process_new_feed_downloads_existing_downloaded_requeued(
         FEED_ID, sample_feed_config, FETCH_SINCE_DATE
     )
 
-    assert count == 1
+    assert count == 0
     mock_db_manager.get_download_by_id.assert_called_once_with(FEED_ID, "video_done")
-    mock_db_manager.requeue_download.assert_called_once_with(FEED_ID, "video_done")
+    mock_db_manager.requeue_download.assert_not_called()
     mock_db_manager.upsert_download.assert_not_called()
 
 

@@ -72,17 +72,17 @@ class FileManager:
         }
         logger.debug("Attempting to delete download file.", extra=log_params)
 
-        try:
-            if file_path.is_file():
+        if not file_path.is_file():
+            raise FileNotFoundError(f"Download file not found: {file_path}")
+        else:
+            try:
                 file_path.unlink()
                 logger.debug("File unlinked successfully.", extra=log_params)
-            else:
-                raise FileNotFoundError(f"Download file not found: {file_path}")
-        except OSError as e:
-            raise FileOperationError(
-                "Failed to delete download file.",
-                file_name=file_name,
-            ) from e
+            except OSError as e:
+                raise FileOperationError(
+                    "Failed to delete download file.",
+                    file_name=file_name,
+                ) from e
 
     def download_exists(self, feed: str, file_name: str) -> bool:
         """Checks if a specific download file exists.
