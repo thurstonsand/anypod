@@ -26,7 +26,7 @@ def run_debug_downloader_mode(
     app_data_dir: Path,
     app_tmp_dir: Path,
 ) -> None:
-    """Runs the Downloader debug mode.
+    """Run the Downloader in debug mode to process queued downloads.
 
     Initializes the Downloader, processes all queued downloads by calling
     download_queued for each configured feed, and then logs the state of
@@ -34,9 +34,9 @@ def run_debug_downloader_mode(
 
     Args:
         settings: Application settings containing feed configurations.
-        debug_db_path: Path to the database.
-        app_tmp_dir: Temporary directory for yt-dlp operations.
+        debug_db_path: Path to the database file.
         app_data_dir: Data directory for downloaded files.
+        app_tmp_dir: Temporary directory for yt-dlp operations.
     """
     logger.info(
         "Initializing Anypod in Downloader debug mode.",

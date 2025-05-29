@@ -1,3 +1,10 @@
+"""Core yt-dlp wrapper functionality and typed data access.
+
+This module provides core yt-dlp integration including strongly-typed access
+to yt-dlp metadata and static methods for yt-dlp operations like option
+parsing, metadata extraction, and media downloading.
+"""
+
 from types import UnionType
 from typing import Any, Union, get_origin
 
@@ -8,7 +15,14 @@ from ..exceptions import YtdlpApiError, YtdlpFieldInvalidError, YtdlpFieldMissin
 
 
 class YtdlpInfo:
-    """A wrapper around the output of yt-dlp extract_info to provide strongly-typed access to its fields."""
+    """A wrapper around yt-dlp extract_info output for strongly-typed access.
+
+    Provides type-safe access to fields in yt-dlp metadata dictionaries
+    with validation and error handling for missing or invalid field types.
+
+    Attributes:
+        _info_dict: The underlying yt-dlp metadata dictionary.
+    """
 
     def __init__(self, info_dict: dict[str, Any]):
         self._info_dict = info_dict
@@ -84,6 +98,14 @@ class YtdlpInfo:
         return field
 
     def entries(self) -> list["YtdlpInfo | None"] | None:
+        """Extract and wrap entries from a playlist or collection.
+
+        Returns:
+            List of YtdlpInfo objects for each entry, or None if no entries exist.
+
+        Raises:
+            YtdlpFieldInvalidError: If an entry has an invalid type.
+        """
         raw_entries = self.get("entries", list[dict[str, Any] | None])  # type: ignore
         if raw_entries is None:
             return None
@@ -100,13 +122,40 @@ class YtdlpInfo:
 
 
 class YtdlpCore:
+    """Static methods for core yt-dlp operations.
+
+    Provides a clean interface to yt-dlp functionality including option
+    parsing, metadata extraction, and media downloading with proper
+    error handling and conversion to application-specific exceptions.
+    """
+
     @staticmethod
     def parse_options(user_cli_args: list[str]) -> dict[str, Any]:
+        """Parse command-line arguments into yt-dlp options.
+
+        Args:
+            user_cli_args: List of command-line argument strings.
+
+        Returns:
+            Dictionary of parsed yt-dlp options.
+        """
         _, _, _, parsed_user_opts = yt_dlp.parse_options(user_cli_args)  # type: ignore
         return parsed_user_opts  # type: ignore
 
     @staticmethod
     def extract_info(ydl_opts: dict[str, Any], url: str) -> YtdlpInfo | None:
+        """Extract metadata information from a URL using yt-dlp.
+
+        Args:
+            ydl_opts: Dictionary of yt-dlp options.
+            url: URL to extract information from.
+
+        Returns:
+            YtdlpInfo object with extracted metadata, or None if extraction failed.
+
+        Raises:
+            YtdlpApiError: If extraction fails or an unexpected error occurs.
+        """
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:  # type: ignore
                 extracted_info = ydl.extract_info(url, download=False)  # type: ignore
@@ -124,6 +173,15 @@ class YtdlpCore:
 
     @staticmethod
     def download(ydl_opts: dict[str, Any], url: str) -> None:
+        """Download media from a URL using yt-dlp.
+
+        Args:
+            ydl_opts: Dictionary of yt-dlp options.
+            url: URL to download media from.
+
+        Raises:
+            YtdlpApiError: If download fails or returns a non-zero exit code.
+        """
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:  # type: ignore
                 ret_code: int = ydl.download([url])  # type: ignore

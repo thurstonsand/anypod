@@ -1,3 +1,5 @@
+"""Tests for the FileManager class and its file handling operations."""
+
 from pathlib import Path
 from unittest.mock import patch
 

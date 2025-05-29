@@ -1,3 +1,9 @@
+"""Debug mode for testing the Enqueuer functionality.
+
+This module provides functionality to test the Enqueuer in isolation,
+processing all configured feeds and reporting on the results.
+"""
+
 from datetime import UTC, datetime
 import logging
 from pathlib import Path
@@ -17,11 +23,17 @@ def run_debug_enqueuer_mode(
     app_data_dir: Path,
     app_tmp_dir: Path,
 ) -> None:
-    """Runs the Enqueuer debug mode.
+    """Run the Enqueuer in debug mode to process feed metadata.
 
     Initializes the Enqueuer, processes all configured feeds by calling
     enqueue_new_downloads, and then logs the state of downloads in the
     database.
+
+    Args:
+        settings: Application settings containing feed configurations.
+        debug_db_path: Path to the database file.
+        app_data_dir: Data directory for downloaded files.
+        app_tmp_dir: Temporary directory for yt-dlp operations.
     """
     logger.info(
         "Initializing Anypod in Enqueuer debug mode.",

@@ -1,3 +1,5 @@
+"""Tests for the Enqueuer service and its download queue management."""
+
 from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, call
 
@@ -86,6 +88,7 @@ def test_enqueue_new_downloads_no_upcoming_no_new(
     mock_ytdlp_wrapper: MagicMock,
     sample_feed_config: FeedConfig,
 ):
+    """Test enqueue_new_downloads when no upcoming downloads exist and no new downloads are found."""
     mock_db_manager.get_downloads_by_status.return_value = []  # No upcoming
     mock_ytdlp_wrapper.fetch_metadata.return_value = []  # No new downloads
 

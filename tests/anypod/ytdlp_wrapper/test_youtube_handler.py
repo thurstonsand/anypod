@@ -1,3 +1,5 @@
+"""Tests for the YoutubeHandler and related YouTube-specific functionality."""
+
 from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import MagicMock, patch

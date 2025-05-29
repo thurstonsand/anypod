@@ -1,3 +1,10 @@
+"""High-level wrapper for yt-dlp operations.
+
+This module provides the YtdlpWrapper class that orchestrates yt-dlp operations
+for metadata fetching and media downloading, integrating with source-specific
+handlers for different platforms.
+"""
+
 import logging
 from pathlib import Path
 from typing import Any
@@ -12,7 +19,18 @@ logger = logging.getLogger(__name__)
 
 
 class YtdlpWrapper:
-    """Wrapper around yt-dlp for fetching and parsing metadata and downloading media."""
+    """Wrapper around yt-dlp for fetching and parsing metadata and downloading media.
+
+    Provides high-level methods for metadata extraction and media downloading,
+    integrating with source-specific handlers to support different platforms
+    and URL types.
+
+    Attributes:
+        _source_handler: Source-specific handler for URL processing. For now,
+            only YoutubeHandler is implemented.
+        _app_tmp_dir: Temporary directory for yt-dlp operations.
+        _app_data_dir: Data directory for downloaded files.
+    """
 
     _source_handler: SourceHandlerBase = YoutubeHandler()
 
@@ -234,7 +252,7 @@ class YtdlpWrapper:
         download: Download,
         yt_cli_args: dict[str, Any],
     ) -> Path:
-        """Downloads the media for a given Download to a target directory.
+        """Download the media for a given Download to a target directory.
 
         yt-dlp will place the final file in a feed-specific subdirectory within
         the application's configured data directory.

@@ -1,3 +1,10 @@
+"""File system management for Anypod downloads.
+
+This module provides the FileManager class for managing download files
+on the filesystem, including file deletion, existence checks, and stream access
+operations. Notably does not handle file creation, as that is done by yt-dlp.
+"""
+
 import logging
 from pathlib import Path
 from typing import IO
@@ -8,9 +15,14 @@ logger = logging.getLogger(__name__)
 
 
 class FileManager:
-    """Manages download files on the filesystem.
+    """Manage download files on the filesystem.
 
-    This class provides an abstraction layer for file operations.
+    This class provides an abstraction layer for file operations,
+    handling the organization and management of downloaded media files
+    in feed-specific subdirectories.
+
+    Attributes:
+        base_download_path: The root path where all download files are stored.
     """
 
     def __init__(self, base_download_path: Path):

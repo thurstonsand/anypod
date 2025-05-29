@@ -25,12 +25,17 @@ logger = logging.getLogger(__name__)
 
 
 class Downloader:
-    """Orchestrates the download process for media items.
+    """Orchestrate the download process for media items.
 
     The Downloader retrieves queued download items, manages the download process
     using YtdlpWrapper, handles file system operations via FileManager (including
     temporary file management and moving to final storage), and updates the
     database via DatabaseManager upon success or failure.
+
+    Attributes:
+        db_manager: Database manager for download record operations.
+        file_manager: File manager for file system operations.
+        ytdlp_wrapper: Wrapper for yt-dlp media download operations.
     """
 
     def __init__(
@@ -157,7 +162,7 @@ class Downloader:
         feed_config: FeedConfig,
         limit: int = -1,
     ) -> tuple[int, int]:
-        """Process and download media items in 'queued' status for a specific feed.
+        """Process and download media items in 'queued' status for a feed.
 
         Retrieves 'queued' Download objects from the database. For each item:
         1. It attempts to download the media content using yt-dlp,
