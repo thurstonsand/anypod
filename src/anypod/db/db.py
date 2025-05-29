@@ -609,7 +609,7 @@ class DatabaseManager:
         """Identify downloads to prune based on 'keep_last' rule.
 
         Returns downloads that exceed the keep_last limit, excluding
-        downloads with status ARCHIVED or UPCOMING.
+        downloads with status ARCHIVED or SKIPPED.
 
         Args:
             feed: The feed identifier.
@@ -634,11 +634,11 @@ class DatabaseManager:
         try:
             rows = self._db.rows_where(
                 self._download_table_name,
-                "feed = :feed AND status NOT IN (:archived, :upcoming)",
+                "feed = :feed AND status NOT IN (:archived, :skipped)",
                 where_args={
                     "feed": feed,
                     "archived": str(DownloadStatus.ARCHIVED),
-                    "upcoming": str(DownloadStatus.UPCOMING),
+                    "skipped": str(DownloadStatus.SKIPPED),
                 },
                 order_by="published DESC",
                 limit=-1,
@@ -655,7 +655,7 @@ class DatabaseManager:
         """Identify downloads published before the 'since' datetime (UTC).
 
         Returns downloads published before the given datetime, excluding
-        downloads with status ARCHIVED or UPCOMING. The 'since' parameter
+        downloads with status ARCHIVED or SKIPPED. The 'since' parameter
         must be a timezone-aware datetime object in UTC.
 
         Args:
@@ -676,12 +676,12 @@ class DatabaseManager:
         try:
             rows = self._db.rows_where(
                 self._download_table_name,
-                "feed = :feed AND published < :since AND status NOT IN (:archived, :upcoming)",
+                "feed = :feed AND published < :since AND status NOT IN (:archived, :skipped)",
                 where_args={
                     "feed": feed,
                     "since": since,
                     "archived": str(DownloadStatus.ARCHIVED),
-                    "upcoming": str(DownloadStatus.UPCOMING),
+                    "skipped": str(DownloadStatus.SKIPPED),
                 },
                 order_by="published ASC",
             )

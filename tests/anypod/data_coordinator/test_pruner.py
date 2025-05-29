@@ -77,6 +77,36 @@ def sample_queued_item() -> Download:
     )
 
 
+@pytest.fixture
+def sample_upcoming_item() -> Download:
+    """Provides a sample Download object with UPCOMING status."""
+    return Download(
+        feed="test_feed",
+        id="test_dl_id_3",
+        source_url="http://example.com/video3",
+        title="Test Video 3",
+        published=datetime.datetime(2023, 1, 3, 12, 0, 0, tzinfo=datetime.UTC),
+        ext="mp4",
+        duration=200.0,
+        status=DownloadStatus.UPCOMING,
+    )
+
+
+@pytest.fixture
+def sample_skipped_item() -> Download:
+    """Provides a sample Download object with SKIPPED status."""
+    return Download(
+        feed="test_feed",
+        id="test_dl_id_4",
+        source_url="http://example.com/video4",
+        title="Test Video 4",
+        published=datetime.datetime(2023, 1, 4, 12, 0, 0, tzinfo=datetime.UTC),
+        ext="mp4",
+        duration=220.0,
+        status=DownloadStatus.SKIPPED,
+    )
+
+
 # --- Tests for _identify_prune_candidates ---
 
 
@@ -340,6 +370,25 @@ def test_process_single_download_non_downloaded_no_file_deletion(
     mock_file_manager.delete_download_file.assert_not_called()
     mock_db_manager.archive_download.assert_called_once_with(
         "test_feed", sample_queued_item.id
+    )
+
+
+@pytest.mark.unit
+def test_process_single_download_upcoming_no_file_deletion(
+    pruner: Pruner,
+    mock_db_manager: MagicMock,
+    mock_file_manager: MagicMock,
+    sample_upcoming_item: Download,
+):
+    """Tests _process_single_download_for_pruning skips file deletion for UPCOMING items but archives them."""
+    result = pruner._process_single_download_for_pruning(
+        sample_upcoming_item, "test_feed"
+    )
+
+    assert result is False
+    mock_file_manager.delete_download_file.assert_not_called()
+    mock_db_manager.archive_download.assert_called_once_with(
+        "test_feed", sample_upcoming_item.id
     )
 
 

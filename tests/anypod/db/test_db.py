@@ -470,6 +470,16 @@ def test_get_downloads_to_prune_by_keep_last(db_manager: DatabaseManager):
         ext="mp4",
         duration=1,
     )
+    dl_f1v7_skipped = Download(
+        feed=feed1_name,
+        id="f1v7_skipped",
+        published=base_time - datetime.timedelta(days=7),  # Very old
+        status=DownloadStatus.SKIPPED,
+        source_url="url",
+        title="t7_skipped",
+        ext="mp4",
+        duration=1,
+    )
 
     # download for another feed, should be ignored
     dl_f2v1_dl = Download(
@@ -490,34 +500,38 @@ def test_get_downloads_to_prune_by_keep_last(db_manager: DatabaseManager):
         dl_f1v4_dl_newest,
         dl_f1v5_arch,
         dl_f2v1_dl,
-        dl_f1v6_upcoming_older,  # Add to list
+        dl_f1v6_upcoming_older,
+        dl_f1v7_skipped,
     ]
     for dl in downloads_to_add:
         db_manager.upsert_download(dl)
 
     # Keep 2: f1v4_dl_newest (kept), f1v3_q_mid2 (kept)
-    # Pruned: f1v2_err_mid1, f1v1_dl_oldest
-    # Ignored from pruning: f1v5_arch, f1v6_upcoming_older
+    # Pruned: f1v2_err_mid1, f1v1_dl_oldest, f1v6_upcoming_older
+    # Ignored from pruning: f1v5_arch, f1v7_skipped
     prune_keep2 = db_manager.get_downloads_to_prune_by_keep_last(
         feed=feed1_name, keep_last=2
     )
-    assert len(prune_keep2) == 2, (
-        "Should identify 2 downloads to prune (f1v1_dl_oldest, f1v2_err_mid1)"
+    assert len(prune_keep2) == 3, (
+        "Should identify 3 downloads to prune (f1v1_dl_oldest, f1v2_err_mid1, f1v6_upcoming_older)"
     )
     pruned_ids_keep2 = sorted([row.id for row in prune_keep2])
-    assert "f1v6_upcoming_older" not in pruned_ids_keep2, (
-        "UPCOMING download f1v6_upcoming_older should NOT be in the prune list"
+    assert "f1v7_skipped" not in pruned_ids_keep2, (
+        "SKIPPED download f1v7_skipped should NOT be in the prune list"
     )
-    assert sorted(["f1v1_dl_oldest", "f1v2_err_mid1"]) == pruned_ids_keep2
+    assert (
+        sorted(["f1v1_dl_oldest", "f1v2_err_mid1", "f1v6_upcoming_older"])
+        == pruned_ids_keep2
+    )
 
-    # Keep 5: All non-ARCHIVED and non-UPCOMING downloads are kept
-    # (f1v4_dl_newest, f1v3_q_mid2, f1v2_err_mid1, f1v1_dl_oldest)
-    # There are 4 such downloads. f1v5_arch and f1v6_upcoming_older are ignored.
+    # Keep 5: All non-ARCHIVED and non-SKIPPED downloads are kept
+    # (f1v4_dl_newest, f1v3_q_mid2, f1v2_err_mid1, f1v1_dl_oldest, f1v6_upcoming_older)
+    # There are 5 such downloads. f1v5_arch and f1v7_skipped are ignored.
     prune_keep5 = db_manager.get_downloads_to_prune_by_keep_last(
         feed=feed1_name, keep_last=5
     )
     assert len(prune_keep5) == 0, (
-        "Should identify 0 if keep_last >= total non-ARCHIVED/non-UPCOMING downloads for feed"
+        "Should identify 0 if keep_last >= total non-ARCHIVED/non-SKIPPED downloads for feed"
     )
 
     prune_keep0 = db_manager.get_downloads_to_prune_by_keep_last(
@@ -582,6 +596,16 @@ def test_get_downloads_to_prune_by_since(db_manager: DatabaseManager):
         ext="mp4",
         duration=1,
     )
+    dl_ps_v6_skipped_ancient = Download(
+        feed=feed_id,
+        id="ps_v6_skipped_ancient",
+        published=base_time - datetime.timedelta(days=12),  # Much older than cutoff
+        status=DownloadStatus.SKIPPED,
+        source_url="url",
+        title="t6_skipped",
+        ext="mp4",
+        duration=1,
+    )
 
     # download for another feed
     dl_other_v1_older_dl = Download(
@@ -600,47 +624,51 @@ def test_get_downloads_to_prune_by_since(db_manager: DatabaseManager):
         dl_ps_v2_mid_err,
         dl_ps_v3_newer_q,
         dl_ps_v4_arch,
-        dl_ps_v5_upcoming_ancient,  # Add to list
+        dl_ps_v5_upcoming_ancient,
+        dl_ps_v6_skipped_ancient,
         dl_other_v1_older_dl,
     ]
     for dl in downloads_to_add:
         db_manager.upsert_download(dl)
 
     # Prune downloads older than 'base_time - 3 days' for feed_id
-    # Candidates for pruning (ignoring ARCHIVED and UPCOMING):
+    # Candidates for pruning (ignoring ARCHIVED and SKIPPED):
     # - ps_v1_older_dl (day -5) -> YES
     # - ps_v2_mid_err (day -2) -> NO (not older than day -3)
     # - ps_v3_newer_q (day +1) -> NO
     # - ps_v4_arch (day 0) -> NO (archived)
-    # - ps_v5_upcoming_ancient (day -10) -> NO (upcoming, due to db.py change)
+    # - ps_v5_upcoming_ancient (day -10) -> YES
+    # - ps_v6_skipped_ancient (day -12) -> NO
     since_cutoff_1 = base_time - datetime.timedelta(days=3)
     pruned_1 = db_manager.get_downloads_to_prune_by_since(
         feed=feed_id, since=since_cutoff_1
     )
-    assert len(pruned_1) == 1
-    assert pruned_1[0].id == "ps_v1_older_dl"
-    # Verify that ps_v5_upcoming_ancient was not pruned
-    pruned_ids_1 = [row.id for row in pruned_1]
-    assert "ps_v5_upcoming_ancient" not in pruned_ids_1, (
-        "UPCOMING download should not be pruned by since_cutoff_1"
+    assert len(pruned_1) == 2
+    pruned_ids_1 = sorted([row.id for row in pruned_1])
+    assert pruned_ids_1 == sorted(["ps_v1_older_dl", "ps_v5_upcoming_ancient"])
+    assert "ps_v6_skipped_ancient" not in pruned_ids_1, (
+        "SKIPPED download should not be pruned by since_cutoff_1"
     )
 
     # Prune downloads older than 'base_time + 2 days' for feed_id
-    # Candidates for pruning (ignoring ARCHIVED and UPCOMING):
+    # Candidates for pruning (ignoring ARCHIVED and SKIPPED):
     # - ps_v1_older_dl (day -5) -> YES
     # - ps_v2_mid_err (day -2) -> YES
     # - ps_v3_newer_q (day +1) -> YES
     # - ps_v4_arch (day 0) -> NO (archived)
-    # - ps_v5_upcoming_ancient (day -10) -> NO (upcoming, due to db.py change)
+    # - ps_v5_upcoming_ancient (day -10) -> YES
+    # - ps_v6_skipped_ancient (day -12) -> NO
     since_cutoff_2 = base_time + datetime.timedelta(days=2)
     pruned_2 = db_manager.get_downloads_to_prune_by_since(
         feed=feed_id, since=since_cutoff_2
     )
     pruned_ids_2 = sorted([row.id for row in pruned_2])
-    assert len(pruned_2) == 3
-    assert pruned_ids_2 == sorted(["ps_v1_older_dl", "ps_v2_mid_err", "ps_v3_newer_q"])
-    assert "ps_v5_upcoming_ancient" not in pruned_ids_2, (
-        "UPCOMING download should not be pruned by since_cutoff_2"
+    assert len(pruned_2) == 4
+    assert pruned_ids_2 == sorted(
+        ["ps_v1_older_dl", "ps_v2_mid_err", "ps_v3_newer_q", "ps_v5_upcoming_ancient"]
+    )
+    assert "ps_v6_skipped_ancient" not in pruned_ids_2, (
+        "SKIPPED download should not be pruned by since_cutoff_2"
     )
 
 
