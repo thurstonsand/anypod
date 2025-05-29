@@ -223,11 +223,7 @@ class Downloader:
                 self._process_single_download(download, feed_config)
                 success_count += 1
             except DownloadError as e:
-                logger.error(
-                    "Failed to process download.",
-                    exc_info=e,
-                    extra=log_params,
-                )
+                self._handle_download_failure(download, feed_config, e)
                 failure_count += 1
 
         logger.info(
