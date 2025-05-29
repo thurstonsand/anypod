@@ -1,3 +1,5 @@
+# pyright: reportPrivateUsage=false
+
 """Tests for the FileManager class and its file handling operations."""
 
 from pathlib import Path

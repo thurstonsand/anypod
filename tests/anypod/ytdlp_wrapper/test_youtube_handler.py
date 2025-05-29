@@ -1,3 +1,5 @@
+# pyright: reportPrivateUsage=false
+
 """Tests for the YoutubeHandler and related YouTube-specific functionality."""
 
 from datetime import UTC, datetime
@@ -69,7 +71,7 @@ def test_parse_single_video_entry_success_basic(
     youtube_handler: YoutubeHandler, valid_video_entry: YoutubeEntry
 ):
     """Tests successful parsing of a basic, valid video entry."""
-    download = youtube_handler._parse_single_video_entry(valid_video_entry, FEED_ID)  # type: ignore
+    download = youtube_handler._parse_single_video_entry(valid_video_entry, FEED_ID)
 
     assert isinstance(download, Download)
     assert download.id == valid_video_entry.download_id
@@ -89,13 +91,13 @@ def test_parse_single_video_entry_success_with_upload_date(
     valid_video_entry: YoutubeEntry,
 ):
     """Tests successful parsing when 'timestamp' is missing but 'upload_date' is present."""
-    del valid_video_entry._ytdlp_info._info_dict["timestamp"]  # type: ignore
+    del valid_video_entry._ytdlp_info._info_dict["timestamp"]
     expected_published = datetime(2023, 3, 15, 0, 0, 0, tzinfo=UTC)
-    valid_video_entry._ytdlp_info._info_dict["upload_date"] = (  # type: ignore
+    valid_video_entry._ytdlp_info._info_dict["upload_date"] = (
         expected_published.strftime("%Y%m%d")
     )
 
-    download = youtube_handler._parse_single_video_entry(valid_video_entry, FEED_ID)  # type: ignore
+    download = youtube_handler._parse_single_video_entry(valid_video_entry, FEED_ID)
 
     assert download.published == expected_published
 
@@ -106,13 +108,13 @@ def test_parse_single_video_entry_success_with_release_timestamp(
     valid_video_entry: YoutubeEntry,
 ):
     """Tests successful parsing when only 'release_timestamp' is present."""
-    del valid_video_entry._ytdlp_info._info_dict["timestamp"]  # type: ignore
+    del valid_video_entry._ytdlp_info._info_dict["timestamp"]
     expected_published = datetime(2023, 3, 15, 12, 0, 0, tzinfo=UTC)
-    valid_video_entry._ytdlp_info._info_dict["release_timestamp"] = (  # type: ignore
+    valid_video_entry._ytdlp_info._info_dict["release_timestamp"] = (
         expected_published.timestamp()
     )
 
-    download = youtube_handler._parse_single_video_entry(valid_video_entry, FEED_ID)  # type: ignore
+    download = youtube_handler._parse_single_video_entry(valid_video_entry, FEED_ID)
 
     assert download.published == expected_published
 
@@ -123,10 +125,10 @@ def test_parse_single_video_entry_live_upcoming_video(
     valid_video_entry: YoutubeEntry,
 ):
     """Tests parsing for a live/upcoming video."""
-    valid_video_entry._ytdlp_info._info_dict["is_live"] = True  # type: ignore
-    valid_video_entry._ytdlp_info._info_dict["live_status"] = "is_upcoming"  # type: ignore
+    valid_video_entry._ytdlp_info._info_dict["is_live"] = True
+    valid_video_entry._ytdlp_info._info_dict["live_status"] = "is_upcoming"
 
-    download = youtube_handler._parse_single_video_entry(valid_video_entry, FEED_ID)  # type: ignore
+    download = youtube_handler._parse_single_video_entry(valid_video_entry, FEED_ID)
 
     assert download.status == DownloadStatus.UPCOMING
     assert download.ext == "live"
@@ -145,19 +147,19 @@ def test_parse_single_video_entry_source_url_priority(
     # Case 1: webpage_url present
     entry1_data = {**entry_base_data, "webpage_url": "https://webpage.url"}
     yt_entry1 = YoutubeEntry(YtdlpInfo(entry1_data), FEED_ID)
-    download1 = youtube_handler._parse_single_video_entry(yt_entry1, FEED_ID)  # type: ignore
+    download1 = youtube_handler._parse_single_video_entry(yt_entry1, FEED_ID)
     assert download1.source_url == "https://webpage.url"
 
     # Case 2: original_url present, webpage_url missing
     entry2_data = {**entry_base_data, "original_url": "https://original.url"}
     yt_entry2 = YoutubeEntry(YtdlpInfo(entry2_data), FEED_ID)
-    download2 = youtube_handler._parse_single_video_entry(yt_entry2, FEED_ID)  # type: ignore
+    download2 = youtube_handler._parse_single_video_entry(yt_entry2, FEED_ID)
     assert download2.source_url == "https://original.url"
 
     # Case 3: Both missing, defaults to youtube watch URL
     entry3_data = entry_base_data.copy()
     yt_entry3 = YoutubeEntry(YtdlpInfo(entry3_data), FEED_ID)
-    download3 = youtube_handler._parse_single_video_entry(yt_entry3, FEED_ID)  # type: ignore
+    download3 = youtube_handler._parse_single_video_entry(yt_entry3, FEED_ID)
     assert (
         download3.source_url == f"https://www.youtube.com/watch?v={entry3_data['id']}"
     )
@@ -168,10 +170,10 @@ def test_parse_single_video_entry_duration_as_int(
     youtube_handler: YoutubeHandler, valid_video_entry: YoutubeEntry
 ):
     """Tests parsing when duration is an integer."""
-    valid_video_entry._ytdlp_info._info_dict["duration"] = 120  # type: ignore
-    download = youtube_handler._parse_single_video_entry(valid_video_entry, FEED_ID)  # type: ignore
+    valid_video_entry._ytdlp_info._info_dict["duration"] = 120
+    download = youtube_handler._parse_single_video_entry(valid_video_entry, FEED_ID)
     assert download.duration == float(
-        valid_video_entry._ytdlp_info._info_dict["duration"]  # type: ignore
+        valid_video_entry._ytdlp_info._info_dict["duration"]
     )
 
 
@@ -194,10 +196,10 @@ def test_parse_single_video_entry_error_video_filtered_out(
     valid_video_entry: YoutubeEntry,
 ):
     """Tests YtdlpYoutubeVideoFilteredOutError when video is filtered out (no ext/url/format_id)."""
-    del valid_video_entry._ytdlp_info._info_dict["ext"]  # type: ignore
+    del valid_video_entry._ytdlp_info._info_dict["ext"]
 
     with pytest.raises(YtdlpYoutubeVideoFilteredOutError) as e:
-        youtube_handler._parse_single_video_entry(valid_video_entry, FEED_ID)  # type: ignore
+        youtube_handler._parse_single_video_entry(valid_video_entry, FEED_ID)
     assert e.value.feed_id == FEED_ID
     assert e.value.download_id == valid_video_entry.download_id
 
@@ -214,10 +216,10 @@ def test_parse_single_video_entry_error_invalid_title(
 ):
     """Tests YtdlpYoutubeDataError for missing or invalid titles."""
     entry_id = valid_video_entry.download_id
-    valid_video_entry._ytdlp_info._info_dict["title"] = bad_title  # type: ignore
+    valid_video_entry._ytdlp_info._info_dict["title"] = bad_title
 
     with pytest.raises(YtdlpYoutubeDataError) as e:
-        youtube_handler._parse_single_video_entry(valid_video_entry, FEED_ID)  # type: ignore
+        youtube_handler._parse_single_video_entry(valid_video_entry, FEED_ID)
 
     if bad_title is None:
         assert "Failed to parse YouTube entry." in str(e.value)
@@ -232,10 +234,10 @@ def test_parse_single_video_entry_error_missing_all_dts(
     valid_video_entry: YoutubeEntry,
 ):
     """Tests YtdlpYoutubeDataError when all date/timestamp fields are missing."""
-    del valid_video_entry._ytdlp_info._info_dict["timestamp"]  # type: ignore
+    del valid_video_entry._ytdlp_info._info_dict["timestamp"]
 
     with pytest.raises(YtdlpYoutubeDataError) as e:
-        youtube_handler._parse_single_video_entry(valid_video_entry, FEED_ID)  # type: ignore
+        youtube_handler._parse_single_video_entry(valid_video_entry, FEED_ID)
     assert "Missing published datetime" in str(e.value)
 
 
@@ -257,11 +259,11 @@ def test_parse_single_video_entry_error_invalid_date_formats_for_dts(
     valid_video_entry: YoutubeEntry,
 ):
     """Tests YtdlpYoutubeDataError for various invalid date/timestamp formats."""
-    del valid_video_entry._ytdlp_info._info_dict["timestamp"]  # type: ignore
-    valid_video_entry._ytdlp_info._info_dict[key] = bad_value  # type: ignore
+    del valid_video_entry._ytdlp_info._info_dict["timestamp"]
+    valid_video_entry._ytdlp_info._info_dict[key] = bad_value
 
     with pytest.raises(YtdlpYoutubeDataError) as e:
-        youtube_handler._parse_single_video_entry(valid_video_entry, FEED_ID)  # type: ignore
+        youtube_handler._parse_single_video_entry(valid_video_entry, FEED_ID)
     assert expected_msg_part in str(e.value)
     assert e.value.download_id == valid_video_entry.download_id
 
@@ -272,14 +274,14 @@ def test_parse_single_video_entry_error_missing_extension(
     valid_video_entry: YoutubeEntry,
 ):
     """Tests YtdlpYoutubeDataError if 'ext' is missing for a non-live video."""
-    del valid_video_entry._ytdlp_info._info_dict["ext"]  # type: ignore
+    del valid_video_entry._ytdlp_info._info_dict["ext"]
     # To avoid YtdlpYoutubeVideoFilteredOutError, ensure one of original_url or format_id exists
-    valid_video_entry._ytdlp_info._info_dict["original_url"] = (  # type: ignore
+    valid_video_entry._ytdlp_info._info_dict["original_url"] = (
         "http://example.com/original"
     )
 
     with pytest.raises(YtdlpYoutubeDataError) as e:
-        youtube_handler._parse_single_video_entry(valid_video_entry, FEED_ID)  # type: ignore
+        youtube_handler._parse_single_video_entry(valid_video_entry, FEED_ID)
     assert "Missing extension" in str(e.value)
 
 
@@ -300,10 +302,10 @@ def test_parse_single_video_entry_error_invalid_duration(
     valid_video_entry: YoutubeEntry,
 ):
     """Tests YtdlpYoutubeDataError for invalid or unparsable duration values."""
-    valid_video_entry._ytdlp_info._info_dict["duration"] = bad_duration  # type: ignore
+    valid_video_entry._ytdlp_info._info_dict["duration"] = bad_duration
 
     with pytest.raises(YtdlpYoutubeDataError) as e:
-        youtube_handler._parse_single_video_entry(valid_video_entry, FEED_ID)  # type: ignore
+        youtube_handler._parse_single_video_entry(valid_video_entry, FEED_ID)
     assert expected_msg_part in str(e.value)
 
 

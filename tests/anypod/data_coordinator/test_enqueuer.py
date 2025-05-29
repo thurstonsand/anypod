@@ -1,3 +1,5 @@
+# pyright: reportPrivateUsage=false
+
 """Tests for the Enqueuer service and its download queue management."""
 
 from datetime import UTC, datetime, timedelta
@@ -119,7 +121,7 @@ def test_handle_existing_upcoming_downloads_none_found(
     """Test _handle_existing_upcoming_downloads when no upcoming downloads are in DB."""
     mock_db_manager.get_downloads_by_status.return_value = []
 
-    count = enqueuer._handle_existing_upcoming_downloads(FEED_ID, sample_feed_config)  # type: ignore
+    count = enqueuer._handle_existing_upcoming_downloads(FEED_ID, sample_feed_config)
     assert count == 0
     mock_db_manager.get_downloads_by_status.assert_called_once_with(
         DownloadStatus.UPCOMING, feed=FEED_ID
@@ -140,7 +142,7 @@ def test_handle_existing_upcoming_download_transitions_to_queued(
     mock_db_manager.get_downloads_by_status.return_value = [upcoming_dl]
     mock_ytdlp_wrapper.fetch_metadata.return_value = [refetched_vod_dl]
 
-    count = enqueuer._handle_existing_upcoming_downloads(FEED_ID, sample_feed_config)  # type: ignore
+    count = enqueuer._handle_existing_upcoming_downloads(FEED_ID, sample_feed_config)
 
     assert count == 1
     mock_ytdlp_wrapper.fetch_metadata.assert_called_once_with(
@@ -166,7 +168,7 @@ def test_handle_existing_upcoming_download_remains_upcoming(
     mock_db_manager.get_downloads_by_status.return_value = [upcoming_dl]
     mock_ytdlp_wrapper.fetch_metadata.return_value = [refetched_upcoming_dl]
 
-    count = enqueuer._handle_existing_upcoming_downloads(FEED_ID, sample_feed_config)  # type: ignore
+    count = enqueuer._handle_existing_upcoming_downloads(FEED_ID, sample_feed_config)
 
     assert count == 0
     mock_ytdlp_wrapper.fetch_metadata.assert_called_once_with(
@@ -192,7 +194,7 @@ def test_handle_existing_upcoming_download_refetch_fails_bumps_retries(
     # Simulate bump_retries not transitioning to ERROR
     mock_db_manager.bump_retries.return_value = (1, DownloadStatus.UPCOMING, False)
 
-    count = enqueuer._handle_existing_upcoming_downloads(FEED_ID, sample_feed_config)  # type: ignore
+    count = enqueuer._handle_existing_upcoming_downloads(FEED_ID, sample_feed_config)
 
     assert count == 0
     mock_db_manager.bump_retries.assert_called_once_with(
@@ -227,7 +229,7 @@ def test_handle_existing_upcoming_download_refetch_fails_transitions_to_error(
         True,
     )
 
-    count = enqueuer._handle_existing_upcoming_downloads(FEED_ID, sample_feed_config)  # type: ignore
+    count = enqueuer._handle_existing_upcoming_downloads(FEED_ID, sample_feed_config)
 
     assert count == 0
     mock_db_manager.bump_retries.assert_called_once_with(
@@ -256,7 +258,7 @@ def test_handle_existing_upcoming_download_refetch_returns_no_match(
     ]
     mock_db_manager.bump_retries.return_value = (1, DownloadStatus.UPCOMING, False)
 
-    count = enqueuer._handle_existing_upcoming_downloads(FEED_ID, sample_feed_config)  # type: ignore
+    count = enqueuer._handle_existing_upcoming_downloads(FEED_ID, sample_feed_config)
 
     assert count == 0
     mock_db_manager.bump_retries.assert_called_once_with(
@@ -277,7 +279,7 @@ def test_fetch_and_process_new_feed_downloads_no_new_downloads(
     """Test _fetch_and_process_new_feed_downloads when no new downloads are fetched."""
     mock_ytdlp_wrapper.fetch_metadata.return_value = []
 
-    count = enqueuer._fetch_and_process_new_feed_downloads(  # type: ignore
+    count = enqueuer._fetch_and_process_new_feed_downloads(
         FEED_ID, sample_feed_config, FETCH_SINCE_DATE
     )
     assert count == 0
@@ -307,7 +309,7 @@ def test_fetch_and_process_new_feed_downloads_new_vod_download(
         message="Not found", feed_id=FEED_ID, download_id="new_video1"
     )
 
-    count = enqueuer._fetch_and_process_new_feed_downloads(  # type: ignore
+    count = enqueuer._fetch_and_process_new_feed_downloads(
         FEED_ID, sample_feed_config, FETCH_SINCE_DATE
     )
 
@@ -330,7 +332,7 @@ def test_fetch_and_process_new_feed_downloads_new_upcoming_download(
         message="Not found", feed_id=FEED_ID, download_id="new_video_live"
     )
 
-    count = enqueuer._fetch_and_process_new_feed_downloads(  # type: ignore
+    count = enqueuer._fetch_and_process_new_feed_downloads(
         FEED_ID, sample_feed_config, FETCH_SINCE_DATE
     )
 
@@ -355,7 +357,7 @@ def test_fetch_and_process_new_feed_downloads_existing_upcoming_now_vod(
     mock_ytdlp_wrapper.fetch_metadata.return_value = [fetched_as_vod]
     mock_db_manager.get_download_by_id.return_value = existing_upcoming_in_db
 
-    count = enqueuer._fetch_and_process_new_feed_downloads(  # type: ignore
+    count = enqueuer._fetch_and_process_new_feed_downloads(
         FEED_ID, sample_feed_config, FETCH_SINCE_DATE
     )
 
@@ -381,7 +383,7 @@ def test_fetch_and_process_new_feed_downloads_existing_downloaded_requeued(
     mock_ytdlp_wrapper.fetch_metadata.return_value = [fetched_again_as_queued]
     mock_db_manager.get_download_by_id.return_value = existing_downloaded_in_db
 
-    count = enqueuer._fetch_and_process_new_feed_downloads(  # type: ignore
+    count = enqueuer._fetch_and_process_new_feed_downloads(
         FEED_ID, sample_feed_config, FETCH_SINCE_DATE
     )
 
@@ -405,7 +407,7 @@ def test_fetch_and_process_new_feed_downloads_existing_error_requeued(
     mock_ytdlp_wrapper.fetch_metadata.return_value = [fetched_as_queued]
     mock_db_manager.get_download_by_id.return_value = existing_error_in_db
 
-    count = enqueuer._fetch_and_process_new_feed_downloads(  # type: ignore
+    count = enqueuer._fetch_and_process_new_feed_downloads(
         FEED_ID, sample_feed_config, FETCH_SINCE_DATE
     )
 

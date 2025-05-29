@@ -1,3 +1,5 @@
+# pyright: reportPrivateUsage=false
+
 """Integration tests for YtdlpWrapper with real YouTube URLs and yt-dlp operations."""
 
 from collections.abc import Generator

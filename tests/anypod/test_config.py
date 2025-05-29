@@ -1,3 +1,5 @@
+# pyright: reportPrivateUsage=false
+
 """Tests for the configuration loading and validation functionality."""
 
 # tests/test_config.py

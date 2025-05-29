@@ -87,6 +87,7 @@ tests/
 - Document test requirements
 - Annotate all tests with a pytest marker for either "Unit" or "Integration"
 - Execute tests with `uv run pytest`
+- Add `# pyright: reportPrivateUsage=false` to the top of test files in order to access protected methods
 
 ## Test Data
 - Use factories for test data

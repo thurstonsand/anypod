@@ -1,3 +1,5 @@
+# pyright: reportPrivateUsage=false
+
 """Tests for the Downloader service.
 
 This module contains unit tests for the Downloader class, which is responsible
@@ -17,7 +19,7 @@ from anypod.data_coordinator.downloader import Downloader
 from anypod.db import DatabaseManager, Download, DownloadStatus
 from anypod.exceptions import (
     DatabaseOperationError,
-    DownloaderError,
+    DownloadError,
     YtdlpApiError,
 )
 from anypod.file_manager import FileManager
@@ -74,7 +76,7 @@ def sample_feed_config() -> FeedConfig:
     """Provides a sample FeedConfig object."""
     return FeedConfig(
         url="http://example.com/feed_url",
-        yt_args="--format best",  # type: ignore # this will be parsed into a dict
+        yt_args="--format best",  # type: ignore # this gets preprocessed into a dict
         schedule="0 0 * * *",
         keep_last=10,
         since=None,
@@ -96,7 +98,7 @@ def test_handle_download_success_updates_db(
     """Tests that _handle_download_success calls mark_as_downloaded on DB manager."""
     downloaded_file = Path("/path/to/downloaded_video.mp4")
 
-    downloader._handle_download_success(sample_download, downloaded_file)  # type: ignore
+    downloader._handle_download_success(sample_download, downloaded_file)
 
     mock_db_manager.mark_as_downloaded.assert_called_once_with(
         feed=sample_download.feed,
@@ -114,13 +116,13 @@ def test_handle_download_success_db_update_fails_raises_downloader_error(
     mock_db_manager: MagicMock,
     sample_download: Download,
 ):
-    """Tests that DB operation failure in _handle_download_success raises DownloaderError."""
+    """Tests that DB operation failure in _handle_download_success raises DownloadError."""
     downloaded_file = Path("/path/to/downloaded_video.mp4")
     db_error = DatabaseOperationError("DB boom")
     mock_db_manager.mark_as_downloaded.side_effect = db_error
 
-    with pytest.raises(DownloaderError) as exc_info:
-        downloader._handle_download_success(sample_download, downloaded_file)  # type: ignore
+    with pytest.raises(DownloadError) as exc_info:
+        downloader._handle_download_success(sample_download, downloaded_file)
 
     assert exc_info.value.__cause__ is db_error
     assert exc_info.value.feed_id == sample_download.feed
@@ -139,7 +141,7 @@ def test_handle_download_failure_bumps_retries(
 ):
     """Tests that _handle_download_failure calls bump_retries on DB manager."""
     error = ValueError("Download exploded")
-    downloader._handle_download_failure(sample_download, sample_feed_config, error)  # type: ignore
+    downloader._handle_download_failure(sample_download, sample_feed_config, error)
 
     mock_db_manager.bump_retries.assert_called_once_with(
         feed_id=sample_download.feed,
@@ -163,7 +165,7 @@ def test_handle_download_failure_db_error_logged(
     )
 
     try:
-        downloader._handle_download_failure(sample_download, sample_feed_config, error)  # type: ignore
+        downloader._handle_download_failure(sample_download, sample_feed_config, error)
     except Exception as e:
         pytest.fail(
             f"_handle_download_failure should not raise an exception, but got: {e}"
@@ -186,7 +188,7 @@ def test_process_single_download_success_flow(
     downloaded_path = Path("/final/video.mp4")
     mock_ytdlp_wrapper.download_media_to_file.return_value = downloaded_path
 
-    downloader._process_single_download(sample_download, sample_feed_config)  # type: ignore
+    downloader._process_single_download(sample_download, sample_feed_config)
 
     mock_ytdlp_wrapper.download_media_to_file.assert_called_once_with(
         sample_download,
@@ -202,14 +204,14 @@ def test_process_single_download_ytdlp_failure_raises_downloader_error(
     sample_download: Download,
     sample_feed_config: FeedConfig,
 ):
-    """Tests that YtdlpApiError during download raises DownloaderError."""
+    """Tests that YtdlpApiError during download raises DownloadError."""
     original_ytdlp_error = YtdlpApiError(
         "yt-dlp failed", feed_id="test_feed", download_id="test_dl_id_1"
     )
     mock_ytdlp_wrapper.download_media_to_file.side_effect = original_ytdlp_error
 
-    with pytest.raises(DownloaderError) as exc_info:
-        downloader._process_single_download(sample_download, sample_feed_config)  # type: ignore
+    with pytest.raises(DownloadError) as exc_info:
+        downloader._process_single_download(sample_download, sample_feed_config)
 
     assert exc_info.value.feed_id == sample_download.feed
     assert exc_info.value.download_id == sample_download.id
@@ -241,11 +243,11 @@ def test_download_queued_no_items_returns_zero_counts(
 def test_download_queued_db_fetch_error_raises_downloader_error(
     downloader: Downloader, mock_db_manager: MagicMock, sample_feed_config: FeedConfig
 ):
-    """Tests that DB error when fetching queued items raises DownloaderError."""
+    """Tests that DB error when fetching queued items raises DownloadError."""
     db_error = DatabaseOperationError("DB fetch failed")
     mock_db_manager.get_downloads_by_status.side_effect = db_error
 
-    with pytest.raises(DownloaderError) as exc_info:
+    with pytest.raises(DownloadError) as exc_info:
         downloader.download_queued("test_feed", sample_feed_config)
 
     assert exc_info.value.feed_id == "test_feed"
@@ -296,8 +298,8 @@ def test_download_queued_processes_items_and_counts_failures(
     queued_items = [sample_download, download2]
     mock_db_manager.get_downloads_by_status.return_value = queued_items
 
-    # Simulate _process_single_download raising DownloaderError for all items
-    mock_process_single.side_effect = DownloaderError("Processing failed")
+    # Simulate _process_single_download raising DownloadError for all items
+    mock_process_single.side_effect = DownloadError("Processing failed")
 
     success, failure = downloader.download_queued("test_feed", sample_feed_config)
 
@@ -331,7 +333,7 @@ def test_download_queued_mixed_success_and_failure(
     # dl1 succeeds, dl2 fails, dl3 succeeds
     mock_process_single.side_effect = [
         None,  # dl1 success
-        DownloaderError("dl2 failed"),  # dl2 failure
+        DownloadError("dl2 failed"),  # dl2 failure
         None,  # dl3 success
     ]
 

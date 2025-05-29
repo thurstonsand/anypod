@@ -1,3 +1,5 @@
+# pyright: reportPrivateUsage=false
+
 """Tests for the YtdlpWrapper class and its yt-dlp integration functionality."""
 
 from datetime import datetime
@@ -29,7 +31,7 @@ def ytdlp_wrapper(
     app_tmp_dir = tmp_path_factory.mktemp("app_tmp")
     app_data_dir = tmp_path_factory.mktemp("app_data")
     wrapper = YtdlpWrapper(app_tmp_dir, app_data_dir)
-    wrapper._source_handler = mock_youtube_handler  # type: ignore
+    wrapper._source_handler = mock_youtube_handler
     return wrapper
 
 
@@ -42,7 +44,7 @@ def test_prepare_ydl_options_discovery_basic(
     purpose = FetchPurpose.DISCOVERY
     source_specific_opts: dict[str, Any] = {}
 
-    prepared_opts = ytdlp_wrapper._prepare_ydl_options(  # type: ignore
+    prepared_opts = ytdlp_wrapper._prepare_ydl_options(
         user_cli_args, purpose, source_specific_opts, None
     )
 
@@ -66,7 +68,7 @@ def test_prepare_ydl_options_metadata_fetch_basic(
     purpose = FetchPurpose.METADATA_FETCH
     source_specific_opts: dict[str, Any] = {}
 
-    prepared_opts = ytdlp_wrapper._prepare_ydl_options(  # type: ignore
+    prepared_opts = ytdlp_wrapper._prepare_ydl_options(
         user_cli_args, purpose, source_specific_opts, None
     )
 
@@ -92,7 +94,7 @@ def test_prepare_ydl_options_media_download(
     mock_target_path = Path("/tmp/downloads/feed_id/video_id.mp4")
     mock_download_id = "video_id"
 
-    prepared_opts = ytdlp_wrapper._prepare_ydl_options(  # type: ignore
+    prepared_opts = ytdlp_wrapper._prepare_ydl_options(
         user_cli_args,
         purpose,
         source_specific_opts,
@@ -123,7 +125,7 @@ def test_prepare_ydl_options_with_user_cli_args_and_source_opts(
         "ignoreerrors": False,
     }
 
-    prepared_opts = ytdlp_wrapper._prepare_ydl_options(  # type: ignore
+    prepared_opts = ytdlp_wrapper._prepare_ydl_options(
         user_cli_args, purpose, source_specific_opts, None
     )
 
@@ -173,8 +175,8 @@ def test_download_media_to_file_success_simplified(
     )
     yt_cli_args: dict[str, Any] = {"format": "bestvideo+bestaudio/best"}
 
-    feed_temp_path = ytdlp_wrapper._app_tmp_dir / feed_id  # type: ignore
-    feed_home_path = ytdlp_wrapper._app_data_dir / feed_id  # type: ignore
+    feed_temp_path = ytdlp_wrapper._app_tmp_dir / feed_id
+    feed_home_path = ytdlp_wrapper._app_data_dir / feed_id
 
     expected_final_file = feed_home_path / f"{download_id}.{dummy_download.ext}"
 

@@ -13,7 +13,7 @@ from pathlib import Path
 from ..config import AppSettings
 from ..data_coordinator.downloader import Downloader
 from ..db import DatabaseManager, Download, DownloadStatus
-from ..exceptions import DatabaseOperationError, DownloaderError
+from ..exceptions import DatabaseOperationError, DownloadError
 from ..file_manager import FileManager
 from ..ytdlp_wrapper import YtdlpWrapper
 
@@ -96,7 +96,7 @@ def run_debug_downloader_mode(
                 f"Successful downloads: {success_count}, Failed downloads: {failure_count}",
                 extra=log_params,
             )
-        except DownloaderError as e:
+        except DownloadError as e:
             logger.error(
                 "Could not process downloads for feed.",
                 extra=log_params,

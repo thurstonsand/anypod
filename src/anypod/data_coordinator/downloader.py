@@ -14,7 +14,7 @@ from ..config import FeedConfig
 from ..db import DatabaseManager, Download, DownloadStatus
 from ..exceptions import (
     DatabaseOperationError,
-    DownloaderError,
+    DownloadError,
     DownloadNotFoundError,
     YtdlpApiError,
 )
@@ -62,7 +62,7 @@ class Downloader:
             downloaded_file_path: Path to the successfully downloaded (temporary) file.
 
         Raises:
-            DownloaderError: If moving the file or updating the database fails.
+            DownloadError: If moving the file or updating the database fails.
         """
         log_params: dict[str, Any] = {
             "feed_id": download.feed,
@@ -79,7 +79,7 @@ class Downloader:
                 filesize=downloaded_file_path.stat().st_size,
             )
         except (DownloadNotFoundError, DatabaseOperationError) as e:
-            raise DownloaderError(
+            raise DownloadError(
                 message="Failed to update database record to DOWNLOADED.",
                 feed_id=download.feed,
                 download_id=download.id,
@@ -133,7 +133,7 @@ class Downloader:
             feed_config: The configuration for the feed.
 
         Raises:
-            DownloaderError: If a step in the download process fails critically
+            DownloadError: If a step in the download process fails critically
                              (e.g., ytdlp error, file move error, DB update error).
         """
         log_params: dict[str, Any] = {
@@ -149,7 +149,7 @@ class Downloader:
             )
             self._handle_download_success(download_to_process, downloaded_file_path)
         except YtdlpApiError as e:
-            raise DownloaderError(
+            raise DownloadError(
                 message="Failed to download media to file.",
                 feed_id=download_to_process.feed,
                 download_id=download_to_process.id,
@@ -184,7 +184,7 @@ class Downloader:
             A tuple (success_count, failure_count).
 
         Raises:
-            DownloaderError: If fetching queued items from the database fails.
+            DownloadError: If fetching queued items from the database fails.
         """
         log_params: dict[str, Any] = {
             "feed_id": feed_id,
@@ -204,7 +204,7 @@ class Downloader:
                 limit,
             )
         except DatabaseOperationError as e:
-            raise DownloaderError(
+            raise DownloadError(
                 message="Failed to fetch queued downloads from database.",
                 feed_id=feed_id,
             ) from e
@@ -222,7 +222,7 @@ class Downloader:
             try:
                 self._process_single_download(download, feed_config)
                 success_count += 1
-            except DownloaderError as e:
+            except DownloadError as e:
                 logger.error(
                     "Failed to process download.",
                     exc_info=e,

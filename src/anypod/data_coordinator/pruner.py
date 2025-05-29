@@ -5,8 +5,9 @@ and removing old downloads according to configured retention rules, including
 file deletion and database record archiving.
 """
 
-import datetime
+from datetime import datetime
 import logging
+from typing import Any
 
 from ..db import DatabaseManager, Download, DownloadStatus
 from ..exceptions import (
@@ -37,55 +38,37 @@ class Pruner:
         self.file_manager = file_manager
         logger.debug("Pruner initialized.")
 
-    def prune_feed_downloads(
+    def _identify_prune_candidates(
         self,
         feed_id: str,
         keep_last: int | None,
-        prune_before_date: datetime.datetime | None,
-    ) -> tuple[list[str], list[str]]:
-        """Prune old downloads for a feed based on retention rules.
+        prune_before_date: datetime | None,
+    ) -> set[Download]:
+        """Identify downloads that are candidates for pruning.
 
-        This method identifies download candidates for pruning based on two criteria:
-        1. keep_last: Retains only the specified number of the most recent DOWNLOADED downloads.
-           Older DOWNLOADED items become candidates for pruning.
-        2. prune_before_date: DOWNLOADED downloads published before this timestamp become candidates.
-
-        The union of downloads identified by both criteria is processed. For each candidate:
-        - If its status is DOWNLOADED, its associated media file is deleted from the filesystem.
-        - The download's database record status is then updated to ARCHIVED.
-
-        Malformed database records encountered during candidate selection are logged and skipped.
+        Combines candidates from both keep_last and prune_before_date rules.
 
         Args:
-            feed_id: The unique identifier of the feed to prune.
-            keep_last: The number of most recent downloaded items to retain. If None, this rule is ignored.
-            prune_before_date: Downloads published before this date are pruned. If None, this rule is ignored.
+            feed_id: The feed identifier.
+            keep_last: Number of most recent downloads to keep (None to ignore).
+            prune_before_date: Downloads published before this date are candidates (None to ignore).
 
         Returns:
-            A tuple containing two lists of strings:
-            - The first list contains the IDs of download records successfully updated to ARCHIVED status.
-            - The second list contains the IDs of downloads whose associated media files were successfully deleted.
+            Set of Download objects that are candidates for pruning.
 
         Raises:
-            DatabaseOperationError: If a database query or update fails during the pruning process
-                                    (e.g., fetching candidates, updating status to ARCHIVED).
-            FileOperationError: If a critical file deletion operation fails for a specific download.
-                                This typically halts pruning for that item but allows others to proceed
-                                if the error is isolated.
+            PruneError: If database operations fail during candidate identification.
         """
-        log_params = {
+        log_params: dict[str, Any] = {
             "feed_id": feed_id,
             "keep_last": keep_last,
             "prune_before_date": (
                 prune_before_date.isoformat() if prune_before_date else None
             ),
         }
-        logger.info("Starting pruning process for feed.", extra=log_params)
+        candidate_downloads: set[Download] = set()
 
-        ids_of_downloads_archived: list[str] = []
-        ids_of_files_deleted: list[str] = []
-        candidate_downloads_to_prune: set[Download] = set()
-
+        # Identify candidates by keep_last rule
         if keep_last is not None and keep_last > 0:
             logger.debug(
                 "Identifying prune candidates by keep_last rule.", extra=log_params
@@ -96,106 +79,214 @@ class Pruner:
                         feed_id, keep_last
                     )
                 )
-            except (DatabaseOperationError, ValueError) as e:
-                # TODO raise a domain specific exception instead
-                raise DatabaseOperationError(
-                    message="Database error identifying downloads to prune by keep_last rule.",
+            except DatabaseOperationError as e:
+                raise PruneError(
+                    message="Failed to identify downloads for keep_last pruning rule.",
                     feed_id=feed_id,
-                    download_id=f"keep_last:{keep_last}",
                 ) from e
-            candidate_downloads_to_prune.update(downloads_for_keep_last)
+            else:
+                candidate_downloads.update(downloads_for_keep_last)
 
+        # Identify candidates by prune_before_date rule
         if prune_before_date is not None:
             logger.debug("Identifying prune candidates by date rule.", extra=log_params)
             try:
                 downloads_for_since = self.db_manager.get_downloads_to_prune_by_since(
                     feed_id, prune_before_date
                 )
-            except (DatabaseOperationError, ValueError) as e:
-                raise DatabaseOperationError(
-                    message="Database error identifying downloads to prune by date rule.",
+            except DatabaseOperationError as e:
+                raise PruneError(
+                    message="Failed to identify downloads for date pruning rule.",
                     feed_id=feed_id,
-                    download_id=f"prune_before_date:{prune_before_date.isoformat()}",
                 ) from e
-            candidate_downloads_to_prune.update(downloads_for_since)
+            else:
+                candidate_downloads.update(downloads_for_since)
 
-        if not candidate_downloads_to_prune:
-            logger.info("No downloads found to prune for feed.", extra=log_params)
-            return [], []
+        logger.debug(
+            "Identified candidates for pruning.",
+            extra={**log_params, "candidate_count": len(candidate_downloads)},
+        )
+        return candidate_downloads
 
-        logger.info(
-            f"Identified {len(candidate_downloads_to_prune)} candidate(s) for pruning.",
+    def _handle_file_deletion(self, download: Download, feed_id: str) -> None:
+        """Handle file deletion for a DOWNLOADED item being pruned.
+
+        Args:
+            download: The Download object with DOWNLOADED status.
+            feed_id: The feed identifier.
+
+        Raises:
+            PruneError: If file deletion fails with an OS-level error.
+            FileNotFoundError: If the file does not exist or is not a regular file.
+        """
+        file_name = f"{download.id}.{download.ext}"
+        log_params: dict[str, Any] = {
+            "feed_id": feed_id,
+            "download_id": download.id,
+            "file_name": file_name,
+        }
+        logger.debug(
+            "Attempting to delete file for downloaded item being pruned.",
             extra=log_params,
         )
 
-        successfully_processed_ids_for_db_deletion: list[str] = []
+        try:
+            self.file_manager.delete_download_file(feed_id, file_name)
+        except FileOperationError as e:
+            raise PruneError(
+                message="Failed to delete file during pruning.",
+                feed_id=feed_id,
+                download_id=download.id,
+            ) from e
+        logger.info("File deleted successfully during pruning.", extra=log_params)
 
-        for download_to_prune in candidate_downloads_to_prune:
-            download_prune_log_params = {
-                "feed_id": feed_id,
-                "download_id": download_to_prune.id,
-                "download_status": download_to_prune.status,
-            }
+    def _archive_download(self, download: Download, feed_id: str) -> None:
+        """Archive a download in the database.
 
-            if download_to_prune.status == DownloadStatus.DOWNLOADED:
-                file_name_to_delete = f"{download_to_prune.id}.{download_to_prune.ext}"
-                download_prune_log_params["file_name"] = file_name_to_delete
-                logger.debug(
-                    "Attempting to delete file for downloaded download being pruned.",
-                    extra=download_prune_log_params,
-                )
-                try:
-                    deleted_on_fs = self.file_manager.delete_download_file(
-                        feed_id, file_name_to_delete
-                    )
-                    if deleted_on_fs:
-                        logger.info(
-                            "File deleted successfully during pruning.",
-                            extra=download_prune_log_params,
-                        )
-                        ids_of_files_deleted.append(download_to_prune.id)
-                    else:
-                        logger.warning(
-                            "File for download not found on disk during pruning. DB record will still be archived.",
-                            extra=download_prune_log_params,
-                        )
-                except FileOperationError as e_fs:
-                    raise FileOperationError(
-                        message="Error deleting file during pruning. Download not modified.",
-                        feed_id=feed_id,
-                        download_id=download_to_prune.id,
-                        file_name=file_name_to_delete,
-                    ) from e_fs
+        Args:
+            download: The Download object to archive.
+            feed_id: The feed identifier.
 
-            successfully_processed_ids_for_db_deletion.append(download_to_prune.id)
+        Raises:
+            PruneError: If the database archival operation fails.
+        """
+        log_params: dict[str, Any] = {
+            "feed_id": feed_id,
+            "download_id": download.id,
+        }
+        logger.debug("Attempting to archive download.", extra=log_params)
 
-        if successfully_processed_ids_for_db_deletion:
-            logger.debug(
-                f"Attempting to archive {len(successfully_processed_ids_for_db_deletion)} download records.",
-                extra={"feed_id": feed_id},
-            )
-        for id_to_archive in successfully_processed_ids_for_db_deletion:
-            archive_log_params = {"feed_id": feed_id, "download_id": id_to_archive}
+        try:
+            self.db_manager.archive_download(feed_id, download.id)
+        except (DownloadNotFoundError, DatabaseOperationError) as e:
+            raise PruneError(
+                message="Failed to archive download.",
+                feed_id=feed_id,
+                download_id=download.id,
+            ) from e
+        logger.info("Download archived successfully.", extra=log_params)
+
+    def _process_single_download_for_pruning(
+        self, download: Download, feed_id: str
+    ) -> bool:
+        """Process a single download for pruning.
+
+        Handles file deletion (if DOWNLOADED) and database archival.
+
+        Args:
+            download: The Download object to process.
+            feed_id: The feed identifier.
+
+        Returns:
+            True if a file was successfully deleted, False otherwise.
+
+        Raises:
+            PruneError: If any step in the pruning process fails.
+        """
+        log_params: dict[str, Any] = {
+            "feed_id": feed_id,
+            "download_id": download.id,
+            "download_status": download.status,
+        }
+        logger.debug("Processing single download for pruning.", extra=log_params)
+
+        file_deleted = False
+
+        # Delete file if the download is DOWNLOADED
+        if download.status == DownloadStatus.DOWNLOADED:
             try:
-                self.db_manager.archive_download(feed_id, id_to_archive)
-                logger.info(
-                    "Download record archived successfully.",
-                    extra=archive_log_params,
+                self._handle_file_deletion(download, feed_id)
+            except FileNotFoundError:
+                logger.warning(
+                    "File not found during pruning, but DB record will still be archived.",
+                    extra={**log_params, "download_id": download.id},
                 )
-                ids_of_downloads_archived.append(id_to_archive)
-            except (DownloadNotFoundError, DatabaseOperationError) as e:
-                raise PruneError(
-                    "Failed to archive download record.",
-                    feed_id=feed_id,
-                    download_id=id_to_archive,
-                ) from e
+            else:
+                file_deleted = True
+
+        # Always archive the download
+        self._archive_download(download, feed_id)
+
+        return file_deleted
+
+    def prune_feed_downloads(
+        self,
+        feed_id: str,
+        keep_last: int | None,
+        prune_before_date: datetime | None,
+    ) -> tuple[int, int]:
+        """Prune old downloads for a feed based on retention rules.
+
+        This method identifies download candidates for pruning based on two criteria:
+        1. keep_last: Retains only the specified number of the most recent downloads.
+           Older downloads become candidates for pruning.
+        2. prune_before_date: Downloads published before this timestamp become candidates.
+
+        The union of downloads identified by both criteria is processed. For each candidate:
+        - If its status is DOWNLOADED, its associated media file is deleted from the filesystem.
+        - The download's database record status is then updated to ARCHIVED.
+
+        Args:
+            feed_id: The unique identifier of the feed to prune.
+            keep_last: The number of most recent downloads to retain. If None, this rule is ignored.
+            prune_before_date: Downloads published before this date are pruned. If None, this rule is ignored.
+
+        Returns:
+            A tuple (archived_count, files_deleted_count) indicating the number of
+            downloads archived and the number of files successfully deleted.
+
+        Raises:
+            PruneError: If candidate identification fails.
+        """
+        log_params: dict[str, Any] = {
+            "feed_id": feed_id,
+            "keep_last": keep_last,
+            "prune_before_date": (
+                prune_before_date.isoformat() if prune_before_date else None
+            ),
+        }
+        logger.info("Starting pruning process for feed.", extra=log_params)
+
+        candidate_downloads = self._identify_prune_candidates(
+            feed_id, keep_last, prune_before_date
+        )
+
+        if not candidate_downloads:
+            logger.info("No downloads found to prune for feed.", extra=log_params)
+            return 0, 0
+
+        logger.info(
+            "Found candidates for pruning.",
+            extra={**log_params, "candidate_count": len(candidate_downloads)},
+        )
+
+        archived_count = 0
+        files_deleted_count = 0
+
+        for download in candidate_downloads:
+            try:
+                file_deleted = self._process_single_download_for_pruning(
+                    download, feed_id
+                )
+                archived_count += 1
+                if file_deleted:
+                    files_deleted_count += 1
+            except PruneError as e:
+                logger.error(
+                    "Failed to process download for pruning.",
+                    exc_info=e,
+                    extra={
+                        **log_params,
+                        "download_id": download.id,
+                    },
+                )
 
         logger.info(
             "Pruning process completed for feed.",
             extra={
                 **log_params,
-                "downloads_archived_count": len(ids_of_downloads_archived),
-                "files_deleted_count": len(ids_of_files_deleted),
+                "archived_count": archived_count,
+                "files_deleted_count": files_deleted_count,
             },
         )
-        return ids_of_downloads_archived, ids_of_files_deleted
+        return archived_count, files_deleted_count

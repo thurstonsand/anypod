@@ -1,3 +1,5 @@
+# pyright: reportPrivateUsage=false
+
 """Tests for the DatabaseManager and Download model functionality."""
 
 from collections.abc import Iterator

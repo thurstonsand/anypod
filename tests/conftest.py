@@ -1,4 +1,5 @@
-"""Pytest configuration and hooks for the Anypod test suite."""
+# pyright: reportPrivateUsage=false
+"""Global pytest configuration for the test suite."""
 
 from _pytest.config import Config
 from _pytest.config.argparsing import Parser

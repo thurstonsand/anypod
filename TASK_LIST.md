@@ -187,13 +187,13 @@ This section details the components that manage the lifecycle of downloads, from
 - [x] Debug mode for Enqueuer
 
 ### 3.5.5 `Pruner` (`data_coordinator/pruner.py`)
-- [ ] Constructor accepts `DatabaseManager`, `FileManager`.
-- [ ] `prune_feed_downloads(feed_id: str, keep_last: int | None, prune_before_date: datetime | None) -> tuple[int, int]`: (archived_count, files_deleted_count)
-    - Implements logic previously in the old `DataCoordinator.prune_old_downloads`.
-    - Uses `DatabaseManager` to get candidates, `Download.from_row` to convert rows.
+- [x] Use old implementation for reference, but prepare for largely a full rewrite
+- [x] Constructor accepts `DatabaseManager`, `FileManager`.
+- [x] `prune_feed_downloads(feed_id: str, keep_last: int | None, prune_before_date: datetime | None) -> tuple[int, int]`: (archived_count, files_deleted_count)
+    - Uses `DatabaseManager` to get candidates
     - Uses `FileManager.delete_download_file()` for download.
-    - Uses `DatabaseManager.update_status()` to 'archived'.
-- [ ] Unit tests for `Pruner` with mocked dependencies.
+    - Uses `DatabaseManager.archive_download()` to archive.
+- [x] Unit tests for `Pruner` with mocked dependencies.
 
 ### 3.5.6 `DataCoordinator` Orchestrator (`data_coordinator/coordinator.py`)
 - [ ] Constructor accepts `Enqueuer`, `Downloader`, `Pruner`, `FeedGen`, `DatabaseManager`, `FileManager` (for pass-through methods like `get_download_by_id`, `stream_download_by_id`, etc.).

@@ -114,7 +114,7 @@ class EnqueueError(DataCoordinatorError):
         self.download_id = download_id
 
 
-class DownloaderError(DataCoordinatorError):
+class DownloadError(DataCoordinatorError):
     """Raised when an error occurs during the download process.
 
     Attributes:

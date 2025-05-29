@@ -53,17 +53,15 @@ class FileManager:
                 file_name=str(self.base_download_path),
             ) from e
 
-    def delete_download_file(self, feed: str, file_name: str) -> bool:
+    def delete_download_file(self, feed: str, file_name: str) -> None:
         """Deletes a download file from the filesystem.
 
         Args:
             feed: The name of the feed.
             file_name: The name of the download file to be deleted.
 
-        Returns:
-            True if the file was successfully deleted, False if the file was not found.
-
         Raises:
+            FileNotFoundError: If the file does not exist or is not a regular file.
             FileOperationError: If an OS-level error occurs during file deletion (e.g., PermissionError).
         """
         file_path = self.base_download_path / feed / file_name
@@ -78,13 +76,8 @@ class FileManager:
             if file_path.is_file():
                 file_path.unlink()
                 logger.debug("File unlinked successfully.", extra=log_params)
-                return True
             else:
-                logger.debug(
-                    "File not found or is not a file, deletion skipped.",
-                    extra=log_params,
-                )
-                return False
+                raise FileNotFoundError(f"Download file not found: {file_path}")
         except OSError as e:
             raise FileOperationError(
                 "Failed to delete download file.",
