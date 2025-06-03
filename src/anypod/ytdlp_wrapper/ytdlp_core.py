@@ -109,15 +109,22 @@ class YtdlpInfo:
         raw_entries = self.get("entries", list[dict[str, Any] | None])  # type: ignore
         if raw_entries is None:
             return None
+
         entries: list[YtdlpInfo | None] = []
         for entry in raw_entries:  # type: ignore
+            if entry is None:
+                entries.append(None)
+                continue
+
             if not isinstance(entry, dict):
                 raise YtdlpFieldInvalidError(
                     field_name="entries",
                     expected_type=dict,
                     actual_value=entry,  # type: ignore
                 )
-            entries.append(YtdlpInfo(entry)) if entry else None  # type: ignore
+
+            entries.append(YtdlpInfo(entry))
+
         return entries
 
 
