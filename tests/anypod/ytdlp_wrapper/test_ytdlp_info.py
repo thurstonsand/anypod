@@ -16,11 +16,13 @@ def test_entries_returns_none_when_no_entries():
 @pytest.mark.unit
 def test_entries_handles_none_entries_and_dicts():
     """``entries`` should return ``YtdlpInfo`` instances while preserving ``None``."""
-    info_dict = {"entries": [
-        {"id": "1"},
-        None,
-        {"id": "2"},
-    ]}
+    info_dict = {
+        "entries": [
+            {"id": "1"},
+            None,
+            {"id": "2"},
+        ]
+    }
     info = YtdlpInfo(info_dict)
     entries = info.entries()
     assert entries is not None

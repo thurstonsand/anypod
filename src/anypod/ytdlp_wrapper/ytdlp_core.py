@@ -116,7 +116,8 @@ class YtdlpInfo:
                 entries.append(None)
                 continue
 
-            if not isinstance(entry, dict):
+            # validate entry type at runtime
+            if not isinstance(entry, dict):  # pyright: ignore[reportUnnecessaryIsInstance]
                 raise YtdlpFieldInvalidError(
                     field_name="entries",
                     expected_type=dict,
