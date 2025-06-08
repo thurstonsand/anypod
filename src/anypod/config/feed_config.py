@@ -236,9 +236,10 @@ class PodcastCategory:
         """Convert category to dictionary representation.
 
         Returns:
-            Dictionary with 'main' key and optionally 'sub' key if subcategory exists.
+            Dictionary with 'cat' key and optionally 'sub' key if subcategory exists,
+            formatted for feedgen RSS generation.
         """
-        return {"main": self.main, "sub": self.sub} if self.sub else {"main": self.main}
+        return {"cat": self.main, "sub": self.sub} if self.sub else {"cat": self.main}
 
     def __repr__(self) -> str:
         """The exact Apple-approved string(s)."""

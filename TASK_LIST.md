@@ -220,8 +220,8 @@ This section details the components that manage the lifecycle of downloads, from
 - [ ] check for commonalities in generated data in tests and see if we can extract a fixture out of them
 
 ## 4  Feed Generation
-- [ ] Determine if a [read/write lock](https://pypi.org/project/readerwriterlock/) for in-memory feed XML cache is needed for concurrency
-- [ ] add new fields to Download
+- [x] Determine if a [read/write lock](https://pypi.org/project/readerwriterlock/) for in-memory feed XML cache is needed for concurrency
+- [x] add new fields to Download
   - this will also involve potentially changing how i update values, since some (like title) might get changed down the line. so we should try to store the most recent value
 - [ ] Implement `generate_feed_xml(feed_id)` to write to in-memory XML after acquiring write lock
 - [ ] Implement `get_feed_xml(feed_id)` for HTTP handlers to read from in-memory XML after acquiring read lock

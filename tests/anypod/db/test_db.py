@@ -35,7 +35,7 @@ def sample_download_queued() -> Download:
         published=datetime.datetime(2023, 1, 1, 12, 0, 0, tzinfo=datetime.UTC),
         ext="mp4",
         mime_type="video/mp4",
-        duration=120.0,
+        duration=120,
         status=DownloadStatus.QUEUED,
         thumbnail="http://example.com/thumb1.jpg",
         description="Test video description",
@@ -58,7 +58,7 @@ def sample_download_row_data() -> dict[str, Any]:
         ).isoformat(),  # Stored as ISO string in DB
         "ext": "mp4",
         "mime_type": "video/mp4",
-        "duration": 120.0,
+        "duration": 120,
         "thumbnail": "http://example.com/thumb/123.jpg",
         "description": "Test video description from DB",
         "filesize": 0,
@@ -79,7 +79,7 @@ def sample_download_upcoming() -> Download:
         published=datetime.datetime(2023, 1, 1, 12, 0, 0, tzinfo=datetime.UTC),
         ext="mp4",
         mime_type="video/mp4",
-        duration=120.0,
+        duration=120,
         status=DownloadStatus.UPCOMING,
         thumbnail="http://example.com/thumb_upcoming.jpg",
         description="Upcoming video description",
@@ -104,7 +104,7 @@ def test_download_equality_and_hash(sample_download_queued: Download):
         published=datetime.datetime(2023, 1, 1, 13, 0, 0, tzinfo=datetime.UTC),
         ext="mkv",
         mime_type="video/x-matroska",
-        duration=130.5,
+        duration=130,
         thumbnail="http://example.com/thumb/v123_alt.jpg",
         description="Alt description",
         filesize=2048,
@@ -134,7 +134,7 @@ def test_download_equality_and_hash(sample_download_queued: Download):
         published=datetime.datetime(2023, 1, 1, 12, 0, 0, tzinfo=datetime.UTC),
         ext="mp4",
         mime_type="video/mp4",
-        duration=120.5,
+        duration=120,
         thumbnail="http://example.com/thumb/another_v123.jpg",
         description="Different feed description",
         filesize=0,
@@ -249,7 +249,7 @@ def test_upsert_download_updates_existing(
         published=sample_download_queued.published + datetime.timedelta(hours=1),
         ext="mkv",  # Changed ext
         mime_type="video/x-matroska",  # Changed mime_type
-        duration=150.0,  # Changed duration
+        duration=150,  # Changed duration
         thumbnail="http://example.com/thumb/v123_updated.jpg",
         description="Updated description",
         filesize=4096,  # Changed filesize
@@ -957,7 +957,7 @@ def test_download_from_row_success(sample_download_row_data: dict[str, Any]):
         ext=mock_row["ext"],
         mime_type=mock_row["mime_type"],
         filesize=mock_row["filesize"],
-        duration=float(mock_row["duration"]),
+        duration=int(mock_row["duration"]),
         thumbnail=mock_row["thumbnail"],
         status=expected_status_enum,
         retries=int(mock_row["retries"]),
@@ -968,7 +968,7 @@ def test_download_from_row_success(sample_download_row_data: dict[str, Any]):
     assert converted_download == expected_download
     assert converted_download.published == expected_published_dt
     assert converted_download.status == expected_status_enum
-    assert converted_download.duration == float(mock_row["duration"])
+    assert converted_download.duration == int(mock_row["duration"])
 
 
 @pytest.mark.unit

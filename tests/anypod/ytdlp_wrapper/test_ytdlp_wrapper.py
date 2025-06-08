@@ -172,7 +172,7 @@ def test_download_media_to_file_success_simplified(
         ext="mkv",
         mime_type="video/x-matroska",
         filesize=12345,
-        duration=60.0,
+        duration=60,
         status=DownloadStatus.QUEUED,
     )
     yt_cli_args: dict[str, Any] = {"format": "bestvideo+bestaudio/best"}

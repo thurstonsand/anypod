@@ -187,6 +187,7 @@ class AppSettings(BaseSettings):
         log_format: Format for application logs (human or json).
         log_level: Logging level for the application.
         log_include_stacktrace: Include full stack traces in error logs.
+        base_url: Base URL for RSS feeds and media files.
         config_file: Path to the YAML config file.
         feeds: Configuration for all podcast feeds.
     """
@@ -211,6 +212,11 @@ class AppSettings(BaseSettings):
         default=False,
         validation_alias="LOG_INCLUDE_STACKTRACE",
         description="Include full stack traces in error logs (true/false).",
+    )
+    base_url: str = Field(
+        default="http://localhost:8024",
+        validation_alias="BASE_URL",
+        description="Base URL for RSS feeds and media files (e.g., 'https://podcasts.example.com').",
     )
 
     # Feeds config

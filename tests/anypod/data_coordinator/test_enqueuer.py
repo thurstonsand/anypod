@@ -62,7 +62,7 @@ def create_download(
     title: str | None = None,
     source_url: str | None = None,
     ext: str = "mp4",
-    duration: float = 120.0,
+    duration: int = 120,
     retries: int = 0,
     mime_type: str | None = None,
     filesize: int | None = None,

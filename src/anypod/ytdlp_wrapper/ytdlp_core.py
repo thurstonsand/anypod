@@ -56,7 +56,7 @@ class YtdlpInfo:
         Raises:
             YtdlpFieldInvalidError: If the field exists but its type does not match.
         """
-        if field_name not in self._info_dict:
+        if field_name not in self._info_dict or self._info_dict[field_name] is None:
             return None
 
         field = self._info_dict[field_name]

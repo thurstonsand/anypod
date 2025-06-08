@@ -26,7 +26,7 @@ SAMPLE_DOWNLOADS = [
         ext="mp4",
         mime_type="video/mp4",
         filesize=1024 * 1024,  # 1MB
-        duration=120.0,
+        duration=120,
         status=DownloadStatus.DOWNLOADED,
         retries=0,
     ),
@@ -39,7 +39,7 @@ SAMPLE_DOWNLOADS = [
         ext="webm",
         mime_type="video/webm",
         filesize=2 * 1024 * 1024,  # 2MB
-        duration=180.0,
+        duration=180,
         status=DownloadStatus.DOWNLOADED,
         retries=0,
     ),
@@ -52,7 +52,7 @@ SAMPLE_DOWNLOADS = [
         ext="mp4",
         mime_type="video/mp4",
         filesize=3 * 1024 * 1024,  # 3MB
-        duration=200.0,
+        duration=200,
         status=DownloadStatus.DOWNLOADED,
         retries=0,
     ),
@@ -65,7 +65,7 @@ SAMPLE_DOWNLOADS = [
         ext="mp4",
         mime_type="video/mp4",
         filesize=int(1.5 * 1024 * 1024),  # 1.5MB
-        duration=150.0,
+        duration=150,
         status=DownloadStatus.DOWNLOADED,
         retries=0,
     ),
@@ -78,7 +78,7 @@ SAMPLE_DOWNLOADS = [
         ext="mkv",
         mime_type="video/mkv",
         filesize=4 * 1024 * 1024,  # 4MB
-        duration=240.0,
+        duration=240,
         status=DownloadStatus.DOWNLOADED,
         retries=0,
     ),
@@ -92,7 +92,7 @@ SAMPLE_DOWNLOADS = [
         ext="mp4",
         mime_type="video/mp4",
         filesize=1024 * 1024,  # 1MB
-        duration=100.0,
+        duration=100,
         status=DownloadStatus.QUEUED,
         retries=0,
     ),
@@ -105,7 +105,7 @@ SAMPLE_DOWNLOADS = [
         ext="mp4",
         mime_type="video/mp4",
         filesize=1024 * 1024,  # 1MB
-        duration=90.0,
+        duration=90,
         status=DownloadStatus.ERROR,
         retries=3,
         last_error="Failed to download",
@@ -119,7 +119,7 @@ SAMPLE_DOWNLOADS = [
         ext="mp4",
         mime_type="video/mp4",
         filesize=1024 * 1024,  # 1MB
-        duration=110.0,
+        duration=110,
         status=DownloadStatus.SKIPPED,
         retries=0,
     ),
@@ -133,7 +133,7 @@ SAMPLE_DOWNLOADS = [
         ext="mp4",
         mime_type="video/mp4",
         filesize=1024 * 1024,  # 1MB
-        duration=130.0,
+        duration=130,
         status=DownloadStatus.UPCOMING,
         retries=0,
     ),
@@ -146,7 +146,7 @@ SAMPLE_DOWNLOADS = [
         ext="mp4",
         mime_type="video/mp4",
         filesize=1024 * 1024,  # 1MB
-        duration=140.0,
+        duration=140,
         status=DownloadStatus.ARCHIVED,
         retries=0,
     ),
@@ -561,7 +561,7 @@ def test_prune_feed_downloads_only_excluded_statuses(
             ext="mp4",
             mime_type="video/mp4",
             filesize=12345,
-            duration=120.0,
+            duration=120,
             status=DownloadStatus.SKIPPED,
             retries=0,
         ),
@@ -574,7 +574,7 @@ def test_prune_feed_downloads_only_excluded_statuses(
             ext="mp4",
             mime_type="video/mp4",
             filesize=12345,
-            duration=150.0,
+            duration=150,
             status=DownloadStatus.ARCHIVED,
             retries=0,
         ),
@@ -627,7 +627,7 @@ def test_prune_feed_downloads_large_dataset(
             ext="mp4",
             mime_type="video/mp4",
             filesize=1024 * 1024,  # 1MB
-            duration=120.0,
+            duration=120,
             status=DownloadStatus.DOWNLOADED if i % 2 == 0 else DownloadStatus.QUEUED,
             retries=0,
         )

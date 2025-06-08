@@ -59,7 +59,7 @@ def sample_downloaded_item() -> Download:
         ext="mp4",
         mime_type="video/mp4",
         filesize=1024000,
-        duration=120.0,
+        duration=120,
         status=DownloadStatus.DOWNLOADED,
     )
 
@@ -76,7 +76,7 @@ def sample_queued_item() -> Download:
         ext="mp4",
         mime_type="video/mp4",
         filesize=0,
-        duration=180.0,
+        duration=180,
         status=DownloadStatus.QUEUED,
     )
 
@@ -93,7 +93,7 @@ def sample_upcoming_item() -> Download:
         ext="live",
         mime_type="application/octet-stream",
         filesize=0,
-        duration=200.0,
+        duration=200,
         status=DownloadStatus.UPCOMING,
     )
 
@@ -110,7 +110,7 @@ def sample_skipped_item() -> Download:
         ext="mp4",
         mime_type="video/mp4",
         filesize=1024000,
-        duration=220.0,
+        duration=220,
         status=DownloadStatus.SKIPPED,
     )
 

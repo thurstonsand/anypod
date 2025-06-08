@@ -361,7 +361,7 @@ This resolution logic aims to simplify configuration for the end-user, as they c
 | **Base** | `python:3.13-slim` |
 | **User** | Runs as **root (UID 0)** by default; override via `user: "#{UID}:{GID}"` in docker-compose |
 | **Volumes** | `/config`, `/data`, `/cookies` |
-| **Port** | 8000 |
+| **Port** | 8024 |
 
 ---
 

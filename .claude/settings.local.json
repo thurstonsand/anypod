@@ -3,7 +3,10 @@
     "allow": [
       "Bash(find:*)",
       "Bash(grep:*)",
-      "Bash(uv run:*)"
+      "Bash(uv run:*)",
+      "Bash(rg:*)",
+      "Bash(cat:*)",
+      "WebFetch(domain:github.com)"
     ],
     "deny": []
   }

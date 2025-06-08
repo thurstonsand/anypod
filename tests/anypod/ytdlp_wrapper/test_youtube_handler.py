@@ -37,7 +37,7 @@ def valid_video_entry_data() -> dict[str, Any]:
         "title": "Test Video Title",
         "timestamp": 1678886400,  # 2023-03-15T12:00:00Z
         "ext": "mp4",
-        "duration": 120.0,
+        "duration": 120,
         "webpage_url": "https://www.youtube.com/watch?v=video123",
         "thumbnail": "https://example.com/thumb.jpg",
         "description": "This is a test video description",
@@ -108,11 +108,11 @@ def test_parse_single_video_entry_success_no_description(
     "ext, expected_mime",
     [
         ("mp3", "audio/mpeg"),
-        ("m4a", "audio/mp4a-latm"),
+        ("m4a", "audio/mp4"),
         ("mp4", "video/mp4"),
         ("webm", "video/webm"),
         ("mkv", "video/x-matroska"),
-        ("flac", "audio/x-flac"),
+        ("flac", "audio/flac"),
         # Test with dot prefix
         (".mp3", "audio/mpeg"),
         (".mp4", "video/mp4"),
@@ -241,7 +241,7 @@ def test_parse_single_video_entry_duration_as_int(
     """Tests parsing when duration is an integer."""
     valid_video_entry._ytdlp_info._info_dict["duration"] = 120
     download = youtube_handler._parse_single_video_entry(valid_video_entry, FEED_ID)
-    assert download.duration == float(
+    assert download.duration == int(
         valid_video_entry._ytdlp_info._info_dict["duration"]
     )
 

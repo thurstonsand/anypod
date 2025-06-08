@@ -23,6 +23,10 @@ from .ytdlp_core import YtdlpInfo
 
 logger = logging.getLogger(__name__)
 
+# Normalize common audio extensions across platforms
+mimetypes.add_type("audio/mp4", ".m4a")
+mimetypes.add_type("audio/flac", ".flac")
+
 
 class YtdlpYoutubeDataError(YtdlpDataError):
     """Raised when yt-dlp data extraction fails for YouTube.
@@ -195,10 +199,15 @@ class YoutubeEntry:
     def filesize(self) -> int:
         """Get the file size for the video.
 
-        Defaults to 0 if not present.
+        Uses filesize_approx as fallback when filesize is None.
+        Defaults to 0 if neither are present.
         """
         with self._annotate_exceptions():
-            return self._ytdlp_info.get("filesize", int) or 0
+            return (
+                self._ytdlp_info.get("filesize", int)
+                or self._ytdlp_info.get("filesize_approx", int)
+                or 0
+            )
 
     @property
     def timestamp(self) -> datetime | None:
@@ -274,8 +283,8 @@ class YoutubeEntry:
             return self._ytdlp_info.get("live_status", str)
 
     @property
-    def duration(self) -> float:
-        """Get the video duration in seconds as a float."""
+    def duration(self) -> int:
+        """Get the video duration in seconds as an int."""
         # Explicitly check for bool first, as bool is a subclass of int
         raw_duration = self._ytdlp_info.get_raw("duration")
         if isinstance(raw_duration, bool):
@@ -289,10 +298,10 @@ class YoutubeEntry:
         with self._annotate_exceptions():
             match self._ytdlp_info.required("duration", (float, int, str)):
                 case float() | int() as duration:
-                    return float(duration)
+                    return int(duration)
                 case str() as duration_str:
                     try:
-                        return float(duration_str)
+                        return int(float(duration_str))
                     except ValueError as e:
                         raise YtdlpYoutubeDataError(
                             f"Unparsable duration '{duration_str}'.",

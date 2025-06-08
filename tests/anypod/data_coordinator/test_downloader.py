@@ -68,7 +68,7 @@ def sample_download() -> Download:
         published=datetime.datetime(2023, 1, 1, 12, 0, 0, tzinfo=datetime.UTC),
         ext="mp4",
         mime_type="video/mp4",
-        duration=120.0,
+        duration=120,
         status=DownloadStatus.QUEUED,
         description="Original description",
         filesize=0,
@@ -194,7 +194,7 @@ def test_check_and_update_metadata_detects_changes(
         title="Updated Title",
         description="Updated description",
         thumbnail="http://example.com/new_thumb.jpg",
-        duration=180.0,
+        duration=180,
     )
 
     mock_ytdlp_wrapper.fetch_metadata.return_value = [updated_download]

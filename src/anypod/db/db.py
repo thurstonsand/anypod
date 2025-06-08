@@ -69,7 +69,7 @@ class Download:
     ext: str
     mime_type: str
     filesize: int  # Bytes
-    duration: float  # in seconds
+    duration: int  # in seconds
     status: DownloadStatus
     thumbnail: str | None = None
     description: str | None = None
@@ -112,7 +112,7 @@ class Download:
             ext=row["ext"],
             mime_type=row["mime_type"],
             filesize=row["filesize"],
-            duration=float(row["duration"]),
+            duration=int(row["duration"]),
             status=status_enum,
             thumbnail=row.get("thumbnail"),
             description=row.get("description"),
@@ -164,7 +164,7 @@ class DatabaseManager:
                 "ext": str,
                 "mime_type": str,
                 "filesize": int,
-                "duration": float,
+                "duration": int,
                 "thumbnail": str,
                 "description": str,
                 "status": str,

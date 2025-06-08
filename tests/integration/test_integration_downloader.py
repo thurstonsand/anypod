@@ -340,7 +340,7 @@ def test_download_queued_handles_invalid_urls(
         ext="mp4",
         mime_type="video/mp4",
         filesize=12345,
-        duration=10.0,
+        duration=10,
         status=DownloadStatus.QUEUED,
         retries=0,
     )
@@ -395,7 +395,7 @@ def test_download_queued_retry_logic_max_errors(
         ext="mp4",
         mime_type="video/mp4",
         filesize=12345,
-        duration=10.0,
+        duration=10,
         status=DownloadStatus.QUEUED,
         retries=0,
     )
@@ -442,7 +442,7 @@ def test_download_queued_mixed_success_and_failure(
         ext="mp4",
         mime_type="video/mp4",
         filesize=12345,
-        duration=10.0,
+        duration=10,
         status=DownloadStatus.QUEUED,
         retries=0,
     )
@@ -532,3 +532,73 @@ def test_download_queued_file_properties(
     actual_file = feed_data_dir / expected_filename
     actual_size = actual_file.stat().st_size
     assert downloaded_item.filesize == actual_size
+
+
+@pytest.mark.integration
+def test_filesize_metadata_flow(
+    enqueuer: Enqueuer,
+    downloader: Downloader,
+    db_manager: DatabaseManager,
+    file_manager: FileManager,
+):
+    """Tests that filesize metadata flows correctly from enqueue through download.
+
+    Verifies that:
+    1. Initial metadata may have approximate filesize (not 0)
+    2. After download, filesize is updated to exact file size
+    3. Database filesize matches actual downloaded file size
+    """
+    feed_id = "test_filesize_flow"
+    feed_config = SAMPLE_FEED_CONFIG
+
+    # Enqueue items to get initial metadata
+    queued_count = enqueue_test_items(enqueuer, feed_id, feed_config)
+    assert queued_count >= 1, "Should have queued at least one item"
+
+    # Get the queued item and check initial filesize
+    queued_items = db_manager.get_downloads_by_status(
+        DownloadStatus.QUEUED, feed=feed_id
+    )
+    queued_item = queued_items[0]
+    initial_filesize = queued_item.filesize
+
+    # Initial filesize should be either 0 (no estimate) or > 0 (has estimate)
+    assert initial_filesize >= 0, "Initial filesize should be non-negative"
+
+    # Download the item
+    success_count, _ = downloader.download_queued(
+        feed_id=feed_id,
+        feed_config=feed_config,
+        limit=1,
+    )
+    assert success_count >= 1, "Should have downloaded at least one item"
+
+    # Get the downloaded item
+    downloaded_items = db_manager.get_downloads_by_status(
+        DownloadStatus.DOWNLOADED, feed=feed_id
+    )
+    downloaded_item = downloaded_items[0]
+    final_filesize = downloaded_item.filesize
+
+    # Final filesize should always be > 0 and represent actual file size
+    assert final_filesize > 0, "Downloaded item should have actual filesize > 0"
+
+    # Verify final filesize matches actual file
+    expected_filename = f"{downloaded_item.id}.{downloaded_item.ext}"
+    feed_data_dir = Path(file_manager.base_download_path) / feed_id
+    actual_file = feed_data_dir / expected_filename
+    actual_size = actual_file.stat().st_size
+
+    assert final_filesize == actual_size, (
+        "Database filesize should match actual file size"
+    )
+
+    # If initial estimate was available and reasonable, it should be in the ballpark
+    if initial_filesize > 0:
+        # Allow for some variance between estimate and actual (up to 50% difference)
+        size_ratio = min(initial_filesize, final_filesize) / max(
+            initial_filesize, final_filesize
+        )
+        assert size_ratio > 0.5, (
+            f"Initial estimate ({initial_filesize}) should be reasonably close to actual ({final_filesize})"
+        )

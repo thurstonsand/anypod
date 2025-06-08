@@ -18,7 +18,7 @@ BIG_BUCK_BUNNY_URL = f"https://www.youtube.com/watch?v={BIG_BUCK_BUNNY_VIDEO_ID}
 BIG_BUCK_BUNNY_SHORT_URL = f"https://youtu.be/{BIG_BUCK_BUNNY_VIDEO_ID}"
 BIG_BUCK_BUNNY_TITLE = "Test Video"
 BIG_BUCK_BUNNY_PUBLISHED = datetime(2014, 11, 10, 14, 5, 55, tzinfo=UTC)
-BIG_BUCK_BUNNY_DURATION = 635.0
+BIG_BUCK_BUNNY_DURATION = 635
 
 COLETDJNZ_CHANNEL_VIDEOS = "https://www.youtube.com/@coletdjnz/videos"
 
