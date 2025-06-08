@@ -170,6 +170,8 @@ def test_download_media_to_file_success_simplified(
         title="Test Happy Video",
         published=datetime.fromisoformat("2023-02-01T00:00:00Z".replace("Z", "+00:00")),
         ext="mkv",
+        mime_type="video/x-matroska",
+        filesize=12345,
         duration=60.0,
         status=DownloadStatus.QUEUED,
     )

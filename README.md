@@ -17,3 +17,4 @@ run with `uv run anypod --config-file example_feeds.yaml`
     - if you are on Windows, watch out for the newlines. The Docker container will expect `LF`, and Windows might default to `CRLF`
     - for Youtube cookies, you need to [follow special instructions](https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies). but this should only be needed if you are trying to access private playlists, age-restricted videos, or members-only content
     - if downloading from Patreon behind a paywall, it can help help to [simply add `--referer https://www.patreon.com`](https://github.com/yt-dlp/yt-dlp/issues/13263#issuecomment-2903954393) as well to prevent HTTP 403's
+- I would not test out feeds using PocketCasts, since they permanently cache on their end. So if you need to modify anything, PocketCasts will not pick up that change -- you'd need to change the feed id to make it pick up a "new" feed. Apple Podcasts is a safe bet

@@ -10,7 +10,7 @@ import pytest
 from pytest import MonkeyPatch
 import yaml
 
-from anypod.config import AppSettings, FeedConfig, YamlFileFromFieldSource
+from anypod.config.config import AppSettings, FeedConfig, YamlFileFromFieldSource
 from anypod.exceptions import ConfigLoadError
 from anypod.ytdlp_wrapper.ytdlp_core import YtdlpCore
 

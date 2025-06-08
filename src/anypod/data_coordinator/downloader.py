@@ -120,13 +120,120 @@ class Downloader:
                 extra={"feed_id": download.feed, "download_id": download.id},
             )
 
+    def _check_and_update_metadata(
+        self, download: Download, feed_config: FeedConfig
+    ) -> Download:
+        """Re-fetch metadata and update if values have changed.
+
+        Re-fetches the metadata for a download before actually downloading it,
+        and updates the database if any values have changed (except for the
+        primary keys and published date).
+
+        TODO: determine if this is necessary.
+
+        Args:
+            download: The Download object to check.
+            feed_config: The configuration for the feed.
+
+        Returns:
+            Updated Download object with latest metadata.
+
+        Raises:
+            DownloadError: If metadata fetch fails.
+        """
+        log_params: dict[str, Any] = {
+            "feed_id": download.feed,
+            "download_id": download.id,
+        }
+        logger.debug("Re-fetching metadata to check for updates.", extra=log_params)
+
+        try:
+            # Re-fetch metadata for this specific download
+            fetched_downloads = self.ytdlp_wrapper.fetch_metadata(
+                download.feed,
+                download.source_url,
+                feed_config.yt_args,
+            )
+        except YtdlpApiError as e:
+            logger.warning(
+                "Failed to re-fetch metadata for update check. Proceeding with cached values.",
+                extra=log_params,
+                exc_info=e,
+            )
+            return download
+
+        # Find the matching download in the fetched results
+        matching_download = None
+        for fetched in fetched_downloads:
+            if fetched.id == download.id and fetched.feed == download.feed:
+                matching_download = fetched
+                break
+
+        if not matching_download:
+            logger.warning(
+                "Could not find matching download in re-fetched metadata. Proceeding with cached values.",
+                extra=log_params,
+            )
+            return download
+
+        # Check for changes (excluding pks, published date, and status-related fields)
+        changes: dict[str, tuple[Any, Any]] = {}
+        fields_to_check = [
+            "source_url",
+            "title",
+            "published",
+            "ext",
+            "mime_type",
+            "filesize",
+            "duration",
+            "thumbnail",
+            "description",
+        ]
+
+        for field in fields_to_check:
+            old_value = getattr(download, field)
+            new_value = getattr(matching_download, field)
+            if old_value != new_value:
+                changes[field] = (old_value, new_value)
+
+        if changes:
+            # Create a simpler changes dict for logging
+            changes_for_log = {
+                field: {"old": old_val, "new": new_val}
+                for field, (old_val, new_val) in changes.items()
+            }
+            logger.info(
+                "Detected metadata changes, updating database.",
+                extra={
+                    **log_params,
+                    "changes": changes_for_log,
+                },
+            )
+
+            # Update the download object with new values
+            for field, (_, new_value) in changes.items():
+                setattr(download, field, new_value)
+
+            # Persist changes to database
+            try:
+                self.db_manager.upsert_download(download)
+            except DatabaseOperationError as e:
+                logger.error(
+                    "Failed to update changed metadata in database.",
+                    extra=log_params,
+                    exc_info=e,
+                )
+                # Continue with download even if update fails
+
+        return download
+
     def _process_single_download(
         self, download_to_process: Download, feed_config: FeedConfig
     ) -> None:
         """Manage the download lifecycle for a single Download object.
 
-        This includes attempting the download via `YtdlpWrapper`, and then
-        handling success or failure.
+        This includes re-fetching metadata to check for updates, attempting
+        the download via `YtdlpWrapper`, and then handling success or failure.
 
         Args:
             download_to_process: The Download object to process.
@@ -143,6 +250,11 @@ class Downloader:
         logger.info("Processing single download.", extra=log_params)
 
         try:
+            # Check for metadata updates before downloading
+            download_to_process = self._check_and_update_metadata(
+                download_to_process, feed_config
+            )
+
             downloaded_file_path = self.ytdlp_wrapper.download_media_to_file(
                 download_to_process,
                 feed_config.yt_args,

@@ -9,10 +9,12 @@ description = "Thin yt‑dlp → podcast solution"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "feedgen>=1.0.0",
     "pydantic>=2.11.3",
     "pydantic-settings>=2.9.1",
     "python-json-logger>=3.3.0",
     "pyyaml>=6.0.2",
+    "readerwriterlock>=1.0.9",
     "sqlite-utils>=3.38",
     "yt-dlp>=2025.4.30",
 ]

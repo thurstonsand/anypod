@@ -399,3 +399,6 @@ This resolution logic aims to simplify configuration for the end-user, as they c
 * performance testing once both server and cron exist -- does the cron being active cause slow down for the server?
 * allow for download-time quality settings AND feed-time quality settings; you can download in high quality, deliver in low quality (for archival purposes
 * consider async'ifying the code base. e.g. https://github.com/omnilib/aiosqlite)
+  - consider SQLAlchemy as well
+* potentially add support for [websub](https://websubhub.com/)
+* download and self-host metadata like images

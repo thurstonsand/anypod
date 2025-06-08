@@ -9,6 +9,7 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 import logging
+import mimetypes
 from typing import Any
 
 from ..db import Download, DownloadStatus
@@ -165,6 +166,41 @@ class YoutubeEntry:
             return self._ytdlp_info.get("ext", str)
 
     @property
+    def mime_type(self) -> str:
+        """Get the MIME type for the video.
+
+        Defaults to application/octet-stream if video is live or not present.
+        """
+        ext = self.ext
+        if ext is None:
+            return "application/octet-stream"
+        if not ext.startswith("."):
+            ext = f".{ext}"
+
+        # Special case for live streams
+        if ext == ".live":
+            return "application/octet-stream"
+
+        mime_type = mimetypes.guess_type(f"file{ext}")[0]
+        if mime_type is None:
+            raise YtdlpYoutubeDataError(
+                f"Could not determine MIME type for extension '{ext}'.",
+                feed_id=self.feed_id,
+                download_id=self.download_id,
+            )
+
+        return mime_type
+
+    @property
+    def filesize(self) -> int:
+        """Get the file size for the video.
+
+        Defaults to 0 if not present.
+        """
+        with self._annotate_exceptions():
+            return self._ytdlp_info.get("filesize", int) or 0
+
+    @property
     def timestamp(self) -> datetime | None:
         """Get the timestamp as a UTC datetime object."""
         with self._annotate_exceptions():
@@ -270,6 +306,12 @@ class YoutubeEntry:
         with self._annotate_exceptions():
             return self._ytdlp_info.get("thumbnail", str)
 
+    @property
+    def description(self) -> str | None:
+        """Get the description for the video."""
+        with self._annotate_exceptions():
+            return self._ytdlp_info.get("description", str)
+
 
 class YoutubeHandler:
     """YouTube-specific implementation for fetching strategy and parsing.
@@ -331,12 +373,14 @@ class YoutubeHandler:
             # For live/upcoming entries, these values are not yet available
             ext = "live"
             duration = 0
+            mime_type = "application/octet-stream"
             logger.debug(
                 "Entry is upcoming/live, setting default extension and duration.",
                 extra={
                     "video_id": entry.download_id,
                     "extension": ext,
                     "duration": duration,
+                    "mime_type": mime_type,
                 },
             )
         else:
@@ -348,6 +392,7 @@ class YoutubeHandler:
                 )
             ext = entry.ext
             duration = entry.duration
+            mime_type = entry.mime_type
 
         parsed_download = Download(
             feed=feed_id,
@@ -356,9 +401,12 @@ class YoutubeHandler:
             title=entry.title,
             published=published_dt,
             ext=ext,
+            mime_type=mime_type,
+            filesize=entry.filesize,
             duration=duration,
             status=status,
             thumbnail=entry.thumbnail,
+            description=entry.description,
         )
         logger.debug(
             "Successfully parsed single video entry.",

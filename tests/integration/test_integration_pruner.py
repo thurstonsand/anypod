@@ -24,9 +24,10 @@ SAMPLE_DOWNLOADS = [
         title="Old Downloaded Video 1",
         published=BASE_PUBLISH_DATE - timedelta(days=10),
         ext="mp4",
+        mime_type="video/mp4",
+        filesize=1024 * 1024,  # 1MB
         duration=120.0,
         status=DownloadStatus.DOWNLOADED,
-        filesize=1024 * 1024,  # 1MB
         retries=0,
     ),
     Download(
@@ -36,9 +37,10 @@ SAMPLE_DOWNLOADS = [
         title="Old Downloaded Video 2",
         published=BASE_PUBLISH_DATE - timedelta(days=8),
         ext="webm",
+        mime_type="video/webm",
+        filesize=2 * 1024 * 1024,  # 2MB
         duration=180.0,
         status=DownloadStatus.DOWNLOADED,
-        filesize=2 * 1024 * 1024,  # 2MB
         retries=0,
     ),
     Download(
@@ -48,9 +50,10 @@ SAMPLE_DOWNLOADS = [
         title="Mid Downloaded Video",
         published=BASE_PUBLISH_DATE - timedelta(days=5),
         ext="mp4",
+        mime_type="video/mp4",
+        filesize=3 * 1024 * 1024,  # 3MB
         duration=200.0,
         status=DownloadStatus.DOWNLOADED,
-        filesize=3 * 1024 * 1024,  # 3MB
         retries=0,
     ),
     Download(
@@ -60,9 +63,10 @@ SAMPLE_DOWNLOADS = [
         title="Recent Downloaded Video 1",
         published=BASE_PUBLISH_DATE - timedelta(days=2),
         ext="mp4",
+        mime_type="video/mp4",
+        filesize=int(1.5 * 1024 * 1024),  # 1.5MB
         duration=150.0,
         status=DownloadStatus.DOWNLOADED,
-        filesize=int(1.5 * 1024 * 1024),  # 1.5MB
         retries=0,
     ),
     Download(
@@ -72,9 +76,10 @@ SAMPLE_DOWNLOADS = [
         title="Recent Downloaded Video 2",
         published=BASE_PUBLISH_DATE - timedelta(days=1),
         ext="mkv",
+        mime_type="video/mkv",
+        filesize=4 * 1024 * 1024,  # 4MB
         duration=240.0,
         status=DownloadStatus.DOWNLOADED,
-        filesize=4 * 1024 * 1024,  # 4MB
         retries=0,
     ),
     # Non-downloaded items (should not have files deleted but can be archived)
@@ -85,6 +90,8 @@ SAMPLE_DOWNLOADS = [
         title="Old Queued Video",
         published=BASE_PUBLISH_DATE - timedelta(days=9),
         ext="mp4",
+        mime_type="video/mp4",
+        filesize=1024 * 1024,  # 1MB
         duration=100.0,
         status=DownloadStatus.QUEUED,
         retries=0,
@@ -96,6 +103,8 @@ SAMPLE_DOWNLOADS = [
         title="Old Error Video",
         published=BASE_PUBLISH_DATE - timedelta(days=7),
         ext="mp4",
+        mime_type="video/mp4",
+        filesize=1024 * 1024,  # 1MB
         duration=90.0,
         status=DownloadStatus.ERROR,
         retries=3,
@@ -108,6 +117,8 @@ SAMPLE_DOWNLOADS = [
         title="Old Skipped Video",
         published=BASE_PUBLISH_DATE - timedelta(days=6),
         ext="mp4",
+        mime_type="video/mp4",
+        filesize=1024 * 1024,  # 1MB
         duration=110.0,
         status=DownloadStatus.SKIPPED,
         retries=0,
@@ -120,6 +131,8 @@ SAMPLE_DOWNLOADS = [
         title="Recent Upcoming Video",
         published=BASE_PUBLISH_DATE - timedelta(days=3),
         ext="mp4",
+        mime_type="video/mp4",
+        filesize=1024 * 1024,  # 1MB
         duration=130.0,
         status=DownloadStatus.UPCOMING,
         retries=0,
@@ -131,6 +144,8 @@ SAMPLE_DOWNLOADS = [
         title="Old Archived Video",
         published=BASE_PUBLISH_DATE - timedelta(days=15),
         ext="mp4",
+        mime_type="video/mp4",
+        filesize=1024 * 1024,  # 1MB
         duration=140.0,
         status=DownloadStatus.ARCHIVED,
         retries=0,
@@ -544,6 +559,8 @@ def test_prune_feed_downloads_only_excluded_statuses(
             title="Skipped Video 1",
             published=BASE_PUBLISH_DATE - timedelta(days=10),
             ext="mp4",
+            mime_type="video/mp4",
+            filesize=12345,
             duration=120.0,
             status=DownloadStatus.SKIPPED,
             retries=0,
@@ -555,6 +572,8 @@ def test_prune_feed_downloads_only_excluded_statuses(
             title="Archived Video 1",
             published=BASE_PUBLISH_DATE - timedelta(days=15),
             ext="mp4",
+            mime_type="video/mp4",
+            filesize=12345,
             duration=150.0,
             status=DownloadStatus.ARCHIVED,
             retries=0,
@@ -606,9 +625,10 @@ def test_prune_feed_downloads_large_dataset(
             title=f"Video {i}",
             published=BASE_PUBLISH_DATE - timedelta(days=i),
             ext="mp4",
+            mime_type="video/mp4",
+            filesize=1024 * 1024,  # 1MB
             duration=120.0,
             status=DownloadStatus.DOWNLOADED if i % 2 == 0 else DownloadStatus.QUEUED,
-            filesize=1024 * 1024,  # 1MB
             retries=0,
         )
         large_downloads.append(download)

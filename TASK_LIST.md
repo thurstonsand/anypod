@@ -221,15 +221,21 @@ This section details the components that manage the lifecycle of downloads, from
 
 ## 4  Feed Generation
 - [ ] Determine if a [read/write lock](https://pypi.org/project/readerwriterlock/) for in-memory feed XML cache is needed for concurrency
+- [ ] add new fields to Download
+  - this will also involve potentially changing how i update values, since some (like title) might get changed down the line. so we should try to store the most recent value
 - [ ] Implement `generate_feed_xml(feed_id)` to write to in-memory XML after acquiring write lock
 - [ ] Implement `get_feed_xml(feed_id)` for HTTP handlers to read from in-memory XML after acquiring read lock
-- [ ] On startup, trigger a retrieve-and-update loop for all feeds to generate XML before starting the HTTP server
 - [ ] Write unit tests to verify enclosure URLs and MIME types in generated feeds
+- [ ] Not really related: maybe I can collapse the concepts of enqueuer and downloader into 1: basically skip the QUEUED state for any immediately ready videos (go straight to download). Only issue is then how do we queue upcoming videos? maybe explicit live handler? but then duplicate download logic?
+- [ ] Prevent magic values (url path, file path). maybe have an intermediate that knows all types of paths that file_manager and feedgen reach out to? or some unified type that can output both in a stable way?
+- [ ] Figure out how to bring in host url.
+- [ ] duration should be an int
 
 ## 5  Scheduler / Worker Loop
 - [ ] Init APScheduler (asyncio).
 - [ ] For each feed add cron trigger → `process_feed`.
 - [ ] Implement `process_feed` steps via DataCoordinator and FeedGen: ① enqueue → ② download → ③ prune → ④ generate RSS
+- [ ] On startup, trigger a retrieve-and-update loop for all feeds to generate XML before starting the HTTP server
 
 ## 6  Scheduler / Worker Loop
 - [ ] Create FastAPI app: static mounts `/feeds` & `/media`.

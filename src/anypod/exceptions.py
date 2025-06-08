@@ -222,3 +222,19 @@ class YtdlpApiError(YtdlpError):
         self.feed_id = feed_id
         self.download_id = download_id
         self.url = url
+
+
+class RSSGenerationError(AnypodError):
+    """Raised when an error occurs during RSS feed generation.
+
+    Attributes:
+        feed_id: The feed identifier associated with the error.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        feed_id: str | None = None,
+    ):
+        super().__init__(message)
+        self.feed_id = feed_id

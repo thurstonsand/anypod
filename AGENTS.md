@@ -1,0 +1,2 @@
+- Follow the instructions found in `/CLAUDE.md`
+- When working in the `/tests` directory, follow the instructions found in `/tests/CLAUDE.md` in addition to the original, top level instructions.

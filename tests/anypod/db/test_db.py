@@ -34,9 +34,12 @@ def sample_download_queued() -> Download:
         title="Test Video 1",
         published=datetime.datetime(2023, 1, 1, 12, 0, 0, tzinfo=datetime.UTC),
         ext="mp4",
+        mime_type="video/mp4",
         duration=120.0,
         status=DownloadStatus.QUEUED,
         thumbnail="http://example.com/thumb1.jpg",
+        description="Test video description",
+        filesize=0,  # 0 for queued items
         retries=0,
         last_error=None,
     )
@@ -54,8 +57,11 @@ def sample_download_row_data() -> dict[str, Any]:
             2023, 1, 1, 12, 0, 0, tzinfo=datetime.UTC
         ).isoformat(),  # Stored as ISO string in DB
         "ext": "mp4",
+        "mime_type": "video/mp4",
         "duration": 120.0,
         "thumbnail": "http://example.com/thumb/123.jpg",
+        "description": "Test video description from DB",
+        "filesize": 0,
         "status": str(DownloadStatus.QUEUED),
         "retries": 0,
         "last_error": None,
@@ -72,9 +78,12 @@ def sample_download_upcoming() -> Download:
         title="Test Video Upcoming",
         published=datetime.datetime(2023, 1, 1, 12, 0, 0, tzinfo=datetime.UTC),
         ext="mp4",
+        mime_type="video/mp4",
         duration=120.0,
         status=DownloadStatus.UPCOMING,
         thumbnail="http://example.com/thumb_upcoming.jpg",
+        description="Upcoming video description",
+        filesize=0,
         retries=0,
         last_error=None,
     )
@@ -94,8 +103,11 @@ def test_download_equality_and_hash(sample_download_queued: Download):
         title="Test Video Title One Alt",
         published=datetime.datetime(2023, 1, 1, 13, 0, 0, tzinfo=datetime.UTC),
         ext="mkv",
+        mime_type="video/x-matroska",
         duration=130.5,
         thumbnail="http://example.com/thumb/v123_alt.jpg",
+        description="Alt description",
+        filesize=2048,
         status=DownloadStatus.DOWNLOADED,  # Different status
         retries=1,  # Different retries
         last_error="some error",  # Different error
@@ -107,8 +119,11 @@ def test_download_equality_and_hash(sample_download_queued: Download):
         title="Test Video Title Two",
         published=datetime.datetime(2023, 1, 2, 12, 0, 0, tzinfo=datetime.UTC),
         ext="mp4",
+        mime_type="video/mp4",
         duration=180,
         thumbnail="http://example.com/thumb/v456.jpg",
+        description="Another description",
+        filesize=0,
         status=DownloadStatus.QUEUED,
     )
     download4_feed2_v1_diff_feed = Download(
@@ -118,8 +133,11 @@ def test_download_equality_and_hash(sample_download_queued: Download):
         title="Another Feed Video",
         published=datetime.datetime(2023, 1, 1, 12, 0, 0, tzinfo=datetime.UTC),
         ext="mp4",
+        mime_type="video/mp4",
         duration=120.5,
         thumbnail="http://example.com/thumb/another_v123.jpg",
+        description="Different feed description",
+        filesize=0,
         status=DownloadStatus.QUEUED,
     )
 
@@ -230,8 +248,11 @@ def test_upsert_download_updates_existing(
         title="Updated Test Video Title",
         published=sample_download_queued.published + datetime.timedelta(hours=1),
         ext="mkv",  # Changed ext
+        mime_type="video/x-matroska",  # Changed mime_type
         duration=150.0,  # Changed duration
         thumbnail="http://example.com/thumb/v123_updated.jpg",
+        description="Updated description",
+        filesize=4096,  # Changed filesize
         status=DownloadStatus.DOWNLOADED,  # Changed status
         retries=1,  # Changed retries
         last_error="An old error",  # Changed last_error
@@ -418,6 +439,8 @@ def test_get_downloads_to_prune_by_keep_last(db_manager: DatabaseManager):
         source_url="url",
         title="t1",
         ext="mp4",
+        mime_type="video/mp4",
+        filesize=1024,
         duration=1,
     )
     dl_f1v2_err_mid1 = Download(
@@ -428,6 +451,8 @@ def test_get_downloads_to_prune_by_keep_last(db_manager: DatabaseManager):
         source_url="url",
         title="t2",
         ext="mkv",
+        mime_type="video/x-matroska",
+        filesize=1024,
         duration=1,
     )
     dl_f1v3_q_mid2 = Download(
@@ -438,6 +463,8 @@ def test_get_downloads_to_prune_by_keep_last(db_manager: DatabaseManager):
         source_url="url",
         title="t3",
         ext="webm",
+        mime_type="video/webm",
+        filesize=1024,
         duration=1,
     )
     dl_f1v4_dl_newest = Download(
@@ -448,6 +475,8 @@ def test_get_downloads_to_prune_by_keep_last(db_manager: DatabaseManager):
         source_url="url",
         title="t4",
         ext="mp4",
+        mime_type="video/mp4",
+        filesize=1024,
         duration=1,
     )
     dl_f1v5_arch = Download(
@@ -458,6 +487,8 @@ def test_get_downloads_to_prune_by_keep_last(db_manager: DatabaseManager):
         source_url="url",
         title="t5",
         ext="mp3",
+        mime_type="audio/mpeg",
+        filesize=1024,
         duration=1,
     )
     dl_f1v6_upcoming_older = Download(  # New UPCOMING download, older
@@ -468,6 +499,8 @@ def test_get_downloads_to_prune_by_keep_last(db_manager: DatabaseManager):
         source_url="url",
         title="t6_upcoming",
         ext="mp4",
+        mime_type="video/mp4",
+        filesize=1024,
         duration=1,
     )
     dl_f1v7_skipped = Download(
@@ -478,6 +511,8 @@ def test_get_downloads_to_prune_by_keep_last(db_manager: DatabaseManager):
         source_url="url",
         title="t7_skipped",
         ext="mp4",
+        mime_type="video/mp4",
+        filesize=1024,
         duration=1,
     )
 
@@ -490,6 +525,8 @@ def test_get_downloads_to_prune_by_keep_last(db_manager: DatabaseManager):
         source_url="url",
         title="t_f2",
         ext="mp4",
+        mime_type="video/mp4",
+        filesize=1024,
         duration=1,
     )
 
@@ -554,6 +591,8 @@ def test_get_downloads_to_prune_by_since(db_manager: DatabaseManager):
         source_url="url",
         title="t1",
         ext="mp4",
+        mime_type="video/mp4",
+        filesize=1024,
         duration=1,
     )
     dl_ps_v2_mid_err = Download(
@@ -564,6 +603,8 @@ def test_get_downloads_to_prune_by_since(db_manager: DatabaseManager):
         source_url="url",
         title="t2",
         ext="mkv",
+        mime_type="video/x-matroska",
+        filesize=1024,
         duration=1,
     )
     dl_ps_v3_newer_q = Download(
@@ -574,6 +615,8 @@ def test_get_downloads_to_prune_by_since(db_manager: DatabaseManager):
         source_url="url",
         title="t3",
         ext="webm",
+        mime_type="video/webm",
+        filesize=1024,
         duration=1,
     )
     dl_ps_v4_arch = Download(
@@ -584,6 +627,8 @@ def test_get_downloads_to_prune_by_since(db_manager: DatabaseManager):
         source_url="url",
         title="t4",
         ext="mp3",
+        mime_type="audio/mpeg",
+        filesize=1024,
         duration=1,
     )
     dl_ps_v5_upcoming_ancient = Download(  # New UPCOMING download, very old
@@ -594,6 +639,8 @@ def test_get_downloads_to_prune_by_since(db_manager: DatabaseManager):
         source_url="url",
         title="t5_upcoming",
         ext="mp4",
+        mime_type="video/mp4",
+        filesize=1024,
         duration=1,
     )
     dl_ps_v6_skipped_ancient = Download(
@@ -604,6 +651,8 @@ def test_get_downloads_to_prune_by_since(db_manager: DatabaseManager):
         source_url="url",
         title="t6_skipped",
         ext="mp4",
+        mime_type="video/mp4",
+        filesize=1024,
         duration=1,
     )
 
@@ -616,6 +665,8 @@ def test_get_downloads_to_prune_by_since(db_manager: DatabaseManager):
         source_url="url",
         title="t_other",
         ext="mp4",
+        mime_type="video/mp4",
+        filesize=1024,
         duration=1,
     )
 
@@ -689,6 +740,8 @@ def test_get_downloads_by_status(db_manager: DatabaseManager):
         source_url="url",
         title="t_err_f2",
         ext="mp4",
+        mime_type="video/mp4",
+        filesize=1024,
         duration=1,
     )
     # middle, feed1, ERROR
@@ -701,6 +754,8 @@ def test_get_downloads_by_status(db_manager: DatabaseManager):
         source_url="url",
         title="t_err_f1_old",
         ext="mp4",
+        mime_type="video/mp4",
+        filesize=1024,
         duration=1,
     )
     # newest, feed1, ERROR
@@ -713,6 +768,8 @@ def test_get_downloads_by_status(db_manager: DatabaseManager):
         source_url="url",
         title="t_err_f1_new",
         ext="mp4",
+        mime_type="video/mp4",
+        filesize=1024,
         duration=1,
     )
     # Other status downloads for noise and testing other statuses
@@ -724,6 +781,8 @@ def test_get_downloads_by_status(db_manager: DatabaseManager):
         source_url="url",
         title="t_q_f1",
         ext="mp4",
+        mime_type="video/mp4",
+        filesize=1024,
         duration=1,
     )
     dl_f3d1 = Download(
@@ -734,6 +793,8 @@ def test_get_downloads_by_status(db_manager: DatabaseManager):
         source_url="url",
         title="t_d_f3",
         ext="mp4",
+        mime_type="video/mp4",
+        filesize=1024,
         duration=1,
     )
     dl_f1_upcoming = Download(
@@ -744,6 +805,8 @@ def test_get_downloads_by_status(db_manager: DatabaseManager):
         source_url="url",
         title="t_up_f1",
         ext="mp4",
+        mime_type="video/mp4",
+        filesize=1024,
         duration=1,
     )
     dl_f2_upcoming = Download(
@@ -754,6 +817,8 @@ def test_get_downloads_by_status(db_manager: DatabaseManager):
         source_url="url",
         title="t_up_f2",
         ext="mp4",
+        mime_type="video/mp4",
+        filesize=1024,
         duration=1,
     )
 
@@ -774,7 +839,7 @@ def test_get_downloads_by_status(db_manager: DatabaseManager):
         status_to_filter=DownloadStatus.ERROR
     )
     assert len(all_errors) == 3, "Should fetch all 3 ERROR downloads"
-    assert [row.id for row in all_errors] == ["f2e1", "f1e1_old", "f1e2_new"]
+    assert [row.id for row in all_errors] == ["f1e2_new", "f1e1_old", "f2e1"]
     for row in all_errors:
         assert row.status == DownloadStatus.ERROR
 
@@ -782,13 +847,13 @@ def test_get_downloads_by_status(db_manager: DatabaseManager):
         status_to_filter=DownloadStatus.ERROR, feed=feed1
     )
     assert len(feed1_errors) == 2, "Should fetch 2 ERROR downloads for feed1"
-    assert [row.id for row in feed1_errors] == ["f1e1_old", "f1e2_new"]
+    assert [row.id for row in feed1_errors] == ["f1e2_new", "f1e1_old"]
 
     limited_errors = db_manager.get_downloads_by_status(
         status_to_filter=DownloadStatus.ERROR, limit=1, offset=0
     )
     assert len(limited_errors) == 1, "Should fetch only 1 error with limit=1"
-    assert limited_errors[0].id == "f2e1", "Should be the oldest overall error"
+    assert limited_errors[0].id == "f1e2_new", "Should be the newest overall error"
 
     # --- Test UPCOMING status ---
     # Expected order for all UPCOMING: f2upcoming (oldest), f1upcoming (newest)
@@ -796,7 +861,7 @@ def test_get_downloads_by_status(db_manager: DatabaseManager):
         status_to_filter=DownloadStatus.UPCOMING
     )
     assert len(all_upcoming) == 2, "Should fetch all 2 UPCOMING downloads"
-    assert [row.id for row in all_upcoming] == ["f2upcoming", "f1upcoming"]
+    assert [row.id for row in all_upcoming] == ["f1upcoming", "f2upcoming"]
     for row in all_upcoming:
         assert row.status == DownloadStatus.UPCOMING
 
@@ -823,9 +888,9 @@ def test_get_downloads_by_status(db_manager: DatabaseManager):
     # --- Test with offset and limit for UPCOMING ---
     upcoming_limit1_offset1 = db_manager.get_downloads_by_status(
         status_to_filter=DownloadStatus.UPCOMING, limit=1, offset=1
-    )  # Skips f2upcoming, gets f1upcoming
+    )  # Skips f1upcoming, gets f2upcoming
     assert len(upcoming_limit1_offset1) == 1
-    assert upcoming_limit1_offset1[0].id == "f1upcoming"
+    assert upcoming_limit1_offset1[0].id == "f2upcoming"
 
     # --- Test no downloads for a status/feed combination ---
     no_feed2_queued = db_manager.get_downloads_by_status(
@@ -890,6 +955,8 @@ def test_download_from_row_success(sample_download_row_data: dict[str, Any]):
         title=mock_row["title"],
         published=expected_published_dt,
         ext=mock_row["ext"],
+        mime_type=mock_row["mime_type"],
+        filesize=mock_row["filesize"],
         duration=float(mock_row["duration"]),
         thumbnail=mock_row["thumbnail"],
         status=expected_status_enum,

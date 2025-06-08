@@ -20,6 +20,8 @@ from anypod.ytdlp_wrapper.youtube_handler import (
     YtdlpYoutubeVideoFilteredOutError,
 )
 
+# --- Fixtures ---
+
 
 @pytest.fixture
 def youtube_handler() -> YoutubeHandler:
@@ -38,6 +40,7 @@ def valid_video_entry_data() -> dict[str, Any]:
         "duration": 120.0,
         "webpage_url": "https://www.youtube.com/watch?v=video123",
         "thumbnail": "https://example.com/thumb.jpg",
+        "description": "This is a test video description",
     }
 
 
@@ -82,7 +85,71 @@ def test_parse_single_video_entry_success_basic(
     assert download.source_url == valid_video_entry.webpage_url
     assert download.status == DownloadStatus.QUEUED
     assert download.thumbnail == valid_video_entry.thumbnail
+    assert download.description == valid_video_entry.description
+    assert download.mime_type == "video/mp4"  # Based on ext="mp4"
+    assert download.filesize == 0  # Default for QUEUED status
     assert download.feed == FEED_ID
+
+
+@pytest.mark.unit
+def test_parse_single_video_entry_success_no_description(
+    youtube_handler: YoutubeHandler, valid_video_entry: YoutubeEntry
+):
+    """Tests successful parsing when description is missing."""
+    del valid_video_entry._ytdlp_info._info_dict["description"]
+
+    download = youtube_handler._parse_single_video_entry(valid_video_entry, FEED_ID)
+
+    assert download.description is None
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "ext, expected_mime",
+    [
+        ("mp3", "audio/mpeg"),
+        ("m4a", "audio/mp4a-latm"),
+        ("mp4", "video/mp4"),
+        ("webm", "video/webm"),
+        ("mkv", "video/x-matroska"),
+        ("flac", "audio/x-flac"),
+        # Test with dot prefix
+        (".mp3", "audio/mpeg"),
+        (".mp4", "video/mp4"),
+        # Test special case
+        ("live", "application/octet-stream"),
+        (".live", "application/octet-stream"),
+    ],
+)
+def test_parse_single_video_entry_mime_type_mapping(
+    youtube_handler: YoutubeHandler,
+    valid_video_entry: YoutubeEntry,
+    ext: str,
+    expected_mime: str,
+):
+    """Tests that MIME type is correctly determined from file extension."""
+    valid_video_entry._ytdlp_info._info_dict["ext"] = ext
+
+    download = youtube_handler._parse_single_video_entry(valid_video_entry, FEED_ID)
+
+    assert download.mime_type == expected_mime
+
+
+@pytest.mark.unit
+def test_parse_single_video_entry_mime_type_unknown_type(
+    youtube_handler: YoutubeHandler, valid_video_entry_data: dict[str, Any]
+):
+    """Tests YoutubeEntry.mime_type property raises error for unknown extensions."""
+    valid_video_entry_data["ext"] = "totallyfakeext"
+    entry = YoutubeEntry(YtdlpInfo(valid_video_entry_data), "test_feed")
+
+    with pytest.raises(YtdlpYoutubeDataError) as exc_info:
+        _ = youtube_handler._parse_single_video_entry(entry, FEED_ID).mime_type
+
+    assert exc_info.value.feed_id == FEED_ID
+    assert exc_info.value.download_id == entry.download_id
+
+    assert valid_video_entry_data["ext"] in str(exc_info.value)
 
 
 @pytest.mark.unit
@@ -133,6 +200,8 @@ def test_parse_single_video_entry_live_upcoming_video(
     assert download.status == DownloadStatus.UPCOMING
     assert download.ext == "live"
     assert download.duration == 0
+    assert download.mime_type == "application/octet-stream"  # Special case for live
+    assert download.filesize == 0
 
 
 @pytest.mark.unit

@@ -52,6 +52,8 @@ BIG_BUCK_BUNNY_DOWNLOAD = Download(
     thumbnail="https://i.ytimg.com/vi_webp/aqz-KE-bpKQ/maxresdefault.webp",
     retries=0,
     last_error=None,
+    mime_type="video/mp4",
+    filesize=12345,
 )
 
 
@@ -159,6 +161,8 @@ def test_download_media_to_file_success(ytdlp_wrapper: YtdlpWrapper):
         thumbnail="https://i.ytimg.com/vi_webp/aqz-KE-bpKQ/maxresdefault.webp",
         retries=0,
         last_error=None,
+        mime_type="video/mp4",
+        filesize=12345,
     )
 
     # Use the same minimal args as other tests, could be customized if needed
@@ -187,6 +191,8 @@ def test_download_media_to_file_non_existent(ytdlp_wrapper: YtdlpWrapper):
         ext="mp4",
         duration=10.0,
         status=DownloadStatus.QUEUED,
+        mime_type="video/mp4",
+        filesize=12345,
     )
     cli_args = YT_DLP_MINIMAL_ARGS
 

@@ -64,8 +64,26 @@ def create_download(
     ext: str = "mp4",
     duration: float = 120.0,
     retries: int = 0,
+    mime_type: str | None = None,
+    filesize: int | None = None,
 ) -> Download:
     """Helper function to create Download objects for tests."""
+    # Determine default mime_type based on ext if not provided
+    if mime_type is None:
+        match ext:
+            case "live":
+                mime_type = "application/octet-stream"
+            case "mp4":
+                mime_type = "video/mp4"
+            case "mp3":
+                mime_type = "audio/mpeg"
+            case _:
+                mime_type = "video/mp4"  # fallback
+
+    # Determine default filesize based on status if not provided
+    if filesize is None:
+        filesize = 1024000 if status == DownloadStatus.DOWNLOADED else 0
+
     return Download(
         feed=feed_id,
         id=id,
@@ -73,6 +91,8 @@ def create_download(
         title=title or f"Test Video {id}",
         published=datetime.now(UTC) - timedelta(days=published_offset_days),
         ext=ext,
+        mime_type=mime_type,
+        filesize=filesize,
         duration=duration,
         status=status,
         retries=retries,

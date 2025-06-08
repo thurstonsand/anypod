@@ -57,6 +57,8 @@ def sample_downloaded_item() -> Download:
         title="Test Video 1",
         published=datetime.datetime(2023, 1, 1, 12, 0, 0, tzinfo=datetime.UTC),
         ext="mp4",
+        mime_type="video/mp4",
+        filesize=1024000,
         duration=120.0,
         status=DownloadStatus.DOWNLOADED,
     )
@@ -72,6 +74,8 @@ def sample_queued_item() -> Download:
         title="Test Video 2",
         published=datetime.datetime(2023, 1, 2, 12, 0, 0, tzinfo=datetime.UTC),
         ext="mp4",
+        mime_type="video/mp4",
+        filesize=0,
         duration=180.0,
         status=DownloadStatus.QUEUED,
     )
@@ -86,7 +90,9 @@ def sample_upcoming_item() -> Download:
         source_url="http://example.com/video3",
         title="Test Video 3",
         published=datetime.datetime(2023, 1, 3, 12, 0, 0, tzinfo=datetime.UTC),
-        ext="mp4",
+        ext="live",
+        mime_type="application/octet-stream",
+        filesize=0,
         duration=200.0,
         status=DownloadStatus.UPCOMING,
     )
@@ -102,6 +108,8 @@ def sample_skipped_item() -> Download:
         title="Test Video 4",
         published=datetime.datetime(2023, 1, 4, 12, 0, 0, tzinfo=datetime.UTC),
         ext="mp4",
+        mime_type="video/mp4",
+        filesize=1024000,
         duration=220.0,
         status=DownloadStatus.SKIPPED,
     )

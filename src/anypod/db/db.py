@@ -51,10 +51,12 @@ class Download:
         title: The download title.
         published: Publication datetime (UTC).
         ext: File extension.
+        mime_type: MIME type of the download.
+        filesize: File size in bytes.
         duration: Duration in seconds.
         status: Current download status.
         thumbnail: Optional thumbnail URL.
-        filesize: Optional file size in bytes.
+        description: Optional description of the download.
         retries: Number of retry attempts.
         last_error: Last error message if any.
     """
@@ -65,10 +67,12 @@ class Download:
     title: str
     published: datetime  # Should be UTC
     ext: str
+    mime_type: str
+    filesize: int  # Bytes
     duration: float  # in seconds
     status: DownloadStatus
     thumbnail: str | None = None
-    filesize: int | None = None  # Bytes
+    description: str | None = None
     retries: int = 0
     last_error: str | None = None
 
@@ -106,12 +110,14 @@ class Download:
             title=row["title"],
             published=published_dt,
             ext=row["ext"],
+            mime_type=row["mime_type"],
+            filesize=row["filesize"],
             duration=float(row["duration"]),
-            thumbnail=row["thumbnail"],
-            filesize=row.get("filesize"),
             status=status_enum,
-            retries=row["retries"],
-            last_error=row["last_error"],
+            thumbnail=row.get("thumbnail"),
+            description=row.get("description"),
+            retries=row.get("retries", 0),
+            last_error=row.get("last_error"),
         )
 
     def __eq__(self, other: object) -> bool:
@@ -156,9 +162,11 @@ class DatabaseManager:
                 "title": str,
                 "published": datetime,
                 "ext": str,
+                "mime_type": str,
+                "filesize": int,
                 "duration": float,
                 "thumbnail": str,
-                "filesize": int,
+                "description": str,
                 "status": str,
                 "retries": int,
                 "last_error": str,
@@ -171,6 +179,8 @@ class DatabaseManager:
                 "title",
                 "published",
                 "ext",
+                "mime_type",
+                "filesize",
                 "duration",
                 "status",
                 "retries",
@@ -231,6 +241,8 @@ class DatabaseManager:
                     "title",
                     "published",
                     "ext",
+                    "mime_type",
+                    "filesize",
                     "duration",
                     "status",
                     "retries",
@@ -737,7 +749,7 @@ class DatabaseManager:
             offset: Number of records to skip (for pagination).
 
         Returns:
-            List of Download objects matching the status and other criteria.
+            List of Download objects matching the status and other criteria, sorted newest first.
 
         Raises:
             DatabaseOperationError: If the database query fails.
@@ -761,7 +773,7 @@ class DatabaseManager:
                 self._download_table_name,
                 " AND ".join(where),
                 where_args=where_args,
-                order_by="published ASC",
+                order_by="published DESC",
                 limit=limit,
                 offset=offset,
             )

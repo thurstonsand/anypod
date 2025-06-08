@@ -15,6 +15,7 @@ from unittest.mock import MagicMock, call, patch
 import pytest
 
 from anypod.config import FeedConfig
+from anypod.config.feed_config import FeedMetadata
 from anypod.data_coordinator.downloader import Downloader
 from anypod.db import DatabaseManager, Download, DownloadStatus
 from anypod.exceptions import (
@@ -66,8 +67,11 @@ def sample_download() -> Download:
         title="Test Video 1",
         published=datetime.datetime(2023, 1, 1, 12, 0, 0, tzinfo=datetime.UTC),
         ext="mp4",
+        mime_type="video/mp4",
         duration=120.0,
         status=DownloadStatus.QUEUED,
+        description="Original description",
+        filesize=0,
     )
 
 
@@ -81,6 +85,7 @@ def sample_feed_config() -> FeedConfig:
         keep_last=10,
         since=None,
         max_errors=3,
+        metadata=FeedMetadata(title="Test Podcast"),  # type: ignore
     )
 
 
@@ -172,6 +177,115 @@ def test_handle_download_failure_db_error_logged(
         )
 
 
+# --- Tests for _check_and_update_metadata ---
+
+
+@pytest.mark.unit
+def test_check_and_update_metadata_detects_changes(
+    downloader: Downloader,
+    mock_db_manager: MagicMock,
+    mock_ytdlp_wrapper: MagicMock,
+    sample_download: Download,
+    sample_feed_config: FeedConfig,
+):
+    """Tests that _check_and_update_metadata detects and updates changed metadata."""
+    updated_download = dataclasses.replace(
+        sample_download,
+        title="Updated Title",
+        description="Updated description",
+        thumbnail="http://example.com/new_thumb.jpg",
+        duration=180.0,
+    )
+
+    mock_ytdlp_wrapper.fetch_metadata.return_value = [updated_download]
+
+    result = downloader._check_and_update_metadata(sample_download, sample_feed_config)
+
+    mock_ytdlp_wrapper.fetch_metadata.assert_called_once_with(
+        sample_download.feed,
+        sample_download.source_url,
+        sample_feed_config.yt_args,
+    )
+
+    mock_db_manager.upsert_download.assert_called_once()
+    updated_in_db = mock_db_manager.upsert_download.call_args[0][0]
+    assert updated_in_db.title == updated_download.title
+    assert updated_in_db.description == updated_download.description
+    assert updated_in_db.thumbnail == updated_download.thumbnail
+    assert updated_in_db.duration == updated_download.duration
+
+    # Verify the returned download has updated values
+    assert result.title == updated_download.title
+    assert result.description == updated_download.description
+
+
+@pytest.mark.unit
+def test_check_and_update_metadata_no_changes(
+    downloader: Downloader,
+    mock_db_manager: MagicMock,
+    mock_ytdlp_wrapper: MagicMock,
+    sample_download: Download,
+    sample_feed_config: FeedConfig,
+):
+    """Tests that _check_and_update_metadata doesn't update DB when no changes detected."""
+    # Mock the fetch to return the same download (no changes)
+    mock_ytdlp_wrapper.fetch_metadata.return_value = [sample_download]
+
+    result = downloader._check_and_update_metadata(sample_download, sample_feed_config)
+
+    # Verify metadata was fetched
+    mock_ytdlp_wrapper.fetch_metadata.assert_called_once()
+
+    # Verify the database was NOT updated since nothing changed
+    mock_db_manager.upsert_download.assert_not_called()
+
+    # Verify the returned download is unchanged
+    assert result == sample_download
+
+
+@pytest.mark.unit
+def test_check_and_update_metadata_fetch_fails_returns_original(
+    downloader: Downloader,
+    mock_db_manager: MagicMock,
+    mock_ytdlp_wrapper: MagicMock,
+    sample_download: Download,
+    sample_feed_config: FeedConfig,
+):
+    """Tests that _check_and_update_metadata returns original on fetch failure."""
+    # Mock the fetch to fail
+    mock_ytdlp_wrapper.fetch_metadata.side_effect = YtdlpApiError("Fetch failed")
+
+    result = downloader._check_and_update_metadata(sample_download, sample_feed_config)
+
+    # Verify the database was NOT updated
+    mock_db_manager.upsert_download.assert_not_called()
+
+    # Verify the original download is returned
+    assert result == sample_download
+
+
+@pytest.mark.unit
+def test_check_and_update_metadata_no_matching_download_returns_original(
+    downloader: Downloader,
+    mock_db_manager: MagicMock,
+    mock_ytdlp_wrapper: MagicMock,
+    sample_download: Download,
+    sample_feed_config: FeedConfig,
+):
+    """Tests that _check_and_update_metadata returns original when no matching download found."""
+    # Mock the fetch to return a different download ID
+    different_download = dataclasses.replace(sample_download, id="different_id")
+    mock_ytdlp_wrapper.fetch_metadata.return_value = [different_download]
+
+    result = downloader._check_and_update_metadata(sample_download, sample_feed_config)
+
+    # Verify the database was NOT updated
+    mock_db_manager.upsert_download.assert_not_called()
+
+    # Verify the original download is returned
+    assert result == sample_download
+
+
 # --- Tests for _process_single_download ---
 
 
@@ -216,6 +330,37 @@ def test_process_single_download_ytdlp_failure_raises_downloader_error(
     assert exc_info.value.feed_id == sample_download.feed
     assert exc_info.value.download_id == sample_download.id
     assert exc_info.value.__cause__ is original_ytdlp_error
+
+
+@pytest.mark.unit
+@patch.object(Downloader, "_check_and_update_metadata")
+@patch.object(Downloader, "_handle_download_success")
+def test_process_single_download_calls_check_metadata(
+    mock_handle_success: MagicMock,
+    mock_check_metadata: MagicMock,
+    downloader: Downloader,
+    mock_ytdlp_wrapper: MagicMock,
+    sample_download: Download,
+    sample_feed_config: FeedConfig,
+):
+    """Tests that _process_single_download calls _check_and_update_metadata before downloading."""
+    # Setup mocks
+    updated_download = dataclasses.replace(sample_download, title="Updated Title")
+    mock_check_metadata.return_value = updated_download
+    downloaded_path = Path("/final/video.mp4")
+    mock_ytdlp_wrapper.download_media_to_file.return_value = downloaded_path
+
+    downloader._process_single_download(sample_download, sample_feed_config)
+
+    # Verify metadata check was called first
+    mock_check_metadata.assert_called_once_with(sample_download, sample_feed_config)
+
+    # Verify download was called with the updated download
+    mock_ytdlp_wrapper.download_media_to_file.assert_called_once_with(
+        updated_download,
+        sample_feed_config.yt_args,
+    )
+    mock_handle_success.assert_called_once_with(updated_download, downloaded_path)
 
 
 # --- Tests for download_queued ---
