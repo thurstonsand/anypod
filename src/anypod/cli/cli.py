@@ -10,6 +10,7 @@ from pathlib import Path
 
 from ..config import AppSettings, DebugMode
 from ..logging_config import setup_logging
+from ..path_manager import PathManager
 from .debug_downloader import run_debug_downloader_mode
 from .debug_enqueuer import run_debug_enqueuer_mode
 from .debug_ytdlp import run_debug_ytdlp_mode
@@ -53,6 +54,12 @@ def main_cli():
         },
     )
 
+    paths = PathManager(
+        base_data_dir=DEBUG_DOWNLOADS_DIR,
+        base_tmp_dir=DEBUG_DOWNLOADS_DIR / "tmp",
+        base_url=settings.base_url,
+    )
+
     match settings.debug_mode:
         case DebugMode.YTDLP:
             debug_ytdlp_config_path = Path.cwd() / DEBUG_YTDLP_CONFIG_FILENAME
@@ -60,38 +67,29 @@ def main_cli():
                 "Initializing Anypod in 'ytdlp' debug mode.",
                 extra={"debug_config_file_path": str(debug_ytdlp_config_path)},
             )
-            app_tmp_dir = DEBUG_DOWNLOADS_DIR / "tmp"
-            app_tmp_dir.mkdir(parents=True, exist_ok=True)
             run_debug_ytdlp_mode(
                 debug_ytdlp_config_path,
-                DEBUG_DOWNLOADS_DIR,
-                app_tmp_dir,
+                paths,
             )
         case DebugMode.ENQUEUER:
             logger.info(
                 "Initializing Anypod in 'enqueuer' debug mode.",
                 extra={"feeds_config_file_path": str(settings.config_file)},
             )
-            app_tmp_dir = DEBUG_DOWNLOADS_DIR / "tmp"
-            app_tmp_dir.mkdir(parents=True, exist_ok=True)
             run_debug_enqueuer_mode(
                 settings,
                 DEBUG_DB_FILE,
-                DEBUG_DOWNLOADS_DIR,
-                app_tmp_dir,
+                paths,
             )
         case DebugMode.DOWNLOADER:
             logger.info(
                 "Initializing Anypod in 'downloader' debug mode.",
                 extra={"feeds_config_file_path": str(settings.config_file)},
             )
-            app_tmp_dir = DEBUG_DOWNLOADS_DIR / "tmp"
-            app_tmp_dir.mkdir(parents=True, exist_ok=True)
             run_debug_downloader_mode(
                 settings,
                 DEBUG_DB_FILE,
-                DEBUG_DOWNLOADS_DIR,
-                app_tmp_dir,
+                paths,
             )
         case None:
             logger.info("Initializing Anypod in default mode.")

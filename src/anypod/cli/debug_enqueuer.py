@@ -12,6 +12,7 @@ from ..config import AppSettings
 from ..data_coordinator.enqueuer import Enqueuer
 from ..db import DatabaseManager, Download, DownloadStatus
 from ..exceptions import DatabaseOperationError, EnqueueError
+from ..path_manager import PathManager
 from ..ytdlp_wrapper import YtdlpWrapper
 
 logger = logging.getLogger(__name__)
@@ -20,8 +21,7 @@ logger = logging.getLogger(__name__)
 def run_debug_enqueuer_mode(
     settings: AppSettings,
     debug_db_path: Path,
-    app_data_dir: Path,
-    app_tmp_dir: Path,
+    paths: PathManager,
 ) -> None:
     """Run the Enqueuer in debug mode to process feed metadata.
 
@@ -32,8 +32,7 @@ def run_debug_enqueuer_mode(
     Args:
         settings: Application settings containing feed configurations.
         debug_db_path: Path to the database file.
-        app_data_dir: Data directory for downloaded files.
-        app_tmp_dir: Temporary directory for yt-dlp operations.
+        paths: PathManager instance containing data and temporary directories.
     """
     logger.info(
         "Initializing Anypod in Enqueuer debug mode.",
@@ -46,10 +45,7 @@ def run_debug_enqueuer_mode(
     try:
         db_manager = DatabaseManager(db_path=debug_db_path)
 
-        ytdlp_wrapper = YtdlpWrapper(
-            app_tmp_dir,
-            app_data_dir,
-        )
+        ytdlp_wrapper = YtdlpWrapper(paths)
         enqueuer = Enqueuer(db_manager, ytdlp_wrapper)
     except Exception as e:
         logger.critical(

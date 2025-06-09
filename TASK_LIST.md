@@ -223,13 +223,23 @@ This section details the components that manage the lifecycle of downloads, from
 - [x] Determine if a [read/write lock](https://pypi.org/project/readerwriterlock/) for in-memory feed XML cache is needed for concurrency
 - [x] add new fields to Download
   - this will also involve potentially changing how i update values, since some (like title) might get changed down the line. so we should try to store the most recent value
-- [ ] Implement `generate_feed_xml(feed_id)` to write to in-memory XML after acquiring write lock
-- [ ] Implement `get_feed_xml(feed_id)` for HTTP handlers to read from in-memory XML after acquiring read lock
+- [x] Implement `generate_feed_xml(feed_id)` to write to in-memory XML after acquiring write lock
+- [x] Implement `get_feed_xml(feed_id)` for HTTP handlers to read from in-memory XML after acquiring read lock
 - [ ] Write unit tests to verify enclosure URLs and MIME types in generated feeds
 - [ ] Not really related: maybe I can collapse the concepts of enqueuer and downloader into 1: basically skip the QUEUED state for any immediately ready videos (go straight to download). Only issue is then how do we queue upcoming videos? maybe explicit live handler? but then duplicate download logic?
-- [ ] Prevent magic values (url path, file path). maybe have an intermediate that knows all types of paths that file_manager and feedgen reach out to? or some unified type that can output both in a stable way?
-- [ ] Figure out how to bring in host url.
-- [ ] duration should be an int
+- [x] Figure out how to bring in host url.
+- [x] duration should be an int
+
+## 4.1 Path Management Centralization
+- [x] **PathManager Implementation** – Create centralized path/URL coordination class:
+  - [x] Single source of truth for file system paths and URLs based on feed_id + download_id
+  - [x] Consistent 1:1 mapping between network paths and file paths
+  - [x] Methods for feed directories, RSS URLs, and media file paths/URLs
+  - [x] Google-style docstrings with proper Args/Returns/Raises sections
+- [x] `FileManager` refactor
+- [x] `Pruner` refactor
+- [x] `RSSFeedGenerator` refactor
+- [x] tests refactor
 
 ## 5  Scheduler / Worker Loop
 - [ ] Init APScheduler (asyncio).

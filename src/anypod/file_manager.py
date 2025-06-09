@@ -6,10 +6,10 @@ operations. Notably does not handle file creation, as that is done by yt-dlp.
 """
 
 import logging
-from pathlib import Path
 from typing import IO
 
 from .exceptions import FileOperationError
+from .path_manager import PathManager
 
 logger = logging.getLogger(__name__)
 
@@ -22,52 +22,38 @@ class FileManager:
     in feed-specific subdirectories.
 
     Attributes:
-        base_download_path: The root path where all download files are stored.
+        _paths: PathManager instance for coordinating file paths and URLs.
     """
 
-    def __init__(self, base_download_path: Path):
-        """Initializes the FileManager with the base directory for download storage.
-
-        Args:
-            base_download_path: The root path where all download files will be stored.
-                               Feed-specific subdirectories will be created under this path.
-
-        Raises:
-            FileOperationError: If the base download directory cannot be created.
-        """
-        self.base_download_path = Path(base_download_path).resolve()
+    def __init__(self, paths: PathManager):
+        self._paths = paths
         logger.debug(
             "FileManager initialized.",
-            extra={"base_download_path": str(self.base_download_path)},
+            extra={"base_download_path": str(self._paths.base_data_dir)},
         )
-        # Ensure the base download directory exists upon instantiation.
-        try:
-            self.base_download_path.mkdir(parents=True, exist_ok=True)
-            logger.debug(
-                "Base download directory exists.",
-                extra={"base_download_path": str(self.base_download_path)},
-            )
-        except OSError as e:
-            raise FileOperationError(
-                "Failed to create base download directory.",
-                file_name=str(self.base_download_path),
-            ) from e
 
-    def delete_download_file(self, feed: str, file_name: str) -> None:
+    def delete_download_file(self, feed: str, download_id: str, ext: str) -> None:
         """Deletes a download file from the filesystem.
 
         Args:
             feed: The name of the feed.
-            file_name: The name of the download file to be deleted.
+            download_id: The unique identifier for the download.
+            ext: File extension without the leading dot.
 
         Raises:
             FileNotFoundError: If the file does not exist or is not a regular file.
-            FileOperationError: If an OS-level error occurs during file deletion (e.g., PermissionError).
+            FileOperationError: If an OS-level error occurs during file deletion, or if feed/download identifiers are invalid.
         """
-        file_path = self.base_download_path / feed / file_name
+        try:
+            file_path = self._paths.media_file_path(feed, download_id, ext)
+        except ValueError as e:
+            raise FileOperationError(
+                "Invalid feed or download identifier.",
+                feed_id=feed,
+                download_id=download_id,
+            ) from e
         log_params = {
             "feed_id": feed,
-            "file_name": file_name,
             "file_path": str(file_path),
         }
         logger.debug("Attempting to delete download file.", extra=log_params)
@@ -81,26 +67,33 @@ class FileManager:
             except OSError as e:
                 raise FileOperationError(
                     "Failed to delete download file.",
-                    file_name=file_name,
+                    file_name=f"{download_id}.{ext}",
                 ) from e
 
-    def download_exists(self, feed: str, file_name: str) -> bool:
+    def download_exists(self, feed: str, download_id: str, ext: str) -> bool:
         """Checks if a specific download file exists.
 
         Args:
             feed: The name of the feed (subdirectory).
-            file_name: The name of the download file.
+            download_id: The unique identifier for the download.
+            ext: File extension without the leading dot.
 
         Returns:
             True if the file exists and is a file, False otherwise.
 
         Raises:
-            FileOperationError: If an OS-level error occurs during the file existence check (e.g., PermissionError on a parent directory).
+            FileOperationError: If an OS-level error occurs during the file existence check, or if feed/download identifiers are invalid.
         """
-        file_path = self.base_download_path / feed / file_name
+        try:
+            file_path = self._paths.media_file_path(feed, download_id, ext)
+        except ValueError as e:
+            raise FileOperationError(
+                "Invalid feed or download identifier.",
+                feed_id=feed,
+                download_id=download_id,
+            ) from e
         log_params = {
             "feed_id": feed,
-            "file_name": file_name,
             "file_path": str(file_path),
         }
         logger.debug("Checking if download file exists.", extra=log_params)
@@ -114,29 +107,36 @@ class FileManager:
                 file_name=str(file_path),
             ) from e
 
-    def get_download_stream(self, feed: str, file_name: str) -> IO[bytes]:
+    def get_download_stream(self, feed: str, download_id: str, ext: str) -> IO[bytes]:
         """Opens and returns a binary read stream for a download file.
 
         Args:
             feed: The name of the feed (subdirectory).
-            file_name: The name of the download file.
+            download_id: The unique identifier for the download.
+            ext: File extension without the leading dot.
 
         Returns:
             An IO[bytes] stream for the download file.
 
         Raises:
             FileNotFoundError: If the file does not exist or is not a regular file.
-            FileOperationError: If an OS-level error occurs while trying to open the file (e.g., PermissionError).
+            FileOperationError: If an OS-level error occurs while trying to open the file, or if feed/download identifiers are invalid.
         """
-        file_path = self.base_download_path / feed / file_name
+        try:
+            file_path = self._paths.media_file_path(feed, download_id, ext)
+        except ValueError as e:
+            raise FileOperationError(
+                "Invalid feed or download identifier.",
+                feed_id=feed,
+                download_id=download_id,
+            ) from e
         log_params = {
             "feed_id": feed,
-            "file_name": file_name,
             "file_path": str(file_path),
         }
         logger.debug("Attempting to get download stream.", extra=log_params)
 
-        if not self.download_exists(feed, file_name):
+        if not self.download_exists(feed, download_id, ext):
             logger.debug(
                 "File not found, cannot get stream.",
                 extra=log_params,

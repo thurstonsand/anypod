@@ -1,3 +1,5 @@
+# pyright: reportPrivateUsage=false
+
 """Integration tests for Downloader with real YouTube URLs and file operations."""
 
 from collections.abc import Generator
@@ -12,6 +14,7 @@ from anypod.data_coordinator.downloader import Downloader
 from anypod.data_coordinator.enqueuer import Enqueuer
 from anypod.db import DatabaseManager, Download, DownloadStatus
 from anypod.file_manager import FileManager
+from anypod.path_manager import PathManager
 from anypod.ytdlp_wrapper import YtdlpWrapper
 
 # Test constants - same as other integration tests for consistency
@@ -90,7 +93,13 @@ def db_manager() -> Generator[DatabaseManager]:
 def file_manager(shared_dirs: tuple[Path, Path]) -> Generator[FileManager]:
     """Provides a FileManager instance with shared data directory."""
     _, app_data_dir = shared_dirs
-    file_manager = FileManager(base_download_path=app_data_dir)
+    app_tmp_dir = shared_dirs[0]
+    paths = PathManager(
+        base_data_dir=app_data_dir,
+        base_tmp_dir=app_tmp_dir,
+        base_url="http://localhost",
+    )
+    file_manager = FileManager(paths)
     yield file_manager
 
 
@@ -98,7 +107,12 @@ def file_manager(shared_dirs: tuple[Path, Path]) -> Generator[FileManager]:
 def ytdlp_wrapper(shared_dirs: tuple[Path, Path]) -> Generator[YtdlpWrapper]:
     """Provides a YtdlpWrapper instance with shared directories."""
     app_tmp_dir, app_data_dir = shared_dirs
-    yield YtdlpWrapper(app_tmp_dir=app_tmp_dir, app_data_dir=app_data_dir)
+    paths = PathManager(
+        base_data_dir=app_data_dir,
+        base_tmp_dir=app_tmp_dir,
+        base_url="http://localhost",
+    )
+    yield YtdlpWrapper(paths)
 
 
 @pytest.fixture
@@ -202,8 +216,9 @@ def test_download_queued_single_video_success(
     assert downloaded_item.last_error is None  # Should be cleared
 
     # Verify file was actually downloaded
-    expected_filename = f"{downloaded_item.id}.{downloaded_item.ext}"
-    assert file_manager.download_exists(feed_id, expected_filename)
+    assert file_manager.download_exists(
+        feed_id, downloaded_item.id, downloaded_item.ext
+    )
 
     # Verify no more queued items for this feed
     remaining_queued = db_manager.get_downloads_by_status(
@@ -253,8 +268,9 @@ def test_download_queued_multiple_videos_success(
 
     # Verify files were downloaded
     for downloaded_item in downloaded_items:
-        expected_filename = f"{downloaded_item.id}.{downloaded_item.ext}"
-        assert file_manager.download_exists(feed_id, expected_filename)
+        assert file_manager.download_exists(
+            feed_id, downloaded_item.id, downloaded_item.ext
+        )
         assert downloaded_item.filesize is not None and downloaded_item.filesize > 0
 
 
@@ -473,8 +489,9 @@ def test_download_queued_mixed_success_and_failure(
     assert len(downloaded_items) == success_count
 
     for downloaded_item in downloaded_items:
-        expected_filename = f"{downloaded_item.id}.{downloaded_item.ext}"
-        assert file_manager.download_exists(feed_id, expected_filename)
+        assert file_manager.download_exists(
+            feed_id, downloaded_item.id, downloaded_item.ext
+        )
 
     # Verify failed download had retry bumped
     failed_download = db_manager.get_download_by_id(feed_id, "invalid_mixed_test")
@@ -510,14 +527,15 @@ def test_download_queued_file_properties(
     )
     downloaded_item = downloaded_items[0]
 
-    # Verify file properties
-    expected_filename = f"{downloaded_item.id}.{downloaded_item.ext}"
-
     # File should exist
-    assert file_manager.download_exists(feed_id, expected_filename)
+    assert file_manager.download_exists(
+        feed_id, downloaded_item.id, downloaded_item.ext
+    )
 
     # File should be readable
-    stream = file_manager.get_download_stream(feed_id, expected_filename)
+    stream = file_manager.get_download_stream(
+        feed_id, downloaded_item.id, downloaded_item.ext
+    )
     assert stream.readable()
     stream.close()
 
@@ -528,8 +546,8 @@ def test_download_queued_file_properties(
     assert downloaded_item.last_error is None
 
     # File size in database should match actual file size
-    feed_data_dir = Path(file_manager.base_download_path) / feed_id
-    actual_file = feed_data_dir / expected_filename
+    feed_data_dir = Path(file_manager._paths.base_data_dir) / feed_id
+    actual_file = feed_data_dir / f"{downloaded_item.id}.{downloaded_item.ext}"
     actual_size = actual_file.stat().st_size
     assert downloaded_item.filesize == actual_size
 
@@ -585,7 +603,7 @@ def test_filesize_metadata_flow(
 
     # Verify final filesize matches actual file
     expected_filename = f"{downloaded_item.id}.{downloaded_item.ext}"
-    feed_data_dir = Path(file_manager.base_download_path) / feed_id
+    feed_data_dir = Path(file_manager._paths.base_data_dir) / feed_id
     actual_file = feed_data_dir / expected_filename
     actual_size = actual_file.stat().st_size
 

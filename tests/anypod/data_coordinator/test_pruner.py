@@ -238,7 +238,7 @@ def test_handle_file_deletion_success(
     pruner._handle_file_deletion(sample_downloaded_item, "test_feed")
 
     mock_file_manager.delete_download_file.assert_called_once_with(
-        "test_feed", "test_dl_id_1.mp4"
+        "test_feed", "test_dl_id_1", "mp4"
     )
 
 
@@ -330,7 +330,7 @@ def test_process_single_download_downloaded_file_deleted_successfully(
 
     assert result is True
     mock_file_manager.delete_download_file.assert_called_once_with(
-        "test_feed", "test_dl_id_1.mp4"
+        "test_feed", "test_dl_id_1", "mp4"
     )
     mock_db_manager.archive_download.assert_called_once_with(
         "test_feed", sample_downloaded_item.id
@@ -355,7 +355,7 @@ def test_process_single_download_downloaded_file_not_found_returns_false(
 
     assert result is False
     mock_file_manager.delete_download_file.assert_called_once_with(
-        "test_feed", "test_dl_id_1.mp4"
+        "test_feed", "test_dl_id_1", "mp4"
     )
     mock_db_manager.archive_download.assert_called_once_with(
         "test_feed", sample_downloaded_item.id

@@ -6,12 +6,12 @@ operations of feedgen and provides a clean interface for creating RSS feeds
 from Anypod download data.
 """
 
-from urllib.parse import urljoin
-
 from feedgen.feed import FeedGenerator  # type: ignore
 
 from anypod.config import FeedConfig
 from anypod.db import Download
+from anypod.exceptions import RSSGenerationError
+from anypod.path_manager import PathManager
 
 
 class FeedgenCore:
@@ -28,19 +28,27 @@ class FeedgenCore:
 
     Attributes:
         _fg: Internal FeedGenerator instance.
-        _download_folder_url: Base URL for download file links.
+        _paths: PathManager instance for resolving URLs and paths.
         _feed_config: Feed configuration reference.
     """
 
-    def __init__(self, host: str, feed_id: str, feed_config: FeedConfig):
+    def __init__(self, paths: PathManager, feed_id: str, feed_config: FeedConfig):
         if feed_config.metadata is None:
             raise ValueError("Feed metadata is required when creating an RSS feed.")
 
         fg = FeedGenerator()  # type: ignore
         fg.load_extension("podcast")  # type: ignore
 
+        try:
+            feed_self_url = paths.feed_url(feed_id)
+        except ValueError as e:
+            raise RSSGenerationError(
+                "Invalid feed identifier for RSS URL.",
+                feed_id=feed_id,
+            ) from e
+
         fg.title(feed_config.metadata.title)  # type: ignore
-        fg.link(href=urljoin(host, f"/feeds/{feed_id}.xml"), rel="self")  # type: ignore
+        fg.link(href=feed_self_url, rel="self")  # type: ignore
         fg.link(href=feed_config.url, rel="alternate")  # type: ignore
         fg.description(feed_config.metadata.description)  # type: ignore
         fg.podcast.itunes_summary(feed_config.metadata.description)  # type: ignore
@@ -65,7 +73,7 @@ class FeedgenCore:
         fg.ttl(60)  # type: ignore
 
         self._fg = fg  # type: ignore
-        self._download_folder_url = urljoin(host, f"/media/{feed_id}/")
+        self._paths = paths
         self._feed_config = feed_config
         self._feed_metadata = feed_config.metadata
 
@@ -83,7 +91,7 @@ class FeedgenCore:
             fe = self._fg.add_entry(order="append")  # type: ignore
 
             fe.guid(  # type: ignore
-                urljoin(self._download_folder_url, download.source_url), permalink=True
+                download.source_url, permalink=True
             )
             fe.title(download.title)  # type: ignore
             fe.podcast.itunes_title(download.title)  # type: ignore
@@ -96,8 +104,18 @@ class FeedgenCore:
             if download.thumbnail:
                 fe.podcast.itunes_image(download.thumbnail)  # type: ignore
 
+            try:
+                media_url = self._paths.media_file_url(
+                    download.feed, download.id, download.ext
+                )
+            except ValueError as e:
+                raise RSSGenerationError(
+                    "Invalid feed or download identifier for media URL.",
+                    feed_id=download.feed,
+                ) from e
+
             fe.enclosure(  # type: ignore
-                url=urljoin(self._download_folder_url, f"{download.id}.{download.ext}"),
+                url=media_url,
                 length=download.filesize or 0,
                 type=download.mime_type,
             )

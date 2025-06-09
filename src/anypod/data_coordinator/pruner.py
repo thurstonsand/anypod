@@ -131,7 +131,7 @@ class Pruner:
         )
 
         try:
-            self.file_manager.delete_download_file(feed_id, file_name)
+            self.file_manager.delete_download_file(feed_id, download.id, download.ext)
         except FileOperationError as e:
             raise PruneError(
                 message="Failed to delete file during pruning.",

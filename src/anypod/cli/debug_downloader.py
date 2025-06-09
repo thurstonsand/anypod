@@ -15,6 +15,7 @@ from ..data_coordinator.downloader import Downloader
 from ..db import DatabaseManager, Download, DownloadStatus
 from ..exceptions import DatabaseOperationError, DownloadError
 from ..file_manager import FileManager
+from ..path_manager import PathManager
 from ..ytdlp_wrapper import YtdlpWrapper
 
 logger = logging.getLogger(__name__)
@@ -23,8 +24,7 @@ logger = logging.getLogger(__name__)
 def run_debug_downloader_mode(
     settings: AppSettings,
     debug_db_path: Path,
-    app_data_dir: Path,
-    app_tmp_dir: Path,
+    paths: PathManager,
 ) -> None:
     """Run the Downloader in debug mode to process queued downloads.
 
@@ -35,27 +35,23 @@ def run_debug_downloader_mode(
     Args:
         settings: Application settings containing feed configurations.
         debug_db_path: Path to the database file.
-        app_data_dir: Data directory for downloaded files.
-        app_tmp_dir: Temporary directory for yt-dlp operations.
+        paths: PathManager instance containing data and temporary directories.
     """
     logger.info(
         "Initializing Anypod in Downloader debug mode.",
         extra={
             "config_file": str(settings.config_file),
             "debug_db_path": str(debug_db_path.resolve()),
-            "debug_downloads_path": str(app_data_dir.resolve()),
+            "debug_downloads_path": str(paths.base_data_dir.resolve()),
         },
     )
 
     try:
         db_manager = DatabaseManager(db_path=debug_db_path)
 
-        file_manager = FileManager(base_download_path=app_data_dir)
+        file_manager = FileManager(paths)
 
-        ytdlp_wrapper = YtdlpWrapper(
-            app_tmp_dir,
-            app_data_dir,
-        )
+        ytdlp_wrapper = YtdlpWrapper(paths)
         downloader = Downloader(db_manager, file_manager, ytdlp_wrapper)
     except Exception as e:
         logger.critical(
@@ -153,9 +149,9 @@ def run_debug_downloader_mode(
             logger.info("No downloads found in the database.")
 
         # Show downloaded files on filesystem
-        if app_data_dir.exists():
+        if paths.base_data_dir.exists():
             logger.info("Files found in debug downloads directory:")
-            for feed_dir in app_data_dir.iterdir():
+            for feed_dir in paths.base_data_dir.iterdir():
                 if feed_dir.is_dir():
                     files = list(feed_dir.glob("*"))
                     if files:

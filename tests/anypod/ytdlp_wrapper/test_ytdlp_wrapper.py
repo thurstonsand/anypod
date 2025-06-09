@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from anypod.db import Download, DownloadStatus
+from anypod.path_manager import PathManager
 from anypod.ytdlp_wrapper import YtdlpWrapper
 from anypod.ytdlp_wrapper.base_handler import FetchPurpose
 from anypod.ytdlp_wrapper.youtube_handler import YoutubeHandler
@@ -30,7 +31,8 @@ def ytdlp_wrapper(
     """Fixture to provide a YtdlpWrapper instance with a mocked YoutubeHandler and temp paths."""
     app_tmp_dir = tmp_path_factory.mktemp("app_tmp")
     app_data_dir = tmp_path_factory.mktemp("app_data")
-    wrapper = YtdlpWrapper(app_tmp_dir, app_data_dir)
+    paths = PathManager(app_data_dir, app_tmp_dir, "http://localhost")
+    wrapper = YtdlpWrapper(paths)
     wrapper._source_handler = mock_youtube_handler
     return wrapper
 
@@ -177,8 +179,8 @@ def test_download_media_to_file_success_simplified(
     )
     yt_cli_args: dict[str, Any] = {"format": "bestvideo+bestaudio/best"}
 
-    feed_temp_path = ytdlp_wrapper._app_tmp_dir / feed_id
-    feed_home_path = ytdlp_wrapper._app_data_dir / feed_id
+    feed_temp_path = ytdlp_wrapper._paths.base_tmp_dir / feed_id
+    feed_home_path = ytdlp_wrapper._paths.base_data_dir / feed_id
 
     expected_final_file = feed_home_path / f"{download_id}.{dummy_download.ext}"
 

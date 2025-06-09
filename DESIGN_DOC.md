@@ -378,6 +378,7 @@ This resolution logic aims to simplify configuration for the end-user, as they c
 * Transcoding fallback (ffmpeg) for non-MP4/M4A sources
 * OAuth device-flow
 * Prometheus `/metrics`
+* Consider restricting feed_id and download_id in `PathManager` to alphanumeric characters only (plus maybe hyphens/underscores) to avoid potential filesystem and URL encoding issues
 * Support transcripts/auto-generated (whisper can natively output .srt files)
   * > I'm a podcast author, how can I add transcripts to my show?
     > In order for Pocket Casts to discover transcripts for an episode and offer them within the app, the podcast feed must include the <podcast:transcript> element and the transcript must be in one of the following formats: VTT, SRT, PodcastIndex JSON, or HTML.
