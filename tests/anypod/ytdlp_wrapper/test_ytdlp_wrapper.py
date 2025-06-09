@@ -179,8 +179,8 @@ def test_download_media_to_file_success_simplified(
     )
     yt_cli_args: dict[str, Any] = {"format": "bestvideo+bestaudio/best"}
 
-    feed_temp_path = ytdlp_wrapper._app_tmp_dir / feed_id
-    feed_home_path = ytdlp_wrapper._app_data_dir / feed_id
+    feed_temp_path = ytdlp_wrapper._paths.base_tmp_dir / feed_id
+    feed_home_path = ytdlp_wrapper._paths.base_data_dir / feed_id
 
     expected_final_file = feed_home_path / f"{download_id}.{dummy_download.ext}"
 

@@ -80,9 +80,10 @@ feeds:
 - Keep functions under 50 lines and focused on single responsibilities
 - Scope `try` blocks tightly around specific statements that may raise exceptions
 - Bias towards wrapping and re-raising exceptions to the highest possible location
+- Exception messages should not include variable data - use existing exception parameters/attributes instead
 
-### Documentation Requirements
-All functions, methods, classes, and files require Google-style docstrings:
+### Docstring Guidelines
+- All functions, methods, classes, and files require Google-style docstrings:
 
 ```python
 def fetch_metadata(
@@ -105,39 +106,4 @@ def fetch_metadata(
     """
 ```
 
-## Testing Guidelines
-
-### Test Structure and Organization
-- Tests mirror source structure in `/tests/anypod/`
-- Integration tests in `/tests/integration/` with `integration_test_` prefix - run with `--integration` flag
-- Add `# pyright: reportPrivateUsage=false` to test files for protected method access
-- Use pytest markers: either `@pytest.mark.unit` or `@pytest.mark.integration` for all tests
-- Import packages directly (e.g., `from anypod.db import Database`) not `from src.anypod`
-
-### Test Writing Patterns
-- Use Arrange-Act-Assert pattern without explicit comments
-- Descriptive test names that describe behavior
-- One assertion per test when possible
-- Test both success and failure paths
-- Add descriptive messages to non-obvious assertions
-- Use `# type: ignore` for private method access complaints
-
-### Test Execution
-```bash
-# Unit tests only
-uv run pytest
-
-# Include integration tests
-uv run pytest --integration
-
-# With coverage
-uv run pytest --cov=src --cov-report=html
-```
-
-### Key Testing Rules
-- Mock at appropriate levels using `pytest-mock`
-- Don't mock external libraries you don't own
-- Avoid string checks on error messages
-- Keep tests fast and independent
-- Use fixtures in `conftest.py` for shared setup
-- Aim for meaningful coverage, not 100% blindly
+- When writing docstrings, never write one for __init__ fns, since this should be covered by the class level docstring

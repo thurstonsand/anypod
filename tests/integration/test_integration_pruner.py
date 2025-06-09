@@ -1,3 +1,5 @@
+# pyright: reportPrivateUsage=false
+
 """Integration tests for Pruner with real database and file system operations."""
 
 from collections.abc import Generator
@@ -222,7 +224,7 @@ def create_dummy_file(file_manager: FileManager, download: Download) -> Path:
     Returns:
         Path to the created file.
     """
-    feed_dir = file_manager.base_download_path / download.feed
+    feed_dir = file_manager._paths.base_data_dir / download.feed
     feed_dir.mkdir(parents=True, exist_ok=True)
 
     file_name = f"{download.id}.{download.ext}"
@@ -285,8 +287,7 @@ def test_prune_feed_downloads_keep_last_success(
 
     # Verify files exist for all DOWNLOADED items
     for download in initial_downloaded:
-        file_name = f"{download.id}.{download.ext}"
-        assert file_manager.download_exists(TEST_FEED_ID, file_name)
+        assert file_manager.download_exists(TEST_FEED_ID, download.id, download.ext)
 
     # Run pruner with keep_last=2
     archived_count, files_deleted_count = pruner.prune_feed_downloads(
@@ -327,11 +328,12 @@ def test_prune_feed_downloads_keep_last_success(
     # Verify files were deleted for pruned DOWNLOADED items
     kept_downloaded_ids = {dl.id for dl in most_recent_downloaded}
     for download in initial_downloaded:
-        file_name = f"{download.id}.{download.ext}"
         if download.id in kept_downloaded_ids:
-            assert file_manager.download_exists(TEST_FEED_ID, file_name)
+            assert file_manager.download_exists(TEST_FEED_ID, download.id, download.ext)
         else:
-            assert not file_manager.download_exists(TEST_FEED_ID, file_name)
+            assert not file_manager.download_exists(
+                TEST_FEED_ID, download.id, download.ext
+            )
 
     # Verify archived downloads increased
     archived_downloads = db_manager.get_downloads_by_status(
@@ -400,8 +402,7 @@ def test_prune_feed_downloads_since_date_success(
 
     # Verify files exist for remaining downloads
     for download in remaining_downloaded:
-        file_name = f"{download.id}.{download.ext}"
-        assert file_manager.download_exists(TEST_FEED_ID, file_name)
+        assert file_manager.download_exists(TEST_FEED_ID, download.id, download.ext)
 
     # Verify SKIPPED items were not affected (should still be SKIPPED)
     skipped_downloads = db_manager.get_downloads_by_status(
@@ -503,11 +504,14 @@ def test_prune_feed_downloads_missing_files(
         for dl in populated_test_data
         if dl.status == DownloadStatus.DOWNLOADED and dl.id == "downloaded_old_1"
     )
-    file_name = f"{missing_download.id}.{missing_download.ext}"
-    file_manager.delete_download_file(TEST_FEED_ID, file_name)
+    file_manager.delete_download_file(
+        TEST_FEED_ID, missing_download.id, missing_download.ext
+    )
 
     # Verify file is gone
-    assert not file_manager.download_exists(TEST_FEED_ID, file_name)
+    assert not file_manager.download_exists(
+        TEST_FEED_ID, missing_download.id, missing_download.ext
+    )
 
     # Run pruner to remove old items
     archived_count, files_deleted_count = pruner.prune_feed_downloads(
@@ -672,7 +676,7 @@ def test_prune_feed_downloads_large_dataset(
 
     finally:
         # Cleanup: remove any remaining files
-        feed_dir = file_manager.base_download_path / feed_id
+        feed_dir = file_manager._paths.base_data_dir / feed_id
         if feed_dir.exists():
             shutil.rmtree(feed_dir)
 

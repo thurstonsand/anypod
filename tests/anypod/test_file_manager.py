@@ -34,7 +34,7 @@ def save_file(
     file_manager: FileManager, feed_id: str, file_name: str, file_content: bytes
 ) -> Path:
     """Saves a file. This is not built-in because yt-dlp does the saving."""
-    file_path = file_manager.base_download_path / feed_id / file_name
+    file_path = file_manager._paths.base_data_dir / feed_id / file_name
     file_path.parent.mkdir(parents=True, exist_ok=True)
     with Path.open(file_path, "wb") as f:
         f.write(file_content)
@@ -48,28 +48,29 @@ def save_file(
 def test_delete_download_file_success(file_manager: FileManager):
     """Tests successful deletion of an existing file."""
     feed_id = "delete_feed"
-    file_name = "to_delete.txt"
+    download_id = "to_delete"
+    ext = "txt"
+    file_name = f"{download_id}.{ext}"
     file_content = b"content"
 
     file_to_delete_path = save_file(file_manager, feed_id, file_name, file_content)
 
     assert file_to_delete_path.exists()
 
-    file_manager.delete_download_file(feed_id, file_name)
+    file_manager.delete_download_file(feed_id, download_id, ext)
 
     assert not file_to_delete_path.exists(), "File should be deleted from disk."
 
 
 @pytest.mark.unit
 def test_delete_download_file_not_found(file_manager: FileManager):
-    """Tests delete_download_file returns False for a non-existent file."""
+    """Tests delete_download_file raises FileNotFoundError for a non-existent file."""
     feed_id = "delete_feed_not_found"
-    file_name = "non_existent.txt"
+    download_id = "non_existent"
+    ext = "txt"
 
-    with pytest.raises(FileNotFoundError) as e:
-        file_manager.delete_download_file(feed_id, file_name)
-
-    assert file_name in str(e.value)
+    with pytest.raises(FileNotFoundError):
+        file_manager.delete_download_file(feed_id, download_id, ext)
 
 
 # --- Tests for download_exists ---
@@ -79,20 +80,23 @@ def test_delete_download_file_not_found(file_manager: FileManager):
 def test_download_exists_true(file_manager: FileManager):
     """Tests download_exists returns True when a file exists."""
     feed_id = "exists_feed"
-    file_name = "existing_file.mp3"
+    download_id = "existing_file"
+    ext = "mp3"
+    file_name = f"{download_id}.{ext}"
 
     save_file(file_manager, feed_id, file_name, b"dummy data")
 
-    assert file_manager.download_exists(feed_id, file_name) is True
+    assert file_manager.download_exists(feed_id, download_id, ext) is True
 
 
 @pytest.mark.unit
 def test_download_exists_false_not_found(file_manager: FileManager):
     """Tests download_exists returns False when a file does not exist."""
     feed_id = "exists_feed_false"
-    file_name = "ghost_file.mp3"
+    download_id = "ghost_file"
+    ext = "mp3"
 
-    assert file_manager.download_exists(feed_id, file_name) is False
+    assert file_manager.download_exists(feed_id, download_id, ext) is False
 
 
 @pytest.mark.unit
@@ -101,14 +105,16 @@ def test_download_exists_false_is_directory(
 ):
     """Tests download_exists returns False if the path is a directory, not a file."""
     feed_id = "exists_feed_dir"
-    dir_as_file_name = "a_directory"
+    download_id = "a_directory"
+    ext = "mp3"
+    dir_as_file_name = f"{download_id}.{ext}"
 
     # Setup: Create a directory where a file might be expected
     (temp_base_download_path / feed_id / dir_as_file_name).mkdir(
         parents=True, exist_ok=True
     )
 
-    assert file_manager.download_exists(feed_id, dir_as_file_name) is False
+    assert file_manager.download_exists(feed_id, download_id, ext) is False
 
 
 # --- Tests for get_download_stream ---
@@ -118,12 +124,14 @@ def test_download_exists_false_is_directory(
 def test_get_download_stream_success(file_manager: FileManager):
     """Tests successfully getting a stream for an existing file and checks its content."""
     feed_id = "stream_feed"
-    file_name = "stream_me.mp3"
+    download_id = "stream_me"
+    ext = "mp3"
+    file_name = f"{download_id}.{ext}"
     file_content = b"Test stream content."
 
     save_file(file_manager, feed_id, file_name, file_content)
 
-    with file_manager.get_download_stream(feed_id, file_name) as stream:
+    with file_manager.get_download_stream(feed_id, download_id, ext) as stream:
         read_content = stream.read()
 
     assert read_content == file_content, (
@@ -135,10 +143,11 @@ def test_get_download_stream_success(file_manager: FileManager):
 def test_get_download_stream_file_not_found(file_manager: FileManager):
     """Tests get_download_stream raises FileNotFoundError for a non-existent file."""
     feed_id = "stream_feed_404"
-    file_name = "no_such_file.mp3"
+    download_id = "no_such_file"
+    ext = "mp3"
 
     with pytest.raises(FileNotFoundError):
-        file_manager.get_download_stream(feed_id, file_name)
+        file_manager.get_download_stream(feed_id, download_id, ext)
 
 
 @pytest.mark.unit
@@ -147,14 +156,16 @@ def test_get_download_stream_path_is_directory(
 ):
     """Tests get_download_stream raises FileNotFoundError if the path is a directory."""
     feed_id = "stream_feed_dir"
-    dir_as_file_name = "i_am_a_dir"
+    download_id = "i_am_a_dir"
+    ext = "mp3"
+    dir_as_file_name = f"{download_id}.{ext}"
 
     (temp_base_download_path / feed_id / dir_as_file_name).mkdir(
         parents=True, exist_ok=True
     )
 
     with pytest.raises(FileNotFoundError):
-        file_manager.get_download_stream(feed_id, dir_as_file_name)
+        file_manager.get_download_stream(feed_id, download_id, ext)
 
 
 @pytest.mark.unit
@@ -163,7 +174,9 @@ def test_get_download_stream_file_operation_error(
 ):
     """Tests get_download_stream raises FileOperationError for a file operation error."""
     feed_id = "stream_feed_error"
-    file_name = "error_file.mp3"
+    download_id = "error_file"
+    ext = "mp3"
+    file_name = f"{download_id}.{ext}"
 
     # Setup a dummy downloaded file
     feed_dir = temp_base_download_path / feed_id
@@ -178,7 +191,7 @@ def test_get_download_stream_file_operation_error(
         patch.object(Path, "open", side_effect=simulated_error),
         pytest.raises(OSError) as exc_info,
     ):
-        file_manager.get_download_stream(feed_id, file_name)
+        file_manager.get_download_stream(feed_id, download_id, ext)
 
     # Verify the FileOperationError includes correct file_name and cause
     assert exc_info.value is simulated_error

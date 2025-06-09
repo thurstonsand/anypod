@@ -37,13 +37,11 @@ class YtdlpWrapper:
 
     def __init__(self, paths: PathManager):
         self._paths = paths
-        self._app_tmp_dir = paths.base_tmp_dir
-        self._app_data_dir = paths.base_data_dir
         logger.debug(
             "YtdlpWrapper initialized.",
             extra={
-                "app_tmp_dir": str(self._app_tmp_dir),
-                "app_data_dir": str(self._app_data_dir),
+                "app_tmp_dir": str(self._paths.base_tmp_dir),
+                "app_data_dir": str(self._paths.base_data_dir),
             },
         )
 
@@ -51,6 +49,11 @@ class YtdlpWrapper:
         try:
             feed_temp_path = self._paths.feed_tmp_dir(feed_id)
             feed_data_path = self._paths.feed_data_dir(feed_id)
+        except ValueError as e:
+            raise YtdlpApiError(
+                message="Invalid feed identifier for yt-dlp paths.",
+                feed_id=feed_id,
+            ) from e
         except OSError as e:
             raise YtdlpApiError(
                 message="Failed to create directories for yt-dlp paths.",
