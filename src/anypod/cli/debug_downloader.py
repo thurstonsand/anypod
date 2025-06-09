@@ -15,6 +15,7 @@ from ..data_coordinator.downloader import Downloader
 from ..db import DatabaseManager, Download, DownloadStatus
 from ..exceptions import DatabaseOperationError, DownloadError
 from ..file_manager import FileManager
+from ..path_manager import PathManager
 from ..ytdlp_wrapper import YtdlpWrapper
 
 logger = logging.getLogger(__name__)
@@ -50,12 +51,15 @@ def run_debug_downloader_mode(
     try:
         db_manager = DatabaseManager(db_path=debug_db_path)
 
-        file_manager = FileManager(base_download_path=app_data_dir)
-
-        ytdlp_wrapper = YtdlpWrapper(
-            app_tmp_dir,
-            app_data_dir,
+        paths = PathManager(
+            base_data_dir=app_data_dir,
+            base_tmp_dir=app_tmp_dir,
+            base_url=settings.base_url,
         )
+
+        file_manager = FileManager(paths)
+
+        ytdlp_wrapper = YtdlpWrapper(paths)
         downloader = Downloader(db_manager, file_manager, ytdlp_wrapper)
     except Exception as e:
         logger.critical(

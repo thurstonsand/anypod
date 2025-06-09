@@ -8,6 +8,7 @@ from unittest.mock import patch
 import pytest
 
 from anypod.file_manager import FileManager
+from anypod.path_manager import PathManager
 
 # --- Fixtures ---
 
@@ -19,9 +20,13 @@ def temp_base_download_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 @pytest.fixture
-def file_manager(temp_base_download_path: Path) -> FileManager:
+def file_manager(
+    tmp_path_factory: pytest.TempPathFactory, temp_base_download_path: Path
+) -> FileManager:
     """Provides a FileManager instance initialized with a temporary base download path."""
-    fm = FileManager(base_download_path=temp_base_download_path)
+    tmp_dir = tmp_path_factory.mktemp("tmp")
+    paths = PathManager(temp_base_download_path, tmp_dir, "http://localhost")
+    fm = FileManager(paths)
     return fm
 
 

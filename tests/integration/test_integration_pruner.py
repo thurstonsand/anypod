@@ -10,6 +10,7 @@ import pytest
 from anypod.data_coordinator.pruner import Pruner
 from anypod.db import DatabaseManager, Download, DownloadStatus
 from anypod.file_manager import FileManager
+from anypod.path_manager import PathManager
 
 # Test data constants
 TEST_FEED_ID = "test_feed"
@@ -195,7 +196,13 @@ def db_manager() -> Generator[DatabaseManager]:
 def file_manager(shared_dirs: tuple[Path, Path]) -> Generator[FileManager]:
     """Provides a FileManager instance with shared data directory."""
     _, app_data_dir = shared_dirs
-    file_manager = FileManager(base_download_path=app_data_dir)
+    app_tmp_dir = shared_dirs[0]
+    paths = PathManager(
+        base_data_dir=app_data_dir,
+        base_tmp_dir=app_tmp_dir,
+        base_url="http://localhost",
+    )
+    file_manager = FileManager(paths)
     yield file_manager
 
 

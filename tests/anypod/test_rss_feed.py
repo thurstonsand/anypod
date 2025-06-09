@@ -3,15 +3,17 @@
 """Tests for RSS feed generation functionality."""
 
 from datetime import UTC, datetime
+from pathlib import Path
 from unittest.mock import MagicMock
 from xml.etree import ElementTree as ET
 
 import pytest
 
-from anypod.config import AppSettings, FeedConfig, FeedMetadata, PodcastCategory
+from anypod.config import FeedConfig, FeedMetadata, PodcastCategory
 from anypod.config.feed_config import PodcastExplicit
 from anypod.db import DatabaseManager, Download, DownloadStatus
 from anypod.exceptions import DatabaseOperationError, RSSGenerationError
+from anypod.path_manager import PathManager
 from anypod.rss.rss_feed import RSSFeedGenerator
 
 # Test constants
@@ -30,11 +32,12 @@ def mock_db_manager() -> MagicMock:
 
 
 @pytest.fixture
-def app_settings() -> MagicMock:
-    """Fixture to provide mocked app settings."""
-    mock_settings = MagicMock(spec=AppSettings)
-    mock_settings.base_url = TEST_BASE_URL
-    return mock_settings
+def path_manager(tmp_path: Path) -> PathManager:
+    """Fixture to provide a PathManager instance."""
+    data_dir = tmp_path / "data"
+    tmp_dir = tmp_path / "tmp"
+    paths = PathManager(data_dir, tmp_dir, TEST_BASE_URL)
+    return paths
 
 
 @pytest.fixture
@@ -96,10 +99,10 @@ def sample_downloads() -> list[Download]:
 
 @pytest.fixture
 def rss_generator(
-    mock_db_manager: MagicMock, app_settings: MagicMock
+    mock_db_manager: MagicMock, path_manager: PathManager
 ) -> RSSFeedGenerator:
     """Fixture to provide RSSFeedGenerator instance."""
-    return RSSFeedGenerator(mock_db_manager, app_settings)
+    return RSSFeedGenerator(mock_db_manager, path_manager)
 
 
 @pytest.mark.unit
@@ -381,7 +384,8 @@ def test_feed_config_without_metadata_fails():
         metadata=None,
     )
 
+    paths = PathManager(Path("/tmp/data"), Path("/tmp/tmp"), TEST_BASE_URL)
     with pytest.raises(ValueError) as exc_info:
-        FeedgenCore(TEST_BASE_URL, TEST_FEED_ID, config_without_metadata)
+        FeedgenCore(paths, TEST_FEED_ID, config_without_metadata)
 
     assert "Feed metadata is required when creating an RSS feed" in str(exc_info.value)

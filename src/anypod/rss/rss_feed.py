@@ -11,9 +11,10 @@ from readerwriterlock import rwlock
 
 from anypod.rss.feedgen_core import FeedgenCore
 
-from ..config import AppSettings, FeedConfig
+from ..config import FeedConfig
 from ..db import DatabaseManager, Download, DownloadStatus
 from ..exceptions import DatabaseOperationError, RSSGenerationError
+from ..path_manager import PathManager
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +28,7 @@ class RSSFeedGenerator:
 
     Attributes:
         _db_manager: Database manager for querying download data.
-        _app_settings: Application settings for configuration.
+        _paths: Path manager for resolving URLs and download paths.
         _feed_cache: In-memory cache mapping feed_id to XML bytes.
         _cache_lock: Read/write lock for thread-safe cache access.
     """
@@ -35,10 +36,10 @@ class RSSFeedGenerator:
     def __init__(
         self,
         db_manager: DatabaseManager,
-        app_settings: AppSettings,
+        paths: PathManager,
     ):
         self._db_manager = db_manager
-        self._app_settings = app_settings
+        self._paths = paths
         self._feed_cache: dict[str, bytes] = {}
         self._cache_lock = rwlock.RWLockWrite()
         logger.debug("RSSFeedGenerator initialized.")
@@ -116,7 +117,7 @@ class RSSFeedGenerator:
         downloads = self._get_feed_downloads(feed_id)
         feed_xml = (
             FeedgenCore(
-                host=self._app_settings.base_url,
+                paths=self._paths,
                 feed_id=feed_id,
                 feed_config=feed_config,
             )

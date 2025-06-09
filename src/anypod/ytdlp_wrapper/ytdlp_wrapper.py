@@ -11,6 +11,7 @@ from typing import Any
 
 from ..db import Download
 from ..exceptions import YtdlpApiError
+from ..path_manager import PathManager
 from .base_handler import FetchPurpose, ReferenceType, SourceHandlerBase
 from .youtube_handler import YoutubeHandler
 from .ytdlp_core import YtdlpCore, YtdlpInfo
@@ -34,9 +35,10 @@ class YtdlpWrapper:
 
     _source_handler: SourceHandlerBase = YoutubeHandler()
 
-    def __init__(self, app_tmp_dir: Path, app_data_dir: Path):
-        self._app_tmp_dir = app_tmp_dir.resolve()
-        self._app_data_dir = app_data_dir.resolve()
+    def __init__(self, paths: PathManager):
+        self._paths = paths
+        self._app_tmp_dir = paths.base_tmp_dir
+        self._app_data_dir = paths.base_data_dir
         logger.debug(
             "YtdlpWrapper initialized.",
             extra={
@@ -46,15 +48,12 @@ class YtdlpWrapper:
         )
 
     def _prepare_download_dir(self, feed_id: str) -> tuple[Path, Path]:
-        feed_temp_path = self._app_tmp_dir / feed_id
-        feed_data_path = self._app_data_dir / feed_id
-
         try:
-            feed_temp_path.mkdir(parents=True, exist_ok=True)
-            feed_data_path.mkdir(parents=True, exist_ok=True)
+            feed_temp_path = self._paths.feed_tmp_dir(feed_id)
+            feed_data_path = self._paths.feed_data_dir(feed_id)
         except OSError as e:
             raise YtdlpApiError(
-                message=f"Failed to create directories for yt-dlp paths (temp: {feed_temp_path}, data: {feed_data_path})",
+                message="Failed to create directories for yt-dlp paths.",
                 feed_id=feed_id,
             ) from e
 

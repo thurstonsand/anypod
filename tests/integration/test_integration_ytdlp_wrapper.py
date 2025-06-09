@@ -8,6 +8,7 @@ import pytest
 
 from anypod.db import Download, DownloadStatus
 from anypod.exceptions import YtdlpApiError
+from anypod.path_manager import PathManager
 from anypod.ytdlp_wrapper import YtdlpWrapper
 from anypod.ytdlp_wrapper.ytdlp_core import YtdlpCore
 
@@ -63,7 +64,13 @@ def ytdlp_wrapper(tmp_path_factory: pytest.TempPathFactory) -> Generator[YtdlpWr
     app_tmp_dir = tmp_path_factory.mktemp("tmp")
     app_data_dir = tmp_path_factory.mktemp("data")
 
-    yield YtdlpWrapper(app_tmp_dir=app_tmp_dir, app_data_dir=app_data_dir)
+    paths = PathManager(
+        base_data_dir=app_data_dir,
+        base_tmp_dir=app_tmp_dir,
+        base_url="http://localhost",
+    )
+
+    yield YtdlpWrapper(paths)
 
     # Teardown: remove temporary directories
     shutil.rmtree(app_tmp_dir)

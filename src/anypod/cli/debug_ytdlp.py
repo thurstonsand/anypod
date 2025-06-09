@@ -13,6 +13,7 @@ import yaml
 
 from ..db import DownloadStatus
 from ..exceptions import YtdlpApiError
+from ..path_manager import PathManager
 from ..ytdlp_wrapper import YtdlpWrapper
 from ..ytdlp_wrapper.ytdlp_core import YtdlpCore
 
@@ -76,7 +77,13 @@ def run_debug_ytdlp_mode(
         )
         return
 
-    ytdlp_wrapper = YtdlpWrapper(app_tmp_dir, app_data_dir)
+    paths = PathManager(
+        base_data_dir=app_data_dir,
+        base_tmp_dir=app_tmp_dir,
+        base_url="http://localhost",
+    )
+
+    ytdlp_wrapper = YtdlpWrapper(paths)
     logger.debug("YtdlpWrapper initialized for debug mode.")
 
     logger.info(

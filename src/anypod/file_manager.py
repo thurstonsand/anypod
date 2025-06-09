@@ -6,10 +6,10 @@ operations. Notably does not handle file creation, as that is done by yt-dlp.
 """
 
 import logging
-from pathlib import Path
 from typing import IO
 
 from .exceptions import FileOperationError
+from .path_manager import PathManager
 
 logger = logging.getLogger(__name__)
 
@@ -25,17 +25,17 @@ class FileManager:
         base_download_path: The root path where all download files are stored.
     """
 
-    def __init__(self, base_download_path: Path):
-        """Initializes the FileManager with the base directory for download storage.
+    def __init__(self, paths: PathManager):
+        """Initialize the FileManager with a ``PathManager`` instance.
 
         Args:
-            base_download_path: The root path where all download files will be stored.
-                               Feed-specific subdirectories will be created under this path.
+            paths: Manager providing base directories for downloads.
 
         Raises:
             FileOperationError: If the base download directory cannot be created.
         """
-        self.base_download_path = Path(base_download_path).resolve()
+        self._paths = paths
+        self.base_download_path = paths.base_data_dir
         logger.debug(
             "FileManager initialized.",
             extra={"base_download_path": str(self.base_download_path)},
@@ -64,7 +64,7 @@ class FileManager:
             FileNotFoundError: If the file does not exist or is not a regular file.
             FileOperationError: If an OS-level error occurs during file deletion (e.g., PermissionError).
         """
-        file_path = self.base_download_path / feed / file_name
+        file_path = self._paths.feed_data_dir(feed) / file_name
         log_params = {
             "feed_id": feed,
             "file_name": file_name,
@@ -97,7 +97,7 @@ class FileManager:
         Raises:
             FileOperationError: If an OS-level error occurs during the file existence check (e.g., PermissionError on a parent directory).
         """
-        file_path = self.base_download_path / feed / file_name
+        file_path = self._paths.feed_data_dir(feed) / file_name
         log_params = {
             "feed_id": feed,
             "file_name": file_name,
@@ -128,7 +128,7 @@ class FileManager:
             FileNotFoundError: If the file does not exist or is not a regular file.
             FileOperationError: If an OS-level error occurs while trying to open the file (e.g., PermissionError).
         """
-        file_path = self.base_download_path / feed / file_name
+        file_path = self._paths.feed_data_dir(feed) / file_name
         log_params = {
             "feed_id": feed,
             "file_name": file_name,

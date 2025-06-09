@@ -10,6 +10,7 @@ from anypod.config import FeedConfig
 from anypod.data_coordinator.enqueuer import Enqueuer
 from anypod.db import DatabaseManager, Download, DownloadStatus
 from anypod.exceptions import EnqueueError
+from anypod.path_manager import PathManager
 from anypod.ytdlp_wrapper import YtdlpWrapper
 
 # Test constants
@@ -74,7 +75,13 @@ def ytdlp_wrapper(tmp_path_factory: pytest.TempPathFactory) -> Generator[YtdlpWr
     app_tmp_dir = tmp_path_factory.mktemp("tmp")
     app_data_dir = tmp_path_factory.mktemp("data")
 
-    yield YtdlpWrapper(app_tmp_dir=app_tmp_dir, app_data_dir=app_data_dir)
+    paths = PathManager(
+        base_data_dir=app_data_dir,
+        base_tmp_dir=app_tmp_dir,
+        base_url="http://localhost",
+    )
+
+    yield YtdlpWrapper(paths)
 
     # Teardown: remove temporary directories
     shutil.rmtree(app_tmp_dir)

@@ -12,6 +12,7 @@ from ..config import AppSettings
 from ..data_coordinator.enqueuer import Enqueuer
 from ..db import DatabaseManager, Download, DownloadStatus
 from ..exceptions import DatabaseOperationError, EnqueueError
+from ..path_manager import PathManager
 from ..ytdlp_wrapper import YtdlpWrapper
 
 logger = logging.getLogger(__name__)
@@ -46,10 +47,13 @@ def run_debug_enqueuer_mode(
     try:
         db_manager = DatabaseManager(db_path=debug_db_path)
 
-        ytdlp_wrapper = YtdlpWrapper(
-            app_tmp_dir,
-            app_data_dir,
+        paths = PathManager(
+            base_data_dir=app_data_dir,
+            base_tmp_dir=app_tmp_dir,
+            base_url=settings.base_url,
         )
+
+        ytdlp_wrapper = YtdlpWrapper(paths)
         enqueuer = Enqueuer(db_manager, ytdlp_wrapper)
     except Exception as e:
         logger.critical(

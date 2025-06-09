@@ -12,6 +12,7 @@ from feedgen.feed import FeedGenerator  # type: ignore
 
 from anypod.config import FeedConfig
 from anypod.db import Download
+from anypod.path_manager import PathManager
 
 
 class FeedgenCore:
@@ -32,7 +33,7 @@ class FeedgenCore:
         _feed_config: Feed configuration reference.
     """
 
-    def __init__(self, host: str, feed_id: str, feed_config: FeedConfig):
+    def __init__(self, paths: PathManager, feed_id: str, feed_config: FeedConfig):
         if feed_config.metadata is None:
             raise ValueError("Feed metadata is required when creating an RSS feed.")
 
@@ -40,7 +41,7 @@ class FeedgenCore:
         fg.load_extension("podcast")  # type: ignore
 
         fg.title(feed_config.metadata.title)  # type: ignore
-        fg.link(href=urljoin(host, f"/feeds/{feed_id}.xml"), rel="self")  # type: ignore
+        fg.link(href=paths.feed_url(feed_id), rel="self")  # type: ignore
         fg.link(href=feed_config.url, rel="alternate")  # type: ignore
         fg.description(feed_config.metadata.description)  # type: ignore
         fg.podcast.itunes_summary(feed_config.metadata.description)  # type: ignore
@@ -65,7 +66,8 @@ class FeedgenCore:
         fg.ttl(60)  # type: ignore
 
         self._fg = fg  # type: ignore
-        self._download_folder_url = urljoin(host, f"/media/{feed_id}/")
+        self._paths = paths
+        self._download_folder_url = paths.feed_media_url(feed_id)
         self._feed_config = feed_config
         self._feed_metadata = feed_config.metadata
 
@@ -97,7 +99,9 @@ class FeedgenCore:
                 fe.podcast.itunes_image(download.thumbnail)  # type: ignore
 
             fe.enclosure(  # type: ignore
-                url=urljoin(self._download_folder_url, f"{download.id}.{download.ext}"),
+                url=self._paths.media_file_url(
+                    download.feed, download.id, download.ext
+                ),
                 length=download.filesize or 0,
                 type=download.mime_type,
             )

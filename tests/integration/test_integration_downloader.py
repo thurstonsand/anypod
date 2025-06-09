@@ -12,6 +12,7 @@ from anypod.data_coordinator.downloader import Downloader
 from anypod.data_coordinator.enqueuer import Enqueuer
 from anypod.db import DatabaseManager, Download, DownloadStatus
 from anypod.file_manager import FileManager
+from anypod.path_manager import PathManager
 from anypod.ytdlp_wrapper import YtdlpWrapper
 
 # Test constants - same as other integration tests for consistency
@@ -90,7 +91,13 @@ def db_manager() -> Generator[DatabaseManager]:
 def file_manager(shared_dirs: tuple[Path, Path]) -> Generator[FileManager]:
     """Provides a FileManager instance with shared data directory."""
     _, app_data_dir = shared_dirs
-    file_manager = FileManager(base_download_path=app_data_dir)
+    app_tmp_dir = shared_dirs[0]
+    paths = PathManager(
+        base_data_dir=app_data_dir,
+        base_tmp_dir=app_tmp_dir,
+        base_url="http://localhost",
+    )
+    file_manager = FileManager(paths)
     yield file_manager
 
 
@@ -98,7 +105,12 @@ def file_manager(shared_dirs: tuple[Path, Path]) -> Generator[FileManager]:
 def ytdlp_wrapper(shared_dirs: tuple[Path, Path]) -> Generator[YtdlpWrapper]:
     """Provides a YtdlpWrapper instance with shared directories."""
     app_tmp_dir, app_data_dir = shared_dirs
-    yield YtdlpWrapper(app_tmp_dir=app_tmp_dir, app_data_dir=app_data_dir)
+    paths = PathManager(
+        base_data_dir=app_data_dir,
+        base_tmp_dir=app_tmp_dir,
+        base_url="http://localhost",
+    )
+    yield YtdlpWrapper(paths)
 
 
 @pytest.fixture
