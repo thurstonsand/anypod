@@ -9,7 +9,7 @@ from Anypod download data.
 from feedgen.feed import FeedGenerator  # type: ignore
 
 from anypod.config import FeedConfig
-from anypod.db import Download
+from anypod.db.download import Download
 from anypod.exceptions import RSSGenerationError
 from anypod.path_manager import PathManager
 
@@ -54,7 +54,7 @@ class FeedgenCore:
         fg.podcast.itunes_summary(feed_config.metadata.description)  # type: ignore
         fg.language(feed_config.metadata.language)  # type: ignore
         fg.podcast.itunes_category(  # type: ignore
-            [cat.asdict() for cat in feed_config.metadata.category]
+            feed_config.metadata.categories.as_dict_list()
         )
         fg.podcast.itunes_explicit(  # type: ignore
             str(feed_config.metadata.explicit)

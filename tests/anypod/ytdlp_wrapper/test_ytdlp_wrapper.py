@@ -9,12 +9,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from anypod.db import Download, DownloadStatus
+from anypod.db.download import Download
+from anypod.db.download_status import DownloadStatus
+from anypod.db.feed import Feed
+from anypod.db.source_type import SourceType
 from anypod.path_manager import PathManager
 from anypod.ytdlp_wrapper import YtdlpWrapper
-from anypod.ytdlp_wrapper.base_handler import FetchPurpose
+from anypod.ytdlp_wrapper.base_handler import FetchPurpose, ReferenceType
 from anypod.ytdlp_wrapper.youtube_handler import YoutubeHandler
-from anypod.ytdlp_wrapper.ytdlp_core import YtdlpCore
+from anypod.ytdlp_wrapper.ytdlp_core import YtdlpCore, YtdlpInfo
 
 
 @pytest.fixture
@@ -244,10 +247,6 @@ def test_fetch_metadata_returns_feed_and_downloads_tuple(
     mock_youtube_handler: MagicMock,
 ):
     """Tests that fetch_metadata returns a tuple of (Feed, list[Download]) with proper delegation to handler methods."""
-    from anypod.db import Feed, SourceType
-    from anypod.ytdlp_wrapper.base_handler import ReferenceType
-    from anypod.ytdlp_wrapper.ytdlp_core import YtdlpInfo
-
     feed_id = "test_tuple_return"
     url = "https://www.youtube.com/watch?v=test123"
     yt_cli_args = {"format": "best"}

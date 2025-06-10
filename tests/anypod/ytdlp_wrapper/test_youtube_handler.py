@@ -8,12 +8,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from anypod.db.download import Download
+from anypod.db.download_status import DownloadStatus
+from anypod.db.source_type import SourceType
 from anypod.ytdlp_wrapper.base_handler import FetchPurpose
 from anypod.ytdlp_wrapper.youtube_handler import (
-    Download,
-    DownloadStatus,
     ReferenceType,
-    SourceType,
     YoutubeEntry,
     YoutubeHandler,
     YtdlpInfo,

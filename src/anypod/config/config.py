@@ -5,8 +5,6 @@ application, including feed configurations, application settings, and custom
 YAML file loading capabilities.
 """
 
-from __future__ import annotations
-
 from enum import Enum
 import logging
 from pathlib import Path

@@ -9,9 +9,15 @@ from xml.etree import ElementTree as ET
 
 import pytest
 
-from anypod.config import FeedConfig, FeedMetadataOverrides, PodcastCategory
-from anypod.config.feed_config import PodcastExplicit
-from anypod.db import Download, DownloadDatabase, DownloadStatus
+from anypod.config import (
+    FeedConfig,
+    FeedMetadataOverrides,
+    PodcastCategories,
+    PodcastExplicit,
+)
+from anypod.db import DownloadDatabase
+from anypod.db.download import Download
+from anypod.db.download_status import DownloadStatus
 from anypod.exceptions import DatabaseOperationError, RSSGenerationError
 from anypod.path_manager import PathManager
 from anypod.rss.rss_feed import RSSFeedGenerator
@@ -48,7 +54,7 @@ def feed_config() -> FeedConfig:
         subtitle="A test podcast subtitle",
         description=TEST_PODCAST_DESCRIPTION,
         language="en",
-        category=[PodcastCategory("Technology")],
+        categories=PodcastCategories("Technology"),
         explicit=PodcastExplicit.NO,
         image_url="https://example.com/artwork.jpg",
         author=TEST_AUTHOR,

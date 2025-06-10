@@ -14,7 +14,9 @@ from unittest.mock import MagicMock
 import pytest
 
 from anypod.data_coordinator.pruner import Pruner
-from anypod.db import Download, DownloadDatabase, DownloadStatus
+from anypod.db import DownloadDatabase
+from anypod.db.download import Download
+from anypod.db.download_status import DownloadStatus
 from anypod.exceptions import (
     DatabaseOperationError,
     DownloadNotFoundError,

@@ -199,7 +199,7 @@ This section details the components that manage the lifecycle of downloads, from
 - [x] **Split database classes**: Refactor `src/anypod/db/db.py` into separate modules:
   - [x] `DownloadDatabase` class for download-level operations (keep existing methods)
   - [x] `FeedDatabase` class for feed-level operations (new functionality)
-- [ ] **Feed table schema & operations**:
+- [x] **Feed table schema & operations**:
   - [x] Create `feeds` table with schema: `last_sync_attempt`, `last_successful_sync`, `consecutive_failures`, `last_error`, `is_enabled`, `title`, `subtitle`, `description`, `language`, `author`, `image_url`, `source_type`, `total_downloads`, `downloads_since_last_rss`, `last_rss_generation`
   - [x] add `created_at` and `updated_at` with defaults
   - [x] Implement feed CRUD operations in `FeedDatabase`:

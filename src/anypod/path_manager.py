@@ -1,7 +1,5 @@
 """Helpers for resolving file system paths and URLs."""
 
-from __future__ import annotations
-
 from pathlib import Path
 from urllib.parse import urljoin
 

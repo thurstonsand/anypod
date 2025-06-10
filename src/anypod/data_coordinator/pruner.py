@@ -9,7 +9,9 @@ from datetime import datetime
 import logging
 from typing import Any
 
-from ..db import Download, DownloadDatabase, DownloadStatus
+from ..db import DownloadDatabase
+from ..db.download import Download
+from ..db.download_status import DownloadStatus
 from ..exceptions import (
     DatabaseOperationError,
     DownloadNotFoundError,

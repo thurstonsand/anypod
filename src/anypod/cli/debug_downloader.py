@@ -12,7 +12,9 @@ from pathlib import Path
 
 from ..config import AppSettings
 from ..data_coordinator.downloader import Downloader
-from ..db import Download, DownloadDatabase, DownloadStatus
+from ..db import DownloadDatabase
+from ..db.download import Download
+from ..db.download_status import DownloadStatus
 from ..exceptions import DatabaseOperationError, DownloadError
 from ..file_manager import FileManager
 from ..path_manager import PathManager

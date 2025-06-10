@@ -10,7 +10,10 @@ import logging
 from typing import Any
 
 from ..config import FeedConfig
-from ..db import Download, DownloadDatabase, DownloadStatus, FeedDatabase
+from ..db import DownloadDatabase
+from ..db.download import Download
+from ..db.download_status import DownloadStatus
+from ..db.feed_db import FeedDatabase
 from ..exceptions import (
     DatabaseOperationError,
     DownloadNotFoundError,

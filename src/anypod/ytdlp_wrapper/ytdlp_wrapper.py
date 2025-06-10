@@ -9,7 +9,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from ..db import Download, Feed
+from ..db.download import Download
+from ..db.feed import Feed
 from ..exceptions import YtdlpApiError
 from ..path_manager import PathManager
 from .base_handler import FetchPurpose, ReferenceType, SourceHandlerBase

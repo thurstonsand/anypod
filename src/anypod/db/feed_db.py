@@ -4,144 +4,17 @@ This module provides the Feed dataclass and related enums for feed-related
 database operations.
 """
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
 from datetime import UTC, datetime
-from enum import Enum
 import logging
 from pathlib import Path
 from typing import Any
 
 from ..exceptions import DatabaseOperationError, FeedNotFoundError, NotFoundError
-from .base_db import parse_datetime, parse_required_datetime
-from .sqlite_utils_core import SqliteUtilsCore, register_adapter
-
-
-class SourceType(Enum):
-    """Represent the type of source for a feed.
-
-    Indicates what kind of source the feed represents for proper handling
-    and metadata extraction.
-    """
-
-    CHANNEL = "channel"
-    PLAYLIST = "playlist"
-    SINGLE_VIDEO = "single_video"
-    UNKNOWN = "unknown"
-
-    def __str__(self) -> str:
-        return self.value
-
-
-register_adapter(SourceType, lambda source_type: source_type.value)
-
+from .feed import Feed
+from .sqlite_utils_core import SqliteUtilsCore
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class Feed:
-    """Represent a feed's data for adding and updating.
-
-    Attributes:
-        id: The feed identifier.
-        is_enabled: Whether the feed is enabled for processing.
-        source_type: Type of source (e.g., channel, playlist, single_video).
-
-        Time Keeping:
-            created_at: When the feed was created (UTC).
-            updated_at: When the feed was last updated (UTC).
-            last_successful_sync: Last time a successful sync occurred (UTC).
-            last_rss_generation: Last time RSS was generated for this feed (UTC).
-
-        Error Tracking:
-            last_failed_sync: Last time a sync failed (UTC).
-            consecutive_failures: Number of consecutive sync failures.
-            last_error: Last error message if any.
-
-        Download Tracking:
-            total_downloads: Total number of downloads for this feed.
-            downloads_since_last_rss: Number of downloads since last RSS generation.
-
-        Feed Metadata:
-            title: Feed title.
-            subtitle: Feed subtitle.
-            description: Feed description.
-            language: Feed language code.
-            author: Feed author.
-            image_url: URL to feed image.
-    """
-
-    id: str
-    is_enabled: bool
-    source_type: SourceType
-
-    # time keeping
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
-    last_successful_sync: datetime | None = None
-    last_rss_generation: datetime | None = None
-
-    # Error tracking
-    last_failed_sync: datetime | None = None
-    consecutive_failures: int = 0
-    last_error: str | None = None
-
-    # Download tracking
-    total_downloads: int = 0
-    downloads_since_last_rss: int = 0
-
-    # Feed metadata
-    title: str | None = None
-    subtitle: str | None = None
-    description: str | None = None
-    language: str | None = None
-    author: str | None = None
-    image_url: str | None = None
-
-    @classmethod
-    def from_row(cls, row: dict[str, Any]) -> "Feed":
-        """Converts a row from the database to a Feed.
-
-        Args:
-            row: A dictionary representing a row from the database.
-
-        Returns:
-            A Feed object.
-
-        Raises:
-            ValueError: If a date format is invalid or source_type value is invalid.
-        """
-        try:
-            source_type_enum = SourceType(row["source_type"])
-        except ValueError as e:
-            raise ValueError(
-                f"Invalid source_type value in DB row: {row['source_type']}"
-            ) from e
-
-        return cls(
-            id=row["id"],
-            is_enabled=bool(row["is_enabled"]),
-            source_type=source_type_enum,
-            # time keeping
-            created_at=parse_required_datetime(row["created_at"]),
-            updated_at=parse_required_datetime(row["updated_at"]),
-            last_successful_sync=parse_datetime(row.get("last_successful_sync")),
-            last_rss_generation=parse_datetime(row.get("last_rss_generation")),
-            # error tracking
-            last_failed_sync=parse_datetime(row.get("last_failed_sync")),
-            consecutive_failures=row.get("consecutive_failures", 0),
-            last_error=row.get("last_error"),
-            # download tracking
-            total_downloads=row.get("total_downloads", 0),
-            downloads_since_last_rss=row.get("downloads_since_last_rss", 0),
-            # feed metadata
-            title=row.get("title"),
-            subtitle=row.get("subtitle"),
-            description=row.get("description"),
-            language=row.get("language"),
-            author=row.get("author"),
-            image_url=row.get("image_url"),
-        )
 
 
 class FeedDatabase:
@@ -191,6 +64,8 @@ class FeedDatabase:
                 "language": str,
                 "author": str,
                 "image_url": str,
+                "category": str,
+                "explicit": str,
             },
             pk="id",
             not_null={

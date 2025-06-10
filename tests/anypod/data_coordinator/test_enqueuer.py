@@ -9,14 +9,11 @@ import pytest
 
 from anypod.config import FeedConfig
 from anypod.data_coordinator.enqueuer import Enqueuer
-from anypod.db import (
-    Download,
-    DownloadDatabase,
-    DownloadStatus,
-    Feed,
-    FeedDatabase,
-    SourceType,
-)
+from anypod.db import DownloadDatabase, FeedDatabase
+from anypod.db.download import Download
+from anypod.db.download_status import DownloadStatus
+from anypod.db.feed import Feed
+from anypod.db.source_type import SourceType
 from anypod.exceptions import (
     DatabaseOperationError,
     DownloadNotFoundError,

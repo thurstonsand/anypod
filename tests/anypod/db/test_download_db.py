@@ -9,7 +9,9 @@ from typing import Any
 
 import pytest
 
-from anypod.db import Download, DownloadDatabase, DownloadStatus
+from anypod.db import DownloadDatabase
+from anypod.db.download import Download
+from anypod.db.download_status import DownloadStatus
 from anypod.exceptions import DatabaseOperationError, DownloadNotFoundError
 
 # --- Fixtures ---
