@@ -10,7 +10,7 @@ import logging
 from typing import Any
 
 from ..config import FeedConfig
-from ..db import Download, DownloadDatabase, DownloadStatus
+from ..db import Download, DownloadDatabase, DownloadStatus, FeedDatabase
 from ..exceptions import (
     DatabaseOperationError,
     DownloadNotFoundError,
@@ -30,13 +30,20 @@ class Enqueuer:
     items and existing items that need status updates.
 
     Attributes:
-        db_manager: Database manager for download record operations.
-        ytdlp_wrapper: Wrapper for yt-dlp metadata extraction operations.
+        _feed_db: Database manager for feed record operations.
+        _download_db: Database manager for download record operations.
+        _ytdlp_wrapper: Wrapper for yt-dlp metadata extraction operations.
     """
 
-    def __init__(self, db_manager: DownloadDatabase, ytdlp_wrapper: YtdlpWrapper):
-        self.db_manager = db_manager
-        self.ytdlp_wrapper = ytdlp_wrapper
+    def __init__(
+        self,
+        feed_db: FeedDatabase,
+        download_db: DownloadDatabase,
+        ytdlp_wrapper: YtdlpWrapper,
+    ):
+        self._feed_db = feed_db
+        self._download_db = download_db
+        self._ytdlp_wrapper = ytdlp_wrapper
         logger.debug("Enqueuer initialized.")
 
     def _try_bump_retries_and_log(
@@ -61,7 +68,7 @@ class Enqueuer:
         """
         transitioned_to_error_state = False
         try:
-            _, _, transitioned_to_error = self.db_manager.bump_retries(
+            _, _, transitioned_to_error = self._download_db.bump_retries(
                 feed_id=feed_id,
                 download_id=download_id,
                 error_message=error_message,
@@ -98,7 +105,7 @@ class Enqueuer:
             log_params_base: Relevant logging parameters.
         """
         try:
-            self.db_manager.upsert_download(download)
+            self._download_db.upsert_download(download)
             logger.debug(
                 "Successfully upserted download.", extra=log_params_base
             )  # Changed to debug for less noise on normal ops
@@ -131,7 +138,7 @@ class Enqueuer:
         log_params = {"feed_id": feed_id}
         logger.debug("Fetching upcoming downloads from DB.", extra=log_params)
         try:
-            return self.db_manager.get_downloads_by_status(
+            return self._download_db.get_downloads_by_status(
                 DownloadStatus.UPCOMING, feed=feed_id
             )
         except (DatabaseOperationError, ValueError) as e:
@@ -221,7 +228,7 @@ class Enqueuer:
                     extra=download_log_params,
                 )
                 try:
-                    self.db_manager.mark_as_queued_from_upcoming(
+                    self._download_db.mark_as_queued_from_upcoming(
                         feed_id, db_download_id
                     )
                 except (DownloadNotFoundError, DatabaseOperationError) as e:
@@ -280,7 +287,7 @@ class Enqueuer:
 
         fetched_downloads: list[Download] | None = None
         try:
-            _, fetched_downloads = self.ytdlp_wrapper.fetch_metadata(
+            _, fetched_downloads = self._ytdlp_wrapper.fetch_metadata(
                 feed_id,
                 db_download.source_url,
                 feed_config.yt_args,
@@ -360,7 +367,7 @@ class Enqueuer:
             )
 
         try:
-            _, all_fetched_downloads = self.ytdlp_wrapper.fetch_metadata(
+            _, all_fetched_downloads = self._ytdlp_wrapper.fetch_metadata(
                 feed_id,
                 feed_config.url,
                 current_yt_cli_args,
@@ -433,7 +440,7 @@ class Enqueuer:
                     extra=current_log_params,
                 )
                 try:
-                    self.db_manager.mark_as_queued_from_upcoming(
+                    self._download_db.mark_as_queued_from_upcoming(
                         feed_id, fetched_download.id
                     )
                     return True
@@ -455,7 +462,7 @@ class Enqueuer:
                     extra=current_log_params,
                 )
                 try:
-                    self.db_manager.requeue_download(feed_id, fetched_download.id)
+                    self._download_db.requeue_download(feed_id, fetched_download.id)
                     logger.info(
                         "Successfully re-queued existing ERROR item.",
                         extra=current_log_params,
@@ -511,7 +518,7 @@ class Enqueuer:
         logger.debug("Processing fetched download.", extra=log_params)
 
         try:
-            existing_db_download = self.db_manager.get_download_by_id(
+            existing_db_download = self._download_db.get_download_by_id(
                 feed_id, fetched_dl.id
             )
         except DatabaseOperationError as e:

@@ -153,20 +153,20 @@ This section details the components that manage the lifecycle of downloads, from
         - [x] **`Enqueuer` (`data_coordinator/enqueuer.py`)**:
             - [x] Update `_process_single_download` to correctly handle `DownloadNotFoundError` from `get_download_by_id`.
             - [x] Refactor `_update_download_status_in_db` (or remove it) and its call sites (`_update_status_to_queued_if_vod`, `_handle_existing_fetched_download`):
-                - When an `UPCOMING` download becomes a VOD, call `db_manager.mark_as_queued_from_upcoming`. Adapt to its new signature (returns `None`, raises exceptions).
-                - For other status changes previously handled by `_update_download_status_in_db` (e.g., an existing `ERROR` record being re-processed from feed and needing to be `QUEUED`), evaluate if `db_manager.requeue_download` should be used or if current `upsert_download` logic in `_handle_existing_fetched_download` is sufficient.
+                - When an `UPCOMING` download becomes a VOD, call `download_db.mark_as_queued_from_upcoming`. Adapt to its new signature (returns `None`, raises exceptions).
+                - For other status changes previously handled by `_update_download_status_in_db` (e.g., an existing `ERROR` record being re-processed from feed and needing to be `QUEUED`), evaluate if `download_db.requeue_download` should be used or if current `upsert_download` logic in `_handle_existing_fetched_download` is sufficient.
             - Ensure `bump_retries` calls remain correct for metadata fetch failures.
         - [x] **`Pruner` (`data_coordinator/pruner.py`)**:
-            - When pruning items, call `db_manager.archive_download`. Adapt to its new signature (returns `None`, raises exceptions). File deletion logic is already handled by `Pruner` correctly before this step.
+            - When pruning items, call `download_db.archive_download`. Adapt to its new signature (returns `None`, raises exceptions). File deletion logic is already handled by `Pruner` correctly before this step.
     - **Phase 3: Test Updates**
         - [x] **`tests/anypod/db/test_db.py`**:
-            - Remove tests for the old `db_manager.update_status`.
-            - Add/Update comprehensive unit tests for all new/modified `db_manager.mark_as_*`, `db_manager.requeue_*`, `db_manager.unskip_download`, and `db_manager.get_download_by_id` methods, including exception checking.
+            - Remove tests for the old `download_db.update_status`.
+            - Add/Update comprehensive unit tests for all new/modified `download_db.mark_as_*`, `download_db.requeue_*`, `download_db.unskip_download`, and `download_db.get_download_by_id` methods, including exception checking.
             - Ensure tests for `upsert_download` cover setting initial `UPCOMING` and `QUEUED` states.
             - Ensure tests for `bump_retries` are still valid and cover its role, especially `DownloadNotFoundError` handling.
         - [x] **`tests/anypod/data_coordinator/test_enqueuer.py`**:
-            - Update mocks and assertions for `db_manager.get_download_by_id` to reflect new exception-raising behavior.
-            - Update mocks for status update calls to the new `db_manager.mark_as_queued_from_upcoming` or `db_manager.requeue_download` methods. Verify correct arguments and exception handling.
+            - Update mocks and assertions for `download_db.get_download_by_id` to reflect new exception-raising behavior.
+            - Update mocks for status update calls to the new `download_db.mark_as_queued_from_upcoming` or `download_db.requeue_download` methods. Verify correct arguments and exception handling.
             - Verify `upsert_download` is called with correctly statused `Download` objects.
 - [x] address various TODOs throughout code base
 
@@ -223,7 +223,7 @@ This section details the components that manage the lifecycle of downloads, from
 - [ ] **Feed metadata synchronization**:
   - [ ] Compare `FeedMetadataOverrides` from config with stored feed metadata in DB
   - [ ] Update DB when config overrides change
-  - [ ] Modify `YtdlpWrapper` to make best-effort extraction of non-overridden `FeedMetadataOverrides` fields
+  - [x] Modify `YtdlpWrapper` to make best-effort extraction of non-overridden `FeedMetadataOverrides` fields
   - [ ] Mark fields for best-effort extraction when overrides are removed
 - [ ] Unit tests for both `DownloadDatabase` and `FeedDatabase`
 - [ ] on pruning, also update `total_downloads` value

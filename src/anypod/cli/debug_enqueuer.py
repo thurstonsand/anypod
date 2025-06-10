@@ -10,7 +10,7 @@ from pathlib import Path
 
 from ..config import AppSettings
 from ..data_coordinator.enqueuer import Enqueuer
-from ..db import Download, DownloadDatabase, DownloadStatus
+from ..db import Download, DownloadDatabase, DownloadStatus, FeedDatabase
 from ..exceptions import DatabaseOperationError, EnqueueError
 from ..path_manager import PathManager
 from ..ytdlp_wrapper import YtdlpWrapper
@@ -43,10 +43,10 @@ def run_debug_enqueuer_mode(
     )
 
     try:
-        db_manager = DownloadDatabase(db_path=debug_db_path)
-
+        feed_db = FeedDatabase(db_path=debug_db_path)
+        download_db = DownloadDatabase(db_path=debug_db_path)
         ytdlp_wrapper = YtdlpWrapper(paths)
-        enqueuer = Enqueuer(db_manager, ytdlp_wrapper)
+        enqueuer = Enqueuer(feed_db, download_db, ytdlp_wrapper)
     except Exception as e:
         logger.critical(
             "Failed to initialize components for Enqueuer debug mode.", exc_info=e
@@ -57,7 +57,8 @@ def run_debug_enqueuer_mode(
 
     if not settings.feeds:
         logger.info("No feeds configured. Enqueuer debug mode has nothing to process.")
-        db_manager.close()
+        feed_db.close()
+        download_db.close()
         return
 
     total_newly_queued_count = 0
@@ -105,7 +106,7 @@ def run_debug_enqueuer_mode(
 
         for status in DownloadStatus:
             try:
-                downloads_in_status = db_manager.get_downloads_by_status(
+                downloads_in_status = download_db.get_downloads_by_status(
                     status_to_filter=status,
                     limit=-1,  # get all
                 )
@@ -135,6 +136,7 @@ def run_debug_enqueuer_mode(
         else:
             logger.info("No downloads found in the database.")
     finally:
-        db_manager.close()
+        feed_db.close()
+        download_db.close()
 
     logger.info("Enqueuer debug mode processing complete.")

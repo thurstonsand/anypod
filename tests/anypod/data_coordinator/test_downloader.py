@@ -43,7 +43,7 @@ MOCK_FEED = Feed(
 
 
 @pytest.fixture
-def mock_db_manager() -> MagicMock:
+def mock_download_db() -> MagicMock:
     """Provides a mock DownloadDatabase."""
     return MagicMock(spec=DownloadDatabase)
 
@@ -62,12 +62,12 @@ def mock_ytdlp_wrapper() -> MagicMock:
 
 @pytest.fixture
 def downloader(
-    mock_db_manager: MagicMock,
+    mock_download_db: MagicMock,
     mock_file_manager: MagicMock,
     mock_ytdlp_wrapper: MagicMock,
 ) -> Downloader:
     """Provides a Downloader instance with mocked dependencies."""
-    return Downloader(mock_db_manager, mock_file_manager, mock_ytdlp_wrapper)
+    return Downloader(mock_download_db, mock_file_manager, mock_ytdlp_wrapper)
 
 
 @pytest.fixture
@@ -113,7 +113,7 @@ def sample_feed_config() -> FeedConfig:
 def test_handle_download_success_updates_db(
     _mock_stat: MagicMock,
     downloader: Downloader,
-    mock_db_manager: MagicMock,
+    mock_download_db: MagicMock,
     sample_download: Download,
 ):
     """Tests that _handle_download_success calls mark_as_downloaded on DB manager."""
@@ -121,7 +121,7 @@ def test_handle_download_success_updates_db(
 
     downloader._handle_download_success(sample_download, downloaded_file)
 
-    mock_db_manager.mark_as_downloaded.assert_called_once_with(
+    mock_download_db.mark_as_downloaded.assert_called_once_with(
         feed=sample_download.feed,
         id=sample_download.id,
         ext="mp4",
@@ -134,13 +134,13 @@ def test_handle_download_success_updates_db(
 def test_handle_download_success_db_update_fails_raises_downloader_error(
     _mock_stat: MagicMock,
     downloader: Downloader,
-    mock_db_manager: MagicMock,
+    mock_download_db: MagicMock,
     sample_download: Download,
 ):
     """Tests that DB operation failure in _handle_download_success raises DownloadError."""
     downloaded_file = Path("/path/to/downloaded_video.mp4")
     db_error = DatabaseOperationError("DB boom")
-    mock_db_manager.mark_as_downloaded.side_effect = db_error
+    mock_download_db.mark_as_downloaded.side_effect = db_error
 
     with pytest.raises(DownloadError) as exc_info:
         downloader._handle_download_success(sample_download, downloaded_file)
@@ -156,7 +156,7 @@ def test_handle_download_success_db_update_fails_raises_downloader_error(
 @pytest.mark.unit
 def test_handle_download_failure_bumps_retries(
     downloader: Downloader,
-    mock_db_manager: MagicMock,
+    mock_download_db: MagicMock,
     sample_download: Download,
     sample_feed_config: FeedConfig,
 ):
@@ -164,7 +164,7 @@ def test_handle_download_failure_bumps_retries(
     error = ValueError("Download exploded")
     downloader._handle_download_failure(sample_download, sample_feed_config, error)
 
-    mock_db_manager.bump_retries.assert_called_once_with(
+    mock_download_db.bump_retries.assert_called_once_with(
         feed_id=sample_download.feed,
         download_id=sample_download.id,
         error_message=str(error),
@@ -175,13 +175,13 @@ def test_handle_download_failure_bumps_retries(
 @pytest.mark.unit
 def test_handle_download_failure_db_error_logged(
     downloader: Downloader,
-    mock_db_manager: MagicMock,
+    mock_download_db: MagicMock,
     sample_download: Download,
     sample_feed_config: FeedConfig,
 ):
     """Tests that DB errors during bump_retries are logged and not re-raised."""
     error = ValueError("Download exploded")
-    mock_db_manager.bump_retries.side_effect = DatabaseOperationError(
+    mock_download_db.bump_retries.side_effect = DatabaseOperationError(
         "DB boom for retries"
     )
 
@@ -199,7 +199,7 @@ def test_handle_download_failure_db_error_logged(
 @pytest.mark.unit
 def test_check_and_update_metadata_detects_changes(
     downloader: Downloader,
-    mock_db_manager: MagicMock,
+    mock_download_db: MagicMock,
     mock_ytdlp_wrapper: MagicMock,
     sample_download: Download,
     sample_feed_config: FeedConfig,
@@ -223,8 +223,8 @@ def test_check_and_update_metadata_detects_changes(
         sample_feed_config.yt_args,
     )
 
-    mock_db_manager.upsert_download.assert_called_once()
-    updated_in_db = mock_db_manager.upsert_download.call_args[0][0]
+    mock_download_db.upsert_download.assert_called_once()
+    updated_in_db = mock_download_db.upsert_download.call_args[0][0]
     assert updated_in_db.title == updated_download.title
     assert updated_in_db.description == updated_download.description
     assert updated_in_db.thumbnail == updated_download.thumbnail
@@ -238,7 +238,7 @@ def test_check_and_update_metadata_detects_changes(
 @pytest.mark.unit
 def test_check_and_update_metadata_no_changes(
     downloader: Downloader,
-    mock_db_manager: MagicMock,
+    mock_download_db: MagicMock,
     mock_ytdlp_wrapper: MagicMock,
     sample_download: Download,
     sample_feed_config: FeedConfig,
@@ -253,7 +253,7 @@ def test_check_and_update_metadata_no_changes(
     mock_ytdlp_wrapper.fetch_metadata.assert_called_once()
 
     # Verify the database was NOT updated since nothing changed
-    mock_db_manager.upsert_download.assert_not_called()
+    mock_download_db.upsert_download.assert_not_called()
 
     # Verify the returned download is unchanged
     assert result == sample_download
@@ -262,7 +262,7 @@ def test_check_and_update_metadata_no_changes(
 @pytest.mark.unit
 def test_check_and_update_metadata_fetch_fails_returns_original(
     downloader: Downloader,
-    mock_db_manager: MagicMock,
+    mock_download_db: MagicMock,
     mock_ytdlp_wrapper: MagicMock,
     sample_download: Download,
     sample_feed_config: FeedConfig,
@@ -274,7 +274,7 @@ def test_check_and_update_metadata_fetch_fails_returns_original(
     result = downloader._check_and_update_metadata(sample_download, sample_feed_config)
 
     # Verify the database was NOT updated
-    mock_db_manager.upsert_download.assert_not_called()
+    mock_download_db.upsert_download.assert_not_called()
 
     # Verify the original download is returned
     assert result == sample_download
@@ -283,7 +283,7 @@ def test_check_and_update_metadata_fetch_fails_returns_original(
 @pytest.mark.unit
 def test_check_and_update_metadata_no_matching_download_returns_original(
     downloader: Downloader,
-    mock_db_manager: MagicMock,
+    mock_download_db: MagicMock,
     mock_ytdlp_wrapper: MagicMock,
     sample_download: Download,
     sample_feed_config: FeedConfig,
@@ -296,7 +296,7 @@ def test_check_and_update_metadata_no_matching_download_returns_original(
     result = downloader._check_and_update_metadata(sample_download, sample_feed_config)
 
     # Verify the database was NOT updated
-    mock_db_manager.upsert_download.assert_not_called()
+    mock_download_db.upsert_download.assert_not_called()
 
     # Verify the original download is returned
     assert result == sample_download
@@ -390,10 +390,10 @@ def test_process_single_download_calls_check_metadata(
 
 @pytest.mark.unit
 def test_download_queued_no_items_returns_zero_counts(
-    downloader: Downloader, mock_db_manager: MagicMock, sample_feed_config: FeedConfig
+    downloader: Downloader, mock_download_db: MagicMock, sample_feed_config: FeedConfig
 ):
     """Tests download_queued returns (0,0) if no items are fetched from DB."""
-    mock_db_manager.get_downloads_by_status.return_value = []
+    mock_download_db.get_downloads_by_status.return_value = []
 
     success, failure = downloader.download_queued(
         "test_feed", sample_feed_config, limit=5
@@ -401,18 +401,18 @@ def test_download_queued_no_items_returns_zero_counts(
 
     assert success == 0
     assert failure == 0
-    mock_db_manager.get_downloads_by_status.assert_called_once_with(
+    mock_download_db.get_downloads_by_status.assert_called_once_with(
         DownloadStatus.QUEUED, "test_feed", 5
     )
 
 
 @pytest.mark.unit
 def test_download_queued_db_fetch_error_raises_downloader_error(
-    downloader: Downloader, mock_db_manager: MagicMock, sample_feed_config: FeedConfig
+    downloader: Downloader, mock_download_db: MagicMock, sample_feed_config: FeedConfig
 ):
     """Tests that DB error when fetching queued items raises DownloadError."""
     db_error = DatabaseOperationError("DB fetch failed")
-    mock_db_manager.get_downloads_by_status.side_effect = db_error
+    mock_download_db.get_downloads_by_status.side_effect = db_error
 
     with pytest.raises(DownloadError) as exc_info:
         downloader.download_queued("test_feed", sample_feed_config)
@@ -426,14 +426,14 @@ def test_download_queued_db_fetch_error_raises_downloader_error(
 def test_download_queued_processes_items_and_counts_success(
     mock_process_single: MagicMock,
     downloader: Downloader,
-    mock_db_manager: MagicMock,
+    mock_download_db: MagicMock,
     sample_feed_config: FeedConfig,
     sample_download: Download,  # Re-use for creating a list
 ):
     """Tests download_queued iterates and counts successful processing."""
     download2 = dataclasses.replace(sample_download, id="test_dl_id_2")
     queued_items = [sample_download, download2]
-    mock_db_manager.get_downloads_by_status.return_value = queued_items
+    mock_download_db.get_downloads_by_status.return_value = queued_items
 
     # _process_single_download does not raise for success
     mock_process_single.return_value = None
@@ -456,14 +456,14 @@ def test_download_queued_processes_items_and_counts_success(
 def test_download_queued_processes_items_and_counts_failures(
     mock_process_single: MagicMock,
     downloader: Downloader,
-    mock_db_manager: MagicMock,
+    mock_download_db: MagicMock,
     sample_feed_config: FeedConfig,
     sample_download: Download,
 ):
     """Tests download_queued iterates and counts failures from _process_single_download."""
     download2 = dataclasses.replace(sample_download, id="test_dl_id_2")
     queued_items = [sample_download, download2]
-    mock_db_manager.get_downloads_by_status.return_value = queued_items
+    mock_download_db.get_downloads_by_status.return_value = queued_items
 
     # Simulate _process_single_download raising DownloadError for all items
     mock_process_single.side_effect = DownloadError("Processing failed")
@@ -486,7 +486,7 @@ def test_download_queued_processes_items_and_counts_failures(
 def test_download_queued_mixed_success_and_failure(
     mock_process_single: MagicMock,
     downloader: Downloader,
-    mock_db_manager: MagicMock,
+    mock_download_db: MagicMock,
     sample_feed_config: FeedConfig,
     sample_download: Download,
 ):
@@ -495,7 +495,7 @@ def test_download_queued_mixed_success_and_failure(
     dl2 = dataclasses.replace(sample_download, id="dl2_fail")
     dl3 = dataclasses.replace(sample_download, id="dl3_success")
     queued_items = [dl1, dl2, dl3]
-    mock_db_manager.get_downloads_by_status.return_value = queued_items
+    mock_download_db.get_downloads_by_status.return_value = queued_items
 
     # dl1 succeeds, dl2 fails, dl3 succeeds
     mock_process_single.side_effect = [

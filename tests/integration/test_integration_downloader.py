@@ -12,7 +12,7 @@ import pytest
 from anypod.config import FeedConfig
 from anypod.data_coordinator.downloader import Downloader
 from anypod.data_coordinator.enqueuer import Enqueuer
-from anypod.db import Download, DownloadDatabase, DownloadStatus
+from anypod.db import Download, DownloadDatabase, DownloadStatus, FeedDatabase
 from anypod.file_manager import FileManager
 from anypod.path_manager import PathManager
 from anypod.ytdlp_wrapper import YtdlpWrapper
@@ -84,11 +84,19 @@ def shared_dirs(
 
 
 @pytest.fixture
-def db_manager() -> Generator[DownloadDatabase]:
+def feed_db() -> Generator[FeedDatabase]:
+    """Provides a FeedDatabase instance with a temporary database."""
+    feed_db = FeedDatabase(db_path=None, memory_name="integration_test")
+    yield feed_db
+    feed_db.close()
+
+
+@pytest.fixture
+def download_db() -> Generator[DownloadDatabase]:
     """Provides a DownloadDatabase instance with a temporary database."""
-    db_manager = DownloadDatabase(db_path=None, memory_name="integration_test")
-    yield db_manager
-    db_manager.close()
+    download_db = DownloadDatabase(db_path=None, memory_name="integration_test")
+    yield download_db
+    download_db.close()
 
 
 @pytest.fixture
@@ -119,20 +127,20 @@ def ytdlp_wrapper(shared_dirs: tuple[Path, Path]) -> Generator[YtdlpWrapper]:
 
 @pytest.fixture
 def enqueuer(
-    db_manager: DownloadDatabase, ytdlp_wrapper: YtdlpWrapper
+    feed_db: FeedDatabase, download_db: DownloadDatabase, ytdlp_wrapper: YtdlpWrapper
 ) -> Generator[Enqueuer]:
     """Provides an Enqueuer instance for populating the database."""
-    yield Enqueuer(db_manager, ytdlp_wrapper)
+    yield Enqueuer(feed_db, download_db, ytdlp_wrapper)
 
 
 @pytest.fixture
 def downloader(
-    db_manager: DownloadDatabase,
+    download_db: DownloadDatabase,
     file_manager: FileManager,
     ytdlp_wrapper: YtdlpWrapper,
 ) -> Generator[Downloader]:
     """Provides a Downloader instance for the tests."""
-    yield Downloader(db_manager, file_manager, ytdlp_wrapper)
+    yield Downloader(download_db, file_manager, ytdlp_wrapper)
 
 
 def enqueue_test_items(
@@ -166,7 +174,7 @@ def enqueue_test_items(
 def test_download_queued_single_video_success(
     enqueuer: Enqueuer,
     downloader: Downloader,
-    db_manager: DownloadDatabase,
+    download_db: DownloadDatabase,
     file_manager: FileManager,
 ):
     """Tests successful download of a single queued video."""
@@ -178,7 +186,7 @@ def test_download_queued_single_video_success(
     assert queued_count >= 1, "Expected at least 1 item to be queued by enqueuer"
 
     # Verify item is in QUEUED status
-    queued_downloads = db_manager.get_downloads_by_status(
+    queued_downloads = download_db.get_downloads_by_status(
         DownloadStatus.QUEUED, feed=feed_id
     )
     assert len(queued_downloads) >= 1
@@ -199,7 +207,7 @@ def test_download_queued_single_video_success(
     assert failure_count == 0, f"Expected 0 failures, got {failure_count}"
 
     # Verify database was updated
-    downloaded_items = db_manager.get_downloads_by_status(
+    downloaded_items = download_db.get_downloads_by_status(
         DownloadStatus.DOWNLOADED, feed=feed_id
     )
     assert len(downloaded_items) >= 1
@@ -223,7 +231,7 @@ def test_download_queued_single_video_success(
     )
 
     # Verify no more queued items for this feed
-    remaining_queued = db_manager.get_downloads_by_status(
+    remaining_queued = download_db.get_downloads_by_status(
         DownloadStatus.QUEUED, feed=feed_id
     )
     assert len(remaining_queued) == 0
@@ -233,7 +241,7 @@ def test_download_queued_single_video_success(
 def test_download_queued_multiple_videos_success(
     enqueuer: Enqueuer,
     downloader: Downloader,
-    db_manager: DownloadDatabase,
+    download_db: DownloadDatabase,
     file_manager: FileManager,
 ):
     """Tests successful download of multiple queued videos from a channel."""
@@ -245,7 +253,7 @@ def test_download_queued_multiple_videos_success(
     assert queued_count >= 1, "Expected at least 1 item to be queued by enqueuer"
 
     # Get original queued items
-    original_queued = db_manager.get_downloads_by_status(
+    original_queued = download_db.get_downloads_by_status(
         DownloadStatus.QUEUED, feed=feed_id
     )
     original_count = len(original_queued)
@@ -263,7 +271,7 @@ def test_download_queued_multiple_videos_success(
     assert success_count >= 1
 
     # Verify database updates
-    downloaded_items = db_manager.get_downloads_by_status(
+    downloaded_items = download_db.get_downloads_by_status(
         DownloadStatus.DOWNLOADED, feed=feed_id
     )
     assert len(downloaded_items) == success_count
@@ -280,7 +288,7 @@ def test_download_queued_multiple_videos_success(
 def test_download_queued_with_limit(
     enqueuer: Enqueuer,
     downloader: Downloader,
-    db_manager: DownloadDatabase,
+    download_db: DownloadDatabase,
 ):
     """Tests that the limit parameter properly restricts the number of downloads processed."""
     feed_id = "test_limit"
@@ -305,7 +313,7 @@ def test_download_queued_with_limit(
 
     # If we got a success, verify it
     if success_count > 0:
-        downloaded_items = db_manager.get_downloads_by_status(
+        downloaded_items = download_db.get_downloads_by_status(
             DownloadStatus.DOWNLOADED, feed=feed_id
         )
         assert len(downloaded_items) == success_count
@@ -314,7 +322,7 @@ def test_download_queued_with_limit(
 @pytest.mark.integration
 def test_download_queued_no_queued_items(
     downloader: Downloader,
-    db_manager: DownloadDatabase,
+    download_db: DownloadDatabase,
 ):
     """Tests that downloader handles feeds with no queued items gracefully."""
     feed_id = "test_no_queued"
@@ -333,7 +341,7 @@ def test_download_queued_no_queued_items(
     assert failure_count == 0
 
     # Verify no downloads in database for this feed
-    all_downloads = db_manager.get_downloads_by_status(
+    all_downloads = download_db.get_downloads_by_status(
         DownloadStatus.DOWNLOADED, feed=feed_id
     )
     assert len(all_downloads) == 0
@@ -342,7 +350,7 @@ def test_download_queued_no_queued_items(
 @pytest.mark.integration
 def test_download_queued_handles_invalid_urls(
     downloader: Downloader,
-    db_manager: DownloadDatabase,
+    download_db: DownloadDatabase,
 ):
     """Tests that downloader properly handles downloads with invalid URLs."""
     feed_id = "test_invalid_urls"
@@ -365,10 +373,10 @@ def test_download_queued_handles_invalid_urls(
         discovered_at=published_time,
         updated_at=published_time,
     )
-    db_manager.upsert_download(invalid_download)
+    download_db.upsert_download(invalid_download)
 
     # Verify it's queued
-    queued_downloads = db_manager.get_downloads_by_status(
+    queued_downloads = download_db.get_downloads_by_status(
         DownloadStatus.QUEUED, feed=feed_id
     )
     assert len(queued_downloads) == 1
@@ -385,7 +393,7 @@ def test_download_queued_handles_invalid_urls(
     assert failure_count == 1
 
     # Verify the download had its retry count bumped
-    updated_download = db_manager.get_download_by_id(feed_id, "invalid_video_id")
+    updated_download = download_db.get_download_by_id(feed_id, "invalid_video_id")
     assert updated_download.retries > 0
     assert updated_download.last_error is not None
 
@@ -393,7 +401,7 @@ def test_download_queued_handles_invalid_urls(
 @pytest.mark.integration
 def test_download_queued_retry_logic_max_errors(
     downloader: Downloader,
-    db_manager: DownloadDatabase,
+    download_db: DownloadDatabase,
 ):
     """Tests that downloads transition to ERROR status after max retries."""
     feed_id = "test_max_errors"
@@ -423,7 +431,7 @@ def test_download_queued_retry_logic_max_errors(
         discovered_at=published_time,
         updated_at=published_time,
     )
-    db_manager.upsert_download(invalid_download)
+    download_db.upsert_download(invalid_download)
 
     # Run downloader - first failure, should bump retry
     success_count, failure_count = downloader.download_queued(
@@ -435,7 +443,7 @@ def test_download_queued_retry_logic_max_errors(
     assert failure_count == 1
 
     # Check download status - should now be ERROR since max_errors=1
-    updated_download = db_manager.get_download_by_id(feed_id, "will_error_out")
+    updated_download = download_db.get_download_by_id(feed_id, "will_error_out")
     assert updated_download.retries == 1
     assert updated_download.status == DownloadStatus.ERROR
     assert updated_download.last_error is not None
@@ -445,7 +453,7 @@ def test_download_queued_retry_logic_max_errors(
 def test_download_queued_mixed_success_and_failure(
     enqueuer: Enqueuer,
     downloader: Downloader,
-    db_manager: DownloadDatabase,
+    download_db: DownloadDatabase,
     file_manager: FileManager,
 ):
     """Tests handling of mixed successful and failed downloads."""
@@ -473,10 +481,10 @@ def test_download_queued_mixed_success_and_failure(
         discovered_at=published_time,
         updated_at=published_time,
     )
-    db_manager.upsert_download(invalid_download)
+    download_db.upsert_download(invalid_download)
 
     # Verify we have at least 2 queued items
-    queued_downloads = db_manager.get_downloads_by_status(
+    queued_downloads = download_db.get_downloads_by_status(
         DownloadStatus.QUEUED, feed=feed_id
     )
     assert len(queued_downloads) >= 2
@@ -494,7 +502,7 @@ def test_download_queued_mixed_success_and_failure(
     assert success_count + failure_count == len(queued_downloads)
 
     # Verify successful downloads
-    downloaded_items = db_manager.get_downloads_by_status(
+    downloaded_items = download_db.get_downloads_by_status(
         DownloadStatus.DOWNLOADED, feed=feed_id
     )
     assert len(downloaded_items) == success_count
@@ -505,7 +513,7 @@ def test_download_queued_mixed_success_and_failure(
         )
 
     # Verify failed download had retry bumped
-    failed_download = db_manager.get_download_by_id(feed_id, "invalid_mixed_test")
+    failed_download = download_db.get_download_by_id(feed_id, "invalid_mixed_test")
     assert failed_download.retries > 0
     assert failed_download.last_error is not None
 
@@ -514,7 +522,7 @@ def test_download_queued_mixed_success_and_failure(
 def test_download_queued_file_properties(
     enqueuer: Enqueuer,
     downloader: Downloader,
-    db_manager: DownloadDatabase,
+    download_db: DownloadDatabase,
     file_manager: FileManager,
 ):
     """Tests that downloaded files have correct properties and metadata."""
@@ -533,7 +541,7 @@ def test_download_queued_file_properties(
     assert success_count >= 1
 
     # Get the downloaded item
-    downloaded_items = db_manager.get_downloads_by_status(
+    downloaded_items = download_db.get_downloads_by_status(
         DownloadStatus.DOWNLOADED, feed=feed_id
     )
     downloaded_item = downloaded_items[0]
@@ -567,7 +575,7 @@ def test_download_queued_file_properties(
 def test_filesize_metadata_flow(
     enqueuer: Enqueuer,
     downloader: Downloader,
-    db_manager: DownloadDatabase,
+    download_db: DownloadDatabase,
     file_manager: FileManager,
 ):
     """Tests that filesize metadata flows correctly from enqueue through download.
@@ -585,7 +593,7 @@ def test_filesize_metadata_flow(
     assert queued_count >= 1, "Should have queued at least one item"
 
     # Get the queued item and check initial filesize
-    queued_items = db_manager.get_downloads_by_status(
+    queued_items = download_db.get_downloads_by_status(
         DownloadStatus.QUEUED, feed=feed_id
     )
     queued_item = queued_items[0]
@@ -603,7 +611,7 @@ def test_filesize_metadata_flow(
     assert success_count >= 1, "Should have downloaded at least one item"
 
     # Get the downloaded item
-    downloaded_items = db_manager.get_downloads_by_status(
+    downloaded_items = download_db.get_downloads_by_status(
         DownloadStatus.DOWNLOADED, feed=feed_id
     )
     downloaded_item = downloaded_items[0]

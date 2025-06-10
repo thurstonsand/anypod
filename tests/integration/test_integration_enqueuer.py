@@ -9,6 +9,7 @@ import pytest
 from anypod.config import FeedConfig
 from anypod.data_coordinator.enqueuer import Enqueuer
 from anypod.db import Download, DownloadDatabase, DownloadStatus
+from anypod.db.feed_db import FeedDatabase
 from anypod.exceptions import EnqueueError
 from anypod.path_manager import PathManager
 from anypod.ytdlp_wrapper import YtdlpWrapper
@@ -64,11 +65,19 @@ SAMPLE_FEED_CONFIG = FeedConfig(
 
 
 @pytest.fixture
-def db_manager() -> Generator[DownloadDatabase]:
+def feed_db() -> Generator[FeedDatabase]:
+    """Provides a FeedDatabase instance with a temporary database."""
+    feed_db = FeedDatabase(db_path=None, memory_name="integration_test")
+    yield feed_db
+    feed_db.close()
+
+
+@pytest.fixture
+def download_db() -> Generator[DownloadDatabase]:
     """Provides a DownloadDatabase instance with a temporary database."""
-    db_manager = DownloadDatabase(db_path=None, memory_name="integration_test")
-    yield db_manager
-    db_manager.close()
+    download_db = DownloadDatabase(db_path=None, memory_name="integration_test")
+    yield download_db
+    download_db.close()
 
 
 @pytest.fixture
@@ -92,16 +101,16 @@ def ytdlp_wrapper(tmp_path_factory: pytest.TempPathFactory) -> Generator[YtdlpWr
 
 @pytest.fixture
 def enqueuer(
-    db_manager: DownloadDatabase, ytdlp_wrapper: YtdlpWrapper
+    feed_db: FeedDatabase, download_db: DownloadDatabase, ytdlp_wrapper: YtdlpWrapper
 ) -> Generator[Enqueuer]:
     """Provides an Enqueuer instance for the tests."""
-    yield Enqueuer(db_manager, ytdlp_wrapper)
+    yield Enqueuer(feed_db, download_db, ytdlp_wrapper)
 
 
 @pytest.mark.integration
 @pytest.mark.parametrize("url_type, url", TEST_URLS_PARAMS)
 def test_enqueue_new_downloads_success(
-    enqueuer: Enqueuer, db_manager: DownloadDatabase, url_type: str, url: str
+    enqueuer: Enqueuer, download_db: DownloadDatabase, url_type: str, url: str
 ):
     """Tests successful enqueueing of new downloads for various URL types.
 
@@ -130,7 +139,7 @@ def test_enqueue_new_downloads_success(
     assert queued_count >= 1, f"Expected at least 1 queued download for {url_type}"
 
     # Verify downloads are in the database
-    queued_downloads = db_manager.get_downloads_by_status(
+    queued_downloads = download_db.get_downloads_by_status(
         DownloadStatus.QUEUED, feed=feed_id
     )
     assert len(queued_downloads) >= 1, f"Expected queued downloads in DB for {url_type}"
@@ -176,7 +185,7 @@ def test_enqueue_new_downloads_invalid_url(enqueuer: Enqueuer):
 
 @pytest.mark.integration
 def test_enqueue_new_downloads_with_date_filter(
-    enqueuer: Enqueuer, db_manager: DownloadDatabase
+    enqueuer: Enqueuer, download_db: DownloadDatabase
 ):
     """Tests enqueueing with a date filter that should limit results."""
     feed_id = "test_date_filter"
@@ -201,7 +210,7 @@ def test_enqueue_new_downloads_with_date_filter(
     assert queued_count >= 0
 
     # Verify downloads in database match what was reported
-    queued_downloads = db_manager.get_downloads_by_status(
+    queued_downloads = download_db.get_downloads_by_status(
         DownloadStatus.QUEUED, feed=feed_id
     )
     assert len(queued_downloads) == queued_count
@@ -209,7 +218,7 @@ def test_enqueue_new_downloads_with_date_filter(
 
 @pytest.mark.integration
 def test_enqueue_handles_existing_upcoming_downloads(
-    enqueuer: Enqueuer, db_manager: DownloadDatabase
+    enqueuer: Enqueuer, download_db: DownloadDatabase
 ):
     """Tests that existing UPCOMING downloads are properly handled and potentially transitioned to QUEUED."""
     feed_id = "test_upcoming_feed"
@@ -231,10 +240,10 @@ def test_enqueue_handles_existing_upcoming_downloads(
         discovered_at=BIG_BUCK_BUNNY_PUBLISHED,
         updated_at=BIG_BUCK_BUNNY_PUBLISHED,
     )
-    db_manager.upsert_download(upcoming_download)
+    download_db.upsert_download(upcoming_download)
 
     # Verify it's in UPCOMING status
-    upcoming_downloads = db_manager.get_downloads_by_status(
+    upcoming_downloads = download_db.get_downloads_by_status(
         DownloadStatus.UPCOMING, feed=feed_id
     )
     assert len(upcoming_downloads) == 1
@@ -251,7 +260,7 @@ def test_enqueue_handles_existing_upcoming_downloads(
     assert queued_count >= 1
 
     # Verify the download is now QUEUED
-    queued_downloads = db_manager.get_downloads_by_status(
+    queued_downloads = download_db.get_downloads_by_status(
         DownloadStatus.QUEUED, feed=feed_id
     )
     assert len(queued_downloads) >= 1
@@ -264,7 +273,7 @@ def test_enqueue_handles_existing_upcoming_downloads(
     assert transitioned_download.status == DownloadStatus.QUEUED
 
     # Should be no more UPCOMING downloads for this feed
-    remaining_upcoming = db_manager.get_downloads_by_status(
+    remaining_upcoming = download_db.get_downloads_by_status(
         DownloadStatus.UPCOMING, feed=feed_id
     )
     assert len(remaining_upcoming) == 0
@@ -272,7 +281,7 @@ def test_enqueue_handles_existing_upcoming_downloads(
 
 @pytest.mark.integration
 def test_enqueue_handles_existing_downloaded_items(
-    enqueuer: Enqueuer, db_manager: DownloadDatabase
+    enqueuer: Enqueuer, download_db: DownloadDatabase
 ):
     """Tests that existing DOWNLOADED items are ignored during enqueue process."""
     feed_id = "test_downloaded_ignored_feed"
@@ -294,7 +303,7 @@ def test_enqueue_handles_existing_downloaded_items(
         discovered_at=BIG_BUCK_BUNNY_PUBLISHED,
         updated_at=BIG_BUCK_BUNNY_PUBLISHED,
     )
-    db_manager.upsert_download(downloaded_item)
+    download_db.upsert_download(downloaded_item)
 
     # Run enqueuer
     queued_count = enqueuer.enqueue_new_downloads(
@@ -307,7 +316,7 @@ def test_enqueue_handles_existing_downloaded_items(
     assert queued_count == 0
 
     # Verify the item remains DOWNLOADED
-    downloaded_downloads = db_manager.get_downloads_by_status(
+    downloaded_downloads = download_db.get_downloads_by_status(
         DownloadStatus.DOWNLOADED, feed=feed_id
     )
     assert len(downloaded_downloads) == 1
@@ -315,7 +324,7 @@ def test_enqueue_handles_existing_downloaded_items(
     assert downloaded_downloads[0].status == DownloadStatus.DOWNLOADED
 
     # Verify no items were queued
-    queued_downloads = db_manager.get_downloads_by_status(
+    queued_downloads = download_db.get_downloads_by_status(
         DownloadStatus.QUEUED, feed=feed_id
     )
     assert len(queued_downloads) == 0
@@ -323,7 +332,7 @@ def test_enqueue_handles_existing_downloaded_items(
 
 @pytest.mark.integration
 def test_enqueue_multiple_runs_idempotent(
-    enqueuer: Enqueuer, db_manager: DownloadDatabase
+    enqueuer: Enqueuer, download_db: DownloadDatabase
 ):
     """Tests that running enqueue multiple times on the same feed is idempotent."""
     feed_id = "test_idempotent_feed"
@@ -339,7 +348,7 @@ def test_enqueue_multiple_runs_idempotent(
     assert first_queued_count >= 1
 
     # Get downloads after first run
-    first_run_downloads = db_manager.get_downloads_by_status(
+    first_run_downloads = download_db.get_downloads_by_status(
         DownloadStatus.QUEUED, feed=feed_id
     )
 
@@ -354,7 +363,7 @@ def test_enqueue_multiple_runs_idempotent(
     assert second_queued_count == 0
 
     # Downloads should be the same
-    second_run_downloads = db_manager.get_downloads_by_status(
+    second_run_downloads = download_db.get_downloads_by_status(
         DownloadStatus.QUEUED, feed=feed_id
     )
     assert len(second_run_downloads) == len(first_run_downloads)
@@ -362,7 +371,7 @@ def test_enqueue_multiple_runs_idempotent(
 
 @pytest.mark.integration
 def test_enqueue_with_impossible_filter(
-    enqueuer: Enqueuer, db_manager: DownloadDatabase
+    enqueuer: Enqueuer, download_db: DownloadDatabase
 ):
     """Tests enqueueing with filters that match no videos still creates downloads but with filter applied."""
     feed_id = "test_impossible_filter"
@@ -388,7 +397,7 @@ def test_enqueue_with_impossible_filter(
     assert queued_count == 0
 
     # Verify downloads exist in database (the filter will apply during actual download)
-    queued_downloads = db_manager.get_downloads_by_status(
+    queued_downloads = download_db.get_downloads_by_status(
         DownloadStatus.QUEUED, feed=feed_id
     )
     assert len(queued_downloads) == 0

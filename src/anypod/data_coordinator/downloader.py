@@ -33,18 +33,18 @@ class Downloader:
     database via DownloadDatabase upon success or failure.
 
     Attributes:
-        db_manager: Database manager for download record operations.
+        download_db: Database manager for download record operations.
         file_manager: File manager for file system operations.
         ytdlp_wrapper: Wrapper for yt-dlp media download operations.
     """
 
     def __init__(
         self,
-        db_manager: DownloadDatabase,
+        download_db: DownloadDatabase,
         file_manager: FileManager,
         ytdlp_wrapper: YtdlpWrapper,
     ):
-        self.db_manager = db_manager
+        self.download_db = download_db
         self.file_manager = file_manager
         self.ytdlp_wrapper = ytdlp_wrapper
         logger.debug("Downloader initialized.")
@@ -72,7 +72,7 @@ class Downloader:
         logger.info("Download successful, processing file.", extra=log_params)
 
         try:
-            self.db_manager.mark_as_downloaded(
+            self.download_db.mark_as_downloaded(
                 feed=download.feed,
                 id=download.id,
                 ext=downloaded_file_path.suffix.lstrip("."),
@@ -107,7 +107,7 @@ class Downloader:
             },
         )
         try:
-            self.db_manager.bump_retries(
+            self.download_db.bump_retries(
                 feed_id=download.feed,
                 download_id=download.id,
                 error_message=str(error),
@@ -216,7 +216,7 @@ class Downloader:
 
             # Persist changes to database
             try:
-                self.db_manager.upsert_download(download)
+                self.download_db.upsert_download(download)
             except DatabaseOperationError as e:
                 logger.error(
                     "Failed to update changed metadata in database.",
@@ -310,7 +310,7 @@ class Downloader:
         failure_count = 0
 
         try:
-            queued_downloads = self.db_manager.get_downloads_by_status(
+            queued_downloads = self.download_db.get_downloads_by_status(
                 DownloadStatus.QUEUED,
                 feed_id,
                 limit,

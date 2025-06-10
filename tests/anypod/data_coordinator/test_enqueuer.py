@@ -9,7 +9,14 @@ import pytest
 
 from anypod.config import FeedConfig
 from anypod.data_coordinator.enqueuer import Enqueuer
-from anypod.db import Download, DownloadDatabase, DownloadStatus, Feed, SourceType
+from anypod.db import (
+    Download,
+    DownloadDatabase,
+    DownloadStatus,
+    Feed,
+    FeedDatabase,
+    SourceType,
+)
 from anypod.exceptions import (
     DatabaseOperationError,
     DownloadNotFoundError,
@@ -37,7 +44,13 @@ MOCK_FEED = Feed(
 
 
 @pytest.fixture
-def mock_db_manager() -> MagicMock:
+def mock_feed_db() -> MagicMock:
+    """Provides a MagicMock for FeedDatabase."""
+    return MagicMock(spec=FeedDatabase)
+
+
+@pytest.fixture
+def mock_download_db() -> MagicMock:
     """Provides a MagicMock for DownloadDatabase."""
     return MagicMock(spec=DownloadDatabase)
 
@@ -62,9 +75,17 @@ def sample_feed_config() -> FeedConfig:
 
 
 @pytest.fixture
-def enqueuer(mock_db_manager: MagicMock, mock_ytdlp_wrapper: MagicMock) -> Enqueuer:
+def enqueuer(
+    mock_feed_db: MagicMock,
+    mock_download_db: MagicMock,
+    mock_ytdlp_wrapper: MagicMock,
+) -> Enqueuer:
     """Provides an Enqueuer instance with mocked dependencies."""
-    return Enqueuer(db_manager=mock_db_manager, ytdlp_wrapper=mock_ytdlp_wrapper)
+    return Enqueuer(
+        feed_db=mock_feed_db,
+        download_db=mock_download_db,
+        ytdlp_wrapper=mock_ytdlp_wrapper,
+    )
 
 
 def create_download(
@@ -122,12 +143,12 @@ FETCH_SINCE_DATE = datetime.now(UTC) - timedelta(days=1)
 @pytest.mark.unit
 def test_enqueue_new_downloads_no_upcoming_no_new(
     enqueuer: Enqueuer,
-    mock_db_manager: MagicMock,
+    mock_download_db: MagicMock,
     mock_ytdlp_wrapper: MagicMock,
     sample_feed_config: FeedConfig,
 ):
     """Test enqueue_new_downloads when no upcoming downloads exist and no new downloads are found."""
-    mock_db_manager.get_downloads_by_status.return_value = []  # No upcoming
+    mock_download_db.get_downloads_by_status.return_value = []  # No upcoming
     mock_ytdlp_wrapper.fetch_metadata.return_value = (MOCK_FEED, [])  # No new downloads
 
     queued_count = enqueuer.enqueue_new_downloads(
@@ -135,7 +156,7 @@ def test_enqueue_new_downloads_no_upcoming_no_new(
     )
 
     assert queued_count == 0
-    mock_db_manager.get_downloads_by_status.assert_called_once_with(
+    mock_download_db.get_downloads_by_status.assert_called_once_with(
         DownloadStatus.UPCOMING, feed=FEED_ID
     )
     mock_ytdlp_wrapper.fetch_metadata.assert_called_once_with(
@@ -151,15 +172,15 @@ def test_enqueue_new_downloads_no_upcoming_no_new(
 @pytest.mark.unit
 def test_handle_existing_upcoming_downloads_none_found(
     enqueuer: Enqueuer,
-    mock_db_manager: MagicMock,
+    mock_download_db: MagicMock,
     sample_feed_config: FeedConfig,
 ):
     """Test _handle_existing_upcoming_downloads when no upcoming downloads are in DB."""
-    mock_db_manager.get_downloads_by_status.return_value = []
+    mock_download_db.get_downloads_by_status.return_value = []
 
     count = enqueuer._handle_existing_upcoming_downloads(FEED_ID, sample_feed_config)
     assert count == 0
-    mock_db_manager.get_downloads_by_status.assert_called_once_with(
+    mock_download_db.get_downloads_by_status.assert_called_once_with(
         DownloadStatus.UPCOMING, feed=FEED_ID
     )
 
@@ -167,7 +188,7 @@ def test_handle_existing_upcoming_downloads_none_found(
 @pytest.mark.unit
 def test_handle_existing_upcoming_download_transitions_to_queued(
     enqueuer: Enqueuer,
-    mock_db_manager: MagicMock,
+    mock_download_db: MagicMock,
     mock_ytdlp_wrapper: MagicMock,
     sample_feed_config: FeedConfig,
 ):
@@ -175,7 +196,7 @@ def test_handle_existing_upcoming_download_transitions_to_queued(
     upcoming_dl = create_download("video1", DownloadStatus.UPCOMING)
     refetched_vod_dl = create_download("video1", DownloadStatus.QUEUED)
 
-    mock_db_manager.get_downloads_by_status.return_value = [upcoming_dl]
+    mock_download_db.get_downloads_by_status.return_value = [upcoming_dl]
     mock_ytdlp_wrapper.fetch_metadata.return_value = (MOCK_FEED, [refetched_vod_dl])
 
     count = enqueuer._handle_existing_upcoming_downloads(FEED_ID, sample_feed_config)
@@ -184,7 +205,7 @@ def test_handle_existing_upcoming_download_transitions_to_queued(
     mock_ytdlp_wrapper.fetch_metadata.assert_called_once_with(
         FEED_ID, upcoming_dl.source_url, sample_feed_config.yt_args
     )
-    mock_db_manager.mark_as_queued_from_upcoming.assert_called_once_with(
+    mock_download_db.mark_as_queued_from_upcoming.assert_called_once_with(
         FEED_ID, "video1"
     )
 
@@ -192,7 +213,7 @@ def test_handle_existing_upcoming_download_transitions_to_queued(
 @pytest.mark.unit
 def test_handle_existing_upcoming_download_remains_upcoming(
     enqueuer: Enqueuer,
-    mock_db_manager: MagicMock,
+    mock_download_db: MagicMock,
     mock_ytdlp_wrapper: MagicMock,
     sample_feed_config: FeedConfig,
 ):
@@ -201,7 +222,7 @@ def test_handle_existing_upcoming_download_remains_upcoming(
     # Refetched data still shows it as upcoming
     refetched_upcoming_dl = create_download("video1", DownloadStatus.UPCOMING)
 
-    mock_db_manager.get_downloads_by_status.return_value = [upcoming_dl]
+    mock_download_db.get_downloads_by_status.return_value = [upcoming_dl]
     mock_ytdlp_wrapper.fetch_metadata.return_value = (
         MOCK_FEED,
         [refetched_upcoming_dl],
@@ -213,43 +234,43 @@ def test_handle_existing_upcoming_download_remains_upcoming(
     mock_ytdlp_wrapper.fetch_metadata.assert_called_once_with(
         FEED_ID, upcoming_dl.source_url, sample_feed_config.yt_args
     )
-    mock_db_manager.mark_as_queued_from_upcoming.assert_not_called()
-    mock_db_manager.requeue_download.assert_not_called()
+    mock_download_db.mark_as_queued_from_upcoming.assert_not_called()
+    mock_download_db.requeue_download.assert_not_called()
 
 
 @pytest.mark.unit
 def test_handle_existing_upcoming_download_refetch_fails_bumps_retries(
     enqueuer: Enqueuer,
-    mock_db_manager: MagicMock,
+    mock_download_db: MagicMock,
     mock_ytdlp_wrapper: MagicMock,
     sample_feed_config: FeedConfig,
 ):
     """Test upcoming download refetch failure, leading to retry bump."""
     upcoming_dl = create_download("video1", DownloadStatus.UPCOMING)
-    mock_db_manager.get_downloads_by_status.return_value = [upcoming_dl]
+    mock_download_db.get_downloads_by_status.return_value = [upcoming_dl]
     mock_ytdlp_wrapper.fetch_metadata.side_effect = YtdlpApiError(
         message="Fetch failed", feed_id=FEED_ID, url=upcoming_dl.source_url
     )
     # Simulate bump_retries not transitioning to ERROR
-    mock_db_manager.bump_retries.return_value = (1, DownloadStatus.UPCOMING, False)
+    mock_download_db.bump_retries.return_value = (1, DownloadStatus.UPCOMING, False)
 
     count = enqueuer._handle_existing_upcoming_downloads(FEED_ID, sample_feed_config)
 
     assert count == 0
-    mock_db_manager.bump_retries.assert_called_once_with(
+    mock_download_db.bump_retries.assert_called_once_with(
         feed_id=FEED_ID,
         download_id="video1",
         error_message="Failed to re-fetch metadata for upcoming download.",
         max_allowed_errors=sample_feed_config.max_errors,
     )
-    mock_db_manager.mark_as_queued_from_upcoming.assert_not_called()
-    mock_db_manager.requeue_download.assert_not_called()
+    mock_download_db.mark_as_queued_from_upcoming.assert_not_called()
+    mock_download_db.requeue_download.assert_not_called()
 
 
 @pytest.mark.unit
 def test_handle_existing_upcoming_download_refetch_fails_transitions_to_error(
     enqueuer: Enqueuer,
-    mock_db_manager: MagicMock,
+    mock_download_db: MagicMock,
     mock_ytdlp_wrapper: MagicMock,
     sample_feed_config: FeedConfig,
 ):
@@ -257,12 +278,12 @@ def test_handle_existing_upcoming_download_refetch_fails_transitions_to_error(
     upcoming_dl = create_download(
         "video1", DownloadStatus.UPCOMING, retries=sample_feed_config.max_errors - 1
     )
-    mock_db_manager.get_downloads_by_status.return_value = [upcoming_dl]
+    mock_download_db.get_downloads_by_status.return_value = [upcoming_dl]
     mock_ytdlp_wrapper.fetch_metadata.side_effect = YtdlpApiError(
         message="Fetch failed", feed_id=FEED_ID, url=upcoming_dl.source_url
     )
     # Simulate bump_retries transitioning to ERROR
-    mock_db_manager.bump_retries.return_value = (
+    mock_download_db.bump_retries.return_value = (
         sample_feed_config.max_errors,
         DownloadStatus.ERROR,
         True,
@@ -271,37 +292,37 @@ def test_handle_existing_upcoming_download_refetch_fails_transitions_to_error(
     count = enqueuer._handle_existing_upcoming_downloads(FEED_ID, sample_feed_config)
 
     assert count == 0
-    mock_db_manager.bump_retries.assert_called_once_with(
+    mock_download_db.bump_retries.assert_called_once_with(
         feed_id=FEED_ID,
         download_id="video1",
         error_message="Failed to re-fetch metadata for upcoming download.",
         max_allowed_errors=sample_feed_config.max_errors,
     )
-    mock_db_manager.mark_as_queued_from_upcoming.assert_not_called()
-    mock_db_manager.requeue_download.assert_not_called()
+    mock_download_db.mark_as_queued_from_upcoming.assert_not_called()
+    mock_download_db.requeue_download.assert_not_called()
 
 
 @pytest.mark.unit
 def test_handle_existing_upcoming_download_refetch_returns_no_match(
     enqueuer: Enqueuer,
-    mock_db_manager: MagicMock,
+    mock_download_db: MagicMock,
     mock_ytdlp_wrapper: MagicMock,
     sample_feed_config: FeedConfig,
 ):
     """Test upcoming download refetch returns no matching download or multiple."""
     upcoming_dl = create_download("video1", DownloadStatus.UPCOMING)
-    mock_db_manager.get_downloads_by_status.return_value = [upcoming_dl]
+    mock_download_db.get_downloads_by_status.return_value = [upcoming_dl]
     # Simulate no matching download found in refetched results
     mock_ytdlp_wrapper.fetch_metadata.return_value = (
         MOCK_FEED,
         [create_download("video_other", DownloadStatus.QUEUED)],
     )
-    mock_db_manager.bump_retries.return_value = (1, DownloadStatus.UPCOMING, False)
+    mock_download_db.bump_retries.return_value = (1, DownloadStatus.UPCOMING, False)
 
     count = enqueuer._handle_existing_upcoming_downloads(FEED_ID, sample_feed_config)
 
     assert count == 0
-    mock_db_manager.bump_retries.assert_called_once_with(
+    mock_download_db.bump_retries.assert_called_once_with(
         feed_id=FEED_ID,
         download_id="video1",
         error_message="Original ID not found in re-fetched metadata, or mismatched/multiple downloads found.",
@@ -313,7 +334,7 @@ def test_handle_existing_upcoming_download_refetch_returns_no_match(
 def test_fetch_and_process_new_feed_downloads_no_new_downloads(
     enqueuer: Enqueuer,
     mock_ytdlp_wrapper: MagicMock,
-    mock_db_manager: MagicMock,
+    mock_download_db: MagicMock,
     sample_feed_config: FeedConfig,
 ):
     """Test _fetch_and_process_new_feed_downloads when no new downloads are fetched."""
@@ -331,21 +352,21 @@ def test_fetch_and_process_new_feed_downloads_no_new_downloads(
             **sample_feed_config.yt_args,
         },
     )
-    mock_db_manager.get_download_by_id.assert_not_called()
-    mock_db_manager.upsert_download.assert_not_called()
+    mock_download_db.get_download_by_id.assert_not_called()
+    mock_download_db.upsert_download.assert_not_called()
 
 
 @pytest.mark.unit
 def test_fetch_and_process_new_feed_downloads_new_vod_download(
     enqueuer: Enqueuer,
     mock_ytdlp_wrapper: MagicMock,
-    mock_db_manager: MagicMock,
+    mock_download_db: MagicMock,
     sample_feed_config: FeedConfig,
 ):
     """Test processing a new VOD download."""
     new_vod = create_download("new_video1", DownloadStatus.QUEUED)
     mock_ytdlp_wrapper.fetch_metadata.return_value = (MOCK_FEED, [new_vod])
-    mock_db_manager.get_download_by_id.side_effect = DownloadNotFoundError(
+    mock_download_db.get_download_by_id.side_effect = DownloadNotFoundError(
         message="Not found", feed_id=FEED_ID, download_id="new_video1"
     )
 
@@ -354,21 +375,21 @@ def test_fetch_and_process_new_feed_downloads_new_vod_download(
     )
 
     assert count == 1
-    mock_db_manager.get_download_by_id.assert_called_once_with(FEED_ID, "new_video1")
-    mock_db_manager.upsert_download.assert_called_once_with(new_vod)
+    mock_download_db.get_download_by_id.assert_called_once_with(FEED_ID, "new_video1")
+    mock_download_db.upsert_download.assert_called_once_with(new_vod)
 
 
 @pytest.mark.unit
 def test_fetch_and_process_new_feed_downloads_new_upcoming_download(
     enqueuer: Enqueuer,
     mock_ytdlp_wrapper: MagicMock,
-    mock_db_manager: MagicMock,
+    mock_download_db: MagicMock,
     sample_feed_config: FeedConfig,
 ):
     """Test processing a new UPCOMING download."""
     new_upcoming = create_download("new_video_live", DownloadStatus.UPCOMING)
     mock_ytdlp_wrapper.fetch_metadata.return_value = (MOCK_FEED, [new_upcoming])
-    mock_db_manager.get_download_by_id.side_effect = DownloadNotFoundError(
+    mock_download_db.get_download_by_id.side_effect = DownloadNotFoundError(
         message="Not found", feed_id=FEED_ID, download_id="new_video_live"
     )
 
@@ -377,17 +398,17 @@ def test_fetch_and_process_new_feed_downloads_new_upcoming_download(
     )
 
     assert count == 0  # Not QUEUED yet
-    mock_db_manager.get_download_by_id.assert_called_once_with(
+    mock_download_db.get_download_by_id.assert_called_once_with(
         FEED_ID, "new_video_live"
     )
-    mock_db_manager.upsert_download.assert_called_once_with(new_upcoming)
+    mock_download_db.upsert_download.assert_called_once_with(new_upcoming)
 
 
 @pytest.mark.unit
 def test_fetch_and_process_new_feed_downloads_existing_upcoming_now_vod(
     enqueuer: Enqueuer,
     mock_ytdlp_wrapper: MagicMock,
-    mock_db_manager: MagicMock,
+    mock_download_db: MagicMock,
     sample_feed_config: FeedConfig,
 ):
     """Test processing an existing UPCOMING download that is now a VOD."""
@@ -395,25 +416,25 @@ def test_fetch_and_process_new_feed_downloads_existing_upcoming_now_vod(
     fetched_as_vod = create_download("video_live1", DownloadStatus.QUEUED)
 
     mock_ytdlp_wrapper.fetch_metadata.return_value = (MOCK_FEED, [fetched_as_vod])
-    mock_db_manager.get_download_by_id.return_value = existing_upcoming_in_db
+    mock_download_db.get_download_by_id.return_value = existing_upcoming_in_db
 
     count = enqueuer._fetch_and_process_new_feed_downloads(
         FEED_ID, sample_feed_config, FETCH_SINCE_DATE
     )
 
     assert count == 1
-    mock_db_manager.get_download_by_id.assert_called_once_with(FEED_ID, "video_live1")
-    mock_db_manager.mark_as_queued_from_upcoming.assert_called_once_with(
+    mock_download_db.get_download_by_id.assert_called_once_with(FEED_ID, "video_live1")
+    mock_download_db.mark_as_queued_from_upcoming.assert_called_once_with(
         FEED_ID, "video_live1"
     )
-    mock_db_manager.upsert_download.assert_not_called()
+    mock_download_db.upsert_download.assert_not_called()
 
 
 @pytest.mark.unit
 def test_fetch_and_process_new_feed_downloads_existing_downloaded_ignored(
     enqueuer: Enqueuer,
     mock_ytdlp_wrapper: MagicMock,
-    mock_db_manager: MagicMock,
+    mock_download_db: MagicMock,
     sample_feed_config: FeedConfig,
 ):
     """Test that an already DOWNLOADED item is ignored (not requeued) if fetched again as QUEUED."""
@@ -424,23 +445,23 @@ def test_fetch_and_process_new_feed_downloads_existing_downloaded_ignored(
         MOCK_FEED,
         [fetched_again_as_queued],
     )
-    mock_db_manager.get_download_by_id.return_value = existing_downloaded_in_db
+    mock_download_db.get_download_by_id.return_value = existing_downloaded_in_db
 
     count = enqueuer._fetch_and_process_new_feed_downloads(
         FEED_ID, sample_feed_config, FETCH_SINCE_DATE
     )
 
     assert count == 0
-    mock_db_manager.get_download_by_id.assert_called_once_with(FEED_ID, "video_done")
-    mock_db_manager.requeue_download.assert_not_called()
-    mock_db_manager.upsert_download.assert_not_called()
+    mock_download_db.get_download_by_id.assert_called_once_with(FEED_ID, "video_done")
+    mock_download_db.requeue_download.assert_not_called()
+    mock_download_db.upsert_download.assert_not_called()
 
 
 @pytest.mark.unit
 def test_fetch_and_process_new_feed_downloads_existing_error_requeued(
     enqueuer: Enqueuer,
     mock_ytdlp_wrapper: MagicMock,
-    mock_db_manager: MagicMock,
+    mock_download_db: MagicMock,
     sample_feed_config: FeedConfig,
 ):
     """Test that if DB status is ERROR and fetched status is QUEUED, it calls requeue_download."""
@@ -448,22 +469,22 @@ def test_fetch_and_process_new_feed_downloads_existing_error_requeued(
     fetched_as_queued = create_download("video_err", DownloadStatus.QUEUED)
 
     mock_ytdlp_wrapper.fetch_metadata.return_value = (MOCK_FEED, [fetched_as_queued])
-    mock_db_manager.get_download_by_id.return_value = existing_error_in_db
+    mock_download_db.get_download_by_id.return_value = existing_error_in_db
 
     count = enqueuer._fetch_and_process_new_feed_downloads(
         FEED_ID, sample_feed_config, FETCH_SINCE_DATE
     )
 
     assert count == 1  # Because it was re-queued
-    mock_db_manager.get_download_by_id.assert_called_once_with(FEED_ID, "video_err")
-    mock_db_manager.requeue_download.assert_called_once_with(FEED_ID, "video_err")
-    mock_db_manager.upsert_download.assert_not_called()
+    mock_download_db.get_download_by_id.assert_called_once_with(FEED_ID, "video_err")
+    mock_download_db.requeue_download.assert_called_once_with(FEED_ID, "video_err")
+    mock_download_db.upsert_download.assert_not_called()
 
 
 @pytest.mark.unit
 def test_enqueue_new_downloads_full_flow_mixed_scenarios(
     enqueuer: Enqueuer,
-    mock_db_manager: MagicMock,
+    mock_download_db: MagicMock,
     mock_ytdlp_wrapper: MagicMock,
     sample_feed_config: FeedConfig,
 ):
@@ -476,7 +497,7 @@ def test_enqueue_new_downloads_full_flow_mixed_scenarios(
     upcoming2_db = create_download("up2", DownloadStatus.UPCOMING)
     upcoming2_refetched_upcoming = create_download("up2", DownloadStatus.UPCOMING)
 
-    mock_db_manager.get_downloads_by_status.return_value = [upcoming1_db, upcoming2_db]
+    mock_download_db.get_downloads_by_status.return_value = [upcoming1_db, upcoming2_db]
 
     # --- Setup for _fetch_and_process_new_feed_downloads ---
     # 3. New VOD from feed
@@ -497,7 +518,7 @@ def test_enqueue_new_downloads_full_flow_mixed_scenarios(
 
     # Mock get_download_by_id calls for main feed processing
     # This depends on the order of items in main_feed_fetch_result
-    mock_db_manager.get_download_by_id.side_effect = [
+    mock_download_db.get_download_by_id.side_effect = [
         DownloadNotFoundError(
             message="Not found", feed_id=FEED_ID, download_id="feed_new_vod"
         ),  # new_vod_feed
@@ -520,8 +541,8 @@ def test_enqueue_new_downloads_full_flow_mixed_scenarios(
     assert total_queued == 3
 
     # Assert calls for _handle_existing_upcoming_downloads
-    assert mock_db_manager.get_downloads_by_status.call_count == 1
-    assert mock_db_manager.get_downloads_by_status.call_args_list[0] == call(
+    assert mock_download_db.get_downloads_by_status.call_count == 1
+    assert mock_download_db.get_downloads_by_status.call_args_list[0] == call(
         DownloadStatus.UPCOMING, feed=FEED_ID
     )
 
@@ -545,34 +566,34 @@ def test_enqueue_new_downloads_full_flow_mixed_scenarios(
         ]
     )
 
-    # Assert db_manager.update_status calls
+    # Assert download_db.update_status calls
     # Called for upcoming1_db (True) and for existing_up3_db (True)
     # Reset side_effect for update_status for clarity in this specific test's assertions
-    mock_db_manager.mark_as_queued_from_upcoming.assert_has_calls(
+    mock_download_db.mark_as_queued_from_upcoming.assert_has_calls(
         [
             call(FEED_ID, upcoming1_db.id),
             call(FEED_ID, existing_up3_db.id),
         ]
     )
-    assert mock_db_manager.mark_as_queued_from_upcoming.call_count == 2
+    assert mock_download_db.mark_as_queued_from_upcoming.call_count == 2
 
-    mock_db_manager.upsert_download.assert_has_calls(
+    mock_download_db.upsert_download.assert_has_calls(
         [
             call(new_vod_feed),
             call(new_upcoming_feed),
         ]
     )
-    assert mock_db_manager.upsert_download.call_count == 2
+    assert mock_download_db.upsert_download.call_count == 2
 
 
 @pytest.mark.unit
 def test_enqueue_new_downloads_db_error_on_get_upcoming(
     enqueuer: Enqueuer,
-    mock_db_manager: MagicMock,
+    mock_download_db: MagicMock,
     sample_feed_config: FeedConfig,
 ):
     """Test EnqueueError when DB fails during fetching upcoming downloads."""
-    mock_db_manager.get_downloads_by_status.side_effect = DatabaseOperationError(
+    mock_download_db.get_downloads_by_status.side_effect = DatabaseOperationError(
         "DB error"
     )
     with pytest.raises(EnqueueError) as exc_info:
@@ -584,12 +605,12 @@ def test_enqueue_new_downloads_db_error_on_get_upcoming(
 @pytest.mark.unit
 def test_enqueue_new_downloads_ytdlp_error_on_main_feed_fetch(
     enqueuer: Enqueuer,
-    mock_db_manager: MagicMock,
+    mock_download_db: MagicMock,
     mock_ytdlp_wrapper: MagicMock,
     sample_feed_config: FeedConfig,
 ):
     """Test EnqueueError when YTDLP fails during main feed metadata fetch."""
-    mock_db_manager.get_downloads_by_status.return_value = []  # No upcoming
+    mock_download_db.get_downloads_by_status.return_value = []  # No upcoming
     mock_ytdlp_wrapper.fetch_metadata.side_effect = YtdlpApiError(
         "YTDLP error", feed_id=FEED_ID, url=FEED_URL
     )

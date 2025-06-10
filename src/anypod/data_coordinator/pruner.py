@@ -29,12 +29,12 @@ class Pruner:
     deletes associated files, and archives database records.
 
     Attributes:
-        db_manager: Database manager for download record operations.
+        download_db: Database manager for download record operations.
         file_manager: File manager for file system operations.
     """
 
-    def __init__(self, db_manager: DownloadDatabase, file_manager: FileManager):
-        self.db_manager = db_manager
+    def __init__(self, download_db: DownloadDatabase, file_manager: FileManager):
+        self.download_db = download_db
         self.file_manager = file_manager
         logger.debug("Pruner initialized.")
 
@@ -75,7 +75,7 @@ class Pruner:
             )
             try:
                 downloads_for_keep_last = (
-                    self.db_manager.get_downloads_to_prune_by_keep_last(
+                    self.download_db.get_downloads_to_prune_by_keep_last(
                         feed_id, keep_last
                     )
                 )
@@ -91,7 +91,7 @@ class Pruner:
         if prune_before_date is not None:
             logger.debug("Identifying prune candidates by date rule.", extra=log_params)
             try:
-                downloads_for_since = self.db_manager.get_downloads_to_prune_by_since(
+                downloads_for_since = self.download_db.get_downloads_to_prune_by_since(
                     feed_id, prune_before_date
                 )
             except DatabaseOperationError as e:
@@ -157,7 +157,7 @@ class Pruner:
         logger.debug("Attempting to archive download.", extra=log_params)
 
         try:
-            self.db_manager.archive_download(feed_id, download.id)
+            self.download_db.archive_download(feed_id, download.id)
         except (DownloadNotFoundError, DatabaseOperationError) as e:
             raise PruneError(
                 message="Failed to archive download.",

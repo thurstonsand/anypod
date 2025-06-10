@@ -27,7 +27,7 @@ class RSSFeedGenerator:
     concurrent access by HTTP servers and periodic updates.
 
     Attributes:
-        _db_manager: Database manager for querying download data.
+        _download_db: Database manager for querying download data.
         _paths: Path manager for resolving URLs and download paths.
         _feed_cache: In-memory cache mapping feed_id to XML bytes.
         _cache_lock: Read/write lock for thread-safe cache access.
@@ -35,10 +35,10 @@ class RSSFeedGenerator:
 
     def __init__(
         self,
-        db_manager: DownloadDatabase,
+        download_db: DownloadDatabase,
         paths: PathManager,
     ):
-        self._db_manager = db_manager
+        self._download_db = download_db
         self._paths = paths
         self._feed_cache: dict[str, bytes] = {}
         self._cache_lock = rwlock.RWLockWrite()
@@ -59,7 +59,7 @@ class RSSFeedGenerator:
         """
         try:
             # Sorted by newest first
-            downloads = self._db_manager.get_downloads_by_status(
+            downloads = self._download_db.get_downloads_by_status(
                 status_to_filter=DownloadStatus.DOWNLOADED,
                 feed=feed_id,
             )

@@ -16,12 +16,12 @@ from anypod.exceptions import DatabaseOperationError, DownloadNotFoundError
 
 
 @pytest.fixture
-def db_manager() -> Iterator[DownloadDatabase]:
+def download_db() -> Iterator[DownloadDatabase]:
     """Provides a DownloadDatabase instance for testing with a temporary in-memory database."""
     # db_path = tmp_path / "test.db"
-    manager = DownloadDatabase(db_path=None, memory_name="test_db")
-    yield manager
-    manager.close()  # Ensure connection is closed after test
+    download_db = DownloadDatabase(db_path=None, memory_name="test_db")
+    yield download_db
+    download_db.close()  # Ensure connection is closed after test
 
 
 @pytest.fixture
@@ -206,9 +206,9 @@ def test_download_equality_and_hash(sample_download_queued: Download):
 
 
 @pytest.mark.unit
-def test_db_manager_initialization_and_schema(db_manager: DownloadDatabase):
+def test_download_db_initialization_and_schema(download_db: DownloadDatabase):
     """Test that the schema (tables and indices) is created upon first DB interaction."""
-    conn: sqlite3.Connection = db_manager._db.db.conn  # type: ignore
+    conn: sqlite3.Connection = download_db._db.db.conn  # type: ignore
     assert conn is not None, "Connection should have been established"
 
     cursor: sqlite3.Cursor | None = None
@@ -234,14 +234,12 @@ def test_db_manager_initialization_and_schema(db_manager: DownloadDatabase):
 
 @pytest.mark.unit
 def test_add_and_get_download(
-    db_manager: DownloadDatabase, sample_download_queued: Download
+    download_db: DownloadDatabase, sample_download_queued: Download
 ):
     """Test adding a new download and then retrieving it."""
-    db_manager.upsert_download(sample_download_queued)
+    download_db.upsert_download(sample_download_queued)
 
-    # assert 1 == 0, f"{sqlite3.sqlite_version}, {sqlite3.sqlite_version_info}"
-    # assert 1 == 0, f"rows: {list(db_manager._db.db['downloads'].rows)}"
-    retrieved_download = db_manager.get_download_by_id(
+    retrieved_download = download_db.get_download_by_id(
         feed=sample_download_queued.feed,
         id=sample_download_queued.id,
     )
@@ -265,11 +263,11 @@ def test_add_and_get_download(
 
 @pytest.mark.unit
 def test_upsert_download_updates_existing(
-    db_manager: DownloadDatabase, sample_download_queued: Download
+    download_db: DownloadDatabase, sample_download_queued: Download
 ):
     """Test that upsert_download updates an existing download instead of raising an error."""
     # Add initial download
-    db_manager.upsert_download(sample_download_queued)
+    download_db.upsert_download(sample_download_queued)
 
     # Create a modified version with the same (feed, id)
     modified_download = Download(
@@ -292,10 +290,10 @@ def test_upsert_download_updates_existing(
     )
 
     # Perform upsert with the modified download
-    db_manager.upsert_download(modified_download)  # Should not raise IntegrityError
+    download_db.upsert_download(modified_download)  # Should not raise IntegrityError
 
     # Retrieve and verify
-    retrieved_download = db_manager.get_download_by_id(
+    retrieved_download = download_db.get_download_by_id(
         feed=sample_download_queued.feed,
         id=sample_download_queued.id,
     )
@@ -314,35 +312,35 @@ def test_upsert_download_updates_existing(
 
 @pytest.mark.unit
 def test_status_transitions(
-    db_manager: DownloadDatabase,
+    download_db: DownloadDatabase,
     sample_download_queued: Download,
     sample_download_upcoming: Download,
 ):
     """Test various status transition methods."""
     # Start with an UPCOMING download
-    db_manager.upsert_download(sample_download_upcoming)
+    download_db.upsert_download(sample_download_upcoming)
     feed_id = sample_download_upcoming.feed
     dl_id = sample_download_upcoming.id
 
     # UPCOMING -> QUEUED
-    db_manager.mark_as_queued_from_upcoming(feed_id, dl_id)
-    download = db_manager.get_download_by_id(feed_id, dl_id)
+    download_db.mark_as_queued_from_upcoming(feed_id, dl_id)
+    download = download_db.get_download_by_id(feed_id, dl_id)
     assert download.status == DownloadStatus.QUEUED
     assert download.retries == 0  # Preserved from initial UPCOMING
     assert download.last_error is None  # Preserved from initial UPCOMING
 
     # QUEUED -> DOWNLOADED
-    db_manager.mark_as_downloaded(feed_id, dl_id, "mp4", 1024)
-    download = db_manager.get_download_by_id(feed_id, dl_id)
+    download_db.mark_as_downloaded(feed_id, dl_id, "mp4", 1024)
+    download = download_db.get_download_by_id(feed_id, dl_id)
     assert download.status == DownloadStatus.DOWNLOADED
     assert download.retries == 0, "Retries should be reset on DOWNLOADED"
     assert download.last_error is None, "Error should be cleared on DOWNLOADED"
 
     # Attempt to bump retries on DOWNLOADED: should increment retries, set last_error, but NOT change status to ERROR
-    db_manager.bump_retries(
+    download_db.bump_retries(
         feed_id, dl_id, "Simulated error on downloaded item", 1
     )  # max_errors = 1
-    download = db_manager.get_download_by_id(feed_id, dl_id)
+    download = download_db.get_download_by_id(feed_id, dl_id)
     assert download.status == DownloadStatus.DOWNLOADED, (
         "Status should remain DOWNLOADED"
     )
@@ -352,8 +350,8 @@ def test_status_transitions(
     assert download.last_error == "Simulated error on downloaded item"
 
     # DOWNLOADED (with error info) -> REQUEUED
-    db_manager.requeue_download(feed_id, dl_id)
-    download = db_manager.get_download_by_id(feed_id, dl_id)
+    download_db.requeue_download(feed_id, dl_id)
+    download = download_db.get_download_by_id(feed_id, dl_id)
     assert download.status == DownloadStatus.QUEUED
     assert download.retries == 0, "Retries should be reset on REQUEUE"
     assert download.last_error is None, "Error should be cleared on REQUEUE"
@@ -361,9 +359,9 @@ def test_status_transitions(
     # QUEUED -> SKIPPED
     # To test preservation of error/retries, let's set them via bump_retries first
     # (though skip_download itself preserves whatever is there)
-    db_manager.bump_retries(feed_id, dl_id, "Error before skip", 3)
-    db_manager.skip_download(feed_id, dl_id)
-    download = db_manager.get_download_by_id(feed_id, dl_id)
+    download_db.bump_retries(feed_id, dl_id, "Error before skip", 3)
+    download_db.skip_download(feed_id, dl_id)
+    download = download_db.get_download_by_id(feed_id, dl_id)
     assert download.status == DownloadStatus.SKIPPED
     assert download.retries == 1, (
         "Retries should be preserved on SKIP"
@@ -373,9 +371,9 @@ def test_status_transitions(
     )
 
     # SKIPPED -> UNSKIP (which re-queues)
-    returned_status = db_manager.unskip_download(feed_id, dl_id)
+    returned_status = download_db.unskip_download(feed_id, dl_id)
     assert returned_status == DownloadStatus.QUEUED
-    download = db_manager.get_download_by_id(feed_id, dl_id)
+    download = download_db.get_download_by_id(feed_id, dl_id)
     assert download.status == DownloadStatus.QUEUED
     assert download.retries == 0, "Retries should be reset on UNSKIP (via REQUEUE)"
     assert download.last_error is None, (
@@ -383,8 +381,8 @@ def test_status_transitions(
     )
 
     # QUEUED -> ARCHIVED (from a clean QUEUED state)
-    db_manager.archive_download(feed_id, dl_id)
-    download = db_manager.get_download_by_id(feed_id, dl_id)
+    download_db.archive_download(feed_id, dl_id)
+    download = download_db.get_download_by_id(feed_id, dl_id)
     assert download.status == DownloadStatus.ARCHIVED
     assert download.retries == 0  # Preserved from last requeue
     assert download.last_error is None  # Preserved from last requeue
@@ -393,22 +391,22 @@ def test_status_transitions(
     sample_download_queued.status = DownloadStatus.QUEUED
     sample_download_queued.retries = 0
     sample_download_queued.last_error = None
-    db_manager.upsert_download(sample_download_queued)
+    download_db.upsert_download(sample_download_queued)
     q_feed_id = sample_download_queued.feed
     q_dl_id = sample_download_queued.id
 
     # Transition to ERROR
-    _, _, _ = db_manager.bump_retries(
+    _, _, _ = download_db.bump_retries(
         q_feed_id, q_dl_id, "Maxed out errors", 1
     )  # Max errors = 1
-    download_error_state = db_manager.get_download_by_id(q_feed_id, q_dl_id)
+    download_error_state = download_db.get_download_by_id(q_feed_id, q_dl_id)
     assert download_error_state.status == DownloadStatus.ERROR
     assert download_error_state.retries == 1
     assert download_error_state.last_error == "Maxed out errors"
 
     # ERROR -> ARCHIVED
-    db_manager.archive_download(q_feed_id, q_dl_id)
-    download_archived_from_error = db_manager.get_download_by_id(q_feed_id, q_dl_id)
+    download_db.archive_download(q_feed_id, q_dl_id)
+    download_archived_from_error = download_db.get_download_by_id(q_feed_id, q_dl_id)
     assert download_archived_from_error.status == DownloadStatus.ARCHIVED
     assert download_archived_from_error.retries == 1, "Retries should be preserved"
     assert download_archived_from_error.last_error == "Maxed out errors", (
@@ -417,39 +415,41 @@ def test_status_transitions(
 
     # Test non_existent_download for each relevant method
     with pytest.raises(DownloadNotFoundError):
-        db_manager.mark_as_queued_from_upcoming("bad", "bad")
+        download_db.mark_as_queued_from_upcoming("bad", "bad")
     with pytest.raises(DownloadNotFoundError):
-        db_manager.requeue_download("bad", "bad")
+        download_db.requeue_download("bad", "bad")
     with pytest.raises(DownloadNotFoundError):
-        db_manager.mark_as_downloaded("bad", "bad", "mp4", 0)
+        download_db.mark_as_downloaded("bad", "bad", "mp4", 0)
     with pytest.raises(DownloadNotFoundError):
-        db_manager.skip_download("bad", "bad")
+        download_db.skip_download("bad", "bad")
     with pytest.raises(DownloadNotFoundError):
-        db_manager.unskip_download("bad", "bad")
+        download_db.unskip_download("bad", "bad")
     with pytest.raises(DownloadNotFoundError):
-        db_manager.archive_download("bad", "bad")
+        download_db.archive_download("bad", "bad")
 
     # Test mark_as_downloaded from a non-QUEUED state (e.g., UPCOMING)
-    db_manager.upsert_download(sample_download_upcoming)  # dl_id is now UPCOMING
+    download_db.upsert_download(sample_download_upcoming)  # dl_id is now UPCOMING
     with pytest.raises(DatabaseOperationError, match="Download status is not QUEUED"):
-        db_manager.mark_as_downloaded(feed_id, sample_download_upcoming.id, "mp4", 1024)
+        download_db.mark_as_downloaded(
+            feed_id, sample_download_upcoming.id, "mp4", 1024
+        )
 
     # Test mark_as_downloaded from ERROR state
     # First, set an item to ERROR
-    db_manager.upsert_download(sample_download_queued)  # dl_id is now QUEUED
-    db_manager.bump_retries(
+    download_db.upsert_download(sample_download_queued)  # dl_id is now QUEUED
+    download_db.bump_retries(
         sample_download_queued.feed,
         sample_download_queued.id,
         "Error to test from",
         1,
     )  # max_errors = 1, so it becomes ERROR
-    error_download = db_manager.get_download_by_id(
+    error_download = download_db.get_download_by_id(
         sample_download_queued.feed, sample_download_queued.id
     )
     assert error_download.status == DownloadStatus.ERROR
 
     with pytest.raises(DatabaseOperationError, match="Download status is not QUEUED"):
-        db_manager.mark_as_downloaded(
+        download_db.mark_as_downloaded(
             sample_download_queued.feed,
             sample_download_queued.id,
             "mp4",
@@ -458,7 +458,7 @@ def test_status_transitions(
 
 
 @pytest.mark.unit
-def test_get_downloads_to_prune_by_keep_last(db_manager: DownloadDatabase):
+def test_get_downloads_to_prune_by_keep_last(download_db: DownloadDatabase):
     """Test fetching downloads to prune based on 'keep_last'."""
     base_time = datetime(2023, 1, 1, 12, 0, 0, tzinfo=UTC)
     feed1_name = "prune_feed1"
@@ -588,12 +588,12 @@ def test_get_downloads_to_prune_by_keep_last(db_manager: DownloadDatabase):
         dl_f1v7_skipped,
     ]
     for dl in downloads_to_add:
-        db_manager.upsert_download(dl)
+        download_db.upsert_download(dl)
 
     # Keep 2: f1v4_dl_newest (kept), f1v3_q_mid2 (kept)
     # Pruned: f1v2_err_mid1, f1v1_dl_oldest, f1v6_upcoming_older
     # Ignored from pruning: f1v5_arch, f1v7_skipped
-    prune_keep2 = db_manager.get_downloads_to_prune_by_keep_last(
+    prune_keep2 = download_db.get_downloads_to_prune_by_keep_last(
         feed=feed1_name, keep_last=2
     )
     assert len(prune_keep2) == 3, (
@@ -611,21 +611,21 @@ def test_get_downloads_to_prune_by_keep_last(db_manager: DownloadDatabase):
     # Keep 5: All non-ARCHIVED and non-SKIPPED downloads are kept
     # (f1v4_dl_newest, f1v3_q_mid2, f1v2_err_mid1, f1v1_dl_oldest, f1v6_upcoming_older)
     # There are 5 such downloads. f1v5_arch and f1v7_skipped are ignored.
-    prune_keep5 = db_manager.get_downloads_to_prune_by_keep_last(
+    prune_keep5 = download_db.get_downloads_to_prune_by_keep_last(
         feed=feed1_name, keep_last=5
     )
     assert len(prune_keep5) == 0, (
         "Should identify 0 if keep_last >= total non-ARCHIVED/non-SKIPPED downloads for feed"
     )
 
-    prune_keep0 = db_manager.get_downloads_to_prune_by_keep_last(
+    prune_keep0 = download_db.get_downloads_to_prune_by_keep_last(
         feed=feed1_name, keep_last=0
     )
     assert len(prune_keep0) == 0, "Should return 0 if keep_last is 0"
 
 
 @pytest.mark.unit
-def test_get_downloads_to_prune_by_since(db_manager: DownloadDatabase):
+def test_get_downloads_to_prune_by_since(download_db: DownloadDatabase):
     """Test fetching downloads to prune by 'since' date."""
     base_time = datetime(2023, 1, 1, 12, 0, 0, tzinfo=UTC)
     feed_id = "prune_since_feed"
@@ -740,7 +740,7 @@ def test_get_downloads_to_prune_by_since(db_manager: DownloadDatabase):
         dl_other_v1_older_dl,
     ]
     for dl in downloads_to_add:
-        db_manager.upsert_download(dl)
+        download_db.upsert_download(dl)
 
     # Prune downloads older than 'base_time - 3 days' for feed_id
     # Candidates for pruning (ignoring ARCHIVED and SKIPPED):
@@ -751,7 +751,7 @@ def test_get_downloads_to_prune_by_since(db_manager: DownloadDatabase):
     # - ps_v5_upcoming_ancient (day -10) -> YES
     # - ps_v6_skipped_ancient (day -12) -> NO
     since_cutoff_1 = base_time - timedelta(days=3)
-    pruned_1 = db_manager.get_downloads_to_prune_by_since(
+    pruned_1 = download_db.get_downloads_to_prune_by_since(
         feed=feed_id, since=since_cutoff_1
     )
     assert len(pruned_1) == 2
@@ -770,7 +770,7 @@ def test_get_downloads_to_prune_by_since(db_manager: DownloadDatabase):
     # - ps_v5_upcoming_ancient (day -10) -> YES
     # - ps_v6_skipped_ancient (day -12) -> NO
     since_cutoff_2 = base_time + timedelta(days=2)
-    pruned_2 = db_manager.get_downloads_to_prune_by_since(
+    pruned_2 = download_db.get_downloads_to_prune_by_since(
         feed=feed_id, since=since_cutoff_2
     )
     pruned_ids_2 = sorted([row.id for row in pruned_2])
@@ -784,7 +784,7 @@ def test_get_downloads_to_prune_by_since(db_manager: DownloadDatabase):
 
 
 @pytest.mark.unit
-def test_get_downloads_by_status(db_manager: DownloadDatabase):
+def test_get_downloads_by_status(download_db: DownloadDatabase):
     """Test fetching downloads by various statuses, including offset and limit."""
     base_time = datetime(2023, 1, 15, 12, 0, 0, tzinfo=UTC)
     feed1 = "status_feed1"
@@ -905,10 +905,10 @@ def test_get_downloads_by_status(db_manager: DownloadDatabase):
         dl_f2_upcoming,  # UPCOMING
     ]
     for dl_data in downloads_to_add:
-        db_manager.upsert_download(dl_data)
+        download_db.upsert_download(dl_data)
 
     # Expected order for all errors: f2e1 (oldest), f1e1_old, f1e2_new (newest)
-    all_errors = db_manager.get_downloads_by_status(
+    all_errors = download_db.get_downloads_by_status(
         status_to_filter=DownloadStatus.ERROR
     )
     assert len(all_errors) == 3, "Should fetch all 3 ERROR downloads"
@@ -916,13 +916,13 @@ def test_get_downloads_by_status(db_manager: DownloadDatabase):
     for row in all_errors:
         assert row.status == DownloadStatus.ERROR
 
-    feed1_errors = db_manager.get_downloads_by_status(
+    feed1_errors = download_db.get_downloads_by_status(
         status_to_filter=DownloadStatus.ERROR, feed=feed1
     )
     assert len(feed1_errors) == 2, "Should fetch 2 ERROR downloads for feed1"
     assert [row.id for row in feed1_errors] == ["f1e2_new", "f1e1_old"]
 
-    limited_errors = db_manager.get_downloads_by_status(
+    limited_errors = download_db.get_downloads_by_status(
         status_to_filter=DownloadStatus.ERROR, limit=1, offset=0
     )
     assert len(limited_errors) == 1, "Should fetch only 1 error with limit=1"
@@ -930,7 +930,7 @@ def test_get_downloads_by_status(db_manager: DownloadDatabase):
 
     # --- Test UPCOMING status ---
     # Expected order for all UPCOMING: f2upcoming (oldest), f1upcoming (newest)
-    all_upcoming = db_manager.get_downloads_by_status(
+    all_upcoming = download_db.get_downloads_by_status(
         status_to_filter=DownloadStatus.UPCOMING
     )
     assert len(all_upcoming) == 2, "Should fetch all 2 UPCOMING downloads"
@@ -938,56 +938,56 @@ def test_get_downloads_by_status(db_manager: DownloadDatabase):
     for row in all_upcoming:
         assert row.status == DownloadStatus.UPCOMING
 
-    feed1_upcoming = db_manager.get_downloads_by_status(
+    feed1_upcoming = download_db.get_downloads_by_status(
         status_to_filter=DownloadStatus.UPCOMING, feed=feed1
     )
     assert len(feed1_upcoming) == 1, "Should fetch 1 UPCOMING download for feed1"
     assert feed1_upcoming[0].id == "f1upcoming"
 
     # --- Test QUEUED status (feed1 has one) ---
-    feed1_queued = db_manager.get_downloads_by_status(
+    feed1_queued = download_db.get_downloads_by_status(
         status_to_filter=DownloadStatus.QUEUED, feed=feed1
     )
     assert len(feed1_queued) == 1, "Should fetch 1 QUEUED download for feed1"
     assert feed1_queued[0].id == "f1q1"
 
     # --- Test DOWNLOADED status (feed3_no_match has one) ---
-    downloaded_f3 = db_manager.get_downloads_by_status(
+    downloaded_f3 = download_db.get_downloads_by_status(
         status_to_filter=DownloadStatus.DOWNLOADED, feed="feed3_no_match"
     )
     assert len(downloaded_f3) == 1, "Should fetch 1 DOWNLOADED for feed3_no_match"
     assert downloaded_f3[0].id == "f3d1"
 
     # --- Test with offset and limit for UPCOMING ---
-    upcoming_limit1_offset1 = db_manager.get_downloads_by_status(
+    upcoming_limit1_offset1 = download_db.get_downloads_by_status(
         status_to_filter=DownloadStatus.UPCOMING, limit=1, offset=1
     )  # Skips f1upcoming, gets f2upcoming
     assert len(upcoming_limit1_offset1) == 1
     assert upcoming_limit1_offset1[0].id == "f2upcoming"
 
     # --- Test no downloads for a status/feed combination ---
-    no_feed2_queued = db_manager.get_downloads_by_status(
+    no_feed2_queued = download_db.get_downloads_by_status(
         status_to_filter=DownloadStatus.QUEUED, feed=feed2
     )
     assert len(no_feed2_queued) == 0
 
-    no_skipped_any_feed = db_manager.get_downloads_by_status(
+    no_skipped_any_feed = download_db.get_downloads_by_status(
         status_to_filter=DownloadStatus.SKIPPED
     )
     assert len(no_skipped_any_feed) == 0
 
     # --- Test offset greater than number of downloads ---
-    offset_too_high_error = db_manager.get_downloads_by_status(
+    offset_too_high_error = download_db.get_downloads_by_status(
         status_to_filter=DownloadStatus.ERROR, limit=100, offset=5
     )
     assert len(offset_too_high_error) == 0
 
     # --- Test no downloads at all (after updating existing downloads to a different status) ---
-    db_manager.requeue_download(feed=feed1, id="f1e1_old")  # ERROR -> QUEUED
-    db_manager.requeue_download(feed=feed1, id="f1e2_new")  # ERROR -> QUEUED
-    db_manager.skip_download(feed=feed2, id="f2e1")  # ERROR -> SKIPPED
+    download_db.requeue_download(feed=feed1, id="f1e1_old")  # ERROR -> QUEUED
+    download_db.requeue_download(feed=feed1, id="f1e2_new")  # ERROR -> QUEUED
+    download_db.skip_download(feed=feed2, id="f2e1")  # ERROR -> SKIPPED
 
-    all_errors_cleared = db_manager.get_downloads_by_status(
+    all_errors_cleared = download_db.get_downloads_by_status(
         status_to_filter=DownloadStatus.ERROR
     )
     assert len(all_errors_cleared) == 0, (
@@ -995,13 +995,13 @@ def test_get_downloads_by_status(db_manager: DownloadDatabase):
     )
 
     # Test original upcoming downloads are also gone if we query for them after updates
-    db_manager.mark_as_queued_from_upcoming(
+    download_db.mark_as_queued_from_upcoming(
         feed=feed1, id="f1upcoming"
     )  # UPCOMING -> QUEUED
-    db_manager.mark_as_queued_from_upcoming(
+    download_db.mark_as_queued_from_upcoming(
         feed=feed2, id="f2upcoming"
     )  # UPCOMING -> QUEUED
-    all_upcoming_cleared = db_manager.get_downloads_by_status(
+    all_upcoming_cleared = download_db.get_downloads_by_status(
         status_to_filter=DownloadStatus.UPCOMING
     )
     assert len(all_upcoming_cleared) == 0, (
@@ -1013,7 +1013,7 @@ def test_get_downloads_by_status(db_manager: DownloadDatabase):
 
 
 @pytest.mark.unit
-def test_upsert_download_with_none_timestamps(db_manager: DownloadDatabase):
+def test_upsert_download_with_none_timestamps(download_db: DownloadDatabase):
     """Test that database defaults are applied when discovered_at/updated_at are None."""
     base_time = datetime(2023, 1, 1, 12, 0, 0, tzinfo=UTC)
 
@@ -1036,10 +1036,10 @@ def test_upsert_download_with_none_timestamps(db_manager: DownloadDatabase):
     )
 
     # Insert the download
-    db_manager.upsert_download(download_with_none_timestamps)
+    download_db.upsert_download(download_with_none_timestamps)
 
     # Retrieve and verify timestamps were set by database
-    retrieved = db_manager.get_download_by_id("test_feed", "test_none_timestamps")
+    retrieved = download_db.get_download_by_id("test_feed", "test_none_timestamps")
 
     assert retrieved.discovered_at is not None, (
         "discovered_at should be set by database default"
@@ -1058,7 +1058,7 @@ def test_upsert_download_with_none_timestamps(db_manager: DownloadDatabase):
 
 
 @pytest.mark.unit
-def test_database_triggers_update_timestamps(db_manager: DownloadDatabase):
+def test_database_triggers_update_timestamps(download_db: DownloadDatabase):
     """Test that database triggers correctly update timestamps with proper timezone format."""
     base_time = datetime(2023, 1, 1, 12, 0, 0, tzinfo=UTC)
 
@@ -1080,10 +1080,10 @@ def test_database_triggers_update_timestamps(db_manager: DownloadDatabase):
     )
 
     # Insert the download
-    db_manager.upsert_download(download)
+    download_db.upsert_download(download)
 
     # Record the initial timestamps
-    initial_retrieved = db_manager.get_download_by_id("test_feed", "test_triggers")
+    initial_retrieved = download_db.get_download_by_id("test_feed", "test_triggers")
     initial_updated_at = initial_retrieved.updated_at
     initial_downloaded_at = initial_retrieved.downloaded_at
 
@@ -1097,12 +1097,12 @@ def test_database_triggers_update_timestamps(db_manager: DownloadDatabase):
 
     # Update the download to trigger the updated_at trigger
     # Change the title to trigger UPDATE (title is not in exclude_columns)
-    db_manager._db.update(
+    download_db._db.update(
         "downloads", ("test_feed", "test_triggers"), {"title": "Updated Title"}
     )
 
     # Check that updated_at was changed by trigger
-    after_update = db_manager.get_download_by_id("test_feed", "test_triggers")
+    after_update = download_db.get_download_by_id("test_feed", "test_triggers")
     assert after_update.updated_at is not None, "updated_at should not be None"
     assert after_update.updated_at != initial_updated_at, (
         "updated_at should be changed by trigger"
@@ -1114,10 +1114,10 @@ def test_database_triggers_update_timestamps(db_manager: DownloadDatabase):
     time.sleep(0.1)
 
     # Mark as downloaded to trigger the downloaded_at trigger
-    db_manager.mark_as_downloaded("test_feed", "test_triggers", "mp4", 2048)
+    download_db.mark_as_downloaded("test_feed", "test_triggers", "mp4", 2048)
 
     # Check that both updated_at and downloaded_at were set by triggers
-    final_retrieved = db_manager.get_download_by_id("test_feed", "test_triggers")
+    final_retrieved = download_db.get_download_by_id("test_feed", "test_triggers")
 
     # Both should be set and have proper timezone
     assert final_retrieved.updated_at is not None, "updated_at should not be None"
@@ -1201,10 +1201,10 @@ def test_download_from_row_malformed_data(
         Download.from_row(corrupted_row_data)
 
 
-def test_bump_retries_non_existent_download(db_manager: DownloadDatabase):
+def test_bump_retries_non_existent_download(download_db: DownloadDatabase):
     """Test bumping retries for a download that doesn't exist."""
     with pytest.raises(DownloadNotFoundError) as e:
-        db_manager.bump_retries(
+        download_db.bump_retries(
             feed_id="non_existent_feed",
             download_id="non_existent_id",
             error_message="Test error",
@@ -1215,12 +1215,12 @@ def test_bump_retries_non_existent_download(db_manager: DownloadDatabase):
 
 
 def test_bump_retries_below_max(
-    db_manager: DownloadDatabase, sample_download_upcoming: Download
+    download_db: DownloadDatabase, sample_download_upcoming: Download
 ):
     """Test bumping retries when new count is below max_allowed_errors."""
-    db_manager.upsert_download(sample_download_upcoming)
+    download_db.upsert_download(sample_download_upcoming)
 
-    new_retries, final_status, did_transition = db_manager.bump_retries(
+    new_retries, final_status, did_transition = download_db.bump_retries(
         feed_id=sample_download_upcoming.feed,
         download_id=sample_download_upcoming.id,
         error_message="First error",
@@ -1231,7 +1231,7 @@ def test_bump_retries_below_max(
     assert final_status == DownloadStatus.UPCOMING
     assert not did_transition
 
-    updated_row = db_manager.get_download_by_id(
+    updated_row = download_db.get_download_by_id(
         sample_download_upcoming.feed, sample_download_upcoming.id
     )
     assert updated_row is not None
@@ -1241,13 +1241,13 @@ def test_bump_retries_below_max(
 
 
 def test_bump_retries_reaches_max(
-    db_manager: DownloadDatabase, sample_download_upcoming: Download
+    download_db: DownloadDatabase, sample_download_upcoming: Download
 ):
     """Test bumping retries when new count reaches max_allowed_errors."""
     sample_download_upcoming.retries = 2
-    db_manager.upsert_download(sample_download_upcoming)
+    download_db.upsert_download(sample_download_upcoming)
 
-    new_retries, final_status, did_transition = db_manager.bump_retries(
+    new_retries, final_status, did_transition = download_db.bump_retries(
         feed_id=sample_download_upcoming.feed,
         download_id=sample_download_upcoming.id,
         error_message="Third error - reaching max",
@@ -1258,7 +1258,7 @@ def test_bump_retries_reaches_max(
     assert final_status == DownloadStatus.ERROR
     assert did_transition
 
-    updated_row = db_manager.get_download_by_id(
+    updated_row = download_db.get_download_by_id(
         sample_download_upcoming.feed, sample_download_upcoming.id
     )
     assert updated_row is not None
@@ -1268,13 +1268,13 @@ def test_bump_retries_reaches_max(
 
 
 def test_bump_retries_exceeds_max(
-    db_manager: DownloadDatabase, sample_download_upcoming: Download
+    download_db: DownloadDatabase, sample_download_upcoming: Download
 ):
     """Test bumping retries when new count would exceed max_allowed_errors."""
     sample_download_upcoming.retries = 3
-    db_manager.upsert_download(sample_download_upcoming)
+    download_db.upsert_download(sample_download_upcoming)
 
-    new_retries, final_status, did_transition = db_manager.bump_retries(
+    new_retries, final_status, did_transition = download_db.bump_retries(
         feed_id=sample_download_upcoming.feed,
         download_id=sample_download_upcoming.id,
         error_message="Fourth error - exceeds max from upcoming",
@@ -1285,7 +1285,7 @@ def test_bump_retries_exceeds_max(
     assert final_status == DownloadStatus.ERROR
     assert did_transition
 
-    updated_row = db_manager.get_download_by_id(
+    updated_row = download_db.get_download_by_id(
         sample_download_upcoming.feed, sample_download_upcoming.id
     )
     assert updated_row is not None
@@ -1295,16 +1295,16 @@ def test_bump_retries_exceeds_max(
 
 
 def test_bump_retries_already_error_status(
-    db_manager: DownloadDatabase, sample_download_upcoming: Download
+    download_db: DownloadDatabase, sample_download_upcoming: Download
 ):
     """Test bumping retries when the item is already in ERROR state."""
     # Modify fixture to be in ERROR state initially
     sample_download_upcoming.status = DownloadStatus.ERROR
     sample_download_upcoming.retries = 5
     sample_download_upcoming.last_error = "Previous major error"
-    db_manager.upsert_download(sample_download_upcoming)
+    download_db.upsert_download(sample_download_upcoming)
 
-    new_retries, final_status, did_transition_to_error_state = db_manager.bump_retries(
+    new_retries, final_status, did_transition_to_error_state = download_db.bump_retries(
         feed_id=sample_download_upcoming.feed,
         download_id=sample_download_upcoming.id,
         error_message="Another error while already in ERROR state",
@@ -1315,7 +1315,7 @@ def test_bump_retries_already_error_status(
     assert final_status == DownloadStatus.ERROR
     assert not did_transition_to_error_state  # Should be False as it was already ERROR
 
-    updated_row = db_manager.get_download_by_id(
+    updated_row = download_db.get_download_by_id(
         sample_download_upcoming.feed, sample_download_upcoming.id
     )
     assert updated_row is not None
@@ -1325,12 +1325,12 @@ def test_bump_retries_already_error_status(
 
 
 def test_bump_retries_max_errors_is_one(
-    db_manager: DownloadDatabase, sample_download_upcoming: Download
+    download_db: DownloadDatabase, sample_download_upcoming: Download
 ):
     """Test bumping retries transitions to ERROR immediately if max_allowed_errors is 1."""
-    db_manager.upsert_download(sample_download_upcoming)
+    download_db.upsert_download(sample_download_upcoming)
 
-    new_retries, final_status, did_transition = db_manager.bump_retries(
+    new_retries, final_status, did_transition = download_db.bump_retries(
         feed_id=sample_download_upcoming.feed,
         download_id=sample_download_upcoming.id,
         error_message="First and only error allowed",
@@ -1341,7 +1341,7 @@ def test_bump_retries_max_errors_is_one(
     assert final_status == DownloadStatus.ERROR
     assert did_transition
 
-    updated_row = db_manager.get_download_by_id(
+    updated_row = download_db.get_download_by_id(
         sample_download_upcoming.feed, sample_download_upcoming.id
     )
     assert updated_row is not None
@@ -1352,48 +1352,48 @@ def test_bump_retries_max_errors_is_one(
 
 @pytest.mark.unit
 def test_bump_retries_downloaded_item_does_not_become_error(
-    db_manager: DownloadDatabase, sample_download_queued: Download
+    download_db: DownloadDatabase, sample_download_queued: Download
 ):
     """Test that bumping retries on a DOWNLOADED item does not change its status to ERROR, even if retries reach max."""
     # Setup: Insert a download and mark it as DOWNLOADED
     feed_id = sample_download_queued.feed
     dl_id = sample_download_queued.id
-    db_manager.upsert_download(sample_download_queued)  # Initially QUEUED
-    db_manager.mark_as_downloaded(feed_id, dl_id, "mp4", 1024)
+    download_db.upsert_download(sample_download_queued)  # Initially QUEUED
+    download_db.mark_as_downloaded(feed_id, dl_id, "mp4", 1024)
 
-    download = db_manager.get_download_by_id(feed_id, dl_id)
+    download = download_db.get_download_by_id(feed_id, dl_id)
     assert download.status == DownloadStatus.DOWNLOADED
     assert download.retries == 0
 
     # Bump retries enough times to exceed max_allowed_errors
     max_errors = 2
-    new_retries, final_status, did_transition = db_manager.bump_retries(
+    new_retries, final_status, did_transition = download_db.bump_retries(
         feed_id, dl_id, "Error 1 on downloaded", max_errors
     )
     assert new_retries == 1
     assert final_status == DownloadStatus.DOWNLOADED
     assert not did_transition
 
-    new_retries, final_status, did_transition = db_manager.bump_retries(
+    new_retries, final_status, did_transition = download_db.bump_retries(
         feed_id, dl_id, "Error 2 on downloaded (max reached)", max_errors
     )
     assert new_retries == 2
     assert final_status == DownloadStatus.DOWNLOADED  # Should still be DOWNLOADED
     assert not did_transition  # Should not transition to ERROR
 
-    updated_download = db_manager.get_download_by_id(feed_id, dl_id)
+    updated_download = download_db.get_download_by_id(feed_id, dl_id)
     assert updated_download.status == DownloadStatus.DOWNLOADED
     assert updated_download.retries == 2
     assert updated_download.last_error == "Error 2 on downloaded (max reached)"
 
     # One more bump, still should not change status
-    new_retries, final_status, did_transition = db_manager.bump_retries(
+    new_retries, final_status, did_transition = download_db.bump_retries(
         feed_id, dl_id, "Error 3 on downloaded (exceeds max)", max_errors
     )
     assert new_retries == 3
     assert final_status == DownloadStatus.DOWNLOADED
     assert not did_transition
 
-    updated_download = db_manager.get_download_by_id(feed_id, dl_id)
+    updated_download = download_db.get_download_by_id(feed_id, dl_id)
     assert updated_download.status == DownloadStatus.DOWNLOADED
     assert updated_download.retries == 3

@@ -47,12 +47,12 @@ def run_debug_downloader_mode(
     )
 
     try:
-        db_manager = DownloadDatabase(db_path=debug_db_path)
+        download_db = DownloadDatabase(db_path=debug_db_path)
 
         file_manager = FileManager(paths)
 
         ytdlp_wrapper = YtdlpWrapper(paths)
-        downloader = Downloader(db_manager, file_manager, ytdlp_wrapper)
+        downloader = Downloader(download_db, file_manager, ytdlp_wrapper)
     except Exception as e:
         logger.critical(
             "Failed to initialize components for Downloader debug mode.", exc_info=e
@@ -65,7 +65,7 @@ def run_debug_downloader_mode(
         logger.info(
             "No feeds configured. Downloader debug mode has nothing to process."
         )
-        db_manager.close()
+        download_db.close()
         return
 
     total_success_count = 0
@@ -117,7 +117,7 @@ def run_debug_downloader_mode(
 
         for status in DownloadStatus:
             try:
-                downloads_in_status = db_manager.get_downloads_by_status(
+                downloads_in_status = download_db.get_downloads_by_status(
                     status_to_filter=status,
                     limit=-1,  # get all
                 )
@@ -173,6 +173,6 @@ def run_debug_downloader_mode(
             logger.info("Debug downloads directory does not exist.")
 
     finally:
-        db_manager.close()
+        download_db.close()
 
     logger.info("Downloader debug mode processing complete.")

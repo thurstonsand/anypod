@@ -26,7 +26,7 @@ EXPECTED_GENERATOR = "AnyPod: https://github.com/thurstonsan/anypod"
 
 
 @pytest.fixture
-def mock_db_manager() -> MagicMock:
+def mock_download_db() -> MagicMock:
     """Fixture to provide a mocked DownloadDatabase."""
     return MagicMock(spec=DownloadDatabase)
 
@@ -103,26 +103,26 @@ def sample_downloads() -> list[Download]:
 
 @pytest.fixture
 def rss_generator(
-    mock_db_manager: MagicMock, path_manager: PathManager
+    mock_download_db: MagicMock, path_manager: PathManager
 ) -> RSSFeedGenerator:
     """Fixture to provide RSSFeedGenerator instance."""
-    return RSSFeedGenerator(mock_db_manager, path_manager)
+    return RSSFeedGenerator(mock_download_db, path_manager)
 
 
 @pytest.mark.unit
 def test_update_feed_success(
     rss_generator: RSSFeedGenerator,
-    mock_db_manager: MagicMock,
+    mock_download_db: MagicMock,
     feed_config: FeedConfig,
     sample_downloads: list[Download],
 ):
     """Test successful feed generation and caching."""
     feed_id = TEST_FEED_ID
-    mock_db_manager.get_downloads_by_status.return_value = sample_downloads
+    mock_download_db.get_downloads_by_status.return_value = sample_downloads
 
     rss_generator.update_feed(feed_id, feed_config)
 
-    mock_db_manager.get_downloads_by_status.assert_called_once_with(
+    mock_download_db.get_downloads_by_status.assert_called_once_with(
         status_to_filter=DownloadStatus.DOWNLOADED, feed=feed_id
     )
 
@@ -134,11 +134,13 @@ def test_update_feed_success(
 
 @pytest.mark.unit
 def test_update_feed_database_error(
-    rss_generator: RSSFeedGenerator, mock_db_manager: MagicMock, feed_config: FeedConfig
+    rss_generator: RSSFeedGenerator,
+    mock_download_db: MagicMock,
+    feed_config: FeedConfig,
 ):
     """Test feed generation with database error."""
     feed_id = TEST_FEED_ID
-    mock_db_manager.get_downloads_by_status.side_effect = DatabaseOperationError(
+    mock_download_db.get_downloads_by_status.side_effect = DatabaseOperationError(
         "Database connection failed"
     )
 
@@ -164,13 +166,13 @@ def test_get_feed_xml_not_found(rss_generator: RSSFeedGenerator):
 @pytest.mark.unit
 def test_generated_xml_structure(
     rss_generator: RSSFeedGenerator,
-    mock_db_manager: MagicMock,
+    mock_download_db: MagicMock,
     feed_config: FeedConfig,
     sample_downloads: list[Download],
 ):
     """Test that generated XML has correct RSS structure and content."""
     feed_id = TEST_FEED_ID
-    mock_db_manager.get_downloads_by_status.return_value = sample_downloads
+    mock_download_db.get_downloads_by_status.return_value = sample_downloads
 
     rss_generator.update_feed(feed_id, feed_config)
     xml_bytes = rss_generator.get_feed_xml(feed_id)
@@ -253,13 +255,13 @@ def test_generated_xml_structure(
 @pytest.mark.unit
 def test_generated_xml_enclosure_urls(
     rss_generator: RSSFeedGenerator,
-    mock_db_manager: MagicMock,
+    mock_download_db: MagicMock,
     feed_config: FeedConfig,
     sample_downloads: list[Download],
 ):
     """Test that enclosure URLs are correctly formatted."""
     feed_id = TEST_FEED_ID
-    mock_db_manager.get_downloads_by_status.return_value = sample_downloads
+    mock_download_db.get_downloads_by_status.return_value = sample_downloads
 
     rss_generator.update_feed(feed_id, feed_config)
     xml_bytes = rss_generator.get_feed_xml(feed_id)
@@ -290,7 +292,9 @@ def test_generated_xml_enclosure_urls(
 
 @pytest.mark.unit
 def test_generated_xml_mime_types(
-    rss_generator: RSSFeedGenerator, mock_db_manager: MagicMock, feed_config: FeedConfig
+    rss_generator: RSSFeedGenerator,
+    mock_download_db: MagicMock,
+    feed_config: FeedConfig,
 ):
     """Test that MIME types are correctly preserved in enclosures."""
     feed_id = TEST_FEED_ID
@@ -325,7 +329,7 @@ def test_generated_xml_mime_types(
         ),
     ]
 
-    mock_db_manager.get_downloads_by_status.return_value = downloads_with_various_types
+    mock_download_db.get_downloads_by_status.return_value = downloads_with_various_types
 
     rss_generator.update_feed(feed_id, feed_config)
     xml_bytes = rss_generator.get_feed_xml(feed_id)
@@ -359,11 +363,13 @@ def test_generated_xml_mime_types(
 
 @pytest.mark.unit
 def test_empty_downloads_list(
-    rss_generator: RSSFeedGenerator, mock_db_manager: MagicMock, feed_config: FeedConfig
+    rss_generator: RSSFeedGenerator,
+    mock_download_db: MagicMock,
+    feed_config: FeedConfig,
 ):
     """Test RSS generation with no downloads."""
     feed_id = "empty_feed"
-    mock_db_manager.get_downloads_by_status.return_value = []
+    mock_download_db.get_downloads_by_status.return_value = []
 
     rss_generator.update_feed(feed_id, feed_config)
     xml_bytes = rss_generator.get_feed_xml(feed_id)
