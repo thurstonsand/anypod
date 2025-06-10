@@ -9,7 +9,7 @@ from datetime import datetime
 import logging
 from typing import Any
 
-from ..db import DatabaseManager, Download, DownloadStatus
+from ..db import Download, DownloadDatabase, DownloadStatus
 from ..exceptions import (
     DatabaseOperationError,
     DownloadNotFoundError,
@@ -33,7 +33,7 @@ class Pruner:
         file_manager: File manager for file system operations.
     """
 
-    def __init__(self, db_manager: DatabaseManager, file_manager: FileManager):
+    def __init__(self, db_manager: DownloadDatabase, file_manager: FileManager):
         self.db_manager = db_manager
         self.file_manager = file_manager
         logger.debug("Pruner initialized.")

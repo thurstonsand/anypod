@@ -403,3 +403,8 @@ This resolution logic aims to simplify configuration for the end-user, as they c
   - consider SQLAlchemy as well
 * potentially add support for [websub](https://websubhub.com/)
 * download and self-host metadata like images
+* Optimization: Consider merging the enqueuer and downloader into a single component. This would allow immediate downloads for videos that are ready, bypassing the QUEUED state. However, this raises the question of how to handle upcoming videos... maybe a dedicated live handler? but might lead to duplicate download logic.
+* Optimize RSS generation by only regenerating feeds when new content is detected since last sync, using feed-level tracking of last sync timestamp and content changes.
+* User-configurable quality settings with API to change quality preferences after initial setup, including separate download-time vs feed-time quality options.
+* Chapter support for podcasts: extract chapter information from source videos and include in RSS feeds using podcast namespace standards.
+* Think about ways to incorporate LLMs into the interface

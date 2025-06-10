@@ -12,7 +12,7 @@ from pathlib import Path
 
 from ..config import AppSettings
 from ..data_coordinator.downloader import Downloader
-from ..db import DatabaseManager, Download, DownloadStatus
+from ..db import Download, DownloadDatabase, DownloadStatus
 from ..exceptions import DatabaseOperationError, DownloadError
 from ..file_manager import FileManager
 from ..path_manager import PathManager
@@ -47,7 +47,7 @@ def run_debug_downloader_mode(
     )
 
     try:
-        db_manager = DatabaseManager(db_path=debug_db_path)
+        db_manager = DownloadDatabase(db_path=debug_db_path)
 
         file_manager = FileManager(paths)
 

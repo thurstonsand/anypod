@@ -23,3 +23,10 @@ repos:
         entry: uv run pyright
         language: system
         types: [python]
+
+      - id: sync-agents-md
+        name: sync CLAUDE.md files to AGENTS.md
+        entry: scripts/sync_agents_md.py
+        language: script
+        files: '^(CLAUDE\.md|tests/CLAUDE\.md)$'
+        pass_filenames: false

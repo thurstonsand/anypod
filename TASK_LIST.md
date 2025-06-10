@@ -9,7 +9,7 @@ This checklist covers everything required to reach a functional MVP that aligns 
 - [x] **`pyproject.toml`** – minimal project metadata, `uv` backend, Python ≥ 3.13.
 - [x] **`uv pip install --groups dev`** – add dev deps: `ruff`, `pytest`, `pytest-asyncio`, `mypy`, `pre-commit`.
 - [x] **Pre-commit hooks** – formatters & linter.
-- [ ] **CI** – GitHub Actions workflow running `uv pip sync && pytest` on every PR.
+- [x] **CI** – GitHub Actions workflow running `pytest` on every PR.
 
 ## 1  Package Skeleton
 ```text
@@ -57,7 +57,7 @@ src/
   - [x] `get_downloads_to_prune_by_since`
   - [x] `delete_downloads`
 - [x] Tests with tmp in-memory DB.
-- [ ] Tests to make sure db access is optimized (e.g. uses indexes)
+- [x] Tests to make sure db access is optimized (e.g. uses indexes)
 
 ## 3.2 File Manager Layer
 - [x] Abstraction seam: encapsulate base directory so future S3/GCS back‑ends can subclass
@@ -195,19 +195,50 @@ This section details the components that manage the lifecycle of downloads, from
     - Uses `DatabaseManager.archive_download()` to archive.
 - [x] Unit tests for `Pruner` with mocked dependencies.
 
+### 3.5.5.1 Database Refactoring & Feed Table
+- [x] **Split database classes**: Refactor `src/anypod/db/db.py` into separate modules:
+  - [x] `DownloadDatabase` class for download-level operations (keep existing methods)
+  - [x] `FeedDatabase` class for feed-level operations (new functionality)
+- [ ] **Feed table schema & operations**:
+  - [x] Create `feeds` table with schema: `last_sync_attempt`, `last_successful_sync`, `consecutive_failures`, `last_error`, `is_enabled`, `title`, `subtitle`, `description`, `language`, `author`, `image_url`, `source_type`, `total_downloads`, `downloads_since_last_rss`, `last_rss_generation`
+  - [x] add `created_at` and `updated_at` with defaults
+  - [x] Implement feed CRUD operations in `FeedDatabase`:
+    - [x] Add `FeedNotFoundError` exception (similar to `DownloadNotFoundError`)
+    - [x] `upsert_feed(feed: Feed) -> None` - Insert or update a feed record, handling None timestamps to allow database defaults
+    - [x] `get_feed_by_id(feed_id: str) -> Feed` - Retrieve a specific feed by ID, raise `FeedNotFoundError` if not found
+    - [x] `get_feeds(enabled: bool | None = None) -> list[Feed]` - Get all feeds, or filter by enabled status if provided
+    - [x] `mark_sync_success(feed_id: str) -> None` - Set `last_successful_sync` to current timestamp, reset `consecutive_failures` to 0, clear `last_error`
+    - [x] `mark_sync_failure(feed_id: str, error_message: str) -> None` - Set `last_failed_sync` to current timestamp, increment `consecutive_failures`, set `last_error`
+    - [x] `mark_rss_generated(feed_id: str, new_downloads_count: int) -> None` - Set `last_rss_generation` to current timestamp, increment `total_downloads` by `new_downloads_count`, set `downloads_since_last_rss` to `new_downloads_count`
+    - [x] `set_feed_enabled(feed_id: str, enabled: bool) -> None` - Set `is_enabled` to the provided value
+    - [x] `update_feed_metadata(feed_id: str, *, title: str | None = None, subtitle: str | None = None, description: str | None = None, language: str | None = None, author: str | None = None, image_url: str | None = None) -> None` - Update feed metadata fields; only updates provided (non-None) fields; no-op if all None
+- [ ] **Download table enhancements**:
+  - [ ] Add fields: `quality_info`
+  - [x] add fields: `discovered_at` and `updated_at`, potentially `downloaded_at` with sqlite triggers
+  - [x] Update `DownloadDatabase` methods to handle new fields
+  - [x] Update all places that create/modify downloads to populate new fields (`Enqueuer`, `Downloader`, etc.)
+- [x] **Config and model updates**:
+  - [x] Rename `FeedMetadata` to `FeedMetadataOverrides` in `feed_config.py`
+  - [x] Add `enabled` field to `FeedConfig`
+- [ ] **Feed metadata synchronization**:
+  - [ ] Compare `FeedMetadataOverrides` from config with stored feed metadata in DB
+  - [ ] Update DB when config overrides change
+  - [ ] Modify `YtdlpWrapper` to make best-effort extraction of non-overridden `FeedMetadataOverrides` fields
+  - [ ] Mark fields for best-effort extraction when overrides are removed
+- [ ] Unit tests for both `DownloadDatabase` and `FeedDatabase`
+- [ ] on pruning, also update `total_downloads` value
+- [ ] have a deletion coordinator so you can delete feeds. this will mean also deleting all downloads associated with that feed
+
 ### 3.5.6 `DataCoordinator` Orchestrator (`data_coordinator/coordinator.py`)
-- [ ] Constructor accepts `Enqueuer`, `Downloader`, `Pruner`, `FeedGen`, `DatabaseManager`, `FileManager` (for pass-through methods like `get_download_by_id`, `stream_download_by_id`, etc.).
-- [ ] `process_feed(feed_config: FeedConfig) -> None`:
-    - Calls `Enqueuer.enqueue_new_downloads()`.
-    - Calls `Downloader.download_queued()`.
-    - Calls `Pruner.prune_feed_downloads()`.
-    - Calls `FeedGen.generate_feed_xml()`.
-- [ ] `add_download` (delegates to DB, handles file deletion if replacing DOWNLOADED)
-- [ ] `update_status` (delegates to DB, handles file deletion on status change from DOWNLOADED)
-- [ ] `get_download_by_id` (delegates to DB, uses `Download.from_row`)
-- [ ] `stream_download_by_id` (delegates to `FileManager` after checking DB status via `get_download_by_id`, handles `FileNotFoundError` by updating status to ERROR)
-- [ ] `get_errors` (delegates to DB, uses `Download.from_row`)
-- [ ] Unit tests for `DataCoordinator` focusing on interaction correctness with mocked service dependencies.
+- [ ] Constructor accepts `Enqueuer`, `Downloader`, `Pruner`, `RSSFeedGenerator`.
+- [ ] `process_feed(feed_id: str, feed_config: FeedConfig) -> ProcessingResults`:
+    - Calls `enqueuer.enqueue_new_downloads()` (fetch_since_date is from last sync).
+    - Calls `downloader.download_queued()` for the feed.
+    - Calls `pruner.prune_feed_downloads()` with feed_config.keep_last and prune_before_date from feed_config.since.
+    - Calls `rss_generator.update_feed()` to regenerate RSS feed.
+    - Aggregates results and handles cross-phase error scenarios.
+    - Returns structured results with counts and any errors.
+- [ ] Unit tests for `DataCoordinator` focusing on orchestration flow and error handling with mocked dependencies.
 
 ### 3.5.7 Discrepancy Detection (in `Pruner` or new service)
 - [ ] Implement discrepancy detection logic:
@@ -225,8 +256,7 @@ This section details the components that manage the lifecycle of downloads, from
   - this will also involve potentially changing how i update values, since some (like title) might get changed down the line. so we should try to store the most recent value
 - [x] Implement `generate_feed_xml(feed_id)` to write to in-memory XML after acquiring write lock
 - [x] Implement `get_feed_xml(feed_id)` for HTTP handlers to read from in-memory XML after acquiring read lock
-- [ ] Write unit tests to verify enclosure URLs and MIME types in generated feeds
-- [ ] Not really related: maybe I can collapse the concepts of enqueuer and downloader into 1: basically skip the QUEUED state for any immediately ready videos (go straight to download). Only issue is then how do we queue upcoming videos? maybe explicit live handler? but then duplicate download logic?
+- [x] Write unit tests to verify enclosure URLs and MIME types in generated feeds
 - [x] Figure out how to bring in host url.
 - [x] duration should be an int
 
@@ -243,13 +273,15 @@ This section details the components that manage the lifecycle of downloads, from
 
 ## 5  Scheduler / Worker Loop
 - [ ] Init APScheduler (asyncio).
-- [ ] For each feed add cron trigger → `process_feed`.
-- [ ] Implement `process_feed` steps via DataCoordinator and FeedGen: ① enqueue → ② download → ③ prune → ④ generate RSS
-- [ ] On startup, trigger a retrieve-and-update loop for all feeds to generate XML before starting the HTTP server
+- [ ] For each feed add cron trigger → `DataCoordinator.process_feed()`.
+- [ ] Implement scheduler that orchestrates full feed processing pipeline via DataCoordinator.
+- [ ] On startup, trigger `DataCoordinator.process_feed()` for all feeds to ensure RSS feeds are available before starting HTTP server.
+- [ ] on startup, need to do state reconciliation between db and config file more generally
 
-## 6  Scheduler / Worker Loop
+## 6  HTTP Server
 - [ ] Create FastAPI app: static mounts `/feeds` & `/media`.
 - [ ] Routes `/errors` and `/healthz`.
+- [ ] Route for manual sync override: endpoint to manually set `last_successful_sync` timestamp for feeds.
 - [ ] Entry in `cli.py` to start `uvicorn`.
 - [ ] Tests with `httpx` for endpoints.
 
@@ -281,7 +313,7 @@ docker run \
   -v $(pwd)/config:/config \
   -v $(pwd)/data:/data \
   -p 8000:8000 \
-  ghcr.io/<you>/anypod:dev
+  ghcr.io/thurstonsand/anypod:dev
 ```
 
 …and subscribe to `http://localhost:8000/feeds/this_american_life.xml` in your podcast player.

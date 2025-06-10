@@ -2,7 +2,7 @@
 
 This module defines the Downloader class, which is responsible for processing
 downloads marked as 'queued' in the database. It interacts with the YtdlpWrapper
-to fetch media, the FileManager to handle file storage, and the DatabaseManager
+to fetch media, the FileManager to handle file storage, and the DownloadDatabase
 to update download statuses and metadata.
 """
 
@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from ..config import FeedConfig
-from ..db import DatabaseManager, Download, DownloadStatus
+from ..db import Download, DownloadDatabase, DownloadStatus
 from ..exceptions import (
     DatabaseOperationError,
     DownloadError,
@@ -30,7 +30,7 @@ class Downloader:
     The Downloader retrieves queued download items, manages the download process
     using YtdlpWrapper, handles file system operations via FileManager (including
     temporary file management and moving to final storage), and updates the
-    database via DatabaseManager upon success or failure.
+    database via DownloadDatabase upon success or failure.
 
     Attributes:
         db_manager: Database manager for download record operations.
@@ -40,7 +40,7 @@ class Downloader:
 
     def __init__(
         self,
-        db_manager: DatabaseManager,
+        db_manager: DownloadDatabase,
         file_manager: FileManager,
         ytdlp_wrapper: YtdlpWrapper,
     ):
@@ -280,8 +280,8 @@ class Downloader:
         1. It attempts to download the media content using yt-dlp,
            saving it to a temporary location.
         2. If successful, the media file is moved to permanent storage via `FileManager`,
-           and the database record is updated (status, ext, filesize) via `DatabaseManager`.
-        3. If any step fails, the Download's status is managed by `DatabaseManager.bump_retries`,
+           and the database record is updated (status, ext, filesize) via `DownloadDatabase`.
+        3. If any step fails, the Download's status is managed by `DownloadDatabase.bump_retries`,
            logging the error and incrementing its retry count.
         4. Temporary files are cleaned up regardless of the outcome.
 

@@ -14,7 +14,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from anypod.data_coordinator.pruner import Pruner
-from anypod.db import DatabaseManager, Download, DownloadStatus
+from anypod.db import Download, DownloadDatabase, DownloadStatus
 from anypod.exceptions import (
     DatabaseOperationError,
     DownloadNotFoundError,
@@ -28,8 +28,8 @@ from anypod.file_manager import FileManager
 
 @pytest.fixture
 def mock_db_manager() -> MagicMock:
-    """Provides a mock DatabaseManager."""
-    return MagicMock(spec=DatabaseManager)
+    """Provides a mock DownloadDatabase."""
+    return MagicMock(spec=DownloadDatabase)
 
 
 @pytest.fixture
@@ -50,68 +50,80 @@ def pruner(
 @pytest.fixture
 def sample_downloaded_item() -> Download:
     """Provides a sample Download object with DOWNLOADED status."""
+    base_time = datetime.datetime(2023, 1, 1, 12, 0, 0, tzinfo=datetime.UTC)
     return Download(
         feed="test_feed",
         id="test_dl_id_1",
         source_url="http://example.com/video1",
         title="Test Video 1",
-        published=datetime.datetime(2023, 1, 1, 12, 0, 0, tzinfo=datetime.UTC),
+        published=base_time,
         ext="mp4",
         mime_type="video/mp4",
         filesize=1024000,
         duration=120,
         status=DownloadStatus.DOWNLOADED,
+        discovered_at=base_time,
+        updated_at=base_time,
     )
 
 
 @pytest.fixture
 def sample_queued_item() -> Download:
     """Provides a sample Download object with QUEUED status."""
+    base_time = datetime.datetime(2023, 1, 2, 12, 0, 0, tzinfo=datetime.UTC)
     return Download(
         feed="test_feed",
         id="test_dl_id_2",
         source_url="http://example.com/video2",
         title="Test Video 2",
-        published=datetime.datetime(2023, 1, 2, 12, 0, 0, tzinfo=datetime.UTC),
+        published=base_time,
         ext="mp4",
         mime_type="video/mp4",
         filesize=0,
         duration=180,
         status=DownloadStatus.QUEUED,
+        discovered_at=base_time,
+        updated_at=base_time,
     )
 
 
 @pytest.fixture
 def sample_upcoming_item() -> Download:
     """Provides a sample Download object with UPCOMING status."""
+    base_time = datetime.datetime(2023, 1, 3, 12, 0, 0, tzinfo=datetime.UTC)
     return Download(
         feed="test_feed",
         id="test_dl_id_3",
         source_url="http://example.com/video3",
         title="Test Video 3",
-        published=datetime.datetime(2023, 1, 3, 12, 0, 0, tzinfo=datetime.UTC),
+        published=base_time,
         ext="live",
         mime_type="application/octet-stream",
         filesize=0,
         duration=200,
         status=DownloadStatus.UPCOMING,
+        discovered_at=base_time,
+        updated_at=base_time,
     )
 
 
 @pytest.fixture
 def sample_skipped_item() -> Download:
     """Provides a sample Download object with SKIPPED status."""
+    base_time = datetime.datetime(2023, 1, 4, 12, 0, 0, tzinfo=datetime.UTC)
     return Download(
         feed="test_feed",
         id="test_dl_id_4",
         source_url="http://example.com/video4",
         title="Test Video 4",
-        published=datetime.datetime(2023, 1, 4, 12, 0, 0, tzinfo=datetime.UTC),
+        published=base_time,
         ext="mp4",
         mime_type="video/mp4",
         filesize=1024000,
         duration=220,
         status=DownloadStatus.SKIPPED,
+        discovered_at=base_time,
+        updated_at=base_time,
     )
 
 

@@ -4,7 +4,7 @@
 
 This module contains unit tests for the Downloader class, which is responsible
 for processing items in the download queue, interacting with YtdlpWrapper for
-media fetching, FileManager for storage, and DatabaseManager for status updates.
+media fetching, FileManager for storage, and DownloadDatabase for status updates.
 """
 
 import dataclasses
@@ -15,9 +15,9 @@ from unittest.mock import MagicMock, call, patch
 import pytest
 
 from anypod.config import FeedConfig
-from anypod.config.feed_config import FeedMetadata
+from anypod.config.feed_config import FeedMetadataOverrides
 from anypod.data_coordinator.downloader import Downloader
-from anypod.db import DatabaseManager, Download, DownloadStatus
+from anypod.db import Download, DownloadDatabase, DownloadStatus
 from anypod.exceptions import (
     DatabaseOperationError,
     DownloadError,
@@ -31,8 +31,8 @@ from anypod.ytdlp_wrapper import YtdlpWrapper
 
 @pytest.fixture
 def mock_db_manager() -> MagicMock:
-    """Provides a mock DatabaseManager."""
-    return MagicMock(spec=DatabaseManager)
+    """Provides a mock DownloadDatabase."""
+    return MagicMock(spec=DownloadDatabase)
 
 
 @pytest.fixture
@@ -60,16 +60,19 @@ def downloader(
 @pytest.fixture
 def sample_download() -> Download:
     """Provides a sample Download object."""
+    base_time = datetime.datetime(2023, 1, 1, 12, 0, 0, tzinfo=datetime.UTC)
     return Download(
         feed="test_feed",
         id="test_dl_id_1",
         source_url="http://example.com/video1",
         title="Test Video 1",
-        published=datetime.datetime(2023, 1, 1, 12, 0, 0, tzinfo=datetime.UTC),
+        published=base_time,
         ext="mp4",
         mime_type="video/mp4",
         duration=120,
         status=DownloadStatus.QUEUED,
+        discovered_at=base_time,
+        updated_at=base_time,
         description="Original description",
         filesize=0,
     )
@@ -85,7 +88,7 @@ def sample_feed_config() -> FeedConfig:
         keep_last=10,
         since=None,
         max_errors=3,
-        metadata=FeedMetadata(title="Test Podcast"),  # type: ignore
+        metadata=FeedMetadataOverrides(title="Test Podcast"),  # type: ignore
     )
 
 

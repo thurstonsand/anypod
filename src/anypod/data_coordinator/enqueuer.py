@@ -10,7 +10,7 @@ import logging
 from typing import Any
 
 from ..config import FeedConfig
-from ..db import DatabaseManager, Download, DownloadStatus
+from ..db import Download, DownloadDatabase, DownloadStatus
 from ..exceptions import (
     DatabaseOperationError,
     DownloadNotFoundError,
@@ -34,7 +34,7 @@ class Enqueuer:
         ytdlp_wrapper: Wrapper for yt-dlp metadata extraction operations.
     """
 
-    def __init__(self, db_manager: DatabaseManager, ytdlp_wrapper: YtdlpWrapper):
+    def __init__(self, db_manager: DownloadDatabase, ytdlp_wrapper: YtdlpWrapper):
         self.db_manager = db_manager
         self.ytdlp_wrapper = ytdlp_wrapper
         logger.debug("Enqueuer initialized.")

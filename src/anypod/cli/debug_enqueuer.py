@@ -10,7 +10,7 @@ from pathlib import Path
 
 from ..config import AppSettings
 from ..data_coordinator.enqueuer import Enqueuer
-from ..db import DatabaseManager, Download, DownloadStatus
+from ..db import Download, DownloadDatabase, DownloadStatus
 from ..exceptions import DatabaseOperationError, EnqueueError
 from ..path_manager import PathManager
 from ..ytdlp_wrapper import YtdlpWrapper
@@ -43,7 +43,7 @@ def run_debug_enqueuer_mode(
     )
 
     try:
-        db_manager = DatabaseManager(db_path=debug_db_path)
+        db_manager = DownloadDatabase(db_path=debug_db_path)
 
         ytdlp_wrapper = YtdlpWrapper(paths)
         enqueuer = Enqueuer(db_manager, ytdlp_wrapper)

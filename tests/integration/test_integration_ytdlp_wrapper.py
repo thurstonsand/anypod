@@ -37,7 +37,12 @@ INVALID_VIDEO_URL = "https://www.youtube.com/watch?v=thisvideodoesnotexistxyz"
 
 # CLI args for minimal quality and limited playlist downloads
 YT_DLP_MINIMAL_ARGS = YtdlpCore.parse_options(
-    ["--playlist-items", "1", "--format", "worst[ext=mp4]"]
+    [
+        "--playlist-items",
+        "1",
+        "--format",
+        "worst*[ext=mp4]/worst[ext=mp4]/best[ext=mp4]",
+    ]
 )
 
 # Metadata for Big Buck Bunny video - used in several tests
@@ -48,13 +53,15 @@ BIG_BUCK_BUNNY_DOWNLOAD = Download(
     title="Big Buck Bunny 60fps 4K - Official Blender Foundation Short Film",
     published=datetime(2014, 11, 10, 14, 5, 55, tzinfo=UTC),
     ext="mp4",
+    mime_type="video/mp4",
+    filesize=12345,
     duration=635,
     status=DownloadStatus.QUEUED,
+    discovered_at=datetime(2014, 11, 11, 14, 5, 55, tzinfo=UTC),
+    updated_at=datetime(2014, 11, 11, 14, 5, 55, tzinfo=UTC),
     thumbnail="https://i.ytimg.com/vi_webp/aqz-KE-bpKQ/maxresdefault.webp",
     retries=0,
     last_error=None,
-    mime_type="video/mp4",
-    filesize=12345,
 )
 
 
@@ -137,7 +144,12 @@ def test_fetch_metadata_with_impossible_filter(
     feed_id = f"test_impossible_filter_{url_type}"
 
     impossible_filter_args = YtdlpCore.parse_options(
-        ["--format", "worst[ext=mp4]", "--match-filter", "duration > 10000000"]
+        [
+            "--format",
+            "worst*[ext=mp4]/worst[ext=mp4]/best[ext=mp4]",
+            "--match-filter",
+            "duration > 10000000",
+        ]
     )
 
     downloads = ytdlp_wrapper.fetch_metadata(
@@ -162,14 +174,16 @@ def test_download_media_to_file_success(ytdlp_wrapper: YtdlpWrapper):
         source_url="https://www.youtube.com/watch?v=aqz-KE-bpKQ",
         title="Big Buck Bunny 60fps 4K - Official Blender Foundation Short Film",
         published=datetime(2014, 11, 10, 14, 5, 55, tzinfo=UTC),
-        ext="mp4",  # Expected extension based on common yt-dlp behavior with -f worst[ext=mp4]
+        ext="mp4",  # Expected extension based on common yt-dlp behavior with -f worst*[ext=mp4]
+        mime_type="video/mp4",
+        filesize=12345,
         duration=635,
         status=DownloadStatus.QUEUED,
         thumbnail="https://i.ytimg.com/vi_webp/aqz-KE-bpKQ/maxresdefault.webp",
         retries=0,
         last_error=None,
-        mime_type="video/mp4",
-        filesize=12345,
+        discovered_at=datetime(2014, 11, 11, 14, 5, 55, tzinfo=UTC),
+        updated_at=datetime(2014, 11, 11, 14, 5, 55, tzinfo=UTC),
     )
 
     # Use the same minimal args as other tests, could be customized if needed
@@ -196,10 +210,12 @@ def test_download_media_to_file_non_existent(ytdlp_wrapper: YtdlpWrapper):
         title="This Video Does Not Exist",
         published=datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC),
         ext="mp4",
-        duration=10,
-        status=DownloadStatus.QUEUED,
         mime_type="video/mp4",
         filesize=12345,
+        duration=10,
+        status=DownloadStatus.QUEUED,
+        discovered_at=datetime(2024, 1, 2, 0, 0, 0, tzinfo=UTC),
+        updated_at=datetime(2024, 1, 2, 0, 0, 0, tzinfo=UTC),
     )
     cli_args = YT_DLP_MINIMAL_ARGS
 
@@ -219,7 +235,12 @@ def test_download_media_to_file_non_existent(ytdlp_wrapper: YtdlpWrapper):
 def test_download_media_to_file_impossible_filter(ytdlp_wrapper: YtdlpWrapper):
     """Tests that download fails with YtdlpApiError when an impossible filter is applied."""
     impossible_filter_args = YtdlpCore.parse_options(
-        ["--format", "worst[ext=mp4]", "--match-filter", "duration > 99999999"]
+        [
+            "--format",
+            "worst*[ext=mp4]/worst[ext=mp4]/best[ext=mp4]",
+            "--match-filter",
+            "duration > 99999999",
+        ]
     )
 
     with pytest.raises(YtdlpApiError) as excinfo:

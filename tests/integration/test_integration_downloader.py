@@ -12,7 +12,7 @@ import pytest
 from anypod.config import FeedConfig
 from anypod.data_coordinator.downloader import Downloader
 from anypod.data_coordinator.enqueuer import Enqueuer
-from anypod.db import DatabaseManager, Download, DownloadStatus
+from anypod.db import Download, DownloadDatabase, DownloadStatus
 from anypod.file_manager import FileManager
 from anypod.path_manager import PathManager
 from anypod.ytdlp_wrapper import YtdlpWrapper
@@ -31,7 +31,9 @@ COLETDJNZ_CHANNEL_VIDEOS = "https://www.youtube.com/@coletdjnz/videos"
 INVALID_VIDEO_URL = "https://www.youtube.com/watch?v=thisvideodoesnotexistxyz"
 
 # CLI args for minimal quality and limited playlist downloads as a string
-YT_DLP_MINIMAL_ARGS_STR = "--playlist-items 1 --format worst[ext=mp4]"
+YT_DLP_MINIMAL_ARGS_STR = (
+    "--playlist-items 1 --format worst*[ext=mp4]/worst[ext=mp4]/best[ext=mp4]"
+)
 
 # Test schedule and config
 TEST_CRON_SCHEDULE = "0 * * * *"
@@ -82,9 +84,9 @@ def shared_dirs(
 
 
 @pytest.fixture
-def db_manager() -> Generator[DatabaseManager]:
-    """Provides a DatabaseManager instance with a temporary database."""
-    db_manager = DatabaseManager(db_path=None, memory_name="integration_test")
+def db_manager() -> Generator[DownloadDatabase]:
+    """Provides a DownloadDatabase instance with a temporary database."""
+    db_manager = DownloadDatabase(db_path=None, memory_name="integration_test")
     yield db_manager
     db_manager.close()
 
@@ -117,7 +119,7 @@ def ytdlp_wrapper(shared_dirs: tuple[Path, Path]) -> Generator[YtdlpWrapper]:
 
 @pytest.fixture
 def enqueuer(
-    db_manager: DatabaseManager, ytdlp_wrapper: YtdlpWrapper
+    db_manager: DownloadDatabase, ytdlp_wrapper: YtdlpWrapper
 ) -> Generator[Enqueuer]:
     """Provides an Enqueuer instance for populating the database."""
     yield Enqueuer(db_manager, ytdlp_wrapper)
@@ -125,7 +127,7 @@ def enqueuer(
 
 @pytest.fixture
 def downloader(
-    db_manager: DatabaseManager,
+    db_manager: DownloadDatabase,
     file_manager: FileManager,
     ytdlp_wrapper: YtdlpWrapper,
 ) -> Generator[Downloader]:
@@ -164,7 +166,7 @@ def enqueue_test_items(
 def test_download_queued_single_video_success(
     enqueuer: Enqueuer,
     downloader: Downloader,
-    db_manager: DatabaseManager,
+    db_manager: DownloadDatabase,
     file_manager: FileManager,
 ):
     """Tests successful download of a single queued video."""
@@ -231,7 +233,7 @@ def test_download_queued_single_video_success(
 def test_download_queued_multiple_videos_success(
     enqueuer: Enqueuer,
     downloader: Downloader,
-    db_manager: DatabaseManager,
+    db_manager: DownloadDatabase,
     file_manager: FileManager,
 ):
     """Tests successful download of multiple queued videos from a channel."""
@@ -278,7 +280,7 @@ def test_download_queued_multiple_videos_success(
 def test_download_queued_with_limit(
     enqueuer: Enqueuer,
     downloader: Downloader,
-    db_manager: DatabaseManager,
+    db_manager: DownloadDatabase,
 ):
     """Tests that the limit parameter properly restricts the number of downloads processed."""
     feed_id = "test_limit"
@@ -312,7 +314,7 @@ def test_download_queued_with_limit(
 @pytest.mark.integration
 def test_download_queued_no_queued_items(
     downloader: Downloader,
-    db_manager: DatabaseManager,
+    db_manager: DownloadDatabase,
 ):
     """Tests that downloader handles feeds with no queued items gracefully."""
     feed_id = "test_no_queued"
@@ -340,25 +342,28 @@ def test_download_queued_no_queued_items(
 @pytest.mark.integration
 def test_download_queued_handles_invalid_urls(
     downloader: Downloader,
-    db_manager: DatabaseManager,
+    db_manager: DownloadDatabase,
 ):
     """Tests that downloader properly handles downloads with invalid URLs."""
     feed_id = "test_invalid_urls"
     feed_config = INVALID_FEED_CONFIG
 
     # Manually insert an invalid download to test error handling
+    published_time = datetime.now(UTC)
     invalid_download = Download(
         feed=feed_id,
         id="invalid_video_id",
         source_url=INVALID_VIDEO_URL,
         title="Invalid Video",
-        published=datetime.now(UTC),
+        published=published_time,
         ext="mp4",
         mime_type="video/mp4",
         filesize=12345,
         duration=10,
         status=DownloadStatus.QUEUED,
         retries=0,
+        discovered_at=published_time,
+        updated_at=published_time,
     )
     db_manager.upsert_download(invalid_download)
 
@@ -388,7 +393,7 @@ def test_download_queued_handles_invalid_urls(
 @pytest.mark.integration
 def test_download_queued_retry_logic_max_errors(
     downloader: Downloader,
-    db_manager: DatabaseManager,
+    db_manager: DownloadDatabase,
 ):
     """Tests that downloads transition to ERROR status after max retries."""
     feed_id = "test_max_errors"
@@ -402,18 +407,21 @@ def test_download_queued_retry_logic_max_errors(
     )
 
     # Insert an invalid download
+    published_time = datetime.now(UTC)
     invalid_download = Download(
         feed=feed_id,
         id="will_error_out",
         source_url=INVALID_VIDEO_URL,
         title="Will Error Out",
-        published=datetime.now(UTC),
+        published=published_time,
         ext="mp4",
         mime_type="video/mp4",
         filesize=12345,
         duration=10,
         status=DownloadStatus.QUEUED,
         retries=0,
+        discovered_at=published_time,
+        updated_at=published_time,
     )
     db_manager.upsert_download(invalid_download)
 
@@ -437,7 +445,7 @@ def test_download_queued_retry_logic_max_errors(
 def test_download_queued_mixed_success_and_failure(
     enqueuer: Enqueuer,
     downloader: Downloader,
-    db_manager: DatabaseManager,
+    db_manager: DownloadDatabase,
     file_manager: FileManager,
 ):
     """Tests handling of mixed successful and failed downloads."""
@@ -449,18 +457,21 @@ def test_download_queued_mixed_success_and_failure(
     assert queued_count >= 1
 
     # Then manually add an invalid download to the same feed
+    published_time = datetime.now(UTC)
     invalid_download = Download(
         feed=feed_id,
         id="invalid_mixed_test",
         source_url=INVALID_VIDEO_URL,
         title="Invalid Mixed Test",
-        published=datetime.now(UTC),
+        published=published_time,
         ext="mp4",
         mime_type="video/mp4",
         filesize=12345,
         duration=10,
         status=DownloadStatus.QUEUED,
         retries=0,
+        discovered_at=published_time,
+        updated_at=published_time,
     )
     db_manager.upsert_download(invalid_download)
 
@@ -503,7 +514,7 @@ def test_download_queued_mixed_success_and_failure(
 def test_download_queued_file_properties(
     enqueuer: Enqueuer,
     downloader: Downloader,
-    db_manager: DatabaseManager,
+    db_manager: DownloadDatabase,
     file_manager: FileManager,
 ):
     """Tests that downloaded files have correct properties and metadata."""
@@ -556,7 +567,7 @@ def test_download_queued_file_properties(
 def test_filesize_metadata_flow(
     enqueuer: Enqueuer,
     downloader: Downloader,
-    db_manager: DatabaseManager,
+    db_manager: DownloadDatabase,
     file_manager: FileManager,
 ):
     """Tests that filesize metadata flows correctly from enqueue through download.

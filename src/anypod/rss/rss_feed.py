@@ -12,7 +12,7 @@ from readerwriterlock import rwlock
 from anypod.rss.feedgen_core import FeedgenCore
 
 from ..config import FeedConfig
-from ..db import DatabaseManager, Download, DownloadStatus
+from ..db import Download, DownloadDatabase, DownloadStatus
 from ..exceptions import DatabaseOperationError, RSSGenerationError
 from ..path_manager import PathManager
 
@@ -35,7 +35,7 @@ class RSSFeedGenerator:
 
     def __init__(
         self,
-        db_manager: DatabaseManager,
+        db_manager: DownloadDatabase,
         paths: PathManager,
     ):
         self._db_manager = db_manager

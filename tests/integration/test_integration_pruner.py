@@ -10,7 +10,7 @@ import shutil
 import pytest
 
 from anypod.data_coordinator.pruner import Pruner
-from anypod.db import DatabaseManager, Download, DownloadStatus
+from anypod.db import Download, DownloadDatabase, DownloadStatus
 from anypod.file_manager import FileManager
 from anypod.path_manager import PathManager
 
@@ -32,6 +32,8 @@ SAMPLE_DOWNLOADS = [
         duration=120,
         status=DownloadStatus.DOWNLOADED,
         retries=0,
+        discovered_at=BASE_PUBLISH_DATE - timedelta(days=9),
+        updated_at=BASE_PUBLISH_DATE - timedelta(days=9),
     ),
     Download(
         feed=TEST_FEED_ID,
@@ -45,6 +47,8 @@ SAMPLE_DOWNLOADS = [
         duration=180,
         status=DownloadStatus.DOWNLOADED,
         retries=0,
+        discovered_at=BASE_PUBLISH_DATE - timedelta(days=7),
+        updated_at=BASE_PUBLISH_DATE - timedelta(days=7),
     ),
     Download(
         feed=TEST_FEED_ID,
@@ -58,6 +62,8 @@ SAMPLE_DOWNLOADS = [
         duration=200,
         status=DownloadStatus.DOWNLOADED,
         retries=0,
+        discovered_at=BASE_PUBLISH_DATE - timedelta(days=4),
+        updated_at=BASE_PUBLISH_DATE - timedelta(days=4),
     ),
     Download(
         feed=TEST_FEED_ID,
@@ -71,6 +77,8 @@ SAMPLE_DOWNLOADS = [
         duration=150,
         status=DownloadStatus.DOWNLOADED,
         retries=0,
+        discovered_at=BASE_PUBLISH_DATE - timedelta(days=1),
+        updated_at=BASE_PUBLISH_DATE - timedelta(days=1),
     ),
     Download(
         feed=TEST_FEED_ID,
@@ -84,6 +92,8 @@ SAMPLE_DOWNLOADS = [
         duration=240,
         status=DownloadStatus.DOWNLOADED,
         retries=0,
+        discovered_at=BASE_PUBLISH_DATE - timedelta(hours=12),
+        updated_at=BASE_PUBLISH_DATE - timedelta(hours=12),
     ),
     # Non-downloaded items (should not have files deleted but can be archived)
     Download(
@@ -98,6 +108,8 @@ SAMPLE_DOWNLOADS = [
         duration=100,
         status=DownloadStatus.QUEUED,
         retries=0,
+        discovered_at=BASE_PUBLISH_DATE - timedelta(days=8),
+        updated_at=BASE_PUBLISH_DATE - timedelta(days=8),
     ),
     Download(
         feed=TEST_FEED_ID,
@@ -112,6 +124,8 @@ SAMPLE_DOWNLOADS = [
         status=DownloadStatus.ERROR,
         retries=3,
         last_error="Failed to download",
+        discovered_at=BASE_PUBLISH_DATE - timedelta(days=6),
+        updated_at=BASE_PUBLISH_DATE - timedelta(days=6),
     ),
     Download(
         feed=TEST_FEED_ID,
@@ -125,6 +139,8 @@ SAMPLE_DOWNLOADS = [
         duration=110,
         status=DownloadStatus.SKIPPED,
         retries=0,
+        discovered_at=BASE_PUBLISH_DATE - timedelta(days=5),
+        updated_at=BASE_PUBLISH_DATE - timedelta(days=5),
     ),
     # Items that should be excluded from pruning or have special handling
     Download(
@@ -139,6 +155,8 @@ SAMPLE_DOWNLOADS = [
         duration=130,
         status=DownloadStatus.UPCOMING,
         retries=0,
+        discovered_at=BASE_PUBLISH_DATE - timedelta(days=2),
+        updated_at=BASE_PUBLISH_DATE - timedelta(days=2),
     ),
     Download(
         feed=TEST_FEED_ID,
@@ -152,6 +170,8 @@ SAMPLE_DOWNLOADS = [
         duration=140,
         status=DownloadStatus.ARCHIVED,
         retries=0,
+        discovered_at=BASE_PUBLISH_DATE - timedelta(days=14),
+        updated_at=BASE_PUBLISH_DATE - timedelta(days=14),
     ),
 ]
 
@@ -187,9 +207,9 @@ def shared_dirs(
 
 
 @pytest.fixture
-def db_manager() -> Generator[DatabaseManager]:
-    """Provides a DatabaseManager instance with a temporary database."""
-    db_manager = DatabaseManager(db_path=None, memory_name="pruner_integration_test")
+def db_manager() -> Generator[DownloadDatabase]:
+    """Provides a DownloadDatabase instance with a temporary database."""
+    db_manager = DownloadDatabase(db_path=None, memory_name="pruner_integration_test")
     yield db_manager
     db_manager.close()
 
@@ -209,7 +229,9 @@ def file_manager(shared_dirs: tuple[Path, Path]) -> Generator[FileManager]:
 
 
 @pytest.fixture
-def pruner(db_manager: DatabaseManager, file_manager: FileManager) -> Generator[Pruner]:
+def pruner(
+    db_manager: DownloadDatabase, file_manager: FileManager
+) -> Generator[Pruner]:
     """Provides a Pruner instance for the tests."""
     yield Pruner(db_manager, file_manager)
 
@@ -246,7 +268,7 @@ def create_dummy_file(file_manager: FileManager, download: Download) -> Path:
 
 @pytest.fixture
 def populated_test_data(
-    db_manager: DatabaseManager, file_manager: FileManager
+    db_manager: DownloadDatabase, file_manager: FileManager
 ) -> Generator[list[Download]]:
     """Populate database with test downloads and create corresponding files for DOWNLOADED items."""
     # Insert all downloads into database
@@ -271,7 +293,7 @@ def populated_test_data(
 @pytest.mark.integration
 def test_prune_feed_downloads_keep_last_success(
     pruner: Pruner,
-    db_manager: DatabaseManager,
+    db_manager: DownloadDatabase,
     file_manager: FileManager,
     populated_test_data: list[Download],
 ):
@@ -353,7 +375,7 @@ def test_prune_feed_downloads_keep_last_success(
 @pytest.mark.integration
 def test_prune_feed_downloads_since_date_success(
     pruner: Pruner,
-    db_manager: DatabaseManager,
+    db_manager: DownloadDatabase,
     file_manager: FileManager,
     populated_test_data: list[Download],
 ):
@@ -466,7 +488,7 @@ def test_prune_feed_downloads_combined_rules(
 @pytest.mark.integration
 def test_prune_feed_downloads_no_candidates(
     pruner: Pruner,
-    db_manager: DatabaseManager,
+    db_manager: DownloadDatabase,
     populated_test_data: list[Download],
 ):
     """Tests pruning when no downloads match the criteria."""
@@ -493,7 +515,7 @@ def test_prune_feed_downloads_no_candidates(
 @pytest.mark.integration
 def test_prune_feed_downloads_missing_files(
     pruner: Pruner,
-    db_manager: DatabaseManager,
+    db_manager: DownloadDatabase,
     file_manager: FileManager,
     populated_test_data: list[Download],
 ):
@@ -556,7 +578,7 @@ def test_prune_feed_downloads_empty_feed(
 @pytest.mark.integration
 def test_prune_feed_downloads_only_excluded_statuses(
     pruner: Pruner,
-    db_manager: DatabaseManager,
+    db_manager: DownloadDatabase,
 ):
     """Tests pruning a feed with only SKIPPED and ARCHIVED items."""
     feed_id = "excluded_only_feed"
@@ -575,6 +597,8 @@ def test_prune_feed_downloads_only_excluded_statuses(
             duration=120,
             status=DownloadStatus.SKIPPED,
             retries=0,
+            discovered_at=BASE_PUBLISH_DATE,
+            updated_at=BASE_PUBLISH_DATE,
         ),
         Download(
             feed=feed_id,
@@ -588,6 +612,8 @@ def test_prune_feed_downloads_only_excluded_statuses(
             duration=150,
             status=DownloadStatus.ARCHIVED,
             retries=0,
+            discovered_at=BASE_PUBLISH_DATE,
+            updated_at=BASE_PUBLISH_DATE,
         ),
     ]
 
@@ -619,7 +645,7 @@ def test_prune_feed_downloads_only_excluded_statuses(
 @pytest.mark.integration
 def test_prune_feed_downloads_large_dataset(
     pruner: Pruner,
-    db_manager: DatabaseManager,
+    db_manager: DownloadDatabase,
     file_manager: FileManager,
 ):
     """Tests pruning with a larger dataset to verify performance and correctness."""
@@ -641,6 +667,8 @@ def test_prune_feed_downloads_large_dataset(
             duration=120,
             status=DownloadStatus.DOWNLOADED if i % 2 == 0 else DownloadStatus.QUEUED,
             retries=0,
+            discovered_at=BASE_PUBLISH_DATE - timedelta(days=i),
+            updated_at=BASE_PUBLISH_DATE - timedelta(days=i),
         )
         large_downloads.append(download)
         db_manager.upsert_download(download)
@@ -701,7 +729,7 @@ def test_prune_feed_downloads_zero_keep_last(
 @pytest.mark.integration
 def test_prune_feed_downloads_future_date(
     pruner: Pruner,
-    db_manager: DatabaseManager,
+    db_manager: DownloadDatabase,
     populated_test_data: list[Download],
 ):
     """Tests pruning with a future prune_before_date (should prune everything prunable)."""

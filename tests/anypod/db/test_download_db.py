@@ -1,25 +1,25 @@
 # pyright: reportPrivateUsage=false
 
-"""Tests for the DatabaseManager and Download model functionality."""
+"""Tests for the DownloadDatabase and Download model functionality."""
 
 from collections.abc import Iterator
-import datetime
+from datetime import UTC, datetime, timedelta
 import sqlite3
 from typing import Any
 
 import pytest
 
-from anypod.db import DatabaseManager, Download, DownloadStatus
+from anypod.db import Download, DownloadDatabase, DownloadStatus
 from anypod.exceptions import DatabaseOperationError, DownloadNotFoundError
 
 # --- Fixtures ---
 
 
 @pytest.fixture
-def db_manager() -> Iterator[DatabaseManager]:
-    """Provides a DatabaseManager instance for testing with a temporary in-memory database."""
+def db_manager() -> Iterator[DownloadDatabase]:
+    """Provides a DownloadDatabase instance for testing with a temporary in-memory database."""
     # db_path = tmp_path / "test.db"
-    manager = DatabaseManager(db_path=None, memory_name="test_db")
+    manager = DownloadDatabase(db_path=None, memory_name="test_db")
     yield manager
     manager.close()  # Ensure connection is closed after test
 
@@ -27,12 +27,13 @@ def db_manager() -> Iterator[DatabaseManager]:
 @pytest.fixture
 def sample_download_queued() -> Download:
     """Provides a sample Download instance for adding to the DB."""
+    base_time = datetime(2023, 1, 1, 12, 0, 0, tzinfo=UTC)
     return Download(
         feed="test_feed",
         id="test_id_1",
         source_url="http://example.com/video1",
         title="Test Video 1",
-        published=datetime.datetime(2023, 1, 1, 12, 0, 0, tzinfo=datetime.UTC),
+        published=base_time,
         ext="mp4",
         mime_type="video/mp4",
         duration=120,
@@ -42,20 +43,21 @@ def sample_download_queued() -> Download:
         filesize=0,  # 0 for queued items
         retries=0,
         last_error=None,
+        discovered_at=base_time,
+        updated_at=base_time,
     )
 
 
 @pytest.fixture
 def sample_download_row_data() -> dict[str, Any]:
     """Provides raw data for a sample Download object, simulating a DB row."""
+    base_time = datetime(2023, 1, 1, 12, 0, 0, tzinfo=UTC)
     return {
         "feed": "test_feed",
         "id": "test_id_123",
         "source_url": "http://example.com/video/123",
         "title": "Test Video Title",
-        "published": datetime.datetime(
-            2023, 1, 1, 12, 0, 0, tzinfo=datetime.UTC
-        ).isoformat(),  # Stored as ISO string in DB
+        "published": base_time.isoformat(),  # Stored as ISO string in DB
         "ext": "mp4",
         "mime_type": "video/mp4",
         "duration": 120,
@@ -63,6 +65,8 @@ def sample_download_row_data() -> dict[str, Any]:
         "description": "Test video description from DB",
         "filesize": 0,
         "status": str(DownloadStatus.QUEUED),
+        "discovered_at": base_time.isoformat(),
+        "updated_at": base_time.isoformat(),
         "retries": 0,
         "last_error": None,
     }
@@ -71,12 +75,13 @@ def sample_download_row_data() -> dict[str, Any]:
 @pytest.fixture
 def sample_download_upcoming() -> Download:
     """Provides a sample Download instance with UPCOMING status for testing."""
+    base_time = datetime(2023, 1, 1, 12, 0, 0, tzinfo=UTC)
     return Download(
         feed="test_feed",
         id="test_id_upcoming",
         source_url="http://example.com/video_upcoming",
         title="Test Video Upcoming",
-        published=datetime.datetime(2023, 1, 1, 12, 0, 0, tzinfo=datetime.UTC),
+        published=base_time,
         ext="mp4",
         mime_type="video/mp4",
         duration=120,
@@ -86,10 +91,30 @@ def sample_download_upcoming() -> Download:
         filesize=0,
         retries=0,
         last_error=None,
+        discovered_at=base_time,
+        updated_at=base_time,
     )
 
 
 # --- Tests ---
+
+
+def test_download_status_enum():
+    """Test DownloadStatus enum values and string conversion."""
+    assert str(DownloadStatus.UPCOMING) == "upcoming"
+    assert str(DownloadStatus.QUEUED) == "queued"
+    assert str(DownloadStatus.DOWNLOADED) == "downloaded"
+    assert str(DownloadStatus.ERROR) == "error"
+    assert str(DownloadStatus.SKIPPED) == "skipped"
+    assert str(DownloadStatus.ARCHIVED) == "archived"
+
+    # Test enum creation from string
+    assert DownloadStatus("upcoming") == DownloadStatus.UPCOMING
+    assert DownloadStatus("queued") == DownloadStatus.QUEUED
+    assert DownloadStatus("downloaded") == DownloadStatus.DOWNLOADED
+    assert DownloadStatus("error") == DownloadStatus.ERROR
+    assert DownloadStatus("skipped") == DownloadStatus.SKIPPED
+    assert DownloadStatus("archived") == DownloadStatus.ARCHIVED
 
 
 @pytest.mark.unit
@@ -101,7 +126,7 @@ def test_download_equality_and_hash(sample_download_queued: Download):
         id=sample_download_queued.id,  # Use same ID from fixture
         source_url="http://example.com/video/v123_alt",
         title="Test Video Title One Alt",
-        published=datetime.datetime(2023, 1, 1, 13, 0, 0, tzinfo=datetime.UTC),
+        published=datetime(2023, 1, 1, 13, 0, 0, tzinfo=UTC),
         ext="mkv",
         mime_type="video/x-matroska",
         duration=130,
@@ -111,13 +136,15 @@ def test_download_equality_and_hash(sample_download_queued: Download):
         status=DownloadStatus.DOWNLOADED,  # Different status
         retries=1,  # Different retries
         last_error="some error",  # Different error
+        discovered_at=datetime(2023, 1, 1, 13, 5, 0, tzinfo=UTC),
+        updated_at=datetime(2023, 1, 1, 13, 5, 0, tzinfo=UTC),
     )
     download3_v2_diff_id = Download(
         feed=sample_download_queued.feed,
         id="v456",  # Different id
         source_url="http://example.com/video/v456",
         title="Test Video Title Two",
-        published=datetime.datetime(2023, 1, 2, 12, 0, 0, tzinfo=datetime.UTC),
+        published=datetime(2023, 1, 2, 12, 0, 0, tzinfo=UTC),
         ext="mp4",
         mime_type="video/mp4",
         duration=180,
@@ -125,13 +152,15 @@ def test_download_equality_and_hash(sample_download_queued: Download):
         description="Another description",
         filesize=0,
         status=DownloadStatus.QUEUED,
+        discovered_at=datetime(2023, 1, 2, 12, 5, 0, tzinfo=UTC),
+        updated_at=datetime(2023, 1, 2, 12, 5, 0, tzinfo=UTC),
     )
     download4_feed2_v1_diff_feed = Download(
         feed="another_feed",  # Different feed
         id="v123",
         source_url="http://example.com/video/another_v123",
         title="Another Feed Video",
-        published=datetime.datetime(2023, 1, 1, 12, 0, 0, tzinfo=datetime.UTC),
+        published=datetime(2023, 1, 1, 12, 0, 0, tzinfo=UTC),
         ext="mp4",
         mime_type="video/mp4",
         duration=120,
@@ -139,6 +168,8 @@ def test_download_equality_and_hash(sample_download_queued: Download):
         description="Different feed description",
         filesize=0,
         status=DownloadStatus.QUEUED,
+        discovered_at=datetime(2023, 1, 1, 12, 5, 0, tzinfo=UTC),
+        updated_at=datetime(2023, 1, 1, 12, 5, 0, tzinfo=UTC),
     )
 
     # Test equality
@@ -175,7 +206,7 @@ def test_download_equality_and_hash(sample_download_queued: Download):
 
 
 @pytest.mark.unit
-def test_db_manager_initialization_and_schema(db_manager: DatabaseManager):
+def test_db_manager_initialization_and_schema(db_manager: DownloadDatabase):
     """Test that the schema (tables and indices) is created upon first DB interaction."""
     conn: sqlite3.Connection = db_manager._db.db.conn  # type: ignore
     assert conn is not None, "Connection should have been established"
@@ -203,7 +234,7 @@ def test_db_manager_initialization_and_schema(db_manager: DatabaseManager):
 
 @pytest.mark.unit
 def test_add_and_get_download(
-    db_manager: DatabaseManager, sample_download_queued: Download
+    db_manager: DownloadDatabase, sample_download_queued: Download
 ):
     """Test adding a new download and then retrieving it."""
     db_manager.upsert_download(sample_download_queued)
@@ -234,7 +265,7 @@ def test_add_and_get_download(
 
 @pytest.mark.unit
 def test_upsert_download_updates_existing(
-    db_manager: DatabaseManager, sample_download_queued: Download
+    db_manager: DownloadDatabase, sample_download_queued: Download
 ):
     """Test that upsert_download updates an existing download instead of raising an error."""
     # Add initial download
@@ -246,7 +277,7 @@ def test_upsert_download_updates_existing(
         id=sample_download_queued.id,
         source_url="http://example.com/video/v123_updated",
         title="Updated Test Video Title",
-        published=sample_download_queued.published + datetime.timedelta(hours=1),
+        published=sample_download_queued.published + timedelta(hours=1),
         ext="mkv",  # Changed ext
         mime_type="video/x-matroska",  # Changed mime_type
         duration=150,  # Changed duration
@@ -256,6 +287,8 @@ def test_upsert_download_updates_existing(
         status=DownloadStatus.DOWNLOADED,  # Changed status
         retries=1,  # Changed retries
         last_error="An old error",  # Changed last_error
+        discovered_at=sample_download_queued.published + timedelta(hours=1, minutes=5),
+        updated_at=sample_download_queued.published + timedelta(hours=1, minutes=5),
     )
 
     # Perform upsert with the modified download
@@ -281,7 +314,7 @@ def test_upsert_download_updates_existing(
 
 @pytest.mark.unit
 def test_status_transitions(
-    db_manager: DatabaseManager,
+    db_manager: DownloadDatabase,
     sample_download_queued: Download,
     sample_download_upcoming: Download,
 ):
@@ -425,16 +458,16 @@ def test_status_transitions(
 
 
 @pytest.mark.unit
-def test_get_downloads_to_prune_by_keep_last(db_manager: DatabaseManager):
+def test_get_downloads_to_prune_by_keep_last(db_manager: DownloadDatabase):
     """Test fetching downloads to prune based on 'keep_last'."""
-    base_time = datetime.datetime(2023, 1, 1, 12, 0, 0, tzinfo=datetime.UTC)
+    base_time = datetime(2023, 1, 1, 12, 0, 0, tzinfo=UTC)
     feed1_name = "prune_feed1"
 
     # Mix of statuses and published dates
     dl_f1v1_dl_oldest = Download(
         feed=feed1_name,
         id="f1v1_dl_oldest",
-        published=base_time - datetime.timedelta(days=5),
+        published=base_time - timedelta(days=5),
         status=DownloadStatus.DOWNLOADED,
         source_url="url",
         title="t1",
@@ -442,11 +475,13 @@ def test_get_downloads_to_prune_by_keep_last(db_manager: DatabaseManager):
         mime_type="video/mp4",
         filesize=1024,
         duration=1,
+        discovered_at=base_time,
+        updated_at=base_time,
     )
     dl_f1v2_err_mid1 = Download(
         feed=feed1_name,
         id="f1v2_err_mid1",
-        published=base_time - datetime.timedelta(days=4),
+        published=base_time - timedelta(days=4),
         status=DownloadStatus.ERROR,
         source_url="url",
         title="t2",
@@ -454,11 +489,13 @@ def test_get_downloads_to_prune_by_keep_last(db_manager: DatabaseManager):
         mime_type="video/x-matroska",
         filesize=1024,
         duration=1,
+        discovered_at=base_time,
+        updated_at=base_time,
     )
     dl_f1v3_q_mid2 = Download(
         feed=feed1_name,
         id="f1v3_q_mid2",
-        published=base_time - datetime.timedelta(days=3),
+        published=base_time - timedelta(days=3),
         status=DownloadStatus.QUEUED,
         source_url="url",
         title="t3",
@@ -466,11 +503,13 @@ def test_get_downloads_to_prune_by_keep_last(db_manager: DatabaseManager):
         mime_type="video/webm",
         filesize=1024,
         duration=1,
+        discovered_at=base_time,
+        updated_at=base_time,
     )
     dl_f1v4_dl_newest = Download(
         feed=feed1_name,
         id="f1v4_dl_newest",
-        published=base_time - datetime.timedelta(days=2),
+        published=base_time - timedelta(days=2),
         status=DownloadStatus.DOWNLOADED,
         source_url="url",
         title="t4",
@@ -478,11 +517,13 @@ def test_get_downloads_to_prune_by_keep_last(db_manager: DatabaseManager):
         mime_type="video/mp4",
         filesize=1024,
         duration=1,
+        discovered_at=base_time,
+        updated_at=base_time,
     )
     dl_f1v5_arch = Download(
         feed=feed1_name,
         id="f1v5_arch",
-        published=base_time - datetime.timedelta(days=1),
+        published=base_time - timedelta(days=1),
         status=DownloadStatus.ARCHIVED,
         source_url="url",
         title="t5",
@@ -490,11 +531,13 @@ def test_get_downloads_to_prune_by_keep_last(db_manager: DatabaseManager):
         mime_type="audio/mpeg",
         filesize=1024,
         duration=1,
+        discovered_at=base_time,
+        updated_at=base_time,
     )
     dl_f1v6_upcoming_older = Download(  # New UPCOMING download, older
         feed=feed1_name,
         id="f1v6_upcoming_older",
-        published=base_time - datetime.timedelta(days=6),  # Older than f1v1_dl_oldest
+        published=base_time - timedelta(days=6),  # Older than f1v1_dl_oldest
         status=DownloadStatus.UPCOMING,
         source_url="url",
         title="t6_upcoming",
@@ -502,11 +545,13 @@ def test_get_downloads_to_prune_by_keep_last(db_manager: DatabaseManager):
         mime_type="video/mp4",
         filesize=1024,
         duration=1,
+        discovered_at=base_time,
+        updated_at=base_time,
     )
     dl_f1v7_skipped = Download(
         feed=feed1_name,
         id="f1v7_skipped",
-        published=base_time - datetime.timedelta(days=7),  # Very old
+        published=base_time - timedelta(days=7),  # Very old
         status=DownloadStatus.SKIPPED,
         source_url="url",
         title="t7_skipped",
@@ -514,13 +559,14 @@ def test_get_downloads_to_prune_by_keep_last(db_manager: DatabaseManager):
         mime_type="video/mp4",
         filesize=1024,
         duration=1,
+        discovered_at=base_time,
+        updated_at=base_time,
     )
-
     # download for another feed, should be ignored
     dl_f2v1_dl = Download(
         feed="prune_feed2",
         id="f2v1_dl",
-        published=base_time - datetime.timedelta(days=3),
+        published=base_time - timedelta(days=3),
         status=DownloadStatus.DOWNLOADED,
         source_url="url",
         title="t_f2",
@@ -528,8 +574,9 @@ def test_get_downloads_to_prune_by_keep_last(db_manager: DatabaseManager):
         mime_type="video/mp4",
         filesize=1024,
         duration=1,
+        discovered_at=base_time,
+        updated_at=base_time,
     )
-
     downloads_to_add = [
         dl_f1v1_dl_oldest,
         dl_f1v2_err_mid1,
@@ -578,15 +625,15 @@ def test_get_downloads_to_prune_by_keep_last(db_manager: DatabaseManager):
 
 
 @pytest.mark.unit
-def test_get_downloads_to_prune_by_since(db_manager: DatabaseManager):
+def test_get_downloads_to_prune_by_since(db_manager: DownloadDatabase):
     """Test fetching downloads to prune by 'since' date."""
-    base_time = datetime.datetime(2023, 1, 1, 12, 0, 0, tzinfo=datetime.UTC)
+    base_time = datetime(2023, 1, 1, 12, 0, 0, tzinfo=UTC)
     feed_id = "prune_since_feed"
 
     dl_ps_v1_older_dl = Download(
         feed=feed_id,
         id="ps_v1_older_dl",
-        published=base_time - datetime.timedelta(days=5),
+        published=base_time - timedelta(days=5),
         status=DownloadStatus.DOWNLOADED,
         source_url="url",
         title="t1",
@@ -594,11 +641,13 @@ def test_get_downloads_to_prune_by_since(db_manager: DatabaseManager):
         mime_type="video/mp4",
         filesize=1024,
         duration=1,
+        discovered_at=base_time,
+        updated_at=base_time,
     )
     dl_ps_v2_mid_err = Download(
         feed=feed_id,
         id="ps_v2_mid_err",
-        published=base_time - datetime.timedelta(days=2),
+        published=base_time - timedelta(days=2),
         status=DownloadStatus.ERROR,
         source_url="url",
         title="t2",
@@ -606,11 +655,13 @@ def test_get_downloads_to_prune_by_since(db_manager: DatabaseManager):
         mime_type="video/x-matroska",
         filesize=1024,
         duration=1,
+        discovered_at=base_time,
+        updated_at=base_time,
     )
     dl_ps_v3_newer_q = Download(
         feed=feed_id,
         id="ps_v3_newer_q",
-        published=base_time + datetime.timedelta(days=1),
+        published=base_time + timedelta(days=1),
         status=DownloadStatus.QUEUED,
         source_url="url",
         title="t3",
@@ -618,6 +669,8 @@ def test_get_downloads_to_prune_by_since(db_manager: DatabaseManager):
         mime_type="video/webm",
         filesize=1024,
         duration=1,
+        discovered_at=base_time,
+        updated_at=base_time,
     )
     dl_ps_v4_arch = Download(
         feed=feed_id,
@@ -630,11 +683,13 @@ def test_get_downloads_to_prune_by_since(db_manager: DatabaseManager):
         mime_type="audio/mpeg",
         filesize=1024,
         duration=1,
+        discovered_at=base_time,
+        updated_at=base_time,
     )
     dl_ps_v5_upcoming_ancient = Download(  # New UPCOMING download, very old
         feed=feed_id,
         id="ps_v5_upcoming_ancient",
-        published=base_time - datetime.timedelta(days=10),  # Much older than cutoff
+        published=base_time - timedelta(days=10),  # Much older than cutoff
         status=DownloadStatus.UPCOMING,
         source_url="url",
         title="t5_upcoming",
@@ -642,11 +697,13 @@ def test_get_downloads_to_prune_by_since(db_manager: DatabaseManager):
         mime_type="video/mp4",
         filesize=1024,
         duration=1,
+        discovered_at=base_time,
+        updated_at=base_time,
     )
     dl_ps_v6_skipped_ancient = Download(
         feed=feed_id,
         id="ps_v6_skipped_ancient",
-        published=base_time - datetime.timedelta(days=12),  # Much older than cutoff
+        published=base_time - timedelta(days=12),  # Much older than cutoff
         status=DownloadStatus.SKIPPED,
         source_url="url",
         title="t6_skipped",
@@ -654,13 +711,15 @@ def test_get_downloads_to_prune_by_since(db_manager: DatabaseManager):
         mime_type="video/mp4",
         filesize=1024,
         duration=1,
+        discovered_at=base_time,
+        updated_at=base_time,
     )
 
     # download for another feed
     dl_other_v1_older_dl = Download(
         feed="other_feed",
         id="other_v1_older_dl",
-        published=base_time - datetime.timedelta(days=5),
+        published=base_time - timedelta(days=5),
         status=DownloadStatus.DOWNLOADED,
         source_url="url",
         title="t_other",
@@ -668,8 +727,9 @@ def test_get_downloads_to_prune_by_since(db_manager: DatabaseManager):
         mime_type="video/mp4",
         filesize=1024,
         duration=1,
+        discovered_at=base_time,
+        updated_at=base_time,
     )
-
     downloads_to_add = [
         dl_ps_v1_older_dl,
         dl_ps_v2_mid_err,
@@ -690,7 +750,7 @@ def test_get_downloads_to_prune_by_since(db_manager: DatabaseManager):
     # - ps_v4_arch (day 0) -> NO (archived)
     # - ps_v5_upcoming_ancient (day -10) -> YES
     # - ps_v6_skipped_ancient (day -12) -> NO
-    since_cutoff_1 = base_time - datetime.timedelta(days=3)
+    since_cutoff_1 = base_time - timedelta(days=3)
     pruned_1 = db_manager.get_downloads_to_prune_by_since(
         feed=feed_id, since=since_cutoff_1
     )
@@ -709,7 +769,7 @@ def test_get_downloads_to_prune_by_since(db_manager: DatabaseManager):
     # - ps_v4_arch (day 0) -> NO (archived)
     # - ps_v5_upcoming_ancient (day -10) -> YES
     # - ps_v6_skipped_ancient (day -12) -> NO
-    since_cutoff_2 = base_time + datetime.timedelta(days=2)
+    since_cutoff_2 = base_time + timedelta(days=2)
     pruned_2 = db_manager.get_downloads_to_prune_by_since(
         feed=feed_id, since=since_cutoff_2
     )
@@ -724,9 +784,9 @@ def test_get_downloads_to_prune_by_since(db_manager: DatabaseManager):
 
 
 @pytest.mark.unit
-def test_get_downloads_by_status(db_manager: DatabaseManager):
+def test_get_downloads_by_status(db_manager: DownloadDatabase):
     """Test fetching downloads by various statuses, including offset and limit."""
-    base_time = datetime.datetime(2023, 1, 15, 12, 0, 0, tzinfo=datetime.UTC)
+    base_time = datetime(2023, 1, 15, 12, 0, 0, tzinfo=UTC)
     feed1 = "status_feed1"
     feed2 = "status_feed2"
 
@@ -734,7 +794,7 @@ def test_get_downloads_by_status(db_manager: DatabaseManager):
     dl_f2e1 = Download(
         feed=feed2,
         id="f2e1",
-        published=base_time - datetime.timedelta(days=3),
+        published=base_time - timedelta(days=3),
         status=DownloadStatus.ERROR,
         last_error="Feed 2 error",
         source_url="url",
@@ -743,12 +803,14 @@ def test_get_downloads_by_status(db_manager: DatabaseManager):
         mime_type="video/mp4",
         filesize=1024,
         duration=1,
+        discovered_at=base_time,
+        updated_at=base_time,
     )
     # middle, feed1, ERROR
     dl_f1e1_old = Download(
         feed=feed1,
         id="f1e1_old",
-        published=base_time - datetime.timedelta(days=2),
+        published=base_time - timedelta(days=2),
         status=DownloadStatus.ERROR,
         last_error="Old error 1",
         source_url="url",
@@ -757,12 +819,14 @@ def test_get_downloads_by_status(db_manager: DatabaseManager):
         mime_type="video/mp4",
         filesize=1024,
         duration=1,
+        discovered_at=base_time,
+        updated_at=base_time,
     )
     # newest, feed1, ERROR
     dl_f1e2_new = Download(
         feed=feed1,
         id="f1e2_new",
-        published=base_time - datetime.timedelta(days=1),
+        published=base_time - timedelta(days=1),
         status=DownloadStatus.ERROR,
         last_error="New error 1",
         source_url="url",
@@ -771,6 +835,8 @@ def test_get_downloads_by_status(db_manager: DatabaseManager):
         mime_type="video/mp4",
         filesize=1024,
         duration=1,
+        discovered_at=base_time,
+        updated_at=base_time,
     )
     # Other status downloads for noise and testing other statuses
     dl_f1q1 = Download(
@@ -784,6 +850,8 @@ def test_get_downloads_by_status(db_manager: DatabaseManager):
         mime_type="video/mp4",
         filesize=1024,
         duration=1,
+        discovered_at=base_time,
+        updated_at=base_time,
     )
     dl_f3d1 = Download(
         feed="feed3_no_match",
@@ -796,11 +864,13 @@ def test_get_downloads_by_status(db_manager: DatabaseManager):
         mime_type="video/mp4",
         filesize=1024,
         duration=1,
+        discovered_at=base_time,
+        updated_at=base_time,
     )
     dl_f1_upcoming = Download(
         feed=feed1,
         id="f1upcoming",
-        published=base_time - datetime.timedelta(days=4),  # Older than errors
+        published=base_time - timedelta(days=4),  # Older than errors
         status=DownloadStatus.UPCOMING,
         source_url="url",
         title="t_up_f1",
@@ -808,11 +878,13 @@ def test_get_downloads_by_status(db_manager: DatabaseManager):
         mime_type="video/mp4",
         filesize=1024,
         duration=1,
+        discovered_at=base_time,
+        updated_at=base_time,
     )
     dl_f2_upcoming = Download(
         feed=feed2,
         id="f2upcoming",
-        published=base_time - datetime.timedelta(days=5),
+        published=base_time - timedelta(days=5),
         status=DownloadStatus.UPCOMING,
         source_url="url",
         title="t_up_f2",
@@ -820,8 +892,9 @@ def test_get_downloads_by_status(db_manager: DatabaseManager):
         mime_type="video/mp4",
         filesize=1024,
         duration=1,
+        discovered_at=base_time,
+        updated_at=base_time,
     )
-
     downloads_to_add = [
         dl_f2e1,  # ERROR
         dl_f1e1_old,  # ERROR
@@ -940,13 +1013,146 @@ def test_get_downloads_by_status(db_manager: DatabaseManager):
 
 
 @pytest.mark.unit
+def test_upsert_download_with_none_timestamps(db_manager: DownloadDatabase):
+    """Test that database defaults are applied when discovered_at/updated_at are None."""
+    base_time = datetime(2023, 1, 1, 12, 0, 0, tzinfo=UTC)
+
+    # Create a download with None timestamp fields
+    download_with_none_timestamps = Download(
+        feed="test_feed",
+        id="test_none_timestamps",
+        source_url="http://example.com/video1",
+        title="Test Video with None Timestamps",
+        published=base_time,
+        ext="mp4",
+        mime_type="video/mp4",
+        duration=120,
+        status=DownloadStatus.QUEUED,
+        filesize=1024,
+        retries=0,
+        # These should be None, triggering database defaults
+        discovered_at=None,
+        updated_at=None,
+    )
+
+    # Insert the download
+    db_manager.upsert_download(download_with_none_timestamps)
+
+    # Retrieve and verify timestamps were set by database
+    retrieved = db_manager.get_download_by_id("test_feed", "test_none_timestamps")
+
+    assert retrieved.discovered_at is not None, (
+        "discovered_at should be set by database default"
+    )
+    assert retrieved.updated_at is not None, (
+        "updated_at should be set by database default"
+    )
+
+    # Verify the timestamps are reasonable (within a few seconds of now)
+    current_time = datetime.now(UTC)
+    time_diff_discovered = abs((current_time - retrieved.discovered_at).total_seconds())
+    time_diff_updated = abs((current_time - retrieved.updated_at).total_seconds())
+
+    assert time_diff_discovered < 5, "discovered_at should be close to current time"
+    assert time_diff_updated < 5, "updated_at should be close to current time"
+
+
+@pytest.mark.unit
+def test_database_triggers_update_timestamps(db_manager: DownloadDatabase):
+    """Test that database triggers correctly update timestamps with proper timezone format."""
+    base_time = datetime(2023, 1, 1, 12, 0, 0, tzinfo=UTC)
+
+    # Create a download with explicit timestamps
+    download = Download(
+        feed="test_feed",
+        id="test_triggers",
+        source_url="http://example.com/video1",
+        title="Test Video for Triggers",
+        published=base_time,
+        ext="mp4",
+        mime_type="video/mp4",
+        duration=120,
+        status=DownloadStatus.QUEUED,
+        filesize=1024,
+        retries=0,
+        discovered_at=base_time,
+        updated_at=base_time,
+    )
+
+    # Insert the download
+    db_manager.upsert_download(download)
+
+    # Record the initial timestamps
+    initial_retrieved = db_manager.get_download_by_id("test_feed", "test_triggers")
+    initial_updated_at = initial_retrieved.updated_at
+    initial_downloaded_at = initial_retrieved.downloaded_at
+
+    # Verify initial state
+    assert initial_downloaded_at is None, "downloaded_at should be None initially"
+
+    # Wait a moment to ensure timestamp differences
+    import time
+
+    time.sleep(0.1)
+
+    # Update the download to trigger the updated_at trigger
+    # Change the title to trigger UPDATE (title is not in exclude_columns)
+    db_manager._db.update(
+        "downloads", ("test_feed", "test_triggers"), {"title": "Updated Title"}
+    )
+
+    # Check that updated_at was changed by trigger
+    after_update = db_manager.get_download_by_id("test_feed", "test_triggers")
+    assert after_update.updated_at is not None, "updated_at should not be None"
+    assert after_update.updated_at != initial_updated_at, (
+        "updated_at should be changed by trigger"
+    )
+    assert after_update.updated_at.tzinfo == UTC, "updated_at should have UTC timezone"
+    assert after_update.downloaded_at is None, "downloaded_at should still be None"
+
+    # Wait a moment to ensure timestamp differences
+    time.sleep(0.1)
+
+    # Mark as downloaded to trigger the downloaded_at trigger
+    db_manager.mark_as_downloaded("test_feed", "test_triggers", "mp4", 2048)
+
+    # Check that both updated_at and downloaded_at were set by triggers
+    final_retrieved = db_manager.get_download_by_id("test_feed", "test_triggers")
+
+    # Both should be set and have proper timezone
+    assert final_retrieved.updated_at is not None, "updated_at should not be None"
+    assert final_retrieved.updated_at != after_update.updated_at, (
+        "updated_at should be updated again"
+    )
+    assert final_retrieved.updated_at.tzinfo == UTC, (
+        "updated_at should have UTC timezone"
+    )
+    assert final_retrieved.downloaded_at is not None, (
+        "downloaded_at should be set by trigger"
+    )
+    assert final_retrieved.downloaded_at.tzinfo == UTC, (
+        "downloaded_at should have UTC timezone"
+    )
+
+    # Verify timestamps are reasonable (within a few seconds of now)
+    current_time = datetime.now(UTC)
+    updated_diff = abs((current_time - final_retrieved.updated_at).total_seconds())
+    downloaded_diff = abs(
+        (current_time - final_retrieved.downloaded_at).total_seconds()
+    )
+
+    assert updated_diff < 5, "updated_at should be close to current time"
+    assert downloaded_diff < 5, "downloaded_at should be close to current time"
+
+
+@pytest.mark.unit
 def test_download_from_row_success(sample_download_row_data: dict[str, Any]):
     """Test successful conversion of a valid row dictionary to a Download object."""
     # Simulate sqlite3.Row by using a dictionary. Access by string keys is what sqlite3.Row provides.
     mock_row = sample_download_row_data
 
     # Expected Download object based on the row data
-    expected_published_dt = datetime.datetime.fromisoformat(mock_row["published"])
+    expected_published_dt = datetime.fromisoformat(mock_row["published"])
     expected_status_enum = DownloadStatus(mock_row["status"])
     expected_download = Download(
         feed=mock_row["feed"],
@@ -962,6 +1168,7 @@ def test_download_from_row_success(sample_download_row_data: dict[str, Any]):
         status=expected_status_enum,
         retries=int(mock_row["retries"]),
         last_error=mock_row["last_error"],
+        description=mock_row["description"],
     )
 
     converted_download = Download.from_row(mock_row)
@@ -994,7 +1201,7 @@ def test_download_from_row_malformed_data(
         Download.from_row(corrupted_row_data)
 
 
-def test_bump_retries_non_existent_download(db_manager: DatabaseManager):
+def test_bump_retries_non_existent_download(db_manager: DownloadDatabase):
     """Test bumping retries for a download that doesn't exist."""
     with pytest.raises(DownloadNotFoundError) as e:
         db_manager.bump_retries(
@@ -1008,7 +1215,7 @@ def test_bump_retries_non_existent_download(db_manager: DatabaseManager):
 
 
 def test_bump_retries_below_max(
-    db_manager: DatabaseManager, sample_download_upcoming: Download
+    db_manager: DownloadDatabase, sample_download_upcoming: Download
 ):
     """Test bumping retries when new count is below max_allowed_errors."""
     db_manager.upsert_download(sample_download_upcoming)
@@ -1034,7 +1241,7 @@ def test_bump_retries_below_max(
 
 
 def test_bump_retries_reaches_max(
-    db_manager: DatabaseManager, sample_download_upcoming: Download
+    db_manager: DownloadDatabase, sample_download_upcoming: Download
 ):
     """Test bumping retries when new count reaches max_allowed_errors."""
     sample_download_upcoming.retries = 2
@@ -1061,7 +1268,7 @@ def test_bump_retries_reaches_max(
 
 
 def test_bump_retries_exceeds_max(
-    db_manager: DatabaseManager, sample_download_upcoming: Download
+    db_manager: DownloadDatabase, sample_download_upcoming: Download
 ):
     """Test bumping retries when new count would exceed max_allowed_errors."""
     sample_download_upcoming.retries = 3
@@ -1088,7 +1295,7 @@ def test_bump_retries_exceeds_max(
 
 
 def test_bump_retries_already_error_status(
-    db_manager: DatabaseManager, sample_download_upcoming: Download
+    db_manager: DownloadDatabase, sample_download_upcoming: Download
 ):
     """Test bumping retries when the item is already in ERROR state."""
     # Modify fixture to be in ERROR state initially
@@ -1118,7 +1325,7 @@ def test_bump_retries_already_error_status(
 
 
 def test_bump_retries_max_errors_is_one(
-    db_manager: DatabaseManager, sample_download_upcoming: Download
+    db_manager: DownloadDatabase, sample_download_upcoming: Download
 ):
     """Test bumping retries transitions to ERROR immediately if max_allowed_errors is 1."""
     db_manager.upsert_download(sample_download_upcoming)
@@ -1145,7 +1352,7 @@ def test_bump_retries_max_errors_is_one(
 
 @pytest.mark.unit
 def test_bump_retries_downloaded_item_does_not_become_error(
-    db_manager: DatabaseManager, sample_download_queued: Download
+    db_manager: DownloadDatabase, sample_download_queued: Download
 ):
     """Test that bumping retries on a DOWNLOADED item does not change its status to ERROR, even if retries reach max."""
     # Setup: Insert a download and mark it as DOWNLOADED

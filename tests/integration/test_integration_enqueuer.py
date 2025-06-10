@@ -8,7 +8,7 @@ import pytest
 
 from anypod.config import FeedConfig
 from anypod.data_coordinator.enqueuer import Enqueuer
-from anypod.db import DatabaseManager, Download, DownloadStatus
+from anypod.db import Download, DownloadDatabase, DownloadStatus
 from anypod.exceptions import EnqueueError
 from anypod.path_manager import PathManager
 from anypod.ytdlp_wrapper import YtdlpWrapper
@@ -26,7 +26,9 @@ COLETDJNZ_CHANNEL_VIDEOS = "https://www.youtube.com/@coletdjnz/videos"
 INVALID_VIDEO_URL = "https://www.youtube.com/watch?v=thisvideodoesnotexistxyz"
 
 # CLI args for minimal quality and limited playlist downloads as a string
-YT_DLP_MINIMAL_ARGS_STR = "--playlist-items 1 --format worst[ext=mp4]"
+YT_DLP_MINIMAL_ARGS_STR = (
+    "--playlist-items 1 --format worst*[ext=mp4]/worst[ext=mp4]/best[ext=mp4]"
+)
 
 # Test schedule
 TEST_CRON_SCHEDULE = "0 * * * *"
@@ -62,9 +64,9 @@ SAMPLE_FEED_CONFIG = FeedConfig(
 
 
 @pytest.fixture
-def db_manager() -> Generator[DatabaseManager]:
-    """Provides a DatabaseManager instance with a temporary database."""
-    db_manager = DatabaseManager(db_path=None, memory_name="integration_test")
+def db_manager() -> Generator[DownloadDatabase]:
+    """Provides a DownloadDatabase instance with a temporary database."""
+    db_manager = DownloadDatabase(db_path=None, memory_name="integration_test")
     yield db_manager
     db_manager.close()
 
@@ -90,7 +92,7 @@ def ytdlp_wrapper(tmp_path_factory: pytest.TempPathFactory) -> Generator[YtdlpWr
 
 @pytest.fixture
 def enqueuer(
-    db_manager: DatabaseManager, ytdlp_wrapper: YtdlpWrapper
+    db_manager: DownloadDatabase, ytdlp_wrapper: YtdlpWrapper
 ) -> Generator[Enqueuer]:
     """Provides an Enqueuer instance for the tests."""
     yield Enqueuer(db_manager, ytdlp_wrapper)
@@ -99,7 +101,7 @@ def enqueuer(
 @pytest.mark.integration
 @pytest.mark.parametrize("url_type, url", TEST_URLS_PARAMS)
 def test_enqueue_new_downloads_success(
-    enqueuer: Enqueuer, db_manager: DatabaseManager, url_type: str, url: str
+    enqueuer: Enqueuer, db_manager: DownloadDatabase, url_type: str, url: str
 ):
     """Tests successful enqueueing of new downloads for various URL types.
 
@@ -174,7 +176,7 @@ def test_enqueue_new_downloads_invalid_url(enqueuer: Enqueuer):
 
 @pytest.mark.integration
 def test_enqueue_new_downloads_with_date_filter(
-    enqueuer: Enqueuer, db_manager: DatabaseManager
+    enqueuer: Enqueuer, db_manager: DownloadDatabase
 ):
     """Tests enqueueing with a date filter that should limit results."""
     feed_id = "test_date_filter"
@@ -207,7 +209,7 @@ def test_enqueue_new_downloads_with_date_filter(
 
 @pytest.mark.integration
 def test_enqueue_handles_existing_upcoming_downloads(
-    enqueuer: Enqueuer, db_manager: DatabaseManager
+    enqueuer: Enqueuer, db_manager: DownloadDatabase
 ):
     """Tests that existing UPCOMING downloads are properly handled and potentially transitioned to QUEUED."""
     feed_id = "test_upcoming_feed"
@@ -226,6 +228,8 @@ def test_enqueue_handles_existing_upcoming_downloads(
         duration=BIG_BUCK_BUNNY_DURATION,
         status=DownloadStatus.UPCOMING,
         retries=0,
+        discovered_at=BIG_BUCK_BUNNY_PUBLISHED,
+        updated_at=BIG_BUCK_BUNNY_PUBLISHED,
     )
     db_manager.upsert_download(upcoming_download)
 
@@ -268,7 +272,7 @@ def test_enqueue_handles_existing_upcoming_downloads(
 
 @pytest.mark.integration
 def test_enqueue_handles_existing_downloaded_items(
-    enqueuer: Enqueuer, db_manager: DatabaseManager
+    enqueuer: Enqueuer, db_manager: DownloadDatabase
 ):
     """Tests that existing DOWNLOADED items are ignored during enqueue process."""
     feed_id = "test_downloaded_ignored_feed"
@@ -287,6 +291,8 @@ def test_enqueue_handles_existing_downloaded_items(
         duration=BIG_BUCK_BUNNY_DURATION,
         status=DownloadStatus.DOWNLOADED,
         retries=0,
+        discovered_at=BIG_BUCK_BUNNY_PUBLISHED,
+        updated_at=BIG_BUCK_BUNNY_PUBLISHED,
     )
     db_manager.upsert_download(downloaded_item)
 
@@ -317,7 +323,7 @@ def test_enqueue_handles_existing_downloaded_items(
 
 @pytest.mark.integration
 def test_enqueue_multiple_runs_idempotent(
-    enqueuer: Enqueuer, db_manager: DatabaseManager
+    enqueuer: Enqueuer, db_manager: DownloadDatabase
 ):
     """Tests that running enqueue multiple times on the same feed is idempotent."""
     feed_id = "test_idempotent_feed"
@@ -356,14 +362,14 @@ def test_enqueue_multiple_runs_idempotent(
 
 @pytest.mark.integration
 def test_enqueue_with_impossible_filter(
-    enqueuer: Enqueuer, db_manager: DatabaseManager
+    enqueuer: Enqueuer, db_manager: DownloadDatabase
 ):
     """Tests enqueueing with filters that match no videos still creates downloads but with filter applied."""
     feed_id = "test_impossible_filter"
 
     feed_config = FeedConfig(
         url=BIG_BUCK_BUNNY_SHORT_URL,
-        yt_args='--playlist-items 1 --format worst[ext=mp4] --match-filters "duration > 10000000"',  # type: ignore
+        yt_args='--playlist-items 1 --format worst*[ext=mp4]/worst[ext=mp4]/best[ext=mp4] --match-filters "duration > 10000000"',  # type: ignore
         schedule=TEST_CRON_SCHEDULE,
         keep_last=None,
         since=None,

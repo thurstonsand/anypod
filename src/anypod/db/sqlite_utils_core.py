@@ -15,14 +15,14 @@ import sqlite3
 from typing import Any
 
 from sqlite_utils import Database
-from sqlite_utils.db import NotFoundError
+from sqlite_utils.db import NotFoundError as SqliteUtilsNotFoundError
 
-from ..exceptions import DatabaseOperationError, DownloadNotFoundError
+from ..exceptions import DatabaseOperationError, NotFoundError
 
 logger = logging.getLogger(__name__)
 
 
-def register_adapter[T: type](tpe: T, value_to_sql: Callable[[T], Any]) -> None:
+def register_adapter[T](tpe: type[T], value_to_sql: Callable[[T], Any]) -> None:
     """Register a SQLite adapter for a Python type.
 
     Args:
@@ -60,6 +60,24 @@ class SqliteUtilsCore:
             )
         except sqlite3.Error as e:
             raise DatabaseOperationError("Failed to initialize database.") from e
+
+    def quote(self, *identifiers: str) -> str:
+        """Apply SQLite string quoting to one or more identifiers.
+
+        This method safely quotes SQL identifiers (table names, column names)
+        to prevent SQL injection issues. If multiple identifiers are provided,
+        they are joined without a separator.
+
+        Args:
+            identifiers: One or more strings representing SQL identifiers.
+
+        Returns:
+            The quoted identifier string.
+        """
+        if not identifiers:
+            return ""
+        # The db.quote method already wraps in single quotes, so we just pass a joined string
+        return self.db.quote("".join(identifiers))
 
     @contextmanager
     def transaction(self) -> Generator[None]:
@@ -124,6 +142,90 @@ class SqliteUtilsCore:
             )
         except sqlite3.Error as e:
             raise DatabaseOperationError("Failed to create index.") from e
+
+    def create_trigger(
+        self,
+        trigger_name: str,
+        table_name: str,
+        trigger_sql_body: str,
+        when_clause: str | None = None,
+        trigger_event: str = "AFTER UPDATE",
+        of_columns: list[str] | None = None,
+        exclude_columns: list[str] | None = None,
+        for_each_row: bool = True,
+        if_not_exists: bool = True,
+        params: dict[str, Any] | None = None,
+    ) -> None:
+        """Create a database trigger.
+
+        Args:
+            trigger_name: The name of the trigger.
+            table_name: The table the trigger is associated with.
+            trigger_sql_body: The SQL statements to execute when the trigger fires.
+                              This should be the content of the BEGIN...END block.
+            when_clause: Optional WHEN clause (e.g., "NEW.status = 'downloaded'").
+            trigger_event: The event that fires the trigger (e.g., "AFTER INSERT", "BEFORE DELETE").
+                           Defaults to "AFTER UPDATE".
+            of_columns: Optional list of column names for UPDATE OF clause. If provided, overrides exclude_columns.
+            exclude_columns: Optional list of column names to exclude from UPDATE OF clause.
+                           Only used for UPDATE triggers when of_columns is not provided.
+            for_each_row: If True, the trigger is a FOR EACH ROW trigger. Defaults to True.
+            if_not_exists: If True, uses CREATE TRIGGER IF NOT EXISTS. Defaults to True.
+            params: Optional dictionary of parameters to bind to the trigger_sql_body
+                    or when_clause (for values, not identifiers).
+
+        Raises:
+            DatabaseOperationError: If the trigger creation fails.
+        """
+        if params is None:
+            params = {}
+
+        # Safely quote dynamic identifiers
+        quoted_table_name = self.quote(table_name)
+        quoted_trigger_name = self.quote(trigger_name)
+
+        # Build the trigger SQL statement
+        if_not_exists_clause = "IF NOT EXISTS " if if_not_exists else ""
+        for_each_row_clause = "FOR EACH ROW" if for_each_row else ""
+        when_clause_sql = f"WHEN {when_clause}" if when_clause else ""
+
+        match "UPDATE" in trigger_event.upper(), of_columns, exclude_columns:
+            # if of_columns is provided, use it
+            case True, [_, *_] as of_columns, _:
+                pass
+            # else if exclude_columns is provided, get all table columns and exclude the specified ones
+            case True, [] | None, [_, *_] as exclude_columns:
+                table = self.db[table_name]  # type: ignore
+                all_columns = set(table.columns_dict.keys())
+                trigger_columns = all_columns - set(exclude_columns)
+                of_columns = list(trigger_columns)
+
+            # if it is not an UPDATE trigger, or if no columns are provided, don't add an OF clause
+            case _:
+                of_columns = []
+
+        if of_columns:
+            quoted_columns = [self.quote(col) for col in of_columns]
+            of_clause = f"OF {', '.join(quoted_columns)}"
+        else:
+            of_clause = ""
+        # Construct the full SQL query string
+        full_sql = f"""
+            CREATE TRIGGER {if_not_exists_clause}{quoted_trigger_name}
+            {trigger_event} {of_clause} ON {quoted_table_name}
+            {for_each_row_clause}
+            {when_clause_sql}
+            BEGIN
+                {trigger_sql_body}
+            END;
+        """
+
+        try:
+            self.db.execute(full_sql, params)  # type: ignore
+        except sqlite3.Error as e:
+            raise DatabaseOperationError(
+                f"Failed to create trigger '{trigger_name}'."
+            ) from e
 
     def close(self) -> None:
         """Close the database connection."""
@@ -197,6 +299,7 @@ class SqliteUtilsCore:
         table_name: str,
         pk_values: str | tuple[str, ...],
         updates: dict[str, Any],
+        conversions: dict[str, Any] | None = None,
     ) -> None:
         """Update a row in the specified table.
 
@@ -204,24 +307,23 @@ class SqliteUtilsCore:
             table_name: Name of the table to update.
             pk_values: Primary key value(s) identifying the row.
             updates: Dictionary of column updates to apply.
+            conversions: Dictionary of column names to conversion functions.
 
         Raises:
-            DownloadNotFoundError: If the row is not found.
+            NotFoundError: If the row is not found.
             DatabaseOperationError: If the update operation fails.
         """
         try:
-            self.db[table_name].update(pk_values, updates)  # type: ignore
-        except NotFoundError as e:
-            raise DownloadNotFoundError(
-                message="Download not found.",
-            ) from e
+            self.db[table_name].update(pk_values, updates, conversions=conversions)  # type: ignore
+        except SqliteUtilsNotFoundError as e:
+            raise NotFoundError("Record not found.") from e
         except sqlite3.Error as e:
             raise DatabaseOperationError("Failed to update.") from e
 
     def rows_where(
         self,
         table_name: str,
-        where: str,
+        where: str | None = None,
         where_args: dict[str, Any] | None = None,
         order_by: str | None = None,
         select: str = "*",
@@ -232,7 +334,7 @@ class SqliteUtilsCore:
 
         Args:
             table_name: Name of the table to query.
-            where: WHERE clause condition.
+            where: WHERE clause condition. If None, returns all rows.
             where_args: Parameters for the WHERE clause.
             order_by: ORDER BY clause.
             select: SELECT clause (default "*").
@@ -271,13 +373,11 @@ class SqliteUtilsCore:
 
         Raises:
             DatabaseOperationError: If the query fails.
-            DownloadNotFoundError: If the row is not found.
+            NotFoundError: If the row is not found.
         """
         try:
             return self.db[table_name].get(pk_values)  # type: ignore
         except sqlite3.Error as e:
             raise DatabaseOperationError("Failed to get row.") from e
-        except NotFoundError as e:
-            raise DownloadNotFoundError(
-                message="Download not found.",
-            ) from e
+        except SqliteUtilsNotFoundError as e:
+            raise NotFoundError("Record not found.") from e

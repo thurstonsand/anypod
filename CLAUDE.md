@@ -75,6 +75,7 @@ feeds:
 
 ### General Principles
 - **Follow existing codebase style above all else**
+- **Following style applies even when editing non-code as well. In all scenarios, follow existing style**
 - Focus on requested functionality - avoid unnecessary refactoring of existing code
 - Use type hints consistently with `<type> | None` over `Optional[<type>]`
 - Keep functions under 50 lines and focused on single responsibilities

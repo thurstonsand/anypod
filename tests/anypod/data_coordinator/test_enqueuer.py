@@ -9,7 +9,7 @@ import pytest
 
 from anypod.config import FeedConfig
 from anypod.data_coordinator.enqueuer import Enqueuer
-from anypod.db.db import DatabaseManager, Download, DownloadStatus
+from anypod.db.download_db import Download, DownloadDatabase, DownloadStatus
 from anypod.exceptions import (
     DatabaseOperationError,
     DownloadNotFoundError,
@@ -25,8 +25,8 @@ DEFAULT_MAX_ERRORS = 3
 
 @pytest.fixture
 def mock_db_manager() -> MagicMock:
-    """Provides a MagicMock for DatabaseManager."""
-    return MagicMock(spec=DatabaseManager)
+    """Provides a MagicMock for DownloadDatabase."""
+    return MagicMock(spec=DownloadDatabase)
 
 
 @pytest.fixture
@@ -84,17 +84,20 @@ def create_download(
     if filesize is None:
         filesize = 1024000 if status == DownloadStatus.DOWNLOADED else 0
 
+    current_time = datetime.now(UTC)
     return Download(
         feed=feed_id,
         id=id,
         source_url=source_url or f"https://example.com/video/{id}",
         title=title or f"Test Video {id}",
-        published=datetime.now(UTC) - timedelta(days=published_offset_days),
+        published=current_time - timedelta(days=published_offset_days),
         ext=ext,
         mime_type=mime_type,
         filesize=filesize,
         duration=duration,
         status=status,
+        discovered_at=current_time,
+        updated_at=current_time,
         retries=retries,
     )
 

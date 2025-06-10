@@ -1,4 +1,10 @@
 from .config import AppSettings, DebugMode
-from .feed_config import FeedConfig, FeedMetadata, PodcastCategory
+from .feed_config import FeedConfig, FeedMetadataOverrides, PodcastCategory
 
-__all__ = ["AppSettings", "DebugMode", "FeedConfig", "FeedMetadata", "PodcastCategory"]
+__all__ = [
+    "AppSettings",
+    "DebugMode",
+    "FeedConfig",
+    "FeedMetadataOverrides",
+    "PodcastCategory",
+]

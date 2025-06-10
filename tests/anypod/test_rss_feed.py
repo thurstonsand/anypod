@@ -9,9 +9,9 @@ from xml.etree import ElementTree as ET
 
 import pytest
 
-from anypod.config import FeedConfig, FeedMetadata, PodcastCategory
+from anypod.config import FeedConfig, FeedMetadataOverrides, PodcastCategory
 from anypod.config.feed_config import PodcastExplicit
-from anypod.db import DatabaseManager, Download, DownloadStatus
+from anypod.db import Download, DownloadDatabase, DownloadStatus
 from anypod.exceptions import DatabaseOperationError, RSSGenerationError
 from anypod.path_manager import PathManager
 from anypod.rss.rss_feed import RSSFeedGenerator
@@ -27,8 +27,8 @@ EXPECTED_GENERATOR = "AnyPod: https://github.com/thurstonsan/anypod"
 
 @pytest.fixture
 def mock_db_manager() -> MagicMock:
-    """Fixture to provide a mocked DatabaseManager."""
-    return MagicMock(spec=DatabaseManager)
+    """Fixture to provide a mocked DownloadDatabase."""
+    return MagicMock(spec=DownloadDatabase)
 
 
 @pytest.fixture
@@ -43,7 +43,7 @@ def path_manager(tmp_path: Path) -> PathManager:
 @pytest.fixture
 def feed_config() -> FeedConfig:
     """Fixture to provide a complete feed configuration."""
-    metadata = FeedMetadata(
+    metadata = FeedMetadataOverrides(
         title=TEST_PODCAST_TITLE,
         subtitle="A test podcast subtitle",
         description=TEST_PODCAST_DESCRIPTION,
@@ -77,6 +77,8 @@ def sample_downloads() -> list[Download]:
             filesize=1048576,
             duration=300,
             status=DownloadStatus.DOWNLOADED,
+            discovered_at=datetime(2023, 1, 16, 12, 0, 0, tzinfo=UTC),
+            updated_at=datetime(2023, 1, 16, 12, 0, 0, tzinfo=UTC),
             thumbnail="https://example.com/thumb1.jpg",
             description="Description for video 1",
         ),
@@ -91,6 +93,8 @@ def sample_downloads() -> list[Download]:
             filesize=524288,
             duration=180,
             status=DownloadStatus.DOWNLOADED,
+            discovered_at=datetime(2023, 1, 11, 10, 30, 0, tzinfo=UTC),
+            updated_at=datetime(2023, 1, 11, 10, 30, 0, tzinfo=UTC),
             thumbnail="https://example.com/thumb2.jpg",
             description="Description for video 2",
         ),
@@ -302,6 +306,8 @@ def test_generated_xml_mime_types(
             filesize=1000000,
             duration=300,
             status=DownloadStatus.DOWNLOADED,
+            discovered_at=datetime(2023, 1, 2, tzinfo=UTC),
+            updated_at=datetime(2023, 1, 2, tzinfo=UTC),
         ),
         Download(
             feed=TEST_FEED_ID,
@@ -314,6 +320,8 @@ def test_generated_xml_mime_types(
             filesize=500000,
             duration=180,
             status=DownloadStatus.DOWNLOADED,
+            discovered_at=datetime(2023, 1, 3, tzinfo=UTC),
+            updated_at=datetime(2023, 1, 3, tzinfo=UTC),
         ),
     ]
 

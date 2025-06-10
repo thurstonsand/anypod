@@ -288,7 +288,7 @@ class PodcastCategory:
         )
 
 
-class FeedMetadata(BaseModel):
+class FeedMetadataOverrides(BaseModel):
     """Podcast metadata overrides for RSS feed generation.
 
     These values can be specified in the feed configuration to override
@@ -401,6 +401,10 @@ class FeedConfig(BaseModel):
                   the source content where possible.
     """
 
+    enabled: bool = Field(
+        default=True,
+        description="Whether the feed is enabled. If disabled, the feed will not be processed.",
+    )
     url: str = Field(..., min_length=1, description="Feed source URL")
     yt_args: dict[str, Any] = Field(
         default_factory=dict[str, Any],
@@ -418,7 +422,7 @@ class FeedConfig(BaseModel):
         ge=1,
         description="Max attempts for downloading media before marking as ERROR.",
     )
-    metadata: FeedMetadata | None = Field(
+    metadata: FeedMetadataOverrides | None = Field(
         None, description="Podcast metadata overrides"
     )
 

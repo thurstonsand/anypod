@@ -2,7 +2,7 @@
 
 """Tests for the YtdlpWrapper class and its yt-dlp integration functionality."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -170,7 +170,7 @@ def test_download_media_to_file_success_simplified(
         id=download_id,
         source_url="http://example.com/video_happy",
         title="Test Happy Video",
-        published=datetime.fromisoformat("2023-02-01T00:00:00Z".replace("Z", "+00:00")),
+        published=datetime(2023, 2, 1, 0, 0, 0, tzinfo=UTC),
         ext="mkv",
         mime_type="video/x-matroska",
         filesize=12345,

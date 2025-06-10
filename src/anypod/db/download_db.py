@@ -1,7 +1,7 @@
 """Database management for Anypod downloads.
 
 This module provides database operations for managing download records,
-including the Download dataclass, DownloadStatus enum, and DatabaseManager
+including the Download dataclass, DownloadStatus enum, and DownloadDatabase
 class for all database interactions.
 """
 
@@ -12,7 +12,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from ..exceptions import DatabaseOperationError, DownloadNotFoundError
+from ..exceptions import DatabaseOperationError, DownloadNotFoundError, NotFoundError
+from .base_db import parse_datetime, parse_required_datetime
 from .sqlite_utils_core import SqliteUtilsCore, register_adapter
 
 logger = logging.getLogger(__name__)
@@ -37,7 +38,6 @@ class DownloadStatus(Enum):
 
 
 register_adapter(DownloadStatus, lambda status: status.value)
-register_adapter(datetime, lambda dt: dt.isoformat())  # type: ignore # not sure why it can't figure this type out
 
 
 @dataclass(eq=False)
@@ -55,12 +55,23 @@ class Download:
         filesize: File size in bytes.
         duration: Duration in seconds.
         status: Current download status.
-        thumbnail: Optional thumbnail URL.
-        description: Optional description of the download.
-        retries: Number of retry attempts.
-        last_error: Last error message if any.
+        discovered_at: When the download was first discovered (UTC).
+        updated_at: When the download was last updated (UTC).
+
+        Optional Media Metadata:
+            thumbnail: Optional thumbnail URL.
+            description: Optional description of the download.
+            quality_info: Optional quality information for the download.
+
+        Error Tracking:
+            retries: Number of retry attempts.
+            last_error: Last error message if any.
+
+        Processing Timestamps:
+            downloaded_at: When the download was completed (UTC).
     """
 
+    # Core identifiers and metadata
     feed: str
     id: str
     source_url: str
@@ -71,10 +82,20 @@ class Download:
     filesize: int  # Bytes
     duration: int  # in seconds
     status: DownloadStatus
+    discovered_at: datetime | None = None
+    updated_at: datetime | None = None
+
+    # Optional media metadata
     thumbnail: str | None = None
     description: str | None = None
+    quality_info: str | None = None
+
+    # Error tracking
     retries: int = 0
     last_error: str | None = None
+
+    # Processing timestamps
+    downloaded_at: datetime | None = None
 
     @classmethod
     def from_row(cls, row: dict[str, Any]) -> "Download":
@@ -114,10 +135,14 @@ class Download:
             filesize=row["filesize"],
             duration=int(row["duration"]),
             status=status_enum,
+            discovered_at=parse_required_datetime(row["discovered_at"]),
+            updated_at=parse_required_datetime(row["updated_at"]),
             thumbnail=row.get("thumbnail"),
             description=row.get("description"),
+            quality_info=row.get("quality_info"),
             retries=row.get("retries", 0),
             last_error=row.get("last_error"),
+            downloaded_at=parse_datetime(row.get("downloaded_at")),
         )
 
     def __eq__(self, other: object) -> bool:
@@ -131,7 +156,7 @@ class Download:
         return hash((self.feed, self.id))
 
 
-class DatabaseManager:
+class DownloadDatabase:
     """Manage all database operations for downloads.
 
     Handles database initialization, CRUD operations, status transitions,
@@ -144,12 +169,11 @@ class DatabaseManager:
     """
 
     def __init__(self, db_path: Path | None, memory_name: str | None = None):
-        """Initializes the DatabaseManager with the path to the SQLite database."""
         self._db_path = db_path
         self._db = SqliteUtilsCore(db_path, memory_name)
         self._download_table_name = "downloads"
         self._initialize_schema()
-        logger.debug("DatabaseManager initialized.", extra={"db_path": str(db_path)})
+        logger.debug("DownloadDatabase initialized.", extra={"db_path": str(db_path)})
 
     def _initialize_schema(self) -> None:
         """Initializes the database schema (tables and indices) if it doesn't exist."""
@@ -165,11 +189,15 @@ class DatabaseManager:
                 "mime_type": str,
                 "filesize": int,
                 "duration": int,
+                "status": str,  # from a DownloadStatus
+                "discovered_at": datetime,
+                "updated_at": datetime,
                 "thumbnail": str,
                 "description": str,
-                "status": str,
+                "quality_info": str,
                 "retries": int,
                 "last_error": str,
+                "downloaded_at": datetime,
             },
             pk=("feed", "id"),
             not_null={
@@ -183,10 +211,44 @@ class DatabaseManager:
                 "filesize",
                 "duration",
                 "status",
+                "discovered_at",
+                "updated_at",
                 "retries",
             },
-            defaults={"retries": 0},
+            defaults={
+                "retries": 0,
+                "discovered_at": "STRFTIME('%Y-%m-%dT%H:%M:%f+00:00','now')",
+                "updated_at": "STRFTIME('%Y-%m-%dT%H:%M:%f+00:00','now')",
+            },
         )
+
+        # Create trigger to set updated_at on UPDATE
+        self._db.create_trigger(
+            trigger_name=f"{self._download_table_name}_update_timestamp",
+            table_name=self._download_table_name,
+            trigger_event="AFTER UPDATE",
+            exclude_columns=["discovered_at", "updated_at", "downloaded_at"],
+            trigger_sql_body=f"""
+                UPDATE {self._db.quote(self._download_table_name)}
+                SET updated_at = STRFTIME('%Y-%m-%dT%H:%M:%f+00:00','now')
+                WHERE feed = NEW.feed AND id = NEW.id;
+            """,
+        )
+
+        # Create trigger to set downloaded_at when status changes to DOWNLOADED
+        self._db.create_trigger(
+            trigger_name=f"{self._download_table_name}_downloaded_timestamp",
+            table_name=self._download_table_name,
+            trigger_event="AFTER UPDATE",
+            of_columns=["status"],
+            when_clause=f"NEW.status = '{DownloadStatus.DOWNLOADED}' AND OLD.status != '{DownloadStatus.DOWNLOADED}'",
+            trigger_sql_body=f"""
+                UPDATE {self._db.quote(self._download_table_name)}
+                SET downloaded_at = STRFTIME('%Y-%m-%dT%H:%M:%f+00:00','now')
+                WHERE feed = NEW.feed AND id = NEW.id;
+            """,
+        )
+
         self._db.create_index(
             self._download_table_name,
             ["feed", "status"],
@@ -230,9 +292,17 @@ class DatabaseManager:
         }
         logger.debug("Attempting to upsert download record.", extra=log_params)
         try:
+            # Convert download to dict and exclude None values for timestamp fields
+            # so database defaults can take effect
+            download_dict = asdict(download)
+            if download_dict.get("discovered_at") is None:
+                download_dict.pop("discovered_at", None)
+            if download_dict.get("updated_at") is None:
+                download_dict.pop("updated_at", None)
+
             self._db.upsert(
                 self._download_table_name,
-                asdict(download),
+                download_dict,
                 pk=("feed", "id"),
                 not_null={
                     "feed",
@@ -293,10 +363,10 @@ class DatabaseManager:
                 (feed, id),
                 {"status": str(DownloadStatus.QUEUED)},
             )
-        except DownloadNotFoundError as e:
-            e.feed_id = feed
-            e.download_id = id
-            raise e
+        except NotFoundError as e:
+            raise DownloadNotFoundError(
+                "Download not found.", feed_id=feed, download_id=id
+            ) from e
         except DatabaseOperationError as e:
             e.feed_id = feed
             e.download_id = id
@@ -340,10 +410,10 @@ class DatabaseManager:
                     "last_error": None,
                 },
             )
-        except DownloadNotFoundError as e:
-            e.feed_id = feed
-            e.download_id = id
-            raise e
+        except NotFoundError as e:
+            raise DownloadNotFoundError(
+                "Download not found.", feed_id=feed, download_id=id
+            ) from e
         except DatabaseOperationError as e:
             e.feed_id = feed
             e.download_id = id
@@ -395,10 +465,10 @@ class DatabaseManager:
                     "filesize": filesize,
                 },
             )
-        except DownloadNotFoundError as e:
-            e.feed_id = feed
-            e.download_id = id
-            raise e
+        except NotFoundError as e:
+            raise DownloadNotFoundError(
+                "Download not found.", feed_id=feed, download_id=id
+            ) from e
         except DatabaseOperationError as e:
             e.feed_id = feed
             e.download_id = id
@@ -430,10 +500,10 @@ class DatabaseManager:
                 (feed, id),
                 {"status": str(DownloadStatus.SKIPPED)},
             )
-        except DownloadNotFoundError as e:
-            e.feed_id = feed
-            e.download_id = id
-            raise e
+        except NotFoundError as e:
+            raise DownloadNotFoundError(
+                "Download not found.", feed_id=feed, download_id=id
+            ) from e
         except DatabaseOperationError as e:
             e.feed_id = feed
             e.download_id = id
@@ -503,10 +573,10 @@ class DatabaseManager:
                 (feed, id),
                 {"status": str(DownloadStatus.ARCHIVED)},
             )
-        except DownloadNotFoundError as e:
-            e.feed_id = feed
-            e.download_id = id
-            raise e
+        except NotFoundError as e:
+            raise DownloadNotFoundError(
+                "Download not found.", feed_id=feed, download_id=id
+            ) from e
         except DatabaseOperationError as e:
             e.feed_id = feed
             e.download_id = id
@@ -598,10 +668,10 @@ class DatabaseManager:
                             "last_error": final_last_error,
                         },
                     )
-                except DownloadNotFoundError as e:
-                    e.feed_id = feed_id
-                    e.download_id = download_id
-                    raise e
+                except NotFoundError as e:
+                    raise DownloadNotFoundError(
+                        "Download not found.", feed_id=feed_id, download_id=download_id
+                    ) from e
                 except DatabaseOperationError as e:
                     e.feed_id = feed_id
                     e.download_id = download_id
@@ -721,10 +791,10 @@ class DatabaseManager:
         logger.debug("Attempting to get download by ID.", extra=log_params)
         try:
             row = self._db.get(self._download_table_name, (feed, id))
-        except DownloadNotFoundError as e:
-            e.feed_id = feed
-            e.download_id = id
-            raise e
+        except NotFoundError as e:
+            raise DownloadNotFoundError(
+                "Download not found.", feed_id=feed, download_id=id
+            ) from e
         except DatabaseOperationError as e:
             e.feed_id = feed
             e.download_id = id

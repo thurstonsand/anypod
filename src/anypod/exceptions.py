@@ -51,7 +51,18 @@ class DatabaseOperationError(DataCoordinatorError):
         self.download_id = download_id
 
 
-class DownloadNotFoundError(DataCoordinatorError):
+class NotFoundError(DataCoordinatorError):
+    """Raised when a database record is not found.
+
+    Generic base exception for record not found errors that can be
+    caught and re-raised as more specific exceptions by database classes.
+    """
+
+    def __init__(self, message: str):
+        super().__init__(message)
+
+
+class DownloadNotFoundError(NotFoundError):
     """Raised when a specific download is not found when expected.
 
     Attributes:
@@ -68,6 +79,22 @@ class DownloadNotFoundError(DataCoordinatorError):
         super().__init__(message)
         self.feed_id = feed_id
         self.download_id = download_id
+
+
+class FeedNotFoundError(NotFoundError):
+    """Raised when a specific feed is not found when expected.
+
+    Attributes:
+        feed_id: The feed identifier associated with the error.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        feed_id: str | None = None,
+    ):
+        super().__init__(message)
+        self.feed_id = feed_id
 
 
 class FileOperationError(DataCoordinatorError):
