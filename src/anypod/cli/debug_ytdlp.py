@@ -124,7 +124,7 @@ def run_debug_ytdlp_mode(debug_yaml_path: Path, paths: PathManager) -> None:
                     "yt_cli_args": cli_args,
                 },
             )
-            downloads = ytdlp_wrapper.fetch_metadata(
+            feed, downloads = ytdlp_wrapper.fetch_metadata(
                 feed_id=feed_id,
                 url=url,
                 yt_cli_args=YtdlpCore.parse_options(cli_args),
@@ -133,7 +133,12 @@ def run_debug_ytdlp_mode(debug_yaml_path: Path, paths: PathManager) -> None:
             if downloads:
                 logger.info(
                     "Successfully fetched downloads for feed.",
-                    extra={"download_count": len(downloads), "feed_url": url},
+                    extra={
+                        "download_count": len(downloads),
+                        "feed_url": url,
+                        "feed_title": feed.title,
+                        "feed_author": feed.author,
+                    },
                 )
                 for download in downloads:
                     if should_download:

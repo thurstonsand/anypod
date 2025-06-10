@@ -12,7 +12,7 @@ import logging
 import mimetypes
 from typing import Any
 
-from ..db import Download, DownloadStatus
+from ..db import Download, DownloadStatus, Feed, SourceType
 from ..exceptions import (
     YtdlpDataError,
     YtdlpFieldInvalidError,
@@ -321,6 +321,20 @@ class YoutubeEntry:
         with self._annotate_exceptions():
             return self._ytdlp_info.get("description", str)
 
+    # --- feed-level metadata fields ---
+
+    @property
+    def channel(self) -> str | None:
+        """Get the channel name for feed author."""
+        with self._annotate_exceptions():
+            return self._ytdlp_info.get("channel", str)
+
+    @property
+    def uploader(self) -> str | None:
+        """Get the uploader name (fallback for feed author)."""
+        with self._annotate_exceptions():
+            return self._ytdlp_info.get("uploader", str)
+
 
 class YoutubeHandler:
     """YouTube-specific implementation for fetching strategy and parsing.
@@ -341,6 +355,77 @@ class YoutubeHandler:
         """
         # No filtering at discovery, metadata fetch, or media download needed from here
         return {}
+
+    def extract_feed_metadata(
+        self,
+        feed_id: str,
+        ytdlp_info: YtdlpInfo,
+        ref_type: ReferenceType,
+    ) -> Feed:
+        """Extract feed-level metadata from yt-dlp response.
+
+        Args:
+            feed_id: The feed identifier.
+            ytdlp_info: The yt-dlp metadata information.
+            ref_type: The type of reference being parsed.
+
+        Returns:
+            Feed object with extracted metadata populated.
+        """
+        logger.debug(
+            "Extracting feed metadata.",
+            extra={
+                "feed_id": feed_id,
+                "ref_type": ref_type,
+            },
+        )
+
+        youtube_info = YoutubeEntry(ytdlp_info, feed_id)
+
+        # Map ReferenceType to SourceType
+        match ref_type:
+            case ReferenceType.SINGLE:
+                source_type = SourceType.SINGLE_VIDEO
+            case ReferenceType.CHANNEL:
+                source_type = SourceType.CHANNEL
+            case ReferenceType.COLLECTION:
+                source_type = SourceType.PLAYLIST
+            case (
+                ReferenceType.UNKNOWN_RESOLVED_URL | ReferenceType.UNKNOWN_DIRECT_FETCH
+            ):
+                source_type = SourceType.UNKNOWN
+
+        # Extract metadata with fallbacks
+        author = youtube_info.uploader or youtube_info.channel
+        title = youtube_info.title
+        description = youtube_info.description
+        image_url = youtube_info.thumbnail
+
+        feed = Feed(
+            id=feed_id,
+            is_enabled=True,
+            source_type=source_type,
+            title=title,
+            subtitle=None,  # Not available from yt-dlp
+            description=description,
+            language=None,  # Not available from yt-dlp
+            author=author,
+            image_url=image_url,
+        )
+
+        logger.info(
+            "Successfully extracted feed metadata.",
+            extra={
+                "feed_id": feed_id,
+                "source_type": source_type.value,
+                "title": title,
+                "author": author,
+                "has_description": description is not None,
+                "has_image_url": image_url is not None,
+            },
+        )
+
+        return feed
 
     def _parse_single_video_entry(self, entry: YoutubeEntry, feed_id: str) -> Download:
         # if a single video is requested, but the match filter excludes it,
@@ -499,6 +584,22 @@ class YoutubeHandler:
             youtube_info.extractor == "youtube:tab"
             and youtube_info.type == "playlist"
             and youtube_info.entries is not None
+            # Check if this is actually a main channel page by ensuring it's not already a specific tab
+            and not (
+                youtube_info.webpage_url
+                and any(
+                    youtube_info.webpage_url.rstrip("/").endswith(tab)
+                    for tab in [
+                        "/videos",
+                        "/shorts",
+                        "/streams",
+                        "/playlists",
+                        "/community",
+                        "/channels",
+                        "/about",
+                    ]
+                )
+            )
             and (
                 # maybe only the case if a channel is brand new and has no videos yet
                 not youtube_info.entries
@@ -522,20 +623,20 @@ class YoutubeHandler:
                             extra={
                                 "initial_url": initial_url,
                                 "videos_tab_url": tab_url,
-                                "reference_type": ReferenceType.COLLECTION,
+                                "reference_type": ReferenceType.CHANNEL,
                             },
                         )
-                        return tab_url, ReferenceType.COLLECTION
+                        return tab_url, ReferenceType.CHANNEL
 
             logger.warning(
-                "'Videos' tab not found for main channel page. Using resolved URL as collection.",
+                "'Videos' tab not found for main channel page. Using resolved URL as channel.",
                 extra={
                     "initial_url": initial_url,
                     "fetch_url": fetch_url,
-                    "reference_type": ReferenceType.COLLECTION,
+                    "reference_type": ReferenceType.CHANNEL,
                 },
             )
-            return fetch_url, ReferenceType.COLLECTION
+            return fetch_url, ReferenceType.CHANNEL
         # Handle the Playlist tabs
         # Playlist tabs will end up creating a "playlist" of playlists
         # I don't know what to do with that, so just throw
@@ -620,7 +721,7 @@ class YoutubeHandler:
                     exc_info=e,
                     extra={"source_identifier": source_identifier},
                 )
-        elif ref_type == ReferenceType.COLLECTION:
+        elif ref_type in (ReferenceType.COLLECTION, ReferenceType.CHANNEL):
             logger.debug(
                 "Parsing as collection.",
                 extra={

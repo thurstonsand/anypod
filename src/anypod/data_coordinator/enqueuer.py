@@ -280,7 +280,7 @@ class Enqueuer:
 
         fetched_downloads: list[Download] | None = None
         try:
-            fetched_downloads = self.ytdlp_wrapper.fetch_metadata(
+            _, fetched_downloads = self.ytdlp_wrapper.fetch_metadata(
                 feed_id,
                 db_download.source_url,
                 feed_config.yt_args,
@@ -360,7 +360,7 @@ class Enqueuer:
             )
 
         try:
-            all_fetched_downloads = self.ytdlp_wrapper.fetch_metadata(
+            _, all_fetched_downloads = self.ytdlp_wrapper.fetch_metadata(
                 feed_id,
                 feed_config.url,
                 current_yt_cli_args,

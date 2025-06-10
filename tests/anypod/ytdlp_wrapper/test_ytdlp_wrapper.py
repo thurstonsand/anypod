@@ -236,5 +236,81 @@ def test_download_media_to_file_success_simplified(
     assert mock_stat.call_count >= 1
 
 
-# NOTE: fetch_metadata is not tested here because it is too complex to mock
-# it is covered by integration tests
+@pytest.mark.unit
+@patch.object(YtdlpCore, "extract_info")
+def test_fetch_metadata_returns_feed_and_downloads_tuple(
+    mock_extract_info: MagicMock,
+    ytdlp_wrapper: YtdlpWrapper,
+    mock_youtube_handler: MagicMock,
+):
+    """Tests that fetch_metadata returns a tuple of (Feed, list[Download]) with proper delegation to handler methods."""
+    from anypod.db import Feed, SourceType
+    from anypod.ytdlp_wrapper.base_handler import ReferenceType
+    from anypod.ytdlp_wrapper.ytdlp_core import YtdlpInfo
+
+    feed_id = "test_tuple_return"
+    url = "https://www.youtube.com/watch?v=test123"
+    yt_cli_args = {"format": "best"}
+
+    # Mock the main fetch call to return valid data (discovery returns None for direct fetch)
+    mock_main_ytdlp_info = YtdlpInfo({"id": "test123", "title": "Test Video"})
+    mock_extract_info.return_value = mock_main_ytdlp_info
+
+    # Create expected Feed and Download objects that the handler will return
+    expected_feed = Feed(
+        id=feed_id,
+        is_enabled=True,
+        source_type=SourceType.SINGLE_VIDEO,
+        title="Test Video Title",
+        author="Test Author",
+    )
+    expected_download = Download(
+        feed=feed_id,
+        id="test123",
+        source_url=url,
+        title="Test Video",
+        published=datetime(2023, 1, 1, 0, 0, 0, tzinfo=UTC),
+        ext="mp4",
+        mime_type="video/mp4",
+        filesize=12345,
+        duration=120,
+        status=DownloadStatus.QUEUED,
+    )
+
+    # Mock handler methods to return our expected objects
+    mock_youtube_handler.get_source_specific_ydl_options.return_value = {}
+    mock_youtube_handler.determine_fetch_strategy.return_value = (
+        url,
+        ReferenceType.SINGLE,
+    )
+    mock_youtube_handler.extract_feed_metadata.return_value = expected_feed
+    mock_youtube_handler.parse_metadata_to_downloads.return_value = [expected_download]
+
+    # Call the method under test
+    result = ytdlp_wrapper.fetch_metadata(feed_id, url, yt_cli_args)
+
+    # Verify return type and structure
+    assert isinstance(result, tuple), "fetch_metadata should return a tuple"
+    assert len(result) == 2, "fetch_metadata should return a 2-tuple"
+
+    feed, downloads = result
+    assert isinstance(feed, Feed), "First element should be a Feed object"
+    assert isinstance(downloads, list), "Second element should be a list"
+
+    # Verify the actual values match what the handler returned
+    assert feed == expected_feed
+    assert downloads == [expected_download]
+
+    # Verify that the handler methods were called with correct parameters
+    mock_youtube_handler.extract_feed_metadata.assert_called_once_with(
+        feed_id, mock_main_ytdlp_info, ReferenceType.SINGLE
+    )
+    mock_youtube_handler.parse_metadata_to_downloads.assert_called_once_with(
+        feed_id,
+        mock_main_ytdlp_info,
+        source_identifier=feed_id,
+        ref_type=ReferenceType.SINGLE,
+    )
+
+
+# NOTE: More complex fetch_metadata scenarios are covered by integration tests

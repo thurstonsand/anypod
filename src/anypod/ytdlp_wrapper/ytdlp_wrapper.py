@@ -9,7 +9,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from ..db import Download
+from ..db import Download, Feed
 from ..exceptions import YtdlpApiError
 from ..path_manager import PathManager
 from .base_handler import FetchPurpose, ReferenceType, SourceHandlerBase
@@ -139,11 +139,11 @@ class YtdlpWrapper:
         feed_id: str,
         url: str,
         yt_cli_args: dict[str, Any],
-    ) -> list[Download]:
+    ) -> tuple[Feed, list[Download]]:
         """Fetches metadata for a given feed and URL using yt-dlp.
 
         This method determines the appropriate fetch strategy for the provided URL,
-        acquires metadata, and parses it into a list of Download objects.
+        acquires metadata, and parses it into feed metadata and a list of found downloads.
 
         Args:
             feed_id: The identifier for the feed.
@@ -151,7 +151,8 @@ class YtdlpWrapper:
             yt_cli_args: Additional command-line arguments for yt-dlp.
 
         Returns:
-            A list of Download objects containing the fetched metadata.
+            A tuple of (feed, downloads) where feed is a Feed object with extracted
+            metadata and downloads is a list of Download objects.
 
         Raises:
             YtdlpApiError: If no fetchable URL is determined or if no information is extracted.
@@ -232,12 +233,19 @@ class YtdlpWrapper:
                 url=actual_fetch_url,
             )
 
+        extracted_feed = self._source_handler.extract_feed_metadata(
+            feed_id,
+            ytdlp_info,
+            ref_type,
+        )
+
         parsed_downloads = self._source_handler.parse_metadata_to_downloads(
             feed_id,
             ytdlp_info,
             source_identifier=feed_id,
             ref_type=ref_type,
         )
+
         logger.info(
             "Successfully processed metadata.",
             extra={
@@ -247,7 +255,7 @@ class YtdlpWrapper:
                 "num_downloads_identified": len(parsed_downloads),
             },
         )
-        return parsed_downloads
+        return extracted_feed, parsed_downloads
 
     def download_media_to_file(
         self,

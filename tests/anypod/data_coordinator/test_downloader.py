@@ -17,7 +17,7 @@ import pytest
 from anypod.config import FeedConfig
 from anypod.config.feed_config import FeedMetadataOverrides
 from anypod.data_coordinator.downloader import Downloader
-from anypod.db import Download, DownloadDatabase, DownloadStatus
+from anypod.db import Download, DownloadDatabase, DownloadStatus, Feed, SourceType
 from anypod.exceptions import (
     DatabaseOperationError,
     DownloadError,
@@ -25,6 +25,19 @@ from anypod.exceptions import (
 )
 from anypod.file_manager import FileManager
 from anypod.ytdlp_wrapper import YtdlpWrapper
+
+# Mock Feed object for testing
+MOCK_FEED = Feed(
+    id="test_feed",
+    title="Test Feed",
+    subtitle=None,
+    description=None,
+    language=None,
+    author=None,
+    image_url=None,
+    is_enabled=True,
+    source_type=SourceType.UNKNOWN,
+)
 
 # --- Fixtures ---
 
@@ -200,7 +213,7 @@ def test_check_and_update_metadata_detects_changes(
         duration=180,
     )
 
-    mock_ytdlp_wrapper.fetch_metadata.return_value = [updated_download]
+    mock_ytdlp_wrapper.fetch_metadata.return_value = (MOCK_FEED, [updated_download])
 
     result = downloader._check_and_update_metadata(sample_download, sample_feed_config)
 
@@ -232,7 +245,7 @@ def test_check_and_update_metadata_no_changes(
 ):
     """Tests that _check_and_update_metadata doesn't update DB when no changes detected."""
     # Mock the fetch to return the same download (no changes)
-    mock_ytdlp_wrapper.fetch_metadata.return_value = [sample_download]
+    mock_ytdlp_wrapper.fetch_metadata.return_value = (MOCK_FEED, [sample_download])
 
     result = downloader._check_and_update_metadata(sample_download, sample_feed_config)
 
@@ -278,7 +291,7 @@ def test_check_and_update_metadata_no_matching_download_returns_original(
     """Tests that _check_and_update_metadata returns original when no matching download found."""
     # Mock the fetch to return a different download ID
     different_download = dataclasses.replace(sample_download, id="different_id")
-    mock_ytdlp_wrapper.fetch_metadata.return_value = [different_download]
+    mock_ytdlp_wrapper.fetch_metadata.return_value = (MOCK_FEED, [different_download])
 
     result = downloader._check_and_update_metadata(sample_download, sample_feed_config)
 
@@ -294,7 +307,9 @@ def test_check_and_update_metadata_no_matching_download_returns_original(
 
 @pytest.mark.unit
 @patch.object(Downloader, "_handle_download_success")
+@patch.object(Downloader, "_check_and_update_metadata")
 def test_process_single_download_success_flow(
+    mock_check_metadata: MagicMock,
     mock_handle_success: MagicMock,
     downloader: Downloader,
     mock_ytdlp_wrapper: MagicMock,
@@ -304,6 +319,7 @@ def test_process_single_download_success_flow(
     """Tests the success path of _process_single_download."""
     downloaded_path = Path("/final/video.mp4")
     mock_ytdlp_wrapper.download_media_to_file.return_value = downloaded_path
+    mock_check_metadata.return_value = sample_download  # Return unchanged
 
     downloader._process_single_download(sample_download, sample_feed_config)
 
@@ -315,7 +331,9 @@ def test_process_single_download_success_flow(
 
 
 @pytest.mark.unit
+@patch.object(Downloader, "_check_and_update_metadata")
 def test_process_single_download_ytdlp_failure_raises_downloader_error(
+    mock_check_metadata: MagicMock,
     downloader: Downloader,
     mock_ytdlp_wrapper: MagicMock,
     sample_download: Download,
@@ -326,6 +344,7 @@ def test_process_single_download_ytdlp_failure_raises_downloader_error(
         "yt-dlp failed", feed_id="test_feed", download_id="test_dl_id_1"
     )
     mock_ytdlp_wrapper.download_media_to_file.side_effect = original_ytdlp_error
+    mock_check_metadata.return_value = sample_download  # Return unchanged
 
     with pytest.raises(DownloadError) as exc_info:
         downloader._process_single_download(sample_download, sample_feed_config)

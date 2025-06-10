@@ -9,7 +9,7 @@ import pytest
 
 from anypod.config import FeedConfig
 from anypod.data_coordinator.enqueuer import Enqueuer
-from anypod.db.download_db import Download, DownloadDatabase, DownloadStatus
+from anypod.db import Download, DownloadDatabase, DownloadStatus, Feed, SourceType
 from anypod.exceptions import (
     DatabaseOperationError,
     DownloadNotFoundError,
@@ -21,6 +21,19 @@ from anypod.ytdlp_wrapper.ytdlp_wrapper import YtdlpWrapper
 FEED_ID = "test_feed"
 FEED_URL = "https://example.com/feed"
 DEFAULT_MAX_ERRORS = 3
+
+# Mock Feed object for testing
+MOCK_FEED = Feed(
+    id=FEED_ID,
+    title="Test Feed",
+    subtitle=None,
+    description=None,
+    language=None,
+    author=None,
+    image_url=None,
+    is_enabled=True,
+    source_type=SourceType.UNKNOWN,
+)
 
 
 @pytest.fixture
@@ -115,7 +128,7 @@ def test_enqueue_new_downloads_no_upcoming_no_new(
 ):
     """Test enqueue_new_downloads when no upcoming downloads exist and no new downloads are found."""
     mock_db_manager.get_downloads_by_status.return_value = []  # No upcoming
-    mock_ytdlp_wrapper.fetch_metadata.return_value = []  # No new downloads
+    mock_ytdlp_wrapper.fetch_metadata.return_value = (MOCK_FEED, [])  # No new downloads
 
     queued_count = enqueuer.enqueue_new_downloads(
         FEED_ID, sample_feed_config, FETCH_SINCE_DATE
@@ -163,7 +176,7 @@ def test_handle_existing_upcoming_download_transitions_to_queued(
     refetched_vod_dl = create_download("video1", DownloadStatus.QUEUED)
 
     mock_db_manager.get_downloads_by_status.return_value = [upcoming_dl]
-    mock_ytdlp_wrapper.fetch_metadata.return_value = [refetched_vod_dl]
+    mock_ytdlp_wrapper.fetch_metadata.return_value = (MOCK_FEED, [refetched_vod_dl])
 
     count = enqueuer._handle_existing_upcoming_downloads(FEED_ID, sample_feed_config)
 
@@ -189,7 +202,10 @@ def test_handle_existing_upcoming_download_remains_upcoming(
     refetched_upcoming_dl = create_download("video1", DownloadStatus.UPCOMING)
 
     mock_db_manager.get_downloads_by_status.return_value = [upcoming_dl]
-    mock_ytdlp_wrapper.fetch_metadata.return_value = [refetched_upcoming_dl]
+    mock_ytdlp_wrapper.fetch_metadata.return_value = (
+        MOCK_FEED,
+        [refetched_upcoming_dl],
+    )
 
     count = enqueuer._handle_existing_upcoming_downloads(FEED_ID, sample_feed_config)
 
@@ -276,9 +292,10 @@ def test_handle_existing_upcoming_download_refetch_returns_no_match(
     upcoming_dl = create_download("video1", DownloadStatus.UPCOMING)
     mock_db_manager.get_downloads_by_status.return_value = [upcoming_dl]
     # Simulate no matching download found in refetched results
-    mock_ytdlp_wrapper.fetch_metadata.return_value = [
-        create_download("video_other", DownloadStatus.QUEUED)
-    ]
+    mock_ytdlp_wrapper.fetch_metadata.return_value = (
+        MOCK_FEED,
+        [create_download("video_other", DownloadStatus.QUEUED)],
+    )
     mock_db_manager.bump_retries.return_value = (1, DownloadStatus.UPCOMING, False)
 
     count = enqueuer._handle_existing_upcoming_downloads(FEED_ID, sample_feed_config)
@@ -300,7 +317,7 @@ def test_fetch_and_process_new_feed_downloads_no_new_downloads(
     sample_feed_config: FeedConfig,
 ):
     """Test _fetch_and_process_new_feed_downloads when no new downloads are fetched."""
-    mock_ytdlp_wrapper.fetch_metadata.return_value = []
+    mock_ytdlp_wrapper.fetch_metadata.return_value = (MOCK_FEED, [])
 
     count = enqueuer._fetch_and_process_new_feed_downloads(
         FEED_ID, sample_feed_config, FETCH_SINCE_DATE
@@ -327,7 +344,7 @@ def test_fetch_and_process_new_feed_downloads_new_vod_download(
 ):
     """Test processing a new VOD download."""
     new_vod = create_download("new_video1", DownloadStatus.QUEUED)
-    mock_ytdlp_wrapper.fetch_metadata.return_value = [new_vod]
+    mock_ytdlp_wrapper.fetch_metadata.return_value = (MOCK_FEED, [new_vod])
     mock_db_manager.get_download_by_id.side_effect = DownloadNotFoundError(
         message="Not found", feed_id=FEED_ID, download_id="new_video1"
     )
@@ -350,7 +367,7 @@ def test_fetch_and_process_new_feed_downloads_new_upcoming_download(
 ):
     """Test processing a new UPCOMING download."""
     new_upcoming = create_download("new_video_live", DownloadStatus.UPCOMING)
-    mock_ytdlp_wrapper.fetch_metadata.return_value = [new_upcoming]
+    mock_ytdlp_wrapper.fetch_metadata.return_value = (MOCK_FEED, [new_upcoming])
     mock_db_manager.get_download_by_id.side_effect = DownloadNotFoundError(
         message="Not found", feed_id=FEED_ID, download_id="new_video_live"
     )
@@ -377,7 +394,7 @@ def test_fetch_and_process_new_feed_downloads_existing_upcoming_now_vod(
     existing_upcoming_in_db = create_download("video_live1", DownloadStatus.UPCOMING)
     fetched_as_vod = create_download("video_live1", DownloadStatus.QUEUED)
 
-    mock_ytdlp_wrapper.fetch_metadata.return_value = [fetched_as_vod]
+    mock_ytdlp_wrapper.fetch_metadata.return_value = (MOCK_FEED, [fetched_as_vod])
     mock_db_manager.get_download_by_id.return_value = existing_upcoming_in_db
 
     count = enqueuer._fetch_and_process_new_feed_downloads(
@@ -403,7 +420,10 @@ def test_fetch_and_process_new_feed_downloads_existing_downloaded_ignored(
     existing_downloaded_in_db = create_download("video_done", DownloadStatus.DOWNLOADED)
     fetched_again_as_queued = create_download("video_done", DownloadStatus.QUEUED)
 
-    mock_ytdlp_wrapper.fetch_metadata.return_value = [fetched_again_as_queued]
+    mock_ytdlp_wrapper.fetch_metadata.return_value = (
+        MOCK_FEED,
+        [fetched_again_as_queued],
+    )
     mock_db_manager.get_download_by_id.return_value = existing_downloaded_in_db
 
     count = enqueuer._fetch_and_process_new_feed_downloads(
@@ -427,7 +447,7 @@ def test_fetch_and_process_new_feed_downloads_existing_error_requeued(
     existing_error_in_db = create_download("video_err", DownloadStatus.ERROR, retries=1)
     fetched_as_queued = create_download("video_err", DownloadStatus.QUEUED)
 
-    mock_ytdlp_wrapper.fetch_metadata.return_value = [fetched_as_queued]
+    mock_ytdlp_wrapper.fetch_metadata.return_value = (MOCK_FEED, [fetched_as_queued])
     mock_db_manager.get_download_by_id.return_value = existing_error_in_db
 
     count = enqueuer._fetch_and_process_new_feed_downloads(
@@ -470,9 +490,9 @@ def test_enqueue_new_downloads_full_flow_mixed_scenarios(
     # The third call to ytdlp_wrapper.fetch_metadata (for the main feed)
     main_feed_fetch_result = [new_vod_feed, fetched_up3_as_vod, new_upcoming_feed]
     mock_ytdlp_wrapper.fetch_metadata.side_effect = [
-        [upcoming1_refetched_vod],
-        [upcoming2_refetched_upcoming],
-        main_feed_fetch_result,
+        (MOCK_FEED, [upcoming1_refetched_vod]),
+        (MOCK_FEED, [upcoming2_refetched_upcoming]),
+        (MOCK_FEED, main_feed_fetch_result),
     ]
 
     # Mock get_download_by_id calls for main feed processing

@@ -6,7 +6,7 @@ import shutil
 
 import pytest
 
-from anypod.db import Download, DownloadStatus
+from anypod.db import Download, DownloadStatus, SourceType
 from anypod.exceptions import YtdlpApiError
 from anypod.path_manager import PathManager
 from anypod.ytdlp_wrapper import YtdlpWrapper
@@ -14,23 +14,64 @@ from anypod.ytdlp_wrapper.ytdlp_core import YtdlpCore
 
 # some CC-BY licensed urls to test with
 TEST_URLS_SINGLE_AND_PLAYLIST = [
-    ("video_short_link", "https://youtu.be/aqz-KE-bpKQ?si=gggSJ6WU2A1w7_FL"),
+    (
+        "video_short_link",
+        "https://youtu.be/aqz-KE-bpKQ?si=gggSJ6WU2A1w7_FL",
+        SourceType.SINGLE_VIDEO,
+        "Big Buck Bunny",
+    ),
     (
         "video_in_playlist_link",
         "https://www.youtube.com/watch?v=aqz-KE-bpKQ&list=PLt5yu3-wZAlSLRHmI1qNm0wjyVNWw1pCU",
+        SourceType.PLAYLIST,
+        "single video playlist",
     ),
 ]
 
+# (url_type, url, expected_source_type, expected_feed_title_contains)
 TEST_URLS_PARAMS = [
-    *TEST_URLS_SINGLE_AND_PLAYLIST,
-    ("channel", "https://www.youtube.com/@coletdjnz"),
-    ("channel_shorts_tab", "https://www.youtube.com/@coletdjnz/shorts"),
-    ("channel_videos_tab", "https://www.youtube.com/@coletdjnz/videos"),
+    (
+        "video_short_link",
+        "https://youtu.be/aqz-KE-bpKQ?si=gggSJ6WU2A1w7_FL",
+        SourceType.SINGLE_VIDEO,
+        "Big Buck Bunny",
+    ),
+    (
+        "video_in_playlist_link",
+        "https://www.youtube.com/watch?v=aqz-KE-bpKQ&list=PLt5yu3-wZAlSLRHmI1qNm0wjyVNWw1pCU",
+        SourceType.PLAYLIST,
+        "single video playlist",
+    ),
+    (
+        "channel",
+        "https://www.youtube.com/@coletdjnz",
+        SourceType.CHANNEL,
+        "cole-dlp-test-acc",
+    ),
+    (
+        "channel_shorts_tab",
+        "https://www.youtube.com/@coletdjnz/shorts",
+        SourceType.PLAYLIST,
+        "cole-dlp-test-acc",
+    ),
+    (
+        "channel_videos_tab",
+        "https://www.youtube.com/@coletdjnz/videos",
+        SourceType.PLAYLIST,
+        "cole-dlp-test-acc",
+    ),
     (
         "playlist",
         "https://youtube.com/playlist?list=PLt5yu3-wZAlSLRHmI1qNm0wjyVNWw1pCU&si=ZSBBgcLWYf2bxd5l",
+        SourceType.PLAYLIST,
+        "single video playlist",
     ),
-    ("video_standard_link", "https://www.youtube.com/watch?v=ZY6TS8Q4C8s"),
+    (
+        "video_standard_link",
+        "https://www.youtube.com/watch?v=ZY6TS8Q4C8s",
+        SourceType.SINGLE_VIDEO,
+        "VFX Artists React to Bad and Great CGi 173",
+    ),
 ]
 
 INVALID_VIDEO_URL = "https://www.youtube.com/watch?v=thisvideodoesnotexistxyz"
@@ -85,20 +126,38 @@ def ytdlp_wrapper(tmp_path_factory: pytest.TempPathFactory) -> Generator[YtdlpWr
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("url_type, url", TEST_URLS_PARAMS)
-def test_fetch_metadata_success(ytdlp_wrapper: YtdlpWrapper, url_type: str, url: str):
+@pytest.mark.parametrize(
+    "url_type, url, expected_source_type, expected_title_contains", TEST_URLS_PARAMS
+)
+def test_fetch_metadata_success(
+    ytdlp_wrapper: YtdlpWrapper,
+    url_type: str,
+    url: str,
+    expected_source_type: SourceType,
+    expected_title_contains: str,
+):
     """Tests successful metadata fetching for various URL types.
 
     Asserts that at least one download is returned (or exactly one due
     to --playlist-items 1) and that basic metadata fields are populated.
     """
     feed_id = f"test_{url_type}"
-    downloads = ytdlp_wrapper.fetch_metadata(
+    feed, downloads = ytdlp_wrapper.fetch_metadata(
         feed_id=feed_id, url=url, yt_cli_args=YT_DLP_MINIMAL_ARGS
     )
 
     assert len(downloads) == 1, (
         f"Expected 1 download, got {len(downloads)} for {url_type}"
+    )
+
+    # Feed metadata assertions
+    assert feed.id == feed_id, f"Feed ID should match input for {url_type}"
+    assert feed.is_enabled is True, f"Feed should be enabled for {url_type}"
+    assert feed.source_type == expected_source_type, (
+        f"Feed source_type should be {expected_source_type} for {url_type}, got {feed.source_type}"
+    )
+    assert feed.title and expected_title_contains.lower() in feed.title.lower(), (
+        f"Feed title should contain '{expected_title_contains}' for {url_type}, got '{feed.title}'"
     )
 
     download = downloads[0]
@@ -136,9 +195,16 @@ def test_fetch_metadata_non_existent_video(ytdlp_wrapper: YtdlpWrapper):
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("url_type, url", TEST_URLS_SINGLE_AND_PLAYLIST)
+@pytest.mark.parametrize(
+    "url_type, url, expected_source_type, expected_title_contains",
+    TEST_URLS_SINGLE_AND_PLAYLIST,
+)
 def test_fetch_metadata_with_impossible_filter(
-    ytdlp_wrapper: YtdlpWrapper, url_type: str, url: str
+    ytdlp_wrapper: YtdlpWrapper,
+    url_type: str,
+    url: str,
+    expected_source_type: SourceType,
+    expected_title_contains: str,
 ):
     """Tests that fetching metadata with a filter that matches no videos returns an empty list."""
     feed_id = f"test_impossible_filter_{url_type}"
@@ -152,11 +218,21 @@ def test_fetch_metadata_with_impossible_filter(
         ]
     )
 
-    downloads = ytdlp_wrapper.fetch_metadata(
+    feed, downloads = ytdlp_wrapper.fetch_metadata(
         feed_id=feed_id, url=url, yt_cli_args=impossible_filter_args
     )
     assert len(downloads) == 0, (
         f"Expected 0 downloads for impossible filter, got {len(downloads)}"
+    )
+
+    # Even with impossible filter, feed metadata should still be extracted
+    assert feed.id == feed_id, f"Feed ID should match input for {url_type}"
+    assert feed.is_enabled is True, f"Feed should be enabled for {url_type}"
+    assert feed.source_type == expected_source_type, (
+        f"Feed source_type should be {expected_source_type} for {url_type}, got {feed.source_type}"
+    )
+    assert feed.title and expected_title_contains.lower() in feed.title.lower(), (
+        f"Feed title should contain '{expected_title_contains}' for {url_type}, got '{feed.title}'"
     )
 
 

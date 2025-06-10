@@ -149,7 +149,7 @@ class Downloader:
 
         try:
             # Re-fetch metadata for this specific download
-            fetched_downloads = self.ytdlp_wrapper.fetch_metadata(
+            _, fetched_downloads = self.ytdlp_wrapper.fetch_metadata(
                 download.feed,
                 download.source_url,
                 feed_config.yt_args,

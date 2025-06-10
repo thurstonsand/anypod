@@ -13,6 +13,7 @@ from anypod.ytdlp_wrapper.youtube_handler import (
     Download,
     DownloadStatus,
     ReferenceType,
+    SourceType,
     YoutubeEntry,
     YoutubeHandler,
     YtdlpInfo,
@@ -442,7 +443,7 @@ def test_determine_fetch_strategy_channel_main_page_finds_videos_tab(
 
     mock_ydl_caller.assert_called_once()
     assert fetch_url == videos_tab_url
-    assert ref_type == ReferenceType.COLLECTION
+    assert ref_type == ReferenceType.CHANNEL
 
 
 @pytest.mark.unit
@@ -478,7 +479,7 @@ def test_determine_fetch_strategy_channel_main_page_no_videos_tab(
     )
 
     assert fetch_url == resolved_channel_url
-    assert ref_type == ReferenceType.COLLECTION
+    assert ref_type == ReferenceType.CHANNEL
 
 
 @pytest.mark.unit
@@ -579,6 +580,101 @@ def test_determine_fetch_strategy_unknown_extractor(youtube_handler: YoutubeHand
 
     assert fetch_url == resolved_url_from_yt_dlp
     assert ref_type == ReferenceType.UNKNOWN_RESOLVED_URL
+
+
+@pytest.mark.unit
+def test_determine_fetch_strategy_channel_with_no_videos_but_has_entries(
+    youtube_handler: YoutubeHandler,
+):
+    """Tests channel identification when entries exist but Videos tab is not found."""
+    initial_url = "https://www.youtube.com/@newchannel"
+    resolved_channel_url = "https://www.youtube.com/@newchannel/featured"
+    mock_ydl_caller = MagicMock(
+        return_value=YtdlpInfo(
+            {
+                "extractor": "youtube:tab",
+                "_type": "playlist",
+                "webpage_url": resolved_channel_url,
+                "id": "newchannel_id",
+                "entries": [
+                    {
+                        "_type": "playlist",
+                        "id": "shorts_tab_id",
+                        "webpage_url": "https://www.youtube.com/@newchannel/shorts",
+                    },
+                    {
+                        "_type": "playlist",
+                        "id": "community_tab_id",
+                        "webpage_url": "https://www.youtube.com/@newchannel/community",
+                    },
+                    # No videos tab
+                ],
+            }
+        )
+    )
+
+    fetch_url, ref_type = youtube_handler.determine_fetch_strategy(
+        FEED_ID, initial_url, mock_ydl_caller
+    )
+
+    # Should fallback to using the resolved URL as CHANNEL type
+    assert fetch_url == resolved_channel_url
+    assert ref_type == ReferenceType.CHANNEL
+
+
+@pytest.mark.unit
+def test_determine_fetch_strategy_channel_with_empty_entries(
+    youtube_handler: YoutubeHandler,
+):
+    """Tests channel identification when channel has no entries (empty/new channel)."""
+    initial_url = "https://www.youtube.com/@emptychannel"
+    resolved_channel_url = "https://www.youtube.com/@emptychannel/featured"
+    mock_ydl_caller = MagicMock(
+        return_value=YtdlpInfo(
+            {
+                "extractor": "youtube:tab",
+                "_type": "playlist",
+                "webpage_url": resolved_channel_url,
+                "id": "emptychannel_id",
+                "entries": [],  # Empty channel
+            }
+        )
+    )
+
+    fetch_url, ref_type = youtube_handler.determine_fetch_strategy(
+        FEED_ID, initial_url, mock_ydl_caller
+    )
+
+    # Should identify as channel even with empty entries
+    assert fetch_url == resolved_channel_url
+    assert ref_type == ReferenceType.CHANNEL
+
+
+@pytest.mark.unit
+def test_determine_fetch_strategy_existing_channel_tab_not_main_page(
+    youtube_handler: YoutubeHandler,
+):
+    """Tests that existing channel tabs are not treated as main channel pages."""
+    initial_url = "https://www.youtube.com/@channel/shorts"
+    mock_ydl_caller = MagicMock(
+        return_value=YtdlpInfo(
+            {
+                "extractor": "youtube:tab",
+                "_type": "playlist",
+                "webpage_url": initial_url,  # Already a specific tab
+                "id": "channel_shorts_id",
+                "entries": [{"id": "short1"}, {"id": "short2"}],
+            }
+        )
+    )
+
+    fetch_url, ref_type = youtube_handler.determine_fetch_strategy(
+        FEED_ID, initial_url, mock_ydl_caller
+    )
+
+    # Should be treated as COLLECTION, not attempt channel tab resolution
+    assert fetch_url == initial_url
+    assert ref_type == ReferenceType.COLLECTION
 
 
 @pytest.mark.unit
@@ -817,3 +913,119 @@ def test_parse_metadata_to_downloads_unknown_type_with_playlist_shape_data(
     assert downloads == []
     expected_yt_entry = YoutubeEntry(ytdlp_info_playlist_shape, feed_id)
     mock_parse_single.assert_called_once_with(expected_yt_entry, feed_id)
+
+
+# --- Tests for extract_feed_metadata functionality ---
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "ref_type, expected_source_type",
+    [
+        (ReferenceType.SINGLE, SourceType.SINGLE_VIDEO),
+        (ReferenceType.CHANNEL, SourceType.CHANNEL),
+        (ReferenceType.COLLECTION, SourceType.PLAYLIST),
+        (ReferenceType.UNKNOWN_RESOLVED_URL, SourceType.UNKNOWN),
+        (ReferenceType.UNKNOWN_DIRECT_FETCH, SourceType.UNKNOWN),
+    ],
+)
+def test_extract_feed_metadata_source_type_mapping(
+    youtube_handler: YoutubeHandler,
+    valid_video_entry_data: dict[str, Any],
+    ref_type: ReferenceType,
+    expected_source_type: SourceType,
+):
+    """Tests that ReferenceType is correctly mapped to SourceType in extract_feed_metadata."""
+    feed_id = "test_mapping_feed"
+    valid_video_entry_data["channel"] = "Test Channel"
+    ytdlp_info = YtdlpInfo(valid_video_entry_data)
+
+    extracted_feed = youtube_handler.extract_feed_metadata(
+        feed_id, ytdlp_info, ref_type
+    )
+
+    assert extracted_feed.source_type == expected_source_type
+    assert extracted_feed.id == feed_id
+    assert extracted_feed.is_enabled is True
+
+
+@pytest.mark.unit
+def test_extract_feed_metadata_with_full_metadata(
+    youtube_handler: YoutubeHandler,
+    valid_video_entry_data: dict[str, Any],
+):
+    """Tests extract_feed_metadata with all available metadata fields."""
+    feed_id = "test_full_metadata_feed"
+    valid_video_entry_data.update(
+        {
+            "title": "Test Feed Title",
+            "description": "Test feed description content",
+            "channel": "Test Channel Name",
+            "uploader": "Test Uploader Name",
+            "thumbnail": "https://example.com/feed_thumbnail.jpg",
+        }
+    )
+    ytdlp_info = YtdlpInfo(valid_video_entry_data)
+    ref_type = ReferenceType.CHANNEL
+
+    extracted_feed = youtube_handler.extract_feed_metadata(
+        feed_id, ytdlp_info, ref_type
+    )
+
+    assert extracted_feed.id == feed_id
+    assert extracted_feed.is_enabled is True
+    assert extracted_feed.source_type == SourceType.CHANNEL
+    assert extracted_feed.title == "Test Feed Title"
+    assert extracted_feed.description == "Test feed description content"
+    assert extracted_feed.author == "Test Uploader Name"  # uploader takes precedence
+    assert extracted_feed.image_url == "https://example.com/feed_thumbnail.jpg"
+    assert extracted_feed.subtitle is None  # Not available from yt-dlp
+    assert extracted_feed.language is None  # Not available from yt-dlp
+
+
+@pytest.mark.unit
+def test_extract_feed_metadata_author_fallback(
+    youtube_handler: YoutubeHandler,
+    valid_video_entry_data: dict[str, Any],
+):
+    """Tests that channel is used as fallback when uploader is not available."""
+    feed_id = "test_author_fallback_feed"
+    valid_video_entry_data["channel"] = "Fallback Channel Name"
+    # Ensure uploader is not present
+    valid_video_entry_data.pop("uploader", None)
+    ytdlp_info = YtdlpInfo(valid_video_entry_data)
+    ref_type = ReferenceType.SINGLE
+
+    extracted_feed = youtube_handler.extract_feed_metadata(
+        feed_id, ytdlp_info, ref_type
+    )
+
+    assert extracted_feed.author == "Fallback Channel Name"
+
+
+@pytest.mark.unit
+def test_extract_feed_metadata_minimal_data(
+    youtube_handler: YoutubeHandler,
+):
+    """Tests extract_feed_metadata with minimal required data only."""
+    feed_id = "test_minimal_feed"
+    minimal_data = {
+        "id": "minimal_video_id",
+        "title": "Minimal Video Title",
+    }
+    ytdlp_info = YtdlpInfo(minimal_data)
+    ref_type = ReferenceType.UNKNOWN_DIRECT_FETCH
+
+    extracted_feed = youtube_handler.extract_feed_metadata(
+        feed_id, ytdlp_info, ref_type
+    )
+
+    assert extracted_feed.id == feed_id
+    assert extracted_feed.is_enabled is True
+    assert extracted_feed.source_type == SourceType.UNKNOWN
+    assert extracted_feed.title == "Minimal Video Title"
+    assert extracted_feed.subtitle is None
+    assert extracted_feed.description is None
+    assert extracted_feed.language is None
+    assert extracted_feed.author is None
+    assert extracted_feed.image_url is None

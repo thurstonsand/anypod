@@ -9,7 +9,7 @@ from collections.abc import Callable
 from enum import Enum
 from typing import Any, Protocol
 
-from ..db import Download
+from ..db import Download, Feed
 from .ytdlp_core import YtdlpInfo
 
 
@@ -21,7 +21,8 @@ class ReferenceType(Enum):
     """
 
     SINGLE = "single"
-    COLLECTION = "collection"  # For playlists, channel tabs listing videos, etc.
+    CHANNEL = "channel"  # For channel videos tab or main channel pages
+    COLLECTION = "collection"  # For playlists, other channel tabs, etc.
     UNKNOWN_RESOLVED_URL = "unknown_resolved_url"
     UNKNOWN_DIRECT_FETCH = "unknown_direct_fetch"
 
@@ -82,6 +83,24 @@ class SourceHandlerBase(Protocol):
 
         Returns:
             Tuple of (final_url, reference_type).
+        """
+        ...
+
+    def extract_feed_metadata(
+        self,
+        feed_id: str,
+        ytdlp_info: YtdlpInfo,
+        ref_type: ReferenceType,
+    ) -> Feed:
+        """Extract feed-level metadata from yt-dlp response.
+
+        Args:
+            feed_id: The feed identifier.
+            ytdlp_info: The yt-dlp metadata information.
+            ref_type: The type of reference being parsed.
+
+        Returns:
+            Feed object with extracted metadata populated.
         """
         ...
 
