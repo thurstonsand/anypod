@@ -116,6 +116,7 @@ def rss_generator(
 
 # --- Tests for RSSFeedGenerator.update_feed ---
 
+
 @pytest.mark.unit
 def test_update_feed_success(
     rss_generator: RSSFeedGenerator,
@@ -159,6 +160,7 @@ def test_update_feed_database_error(
 
 
 # --- Tests for RSSFeedGenerator.get_feed_xml ---
+
 
 @pytest.mark.unit
 def test_get_feed_xml_not_found(rss_generator: RSSFeedGenerator):
@@ -395,6 +397,7 @@ def test_empty_downloads_list(
 
 
 # --- Tests for FeedgenCore feed metadata validation ---
+
 
 @pytest.mark.unit
 def test_feed_config_without_metadata_fails():

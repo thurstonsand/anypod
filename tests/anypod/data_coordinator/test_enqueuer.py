@@ -140,6 +140,7 @@ FETCH_SINCE_DATE = datetime.now(UTC) - timedelta(days=1)
 
 # --- Tests for Enqueuer._synchronize_feed_metadata ---
 
+
 @pytest.mark.unit
 def test_synchronize_feed_metadata_handles_removed_overrides(
     enqueuer: Enqueuer,
@@ -289,8 +290,12 @@ def test_synchronize_feed_metadata_handles_partial_override_removal(
     }
 
     assert call_args[0][0] == FEED_ID
+    actual_updates = call_args[1]
+    assert actual_updates == expected_updates
+
 
 # --- Tests for Enqueuer._handle_existing_upcoming_downloads ---
+
 
 @pytest.mark.unit
 def test_handle_existing_upcoming_downloads_none_found(
@@ -452,7 +457,9 @@ def test_handle_existing_upcoming_download_refetch_returns_no_match(
         max_allowed_errors=sample_feed_config.max_errors,
     )
 
+
 # --- Tests for Enqueuer._fetch_and_process_new_feed_downloads ---
+
 
 @pytest.mark.unit
 def test_fetch_and_process_new_feed_downloads_no_new_downloads(
@@ -604,7 +611,9 @@ def test_fetch_and_process_new_feed_downloads_existing_error_requeued(
     mock_download_db.requeue_download.assert_called_once_with(FEED_ID, "video_err")
     mock_download_db.upsert_download.assert_not_called()
 
+
 # --- Tests for Enqueuer.enqueue_new_downloads ---
+
 
 @pytest.mark.unit
 def test_enqueue_new_downloads_full_flow_mixed_scenarios(
@@ -755,6 +764,8 @@ def test_enqueue_new_downloads_ytdlp_error_on_main_feed_fetch(
             **sample_feed_config.yt_args,
         },
     )
+
+
 @pytest.mark.unit
 def test_enqueue_new_downloads_no_upcoming_no_new(
     enqueuer: Enqueuer,
@@ -782,5 +793,3 @@ def test_enqueue_new_downloads_no_upcoming_no_new(
             **sample_feed_config.yt_args,
         },
     )
-
-

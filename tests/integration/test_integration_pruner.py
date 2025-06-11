@@ -11,6 +11,7 @@ import pytest
 
 from anypod.data_coordinator.pruner import Pruner
 from anypod.db import DownloadDatabase
+from anypod.db.feed_db import FeedDatabase
 from anypod.db.types import Download, DownloadStatus
 from anypod.file_manager import FileManager
 from anypod.path_manager import PathManager
@@ -178,6 +179,7 @@ SAMPLE_DOWNLOADS = [
 
 # --- Tests for Pruner.prune_feed_downloads ---
 
+
 def get_downloads_by_status(
     downloads: list[Download], status: DownloadStatus
 ) -> list[Download]:
@@ -217,6 +219,14 @@ def download_db() -> Generator[DownloadDatabase]:
 
 
 @pytest.fixture
+def feed_db() -> Generator[FeedDatabase]:
+    """Provides a FeedDatabase instance with a temporary database."""
+    feed_db = FeedDatabase(db_path=None, memory_name="pruner_integration_test")
+    yield feed_db
+    feed_db.close()
+
+
+@pytest.fixture
 def file_manager(shared_dirs: tuple[Path, Path]) -> Generator[FileManager]:
     """Provides a FileManager instance with shared data directory."""
     _, app_data_dir = shared_dirs
@@ -232,10 +242,10 @@ def file_manager(shared_dirs: tuple[Path, Path]) -> Generator[FileManager]:
 
 @pytest.fixture
 def pruner(
-    download_db: DownloadDatabase, file_manager: FileManager
+    download_db: DownloadDatabase, feed_db: FeedDatabase, file_manager: FileManager
 ) -> Generator[Pruner]:
     """Provides a Pruner instance for the tests."""
-    yield Pruner(download_db, file_manager)
+    yield Pruner(download_db, feed_db, file_manager)
 
 
 def create_dummy_file(file_manager: FileManager, download: Download) -> Path:

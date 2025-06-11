@@ -39,6 +39,7 @@ def ytdlp_wrapper(
 
 # --- Tests for YtdlpWrapper._prepare_ydl_options ---
 
+
 @pytest.mark.unit
 def test_prepare_ydl_options_discovery_basic(
     ytdlp_wrapper: YtdlpWrapper,
@@ -148,6 +149,7 @@ def test_prepare_ydl_options_with_user_cli_args_and_source_opts(
 
 # --- Tests for YtdlpWrapper.fetch_metadata ---
 
+
 @pytest.mark.unit
 @patch.object(YtdlpCore, "extract_info")
 def test_fetch_metadata_returns_feed_and_downloads_tuple(
@@ -155,8 +157,7 @@ def test_fetch_metadata_returns_feed_and_downloads_tuple(
     ytdlp_wrapper: YtdlpWrapper,
     mock_youtube_handler: MagicMock,
 ):
-    """Tests that fetch_metadata returns a tuple of (Feed, list[Download]) with
-    proper delegation to handler methods."""
+    """Tests that fetch_metadata returns a tuple of (Feed, list[Download]) with proper delegation to handler methods."""
     feed_id = "test_tuple_return"
     url = "https://www.youtube.com/watch?v=test123"
     yt_cli_args = {"format": "best"}
@@ -224,6 +225,7 @@ def test_fetch_metadata_returns_feed_and_downloads_tuple(
 
 # --- Tests for YtdlpWrapper.download_media_to_file ---
 
+
 @pytest.mark.unit
 @patch.object(YtdlpWrapper, "_prepare_ydl_options")
 @patch.object(YtdlpCore, "download")
@@ -287,7 +289,6 @@ def test_download_media_to_file_success_simplified(
 
     returned_path = ytdlp_wrapper.download_media_to_file(dummy_download, yt_cli_args)
 
-    # --- Assertions ---
     assert returned_path == expected_final_file
 
     mock_prep_dl_dir.assert_called_once_with(feed_id)
@@ -316,4 +317,4 @@ def test_download_media_to_file_success_simplified(
     assert mock_stat.call_count >= 1
 
 
-
+# NOTE: More complex fetch_metadata and download_media_to_file scenarios are covered by integration tests

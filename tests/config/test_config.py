@@ -14,7 +14,6 @@ from anypod.config.config import AppSettings, FeedConfig, YamlFileFromFieldSourc
 from anypod.exceptions import ConfigLoadError
 from anypod.ytdlp_wrapper.ytdlp_core import YtdlpCore
 
-
 # --- Tests for AppSettings configuration loading ---
 
 # Sample valid feed configuration data for testing
@@ -291,6 +290,7 @@ def test_invalid_yaml_returns_non_dict_type_raises_error(tmp_path: Path):
 
 
 # --- Tests for FeedConfig.yt_args validator ---
+
 
 @pytest.mark.unit
 def test_feed_config_yt_args_valid_string():
