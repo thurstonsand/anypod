@@ -137,7 +137,7 @@ def sample_skipped_item() -> Download:
     )
 
 
-# --- Tests for _identify_prune_candidates ---
+# --- Tests for Pruner._identify_prune_candidates ---
 
 
 @pytest.mark.unit
@@ -249,7 +249,7 @@ def test_identify_prune_candidates_keep_last_db_error_raises_prune_error(
     assert exc_info.value.__cause__ is db_error
 
 
-# --- Tests for _handle_file_deletion ---
+# --- Tests for Pruner._handle_file_deletion ---
 
 
 @pytest.mark.unit
@@ -284,7 +284,7 @@ def test_handle_file_deletion_file_operation_error_raises_prune_error(
     assert exc_info.value.__cause__ is file_error
 
 
-# --- Tests for _archive_download_record ---
+# --- Tests for Pruner._archive_download ---
 
 
 @pytest.mark.unit
@@ -337,7 +337,7 @@ def test_archive_download_not_found_error_raises_prune_error(
     assert exc_info.value.__cause__ is not_found_error
 
 
-# --- Tests for _process_single_download_for_pruning ---
+# --- Tests for Pruner._process_single_download_for_pruning ---
 
 
 @pytest.mark.unit
@@ -440,7 +440,7 @@ def test_process_single_download_archive_error_raises_prune_error(
     assert exc_info.value.__cause__ is db_error
 
 
-# --- Tests for _recalculate_total_downloads ---
+# --- Tests for Pruner._recalculate_total_downloads ---
 
 
 @pytest.mark.unit
@@ -508,7 +508,7 @@ def test_recalculate_total_downloads_update_error_logs_and_returns(
     pruner._recalculate_total_downloads("test_feed")
 
 
-# --- Tests for prune_feed_downloads ---
+# --- Tests for Pruner.prune_feed_downloads ---
 
 
 @pytest.mark.unit

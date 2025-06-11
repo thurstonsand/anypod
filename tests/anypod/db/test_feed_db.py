@@ -168,7 +168,7 @@ def test_feed_from_row_malformed_data(
         Feed.from_row(corrupted_row_data)
 
 
-# --- Tests for FeedDatabase ---
+# --- Tests for FeedDatabase._initialize_schema ---
 
 
 @pytest.mark.unit
@@ -200,6 +200,8 @@ def test_feed_db_initialization_and_schema(feed_db: FeedDatabase):
         if cursor:
             cursor.close()
 
+
+# --- Tests for FeedDatabase.upsert_feed ---
 
 @pytest.mark.unit
 def test_upsert_and_get_feed(feed_db: FeedDatabase, sample_feed: Feed):
@@ -305,6 +307,8 @@ def test_upsert_feed_with_none_timestamps(feed_db: FeedDatabase, minimal_feed: F
     assert time_diff_updated < 5, "updated_at should be close to current time"
 
 
+# --- Tests for FeedDatabase.get_feed_by_id ---
+
 @pytest.mark.unit
 def test_get_feed_by_id_not_found(feed_db: FeedDatabase):
     """Test that get_feed_by_id raises FeedNotFoundError for non-existent feed."""
@@ -313,6 +317,8 @@ def test_get_feed_by_id_not_found(feed_db: FeedDatabase):
 
     assert exc_info.value.feed_id == "non_existent_feed"
 
+
+# --- Tests for FeedDatabase.get_feeds ---
 
 @pytest.mark.unit
 def test_get_feeds_all_and_filtered(feed_db: FeedDatabase):
@@ -350,6 +356,8 @@ def test_get_feeds_all_and_filtered(feed_db: FeedDatabase):
     assert disabled_feeds[0].id == "feed2"
 
 
+# --- Tests for FeedDatabase.mark_sync_success ---
+
 @pytest.mark.unit
 def test_mark_sync_success(feed_db: FeedDatabase, sample_feed: Feed):
     """Test marking a feed sync as successful."""
@@ -381,6 +389,8 @@ def test_mark_sync_success_not_found(feed_db: FeedDatabase):
 
     assert exc_info.value.feed_id == "non_existent_feed"
 
+
+# --- Tests for FeedDatabase.mark_sync_failure ---
 
 @pytest.mark.unit
 def test_mark_sync_failure(feed_db: FeedDatabase, sample_feed: Feed):
@@ -419,6 +429,8 @@ def test_mark_sync_failure_not_found(feed_db: FeedDatabase):
     assert exc_info.value.feed_id == "non_existent_feed"
 
 
+# --- Tests for FeedDatabase.mark_rss_generated ---
+
 @pytest.mark.unit
 def test_mark_rss_generated(feed_db: FeedDatabase, sample_feed: Feed):
     """Test marking RSS generation for a feed."""
@@ -453,6 +465,8 @@ def test_mark_rss_generated_not_found(feed_db: FeedDatabase):
     assert exc_info.value.feed_id == "non_existent_feed"
 
 
+# --- Tests for FeedDatabase.update_total_downloads ---
+
 @pytest.mark.unit
 def test_update_total_downloads(feed_db: FeedDatabase, sample_feed: Feed):
     """Test updating total_downloads count."""
@@ -486,6 +500,8 @@ def test_update_total_downloads_not_found(feed_db: FeedDatabase):
     assert exc_info.value.feed_id == "non_existent_feed"
 
 
+# --- Tests for FeedDatabase.set_feed_enabled ---
+
 @pytest.mark.unit
 def test_set_feed_enabled(feed_db: FeedDatabase, sample_feed: Feed):
     """Test enabling and disabling a feed."""
@@ -516,6 +532,8 @@ def test_set_feed_enabled_not_found(feed_db: FeedDatabase):
 
     assert exc_info.value.feed_id == "non_existent_feed"
 
+
+# --- Tests for FeedDatabase.update_feed_metadata ---
 
 @pytest.mark.unit
 def test_update_feed_metadata(feed_db: FeedDatabase, sample_feed: Feed):
@@ -573,6 +591,8 @@ def test_update_feed_metadata_not_found(feed_db: FeedDatabase):
 
     assert exc_info.value.feed_id == "non_existent_feed"
 
+
+# --- Tests for FeedDatabase triggers ---
 
 @pytest.mark.unit
 def test_database_triggers_update_timestamp(feed_db: FeedDatabase, sample_feed: Feed):
