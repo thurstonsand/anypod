@@ -6,9 +6,7 @@ import shutil
 
 import pytest
 
-from anypod.db.download import Download
-from anypod.db.download_status import DownloadStatus
-from anypod.db.source_type import SourceType
+from anypod.db.types import Download, DownloadStatus, SourceType
 from anypod.exceptions import YtdlpApiError
 from anypod.path_manager import PathManager
 from anypod.ytdlp_wrapper import YtdlpWrapper

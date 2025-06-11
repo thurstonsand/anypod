@@ -9,8 +9,7 @@ from collections.abc import Callable
 from enum import Enum
 from typing import Any, Protocol
 
-from ..db.download import Download
-from ..db.feed import Feed
+from ..db.types import Download, Feed
 from .ytdlp_core import YtdlpInfo
 
 

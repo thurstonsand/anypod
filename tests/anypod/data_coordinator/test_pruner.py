@@ -15,8 +15,7 @@ import pytest
 
 from anypod.data_coordinator.pruner import Pruner
 from anypod.db import DownloadDatabase
-from anypod.db.download import Download
-from anypod.db.download_status import DownloadStatus
+from anypod.db.types import Download, DownloadStatus
 from anypod.exceptions import (
     DatabaseOperationError,
     DownloadNotFoundError,

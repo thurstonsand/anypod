@@ -9,10 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from anypod.db.download import Download
-from anypod.db.download_status import DownloadStatus
-from anypod.db.feed import Feed
-from anypod.db.source_type import SourceType
+from anypod.db.types import Download, DownloadStatus, Feed, SourceType
 from anypod.path_manager import PathManager
 from anypod.ytdlp_wrapper import YtdlpWrapper
 from anypod.ytdlp_wrapper.base_handler import FetchPurpose, ReferenceType

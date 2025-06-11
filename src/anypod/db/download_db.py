@@ -11,9 +11,8 @@ import logging
 from pathlib import Path
 
 from ..exceptions import DatabaseOperationError, DownloadNotFoundError, NotFoundError
-from .download import Download
-from .download_status import DownloadStatus
 from .sqlite_utils_core import SqliteUtilsCore
+from .types import Download, DownloadStatus
 
 logger = logging.getLogger(__name__)
 

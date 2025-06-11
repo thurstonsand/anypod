@@ -1,6 +1,8 @@
+"""Enumeration of feed source types."""
+
 from enum import Enum
 
-from .sqlite_utils_core import register_adapter
+from ..sqlite_utils_core import register_adapter
 
 
 class SourceType(Enum):

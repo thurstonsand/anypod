@@ -10,7 +10,8 @@ from pathlib import Path
 
 from ..config import AppSettings
 from ..data_coordinator.enqueuer import Enqueuer
-from ..db import Download, DownloadDatabase, DownloadStatus, FeedDatabase
+from ..db import DownloadDatabase, FeedDatabase
+from ..db.types import Download, DownloadStatus
 from ..exceptions import DatabaseOperationError, EnqueueError
 from ..path_manager import PathManager
 from ..ytdlp_wrapper import YtdlpWrapper

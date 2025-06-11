@@ -9,9 +9,8 @@ import pytest
 from anypod.config import FeedConfig
 from anypod.data_coordinator.enqueuer import Enqueuer
 from anypod.db import DownloadDatabase
-from anypod.db.download import Download
-from anypod.db.download_status import DownloadStatus
 from anypod.db.feed_db import FeedDatabase
+from anypod.db.types import Download, DownloadStatus
 from anypod.exceptions import EnqueueError
 from anypod.path_manager import PathManager
 from anypod.ytdlp_wrapper import YtdlpWrapper

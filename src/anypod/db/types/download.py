@@ -1,8 +1,10 @@
+"""Data model representing a downloadable item."""
+
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from .base_db import parse_datetime, parse_required_datetime
+from ..base_db import parse_datetime, parse_required_datetime
 from .download_status import DownloadStatus
 
 

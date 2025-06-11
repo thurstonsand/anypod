@@ -12,10 +12,7 @@ import logging
 import mimetypes
 from typing import Any
 
-from ..db.download import Download
-from ..db.download_status import DownloadStatus
-from ..db.feed import Feed
-from ..db.source_type import SourceType
+from ..db.types import Download, DownloadStatus, Feed, SourceType
 from ..exceptions import (
     YtdlpDataError,
     YtdlpFieldInvalidError,

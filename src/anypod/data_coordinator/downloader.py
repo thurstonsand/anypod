@@ -11,9 +11,8 @@ from pathlib import Path
 from typing import Any
 
 from ..config import FeedConfig
-from ..db.download import Download
 from ..db.download_db import DownloadDatabase
-from ..db.download_status import DownloadStatus
+from ..db.types import Download, DownloadStatus
 from ..exceptions import (
     DatabaseOperationError,
     DownloadError,

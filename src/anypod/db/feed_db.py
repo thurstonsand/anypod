@@ -11,8 +11,8 @@ from pathlib import Path
 from typing import Any
 
 from ..exceptions import DatabaseOperationError, FeedNotFoundError, NotFoundError
-from .feed import Feed
 from .sqlite_utils_core import SqliteUtilsCore
+from .types import Feed
 
 logger = logging.getLogger(__name__)
 
