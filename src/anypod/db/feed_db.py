@@ -4,6 +4,8 @@ This module provides the Feed dataclass and related enums for feed-related
 database operations.
 """
 
+from collections.abc import Generator
+from contextlib import contextmanager
 from dataclasses import asdict
 from datetime import UTC, datetime
 import logging
@@ -105,6 +107,16 @@ class FeedDatabase:
                 WHERE id = NEW.id;
             """,
         )
+
+    @contextmanager
+    def transaction(self) -> Generator[None]:
+        """Provide a database transaction context manager.
+
+        Returns:
+            Context manager for database transactions.
+        """
+        with self._db.transaction():
+            yield
 
     def close(self) -> None:
         """Closes the database connection."""

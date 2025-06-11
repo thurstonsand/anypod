@@ -372,8 +372,7 @@ def test_status_transitions(
     )
 
     # SKIPPED -> UNSKIP (which re-queues)
-    returned_status = download_db.unskip_download(feed_id, dl_id)
-    assert returned_status == DownloadStatus.QUEUED
+    download_db.requeue_download(feed_id, dl_id, from_status=DownloadStatus.SKIPPED)
     download = download_db.get_download_by_id(feed_id, dl_id)
     assert download.status == DownloadStatus.QUEUED
     assert download.retries == 0, "Retries should be reset on UNSKIP (via REQUEUE)"
@@ -424,7 +423,7 @@ def test_status_transitions(
     with pytest.raises(DownloadNotFoundError):
         download_db.skip_download("bad", "bad")
     with pytest.raises(DownloadNotFoundError):
-        download_db.unskip_download("bad", "bad")
+        download_db.requeue_download("bad", "bad", from_status=DownloadStatus.SKIPPED)
     with pytest.raises(DownloadNotFoundError):
         download_db.archive_download("bad", "bad")
 

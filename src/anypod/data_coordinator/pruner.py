@@ -231,38 +231,30 @@ class Pruner:
         logger.debug("Recalculating total_downloads for feed.", extra=log_params)
 
         try:
-            # Count only DOWNLOADED downloads (those that appear in RSS feed)
-            total_count = self.download_db.count_downloads_by_status(
-                DownloadStatus.DOWNLOADED, feed=feed_id
-            )
+            with self.download_db.transaction():
+                # Count only DOWNLOADED downloads (those that appear in RSS feed)
+                total_count = self.download_db.count_downloads_by_status(
+                    DownloadStatus.DOWNLOADED, feed=feed_id
+                )
+
+                # Update the feed's total_downloads in the same transaction
+                self.feed_db.update_total_downloads(feed_id, total_count)
         except DatabaseOperationError as e:
             logger.error(
                 "Failed to count downloaded items for total_downloads recalculation.",
                 exc_info=e,
                 extra=log_params,
             )
-            return
-
-        try:
-            # Update the feed's total_downloads
-            self.feed_db.update_total_downloads(feed_id, total_count)
         except FeedNotFoundError as e:
             raise PruneError(
                 message="Feed not found during total_downloads recalculation.",
                 feed_id=feed_id,
             ) from e
-        except DatabaseOperationError as e:
-            logger.error(
-                "Failed to update total_downloads for feed.",
-                exc_info=e,
-                extra=log_params,
+        else:
+            logger.info(
+                "Total downloads recalculated for feed.",
+                extra={**log_params, "new_total_downloads": total_count},
             )
-            return
-
-        logger.info(
-            "Total downloads recalculated for feed.",
-            extra={**log_params, "new_total_downloads": total_count},
-        )
 
     def prune_feed_downloads(
         self,
