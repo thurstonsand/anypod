@@ -114,6 +114,8 @@ def rss_generator(
     return RSSFeedGenerator(mock_download_db, path_manager)
 
 
+# --- Tests for RSSFeedGenerator.update_feed ---
+
 @pytest.mark.unit
 def test_update_feed_success(
     rss_generator: RSSFeedGenerator,
@@ -155,6 +157,8 @@ def test_update_feed_database_error(
     assert "Failed to retrieve downloads for feed" in str(exc_info.value)
     assert exc_info.value.feed_id == feed_id
 
+
+# --- Tests for RSSFeedGenerator.get_feed_xml ---
 
 @pytest.mark.unit
 def test_get_feed_xml_not_found(rss_generator: RSSFeedGenerator):
@@ -389,6 +393,8 @@ def test_empty_downloads_list(
     assert title_elem is not None and title_elem.text == TEST_PODCAST_TITLE
     assert len(items) == 0
 
+
+# --- Tests for FeedgenCore feed metadata validation ---
 
 @pytest.mark.unit
 def test_feed_config_without_metadata_fails():
