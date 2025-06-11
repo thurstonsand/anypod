@@ -12,11 +12,12 @@ from typing import Any
 from ..config import FeedConfig
 from ..db import DownloadDatabase
 from ..db.feed_db import FeedDatabase
-from ..db.types import Download, DownloadStatus
+from ..db.types import Download, DownloadStatus, Feed
 from ..exceptions import (
     DatabaseOperationError,
     DownloadNotFoundError,
     EnqueueError,
+    FeedNotFoundError,
     YtdlpApiError,
 )
 from ..ytdlp_wrapper import YtdlpWrapper
@@ -345,7 +346,7 @@ class Enqueuer:
         feed_config: FeedConfig,
         fetch_since_date: datetime,
         log_params: dict[str, Any],
-    ) -> list[Download]:
+    ) -> tuple[Feed, list[Download]]:
         """Fetch all media metadata for the feed URL with date filtering.
 
         Args:
@@ -355,7 +356,8 @@ class Enqueuer:
             log_params: Relevant logging parameters.
 
         Returns:
-            List of Download objects fetched from the feed.
+            Tuple of (Feed, list[Download]) containing extracted feed metadata
+            and list of Download objects fetched from the feed.
 
         Raises:
             EnqueueError: If the main ytdlp fetch fails.
@@ -369,7 +371,7 @@ class Enqueuer:
             )
 
         try:
-            _, all_fetched_downloads = self._ytdlp_wrapper.fetch_metadata(
+            fetched_feed, all_fetched_downloads = self._ytdlp_wrapper.fetch_metadata(
                 feed_id,
                 feed_config.url,
                 current_yt_cli_args,
@@ -391,7 +393,131 @@ class Enqueuer:
                 f"Fetched {len(all_fetched_downloads)} downloads from feed URL.",
                 extra=log_params,
             )
-        return all_fetched_downloads
+        return fetched_feed, all_fetched_downloads
+
+    def _synchronize_feed_metadata(
+        self,
+        feed_id: str,
+        fetched_feed: Feed,
+        feed_config: FeedConfig,
+        log_params: dict[str, Any],
+    ) -> None:
+        """Synchronize feed metadata from ytdlp extraction with database record.
+
+        Compares config overrides with extracted metadata and updates database
+        only if fields have changed. Config overrides take precedence over
+        extracted values.
+
+        Args:
+            feed_id: The feed identifier.
+            fetched_feed: Feed metadata extracted from ytdlp.
+            feed_config: Feed configuration with potential overrides.
+            log_params: Logging parameters for context.
+
+        Raises:
+            EnqueueError: If feed is not found or update fails.
+        """
+        try:
+            # Get current feed from database
+            current_feed = self._feed_db.get_feed_by_id(feed_id)
+        except FeedNotFoundError as e:
+            raise EnqueueError(
+                "Feed not found in database during metadata sync.",
+                feed_id=feed_id,
+            ) from e
+        except DatabaseOperationError as e:
+            logger.warning(
+                "Could not retrieve feed for metadata sync, skipping.",
+                extra=log_params,
+                exc_info=e,
+            )
+            return
+
+        # Current metadata in database
+        current_metadata = {
+            "title": current_feed.title,
+            "subtitle": current_feed.subtitle,
+            "description": current_feed.description,
+            "language": current_feed.language,
+            "author": current_feed.author,
+            "image_url": current_feed.image_url,
+            "category": str(current_feed.category) if current_feed.category else None,
+            "explicit": str(current_feed.explicit) if current_feed.explicit else None,
+        }
+
+        # Start with override metadata if present
+        metadata_overrides = feed_config.metadata
+        if metadata_overrides:
+            candidate_metadata: dict[str, Any] = {
+                "title": metadata_overrides.title,
+                "subtitle": metadata_overrides.subtitle,
+                "description": metadata_overrides.description,
+                "language": metadata_overrides.language,
+                "author": metadata_overrides.author,
+                "image_url": metadata_overrides.image_url,
+                "category": str(metadata_overrides.categories)
+                if metadata_overrides.categories
+                else None,
+                "explicit": str(metadata_overrides.explicit)
+                if metadata_overrides.explicit
+                else None,
+            }
+        else:
+            candidate_metadata: dict[str, Any] = {}
+
+        # Fill in missing values from fetched feed
+        candidate_metadata["title"] = (
+            candidate_metadata.get("title") or fetched_feed.title
+        )
+        candidate_metadata["subtitle"] = (
+            candidate_metadata.get("subtitle") or fetched_feed.subtitle
+        )
+        candidate_metadata["description"] = (
+            candidate_metadata.get("description") or fetched_feed.description
+        )
+        candidate_metadata["language"] = (
+            candidate_metadata.get("language") or fetched_feed.language
+        )
+        candidate_metadata["author"] = (
+            candidate_metadata.get("author") or fetched_feed.author
+        )
+        candidate_metadata["image_url"] = (
+            candidate_metadata.get("image_url") or fetched_feed.image_url
+        )
+        candidate_metadata["category"] = candidate_metadata.get("category") or (
+            str(fetched_feed.category) if fetched_feed.category else None
+        )
+        candidate_metadata["explicit"] = candidate_metadata.get("explicit") or (
+            str(fetched_feed.explicit) if fetched_feed.explicit else None
+        )
+
+        # Find fields that need updating
+        updates_needed = {
+            key: val
+            for key, val in candidate_metadata.items()
+            if current_metadata[key] != val
+        }
+
+        if not updates_needed:
+            logger.debug(
+                "No feed metadata changes detected, skipping update.",
+                extra=log_params,
+            )
+            return
+
+        logger.info(
+            "Feed metadata changes detected, updating database.",
+            extra={**log_params, "changed_fields": list(updates_needed.keys())},
+        )
+
+        # Use transaction for atomic update
+        try:
+            self._feed_db.update_feed_metadata(feed_id, **updates_needed)
+        except (FeedNotFoundError, DatabaseOperationError) as e:
+            raise EnqueueError(
+                "Could not update feed metadata in database.",
+                feed_id=feed_id,
+            ) from e
 
     def _handle_newly_fetched_download(
         self, download: Download, log_params: dict[str, Any]
@@ -606,8 +732,13 @@ class Enqueuer:
             extra=feed_log_params,
         )
 
-        all_fetched_downloads = self._fetch_all_metadata_for_feed_url(
+        fetched_feed, all_fetched_downloads = self._fetch_all_metadata_for_feed_url(
             feed_id, feed_config, fetch_since_date, feed_log_params
+        )
+
+        # Synchronize feed metadata with database
+        self._synchronize_feed_metadata(
+            feed_id, fetched_feed, feed_config, feed_log_params
         )
 
         queued_count = 0

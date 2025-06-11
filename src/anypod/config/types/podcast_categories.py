@@ -230,7 +230,7 @@ class PodcastCategories:
         """
         match categories:
             case None:
-                return
+                self._categories: list[tuple[str, str | None]] = []
             case str() as multi_cat_str if "," in multi_cat_str:
                 cat_strs = multi_cat_str.split(",")
                 if len(cat_strs) > 2:

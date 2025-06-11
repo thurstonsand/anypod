@@ -137,6 +137,9 @@ def fetch_metadata(
 - Add `# pyright: reportPrivateUsage=false` to test files for protected method access
 - Use pytest markers: either `@pytest.mark.unit` or `@pytest.mark.integration` for all tests
 - Import packages like `from anypod.db import Database`, not `from src.anypod`
+- When adding new tests to an existing file:
+  - function/method tests should be ordered in the same order as the actual code file
+  - if there are already tests for the function you are adding a test for, add the new test next to the others
 
 ### Test Writing Patterns
 - Use Arrange-Act-Assert pattern without explicit comments

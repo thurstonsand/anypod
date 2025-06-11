@@ -7,10 +7,15 @@ import shutil
 import pytest
 
 from anypod.config import FeedConfig
+from anypod.config.types import (
+    FeedMetadataOverrides,
+    PodcastCategories,
+    PodcastExplicit,
+)
 from anypod.data_coordinator.enqueuer import Enqueuer
 from anypod.db import DownloadDatabase
 from anypod.db.feed_db import FeedDatabase
-from anypod.db.types import Download, DownloadStatus
+from anypod.db.types import Download, DownloadStatus, Feed, SourceType
 from anypod.exceptions import EnqueueError
 from anypod.path_manager import PathManager
 from anypod.ytdlp_wrapper import YtdlpWrapper
@@ -108,10 +113,26 @@ def enqueuer(
     yield Enqueuer(feed_db, download_db, ytdlp_wrapper)
 
 
+def create_test_feed(feed_db: FeedDatabase, feed_id: str, url: str) -> Feed:
+    """Create a test feed in the database."""
+    feed = Feed(
+        id=feed_id,
+        is_enabled=True,
+        source_type=SourceType.UNKNOWN,  # Will be determined by ytdlp
+        title=f"Test Feed {feed_id}",
+    )
+    feed_db.upsert_feed(feed)
+    return feed
+
+
 @pytest.mark.integration
 @pytest.mark.parametrize("url_type, url", TEST_URLS_PARAMS)
 def test_enqueue_new_downloads_success(
-    enqueuer: Enqueuer, download_db: DownloadDatabase, url_type: str, url: str
+    enqueuer: Enqueuer,
+    feed_db: FeedDatabase,
+    download_db: DownloadDatabase,
+    url_type: str,
+    url: str,
 ):
     """Tests successful enqueueing of new downloads for various URL types.
 
@@ -119,6 +140,10 @@ def test_enqueue_new_downloads_success(
     the database with appropriate status.
     """
     feed_id = f"test_feed_{url_type}"
+
+    # Create feed in database
+    create_test_feed(feed_db, feed_id, url)
+
     feed_config = FeedConfig(
         url=url,
         yt_args=YT_DLP_MINIMAL_ARGS_STR,  # type: ignore
@@ -157,11 +182,67 @@ def test_enqueue_new_downloads_success(
     assert download.duration > 0, f"Download duration should be > 0 for {url_type}"
     assert download.status == DownloadStatus.QUEUED
 
+    # Verify feed metadata was updated from extracted metadata
+    updated_feed = feed_db.get_feed_by_id(feed_id)
+
+    # Verify specific extracted values based on URL type
+    if url_type == "video_short_link":
+        # Big Buck Bunny video metadata
+        assert (
+            updated_feed.title
+            == "Big Buck Bunny 60fps 4K - Official Blender Foundation Short Film"
+        )
+        assert updated_feed.author == "Blender"
+        assert (
+            updated_feed.description
+            and "UHD High Frame rate version" in updated_feed.description
+        )
+        assert (
+            updated_feed.image_url
+            == "https://i.ytimg.com/vi_webp/aqz-KE-bpKQ/maxresdefault.webp"
+        )
+        assert updated_feed.subtitle is None
+        assert updated_feed.language is None
+        assert updated_feed.category is None
+        assert updated_feed.explicit is None
+
+    elif url_type == "channel_videos_tab":
+        # cole-dlp-test-acc channel metadata
+        assert updated_feed.title == "cole-dlp-test-acc - Videos"
+        assert updated_feed.author == "cole-dlp-test-acc"
+        assert updated_feed.description == "test description"
+        assert updated_feed.image_url is None
+        assert updated_feed.subtitle is None
+        assert updated_feed.language is None
+        assert updated_feed.category is None
+        assert updated_feed.explicit is None
+
+    elif url_type in ["video_in_playlist_link", "playlist"]:
+        # single video playlist metadata
+        assert updated_feed.title == "single video playlist"
+        assert updated_feed.author == "cole-dlp-test-acc"
+        assert updated_feed.description == ""
+        assert updated_feed.image_url is None
+        assert updated_feed.subtitle is None
+        assert updated_feed.language is None
+        assert updated_feed.category is None
+        assert updated_feed.explicit is None
+
+    # Common assertions for all URL types
+    assert updated_feed.is_enabled is True
+    assert (
+        updated_feed.source_type == SourceType.UNKNOWN
+    )  # This is expected since source_type is not being set by the enqueuer
+
 
 @pytest.mark.integration
-def test_enqueue_new_downloads_invalid_url(enqueuer: Enqueuer):
+def test_enqueue_new_downloads_invalid_url(enqueuer: Enqueuer, feed_db: FeedDatabase):
     """Tests that enqueueing fails gracefully for invalid URLs."""
     feed_id = "test_invalid_feed"
+
+    # Create feed in database
+    create_test_feed(feed_db, feed_id, INVALID_VIDEO_URL)
+
     feed_config = FeedConfig(
         url=INVALID_VIDEO_URL,
         yt_args=YT_DLP_MINIMAL_ARGS_STR,  # type: ignore
@@ -186,10 +267,14 @@ def test_enqueue_new_downloads_invalid_url(enqueuer: Enqueuer):
 
 @pytest.mark.integration
 def test_enqueue_new_downloads_with_date_filter(
-    enqueuer: Enqueuer, download_db: DownloadDatabase
+    enqueuer: Enqueuer, feed_db: FeedDatabase, download_db: DownloadDatabase
 ):
     """Tests enqueueing with a date filter that should limit results."""
     feed_id = "test_date_filter"
+
+    # Create feed in database
+    create_test_feed(feed_db, feed_id, COLETDJNZ_CHANNEL_VIDEOS)
+
     feed_config = FeedConfig(
         url=COLETDJNZ_CHANNEL_VIDEOS,
         yt_args=YT_DLP_MINIMAL_ARGS_STR,  # type: ignore
@@ -219,10 +304,14 @@ def test_enqueue_new_downloads_with_date_filter(
 
 @pytest.mark.integration
 def test_enqueue_handles_existing_upcoming_downloads(
-    enqueuer: Enqueuer, download_db: DownloadDatabase
+    enqueuer: Enqueuer, feed_db: FeedDatabase, download_db: DownloadDatabase
 ):
     """Tests that existing UPCOMING downloads are properly handled and potentially transitioned to QUEUED."""
     feed_id = "test_upcoming_feed"
+
+    # Create feed in database
+    create_test_feed(feed_db, feed_id, SAMPLE_FEED_CONFIG.url)
+
     feed_config = SAMPLE_FEED_CONFIG
 
     # Insert an UPCOMING download manually
@@ -282,10 +371,14 @@ def test_enqueue_handles_existing_upcoming_downloads(
 
 @pytest.mark.integration
 def test_enqueue_handles_existing_downloaded_items(
-    enqueuer: Enqueuer, download_db: DownloadDatabase
+    enqueuer: Enqueuer, feed_db: FeedDatabase, download_db: DownloadDatabase
 ):
     """Tests that existing DOWNLOADED items are ignored during enqueue process."""
     feed_id = "test_downloaded_ignored_feed"
+
+    # Create feed in database
+    create_test_feed(feed_db, feed_id, SAMPLE_FEED_CONFIG.url)
+
     feed_config = SAMPLE_FEED_CONFIG
 
     # Insert a DOWNLOADED item
@@ -333,10 +426,14 @@ def test_enqueue_handles_existing_downloaded_items(
 
 @pytest.mark.integration
 def test_enqueue_multiple_runs_idempotent(
-    enqueuer: Enqueuer, download_db: DownloadDatabase
+    enqueuer: Enqueuer, feed_db: FeedDatabase, download_db: DownloadDatabase
 ):
     """Tests that running enqueue multiple times on the same feed is idempotent."""
     feed_id = "test_idempotent_feed"
+
+    # Create feed in database
+    create_test_feed(feed_db, feed_id, SAMPLE_FEED_CONFIG.url)
+
     feed_config = SAMPLE_FEED_CONFIG
     fetch_since_date = datetime.min.replace(tzinfo=UTC)
 
@@ -372,10 +469,13 @@ def test_enqueue_multiple_runs_idempotent(
 
 @pytest.mark.integration
 def test_enqueue_with_impossible_filter(
-    enqueuer: Enqueuer, download_db: DownloadDatabase
+    enqueuer: Enqueuer, feed_db: FeedDatabase, download_db: DownloadDatabase
 ):
     """Tests enqueueing with filters that match no videos still creates downloads but with filter applied."""
     feed_id = "test_impossible_filter"
+
+    # Create feed in database
+    create_test_feed(feed_db, feed_id, BIG_BUCK_BUNNY_SHORT_URL)
 
     feed_config = FeedConfig(
         url=BIG_BUCK_BUNNY_SHORT_URL,
@@ -402,3 +502,126 @@ def test_enqueue_with_impossible_filter(
         DownloadStatus.QUEUED, feed=feed_id
     )
     assert len(queued_downloads) == 0
+
+
+@pytest.mark.integration
+def test_enqueue_feed_metadata_synchronization_with_overrides(
+    enqueuer: Enqueuer, feed_db: FeedDatabase, download_db: DownloadDatabase
+):
+    """Tests that feed metadata synchronization works correctly with config overrides."""
+    feed_id = "test_metadata_sync"
+
+    # Create feed in database
+    create_test_feed(feed_db, feed_id, BIG_BUCK_BUNNY_SHORT_URL)
+
+    # Create feed config with metadata overrides
+    metadata_overrides = FeedMetadataOverrides(  # type: ignore # quirk of pydantic
+        title="Custom Podcast Title",
+        subtitle="Custom Subtitle",
+        description="Custom description that overrides extracted one",
+        language="en-US",
+        author="Custom Author",
+        categories=PodcastCategories(["Technology", "Science"]),
+        explicit=PodcastExplicit.NO,
+    )
+
+    feed_config = FeedConfig(
+        url=BIG_BUCK_BUNNY_SHORT_URL,
+        yt_args=YT_DLP_MINIMAL_ARGS_STR,  # type: ignore
+        schedule=TEST_CRON_SCHEDULE,
+        keep_last=None,
+        since=None,
+        max_errors=MAX_ERRORS,
+        metadata=metadata_overrides,
+    )
+    fetch_since_date = datetime.min.replace(tzinfo=UTC)
+
+    # Enqueue new downloads
+    queued_count = enqueuer.enqueue_new_downloads(
+        feed_id=feed_id,
+        feed_config=feed_config,
+        fetch_since_date=fetch_since_date,
+    )
+
+    # Verify downloads were processed
+    assert queued_count >= 1
+
+    # Verify feed metadata uses overrides where provided and extracted values as fallback
+    updated_feed = feed_db.get_feed_by_id(feed_id)
+
+    # These should come from overrides
+    assert updated_feed.title == "Custom Podcast Title"
+    assert updated_feed.subtitle == "Custom Subtitle"
+    assert updated_feed.description == "Custom description that overrides extracted one"
+    assert updated_feed.language == "en-US"
+    assert updated_feed.author == "Custom Author"
+    assert str(updated_feed.category) == "Technology, Science"
+    assert str(updated_feed.explicit) == "no"
+
+    # Image URL should come from extracted metadata since not overridden
+    assert (
+        updated_feed.image_url
+        == "https://i.ytimg.com/vi_webp/aqz-KE-bpKQ/maxresdefault.webp"
+    )
+
+
+@pytest.mark.integration
+def test_enqueue_feed_metadata_partial_overrides(
+    enqueuer: Enqueuer, feed_db: FeedDatabase, download_db: DownloadDatabase
+):
+    """Tests that partial metadata overrides work correctly, using extracted values for non-overridden fields."""
+    feed_id = "test_partial_metadata_sync"
+
+    # Create feed in database
+    create_test_feed(feed_db, feed_id, BIG_BUCK_BUNNY_SHORT_URL)
+
+    # Create feed config with only some metadata overrides
+    metadata_overrides = FeedMetadataOverrides(  # type: ignore # quirk of pydantic
+        title="Custom Title Only",
+        author="Custom Author Only",
+        # Other fields left as None to use extracted values
+    )
+
+    feed_config = FeedConfig(
+        url=BIG_BUCK_BUNNY_SHORT_URL,
+        yt_args=YT_DLP_MINIMAL_ARGS_STR,  # type: ignore
+        schedule=TEST_CRON_SCHEDULE,
+        keep_last=None,
+        since=None,
+        max_errors=MAX_ERRORS,
+        metadata=metadata_overrides,
+    )
+    fetch_since_date = datetime.min.replace(tzinfo=UTC)
+
+    # Enqueue new downloads
+    queued_count = enqueuer.enqueue_new_downloads(
+        feed_id=feed_id,
+        feed_config=feed_config,
+        fetch_since_date=fetch_since_date,
+    )
+
+    # Verify downloads were processed
+    assert queued_count >= 1
+
+    # Verify feed metadata combines overrides and extracted values
+    updated_feed = feed_db.get_feed_by_id(feed_id)
+
+    # These should come from overrides
+    assert updated_feed.title == "Custom Title Only"
+    assert updated_feed.author == "Custom Author Only"
+
+    # These should come from extracted metadata
+    assert (
+        updated_feed.description
+        and "UHD High Frame rate version" in updated_feed.description
+    )
+    assert (
+        updated_feed.image_url
+        == "https://i.ytimg.com/vi_webp/aqz-KE-bpKQ/maxresdefault.webp"
+    )
+
+    # These should remain None since not overridden and not in extracted metadata
+    assert updated_feed.subtitle is None
+    assert updated_feed.language is None
+    assert updated_feed.category is None
+    assert updated_feed.explicit is None

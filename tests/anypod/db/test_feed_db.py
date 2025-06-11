@@ -10,6 +10,7 @@ from typing import Any
 
 import pytest
 
+from anypod.config.types import PodcastCategories, PodcastExplicit
 from anypod.db import FeedDatabase
 from anypod.db.types import Feed, SourceType
 from anypod.exceptions import FeedNotFoundError
@@ -48,6 +49,8 @@ def sample_feed() -> Feed:
         language="en",
         author="Test Author",
         image_url="https://example.com/image.jpg",
+        category=PodcastCategories("Technology"),
+        explicit=PodcastExplicit.NO,
     )
 
 
@@ -74,6 +77,8 @@ def sample_feed_row_data() -> dict[str, Any]:
         "language": "fr",
         "author": "Test Playlist Author",
         "image_url": "https://example.com/playlist.jpg",
+        "category": "Business",
+        "explicit": "yes",
     }
 
 
@@ -130,6 +135,8 @@ def test_feed_from_row_success(sample_feed_row_data: dict[str, Any]):
     assert converted_feed.language == mock_row["language"]
     assert converted_feed.author == mock_row["author"]
     assert converted_feed.image_url == mock_row["image_url"]
+    assert str(converted_feed.category) == mock_row["category"]
+    assert str(converted_feed.explicit) == mock_row["explicit"]
     assert converted_feed.total_downloads == mock_row["total_downloads"]
     assert (
         converted_feed.downloads_since_last_rss == mock_row["downloads_since_last_rss"]
@@ -211,6 +218,8 @@ def test_upsert_and_get_feed(feed_db: FeedDatabase, sample_feed: Feed):
     assert retrieved_feed.language == sample_feed.language
     assert retrieved_feed.author == sample_feed.author
     assert retrieved_feed.image_url == sample_feed.image_url
+    assert str(retrieved_feed.category) == str(sample_feed.category)
+    assert str(retrieved_feed.explicit) == str(sample_feed.explicit)
     assert retrieved_feed.total_downloads == sample_feed.total_downloads
     assert (
         retrieved_feed.downloads_since_last_rss == sample_feed.downloads_since_last_rss
@@ -236,6 +245,8 @@ def test_upsert_feed_updates_existing(feed_db: FeedDatabase, sample_feed: Feed):
         language="es",  # Changed
         author="Updated Author",  # Changed
         image_url="https://example.com/updated.jpg",  # Changed
+        category=PodcastCategories("Business"),  # Changed
+        explicit=PodcastExplicit.YES,  # Changed
         total_downloads=15,  # Changed
         downloads_since_last_rss=5,  # Changed
         consecutive_failures=2,  # Changed
@@ -258,6 +269,8 @@ def test_upsert_feed_updates_existing(feed_db: FeedDatabase, sample_feed: Feed):
     assert retrieved_feed.language == modified_feed.language
     assert retrieved_feed.author == modified_feed.author
     assert retrieved_feed.image_url == modified_feed.image_url
+    assert str(retrieved_feed.category) == str(modified_feed.category)
+    assert str(retrieved_feed.explicit) == str(modified_feed.explicit)
     assert retrieved_feed.total_downloads == modified_feed.total_downloads
     assert (
         retrieved_feed.downloads_since_last_rss
@@ -477,7 +490,12 @@ def test_update_feed_metadata(feed_db: FeedDatabase, sample_feed: Feed):
 
     # Update some metadata fields
     feed_db.update_feed_metadata(
-        sample_feed.id, title="New Title", description="New Description", language="de"
+        sample_feed.id,
+        title="New Title",
+        description="New Description",
+        language="de",
+        category="News",
+        explicit="clean",
     )
 
     # Verify changes
@@ -485,6 +503,8 @@ def test_update_feed_metadata(feed_db: FeedDatabase, sample_feed: Feed):
     assert updated_feed.title == "New Title"
     assert updated_feed.description == "New Description"
     assert updated_feed.language == "de"
+    assert str(updated_feed.category) == "News"
+    assert str(updated_feed.explicit) == "clean"
     # Other fields should be unchanged
     assert updated_feed.subtitle == sample_feed.subtitle
     assert updated_feed.author == sample_feed.author

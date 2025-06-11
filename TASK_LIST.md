@@ -220,14 +220,14 @@ This section details the components that manage the lifecycle of downloads, from
 - [x] **Config and model updates**:
   - [x] Rename `FeedMetadata` to `FeedMetadataOverrides` in `feed_config.py`
   - [x] Add `enabled` field to `FeedConfig`
-- [ ] **Feed metadata synchronization**:
-  - [ ] Compare `FeedMetadataOverrides` from config with stored feed metadata in DB
-  - [ ] Update DB when config overrides change
+- [x] **Feed metadata synchronization**:
+  - [x] Compare `FeedMetadataOverrides` from config with stored feed metadata in DB
+  - [x] Update DB when config overrides change
   - [x] Modify `YtdlpWrapper` to make best-effort extraction of non-overridden `FeedMetadataOverrides` fields
-  - [ ] Mark fields for best-effort extraction when overrides are removed
-- [ ] Unit tests for both `DownloadDatabase` and `FeedDatabase`
+  - [x] Mark fields for best-effort extraction when overrides are removed
+- [x] Unit tests for both `DownloadDatabase` and `FeedDatabase`
 - [ ] on pruning, also update `total_downloads` value
-- [ ] have a deletion coordinator so you can delete feeds. this will mean also deleting all downloads associated with that feed
+- [ ] feed archiver. this will mean also archiving all downloads associated with that feed
 
 ### 3.5.6 `DataCoordinator` Orchestrator (`data_coordinator/coordinator.py`)
 - [ ] Constructor accepts `Enqueuer`, `Downloader`, `Pruner`, `RSSFeedGenerator`.

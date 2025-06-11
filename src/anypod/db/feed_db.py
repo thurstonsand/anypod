@@ -343,6 +343,8 @@ class FeedDatabase:
         language: str | None = None,
         author: str | None = None,
         image_url: str | None = None,
+        category: str | None = None,
+        explicit: str | None = None,
     ) -> None:
         """Update feed metadata fields; no-op if all metadata fields are None.
 
@@ -354,6 +356,8 @@ class FeedDatabase:
             language: Optional new language.
             author: Optional new author.
             image_url: Optional new image URL.
+            category: Optional new category.
+            explicit: Optional new explicit flag.
 
         Raises:
             FeedNotFoundError: If the feed is not found.
@@ -373,6 +377,10 @@ class FeedDatabase:
             updates["author"] = author
         if image_url is not None:
             updates["image_url"] = image_url
+        if category is not None:
+            updates["category"] = category
+        if explicit is not None:
+            updates["explicit"] = explicit
 
         # No-op if all fields are None
         if not updates:

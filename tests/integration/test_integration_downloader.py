@@ -14,7 +14,7 @@ from anypod.data_coordinator.downloader import Downloader
 from anypod.data_coordinator.enqueuer import Enqueuer
 from anypod.db import DownloadDatabase
 from anypod.db.feed_db import FeedDatabase
-from anypod.db.types import Download, DownloadStatus
+from anypod.db.types import Download, DownloadStatus, Feed, SourceType
 from anypod.file_manager import FileManager
 from anypod.path_manager import PathManager
 from anypod.ytdlp_wrapper import YtdlpWrapper
@@ -145,8 +145,21 @@ def downloader(
     yield Downloader(download_db, file_manager, ytdlp_wrapper)
 
 
+def create_test_feed(feed_db: FeedDatabase, feed_id: str, url: str) -> Feed:
+    """Create a test feed in the database."""
+    feed = Feed(
+        id=feed_id,
+        is_enabled=True,
+        source_type=SourceType.UNKNOWN,  # Will be determined by ytdlp
+        title=f"Test Feed {feed_id}",
+    )
+    feed_db.upsert_feed(feed)
+    return feed
+
+
 def enqueue_test_items(
     enqueuer: Enqueuer,
+    feed_db: FeedDatabase,
     feed_id: str,
     feed_config: FeedConfig,
     fetch_since_date: datetime | None = None,
@@ -155,6 +168,7 @@ def enqueue_test_items(
 
     Args:
         enqueuer: The Enqueuer instance to use.
+        feed_db: The FeedDatabase instance to use.
         feed_id: The feed identifier.
         feed_config: The feed configuration.
         fetch_since_date: Optional date filter, defaults to datetime.min.
@@ -164,6 +178,9 @@ def enqueue_test_items(
     """
     if fetch_since_date is None:
         fetch_since_date = datetime.min.replace(tzinfo=UTC)
+
+    # Create feed in database first
+    create_test_feed(feed_db, feed_id, feed_config.url)
 
     return enqueuer.enqueue_new_downloads(
         feed_id=feed_id,
@@ -175,6 +192,7 @@ def enqueue_test_items(
 @pytest.mark.integration
 def test_download_queued_single_video_success(
     enqueuer: Enqueuer,
+    feed_db: FeedDatabase,
     downloader: Downloader,
     download_db: DownloadDatabase,
     file_manager: FileManager,
@@ -184,7 +202,7 @@ def test_download_queued_single_video_success(
     feed_config = SAMPLE_FEED_CONFIG
 
     # First, use enqueuer to populate database with a real entry
-    queued_count = enqueue_test_items(enqueuer, feed_id, feed_config)
+    queued_count = enqueue_test_items(enqueuer, feed_db, feed_id, feed_config)
     assert queued_count >= 1, "Expected at least 1 item to be queued by enqueuer"
 
     # Verify item is in QUEUED status
@@ -242,6 +260,7 @@ def test_download_queued_single_video_success(
 @pytest.mark.integration
 def test_download_queued_multiple_videos_success(
     enqueuer: Enqueuer,
+    feed_db: FeedDatabase,
     downloader: Downloader,
     download_db: DownloadDatabase,
     file_manager: FileManager,
@@ -251,7 +270,7 @@ def test_download_queued_multiple_videos_success(
     feed_config = CHANNEL_FEED_CONFIG
 
     # Use enqueuer to populate database with multiple entries
-    queued_count = enqueue_test_items(enqueuer, feed_id, feed_config)
+    queued_count = enqueue_test_items(enqueuer, feed_db, feed_id, feed_config)
     assert queued_count >= 1, "Expected at least 1 item to be queued by enqueuer"
 
     # Get original queued items
@@ -289,6 +308,7 @@ def test_download_queued_multiple_videos_success(
 @pytest.mark.integration
 def test_download_queued_with_limit(
     enqueuer: Enqueuer,
+    feed_db: FeedDatabase,
     downloader: Downloader,
     download_db: DownloadDatabase,
 ):
@@ -297,7 +317,7 @@ def test_download_queued_with_limit(
     feed_config = CHANNEL_FEED_CONFIG
 
     # Use enqueuer to populate database
-    queued_count = enqueue_test_items(enqueuer, feed_id, feed_config)
+    queued_count = enqueue_test_items(enqueuer, feed_db, feed_id, feed_config)
     assert queued_count >= 1
 
     # Test downloader with limit of 1
@@ -454,6 +474,7 @@ def test_download_queued_retry_logic_max_errors(
 @pytest.mark.integration
 def test_download_queued_mixed_success_and_failure(
     enqueuer: Enqueuer,
+    feed_db: FeedDatabase,
     downloader: Downloader,
     download_db: DownloadDatabase,
     file_manager: FileManager,
@@ -463,7 +484,7 @@ def test_download_queued_mixed_success_and_failure(
     feed_config = SAMPLE_FEED_CONFIG
 
     # First, enqueue a valid download
-    queued_count = enqueue_test_items(enqueuer, feed_id, feed_config)
+    queued_count = enqueue_test_items(enqueuer, feed_db, feed_id, feed_config)
     assert queued_count >= 1
 
     # Then manually add an invalid download to the same feed
@@ -523,6 +544,7 @@ def test_download_queued_mixed_success_and_failure(
 @pytest.mark.integration
 def test_download_queued_file_properties(
     enqueuer: Enqueuer,
+    feed_db: FeedDatabase,
     downloader: Downloader,
     download_db: DownloadDatabase,
     file_manager: FileManager,
@@ -532,7 +554,7 @@ def test_download_queued_file_properties(
     feed_config = SAMPLE_FEED_CONFIG
 
     # Enqueue and download
-    enqueue_test_items(enqueuer, feed_id, feed_config)
+    enqueue_test_items(enqueuer, feed_db, feed_id, feed_config)
 
     success_count, _ = downloader.download_queued(
         feed_id=feed_id,
@@ -576,6 +598,7 @@ def test_download_queued_file_properties(
 @pytest.mark.integration
 def test_filesize_metadata_flow(
     enqueuer: Enqueuer,
+    feed_db: FeedDatabase,
     downloader: Downloader,
     download_db: DownloadDatabase,
     file_manager: FileManager,
@@ -591,7 +614,7 @@ def test_filesize_metadata_flow(
     feed_config = SAMPLE_FEED_CONFIG
 
     # Enqueue items to get initial metadata
-    queued_count = enqueue_test_items(enqueuer, feed_id, feed_config)
+    queued_count = enqueue_test_items(enqueuer, feed_db, feed_id, feed_config)
     assert queued_count >= 1, "Should have queued at least one item"
 
     # Get the queued item and check initial filesize
