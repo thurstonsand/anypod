@@ -144,7 +144,9 @@ def run_debug_downloader_mode(
                     for i, dl in enumerate(downloads_list[:5]):
                         logger.info(
                             f"  {i + 1}. ID: {dl.id}, Title: {dl.title}, Feed: {dl.feed}, "
-                            f"Ext: {dl.ext}, Filesize: {dl.filesize or 'N/A'}"
+                            f"Ext: {dl.ext}, Filesize: {dl.filesize or 'N/A'}, "
+                            f"Duration: {dl.duration}s, Quality: {dl.quality_info or 'N/A'}, "
+                            f"Published: {dl.published.isoformat() if dl.published else 'N/A'}"
                         )
         else:
             logger.info("No downloads found in the database.")

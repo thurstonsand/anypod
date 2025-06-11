@@ -206,6 +206,7 @@ def run_debug_ytdlp_mode(debug_yaml_path: Path, paths: PathManager) -> None:
                                 "download_ext": download.ext,
                                 "download_thumbnail": download.thumbnail or "N/A",
                                 "download_status": download.status,
+                                "download_quality_info": download.quality_info or "N/A",
                             },
                         )
             else:

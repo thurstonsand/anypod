@@ -408,3 +408,5 @@ This resolution logic aims to simplify configuration for the end-user, as they c
 * User-configurable quality settings with API to change quality preferences after initial setup, including separate download-time vs feed-time quality options.
 * Chapter support for podcasts: extract chapter information from source videos and include in RSS feeds using podcast namespace standards.
 * Think about ways to incorporate LLMs into the interface
+* Support Patreon
+* Support "generic source" after looking at overlap from a few sources

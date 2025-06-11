@@ -16,7 +16,6 @@ from .debug_enqueuer import run_debug_enqueuer_mode
 from .debug_ytdlp import run_debug_ytdlp_mode
 from .default import default as run_default_mode
 
-DEBUG_YTDLP_CONFIG_FILENAME = "debug.yaml"
 DEBUG_DB_FILE = Path.cwd() / "debug.db"
 DEBUG_DOWNLOADS_DIR = Path.cwd() / "debug_downloads"
 
@@ -62,13 +61,12 @@ def main_cli():
 
     match settings.debug_mode:
         case DebugMode.YTDLP:
-            debug_ytdlp_config_path = Path.cwd() / DEBUG_YTDLP_CONFIG_FILENAME
             logger.info(
                 "Initializing Anypod in 'ytdlp' debug mode.",
-                extra={"debug_config_file_path": str(debug_ytdlp_config_path)},
+                extra={"debug_config_file_path": str(settings.config_file)},
             )
             run_debug_ytdlp_mode(
-                debug_ytdlp_config_path,
+                settings.config_file,
                 paths,
             )
         case DebugMode.ENQUEUER:

@@ -132,7 +132,10 @@ def run_debug_enqueuer_mode(
                     )
                     for i, dl in enumerate(downloads_list[:5]):
                         logger.info(
-                            f"  {i + 1}. ID: {dl.id}, Title: {dl.title}, Feed: {dl.feed}"
+                            f"  {i + 1}. ID: {dl.id}, Title: {dl.title}, Feed: {dl.feed}, "
+                            f"Ext: {dl.ext}, Duration: {dl.duration}s, "
+                            f"Quality: {dl.quality_info or 'N/A'}, "
+                            f"Published: {dl.published.isoformat() if dl.published else 'N/A'}"
                         )
         else:
             logger.info("No downloads found in the database.")

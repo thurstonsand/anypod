@@ -212,8 +212,8 @@ This section details the components that manage the lifecycle of downloads, from
     - [x] `mark_rss_generated(feed_id: str, new_downloads_count: int) -> None` - Set `last_rss_generation` to current timestamp, increment `total_downloads` by `new_downloads_count`, set `downloads_since_last_rss` to `new_downloads_count`
     - [x] `set_feed_enabled(feed_id: str, enabled: bool) -> None` - Set `is_enabled` to the provided value
     - [x] `update_feed_metadata(feed_id: str, *, title: str | None = None, subtitle: str | None = None, description: str | None = None, language: str | None = None, author: str | None = None, image_url: str | None = None) -> None` - Update feed metadata fields; only updates provided (non-None) fields; no-op if all None
-- [ ] **Download table enhancements**:
-  - [ ] Add fields: `quality_info`
+- [x] **Download table enhancements**:
+  - [x] Add fields: `quality_info`
   - [x] add fields: `discovered_at` and `updated_at`, potentially `downloaded_at` with sqlite triggers
   - [x] Update `DownloadDatabase` methods to handle new fields
   - [x] Update all places that create/modify downloads to populate new fields (`Enqueuer`, `Downloader`, etc.)

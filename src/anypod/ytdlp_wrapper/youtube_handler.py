@@ -321,6 +321,74 @@ class YoutubeEntry:
         with self._annotate_exceptions():
             return self._ytdlp_info.get("description", str)
 
+    @property
+    def quality_info(self) -> str | None:
+        """Get quality information for the video as a formatted string.
+
+        Extracts and formats key quality-related metadata from yt-dlp including
+        resolution, fps, HDR, and codec information for end users.
+        """
+        with self._annotate_exceptions():
+            quality_parts: list[str] = []
+
+            # Resolution - prioritize actual resolution over format_note
+            if resolution := self._ytdlp_info.get("resolution", str):
+                quality_parts.append(resolution)
+            elif height := self._ytdlp_info.get("height", int):
+                if width := self._ytdlp_info.get("width", int):
+                    quality_parts.append(f"{width}x{height}")
+                else:
+                    quality_parts.append(f"{height}p")
+            elif format_note := self._ytdlp_info.get("format_note", str):
+                # Fallback to format_note for edge cases
+                quality_parts.append(format_note)
+
+            # Frame rate - only show if notable (not 30fps)
+            match self._ytdlp_info.get("fps", (int, float)):
+                case int() as fps if fps != 30:
+                    quality_parts.append(f"{fps}fps")
+                case float() as fps:
+                    quality_parts.append(f"{fps:.1f}fps")
+                case _:
+                    pass
+
+            # Dynamic range - only show HDR variants
+            match self._ytdlp_info.get("dynamic_range", str):
+                case str() as dynamic_range if dynamic_range != "SDR":
+                    quality_parts.append(dynamic_range)
+                case _:
+                    pass
+
+            # Video codec - simplified for readability
+            match self._ytdlp_info.get("vcodec", str):
+                case "none" | None:
+                    pass
+                case vcodec if vcodec.startswith("av01"):
+                    quality_parts.append("AV1")
+                case vcodec if vcodec.startswith(("vp09", "vp9")):
+                    quality_parts.append("VP9")
+                case vcodec if vcodec.startswith(("avc1", "h264")):
+                    quality_parts.append("H.264")
+                case vcodec if vcodec.startswith(("hev1", "h265")):
+                    quality_parts.append("H.265")
+                case vcodec:
+                    quality_parts.append(vcodec)
+
+            # Audio codec - simplified for readability
+            match self._ytdlp_info.get("acodec", str):
+                case "none" | None:
+                    pass
+                case "opus":
+                    quality_parts.append("Opus")
+                case acodec if acodec.startswith("mp4a.40"):
+                    quality_parts.append("AAC")
+                case "mp3":
+                    quality_parts.append("MP3")
+                case acodec:
+                    quality_parts.append(acodec)
+
+            return " | ".join(quality_parts) if quality_parts else None
+
     # --- feed-level metadata fields ---
 
     @property
@@ -501,6 +569,7 @@ class YoutubeHandler:
             status=status,
             thumbnail=entry.thumbnail,
             description=entry.description,
+            quality_info=entry.quality_info,
         )
         logger.debug(
             "Successfully parsed single video entry.",
