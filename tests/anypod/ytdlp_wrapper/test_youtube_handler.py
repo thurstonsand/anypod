@@ -51,6 +51,7 @@ def valid_video_entry(valid_video_entry_data: dict[str, Any]) -> YoutubeEntry:
 
 # --- Tests for YoutubeHandler.get_source_specific_ydl_options ---
 
+
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "purpose",
@@ -70,6 +71,7 @@ def test_get_source_specific_ydl_options_returns_empty_dict(
 FEED_ID = "test_feed"
 
 # --- Tests for YoutubeHandler.extract_feed_metadata ---
+
 
 @pytest.mark.unit
 @pytest.mark.parametrize(
@@ -185,6 +187,7 @@ def test_extract_feed_metadata_minimal_data(
 
 
 # --- Tests for YoutubeHandler._parse_single_video_entry ---
+
 
 @pytest.mark.unit
 def test_parse_single_video_entry_success_basic(
@@ -497,6 +500,7 @@ def test_parse_single_video_entry_error_invalid_duration(
 
 # --- Tests for YoutubeHandler.determine_fetch_strategy ---
 
+
 @pytest.mark.unit
 def test_determine_fetch_strategy_single_video(youtube_handler: YoutubeHandler):
     """Tests strategy determination for a single YouTube video URL."""
@@ -797,6 +801,7 @@ def test_determine_fetch_strategy_existing_channel_tab_not_main_page(
 
 # --- Tests for YoutubeHandler.parse_metadata_to_downloads ---
 
+
 @pytest.mark.unit
 def test_parse_metadata_to_downloads_incomplete_info_dict(
     youtube_handler: YoutubeHandler,
@@ -1033,5 +1038,3 @@ def test_parse_metadata_to_downloads_unknown_type_with_playlist_shape_data(
     assert downloads == []
     expected_yt_entry = YoutubeEntry(ytdlp_info_playlist_shape, feed_id)
     mock_parse_single.assert_called_once_with(expected_yt_entry, feed_id)
-
-
