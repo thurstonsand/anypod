@@ -12,7 +12,7 @@ import pytest
 from anypod.data_coordinator.pruner import Pruner
 from anypod.db import DownloadDatabase
 from anypod.db.feed_db import FeedDatabase
-from anypod.db.types import Download, DownloadStatus
+from anypod.db.types import Download, DownloadStatus, Feed, SourceType
 from anypod.file_manager import FileManager
 from anypod.path_manager import PathManager
 
@@ -211,19 +211,19 @@ def shared_dirs(
 
 
 @pytest.fixture
-def download_db() -> Generator[DownloadDatabase]:
-    """Provides a DownloadDatabase instance with a temporary database."""
-    download_db = DownloadDatabase(db_path=None, memory_name="pruner_integration_test")
-    yield download_db
-    download_db.close()
-
-
-@pytest.fixture
 def feed_db() -> Generator[FeedDatabase]:
     """Provides a FeedDatabase instance with a temporary database."""
     feed_db = FeedDatabase(db_path=None, memory_name="pruner_integration_test")
     yield feed_db
     feed_db.close()
+
+
+@pytest.fixture
+def download_db() -> Generator[DownloadDatabase]:
+    """Provides a DownloadDatabase instance with a temporary database."""
+    download_db = DownloadDatabase(db_path=None, memory_name="pruner_integration_test")
+    yield download_db
+    download_db.close()
 
 
 @pytest.fixture
@@ -280,9 +280,19 @@ def create_dummy_file(file_manager: FileManager, download: Download) -> Path:
 
 @pytest.fixture
 def populated_test_data(
-    download_db: DownloadDatabase, file_manager: FileManager
+    download_db: DownloadDatabase, feed_db: FeedDatabase, file_manager: FileManager
 ) -> Generator[list[Download]]:
     """Populate database with test downloads and create corresponding files for DOWNLOADED items."""
+    # Create the feed record first (required for pruner's recalculate_total_downloads)
+    test_feed = Feed(
+        id=TEST_FEED_ID,
+        is_enabled=True,
+        source_type=SourceType.CHANNEL,
+        title="Test Feed",
+        description="Test feed for integration tests",
+    )
+    feed_db.upsert_feed(test_feed)
+
     # Insert all downloads into database
     for download in SAMPLE_DOWNLOADS:
         download_db.upsert_download(download)
@@ -573,9 +583,20 @@ def test_prune_feed_downloads_missing_files(
 @pytest.mark.integration
 def test_prune_feed_downloads_empty_feed(
     pruner: Pruner,
+    feed_db: FeedDatabase,
 ):
     """Tests pruning an empty feed."""
     empty_feed_id = "empty_feed"
+
+    # Create the feed record first
+    test_feed = Feed(
+        id=empty_feed_id,
+        is_enabled=True,
+        source_type=SourceType.CHANNEL,
+        title="Empty Feed",
+        description="Test feed with no downloads",
+    )
+    feed_db.upsert_feed(test_feed)
 
     archived_count, files_deleted_count = pruner.prune_feed_downloads(
         feed_id=empty_feed_id,
@@ -591,9 +612,20 @@ def test_prune_feed_downloads_empty_feed(
 def test_prune_feed_downloads_only_excluded_statuses(
     pruner: Pruner,
     download_db: DownloadDatabase,
+    feed_db: FeedDatabase,
 ):
     """Tests pruning a feed with only SKIPPED and ARCHIVED items."""
     feed_id = "excluded_only_feed"
+
+    # Create the feed record first
+    test_feed = Feed(
+        id=feed_id,
+        is_enabled=True,
+        source_type=SourceType.CHANNEL,
+        title="Excluded Only Feed",
+        description="Test feed with only excluded statuses",
+    )
+    feed_db.upsert_feed(test_feed)
 
     # Create downloads with only excluded statuses
     excluded_downloads = [
@@ -658,10 +690,21 @@ def test_prune_feed_downloads_only_excluded_statuses(
 def test_prune_feed_downloads_large_dataset(
     pruner: Pruner,
     download_db: DownloadDatabase,
+    feed_db: FeedDatabase,
     file_manager: FileManager,
 ):
     """Tests pruning with a larger dataset to verify performance and correctness."""
     feed_id = "large_dataset_feed"
+
+    # Create the feed record first
+    test_feed = Feed(
+        id=feed_id,
+        is_enabled=True,
+        source_type=SourceType.CHANNEL,
+        title="Large Dataset Feed",
+        description="Test feed with large dataset",
+    )
+    feed_db.upsert_feed(test_feed)
     num_downloads = 50
 
     # Create many downloads

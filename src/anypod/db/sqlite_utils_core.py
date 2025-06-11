@@ -15,7 +15,11 @@ import sqlite3
 from typing import Any
 
 from sqlite_utils import Database
-from sqlite_utils.db import NotFoundError as SqliteUtilsNotFoundError
+from sqlite_utils.db import (
+    NotFoundError as SqliteUtilsNotFoundError,
+    jsonify_if_needed,  # type: ignore
+    validate_column_names,  # type: ignore
+)
 
 from ..exceptions import DatabaseOperationError, NotFoundError
 
@@ -231,12 +235,12 @@ class SqliteUtilsCore:
         """Close the database connection."""
         self.db.close()
 
-    def execute(self, sql: str, params: dict[str, Any]) -> int:
+    def execute(self, sql: str, params: dict[str, Any] | list[Any]) -> int:
         """Execute a SQL statement and return the number of affected rows.
 
         Args:
             sql: SQL statement to execute.
-            params: Parameters for the SQL statement.
+            params: Parameters for the SQL statement, either a dictionary for named parameters or a list for positional parameters.
 
         Returns:
             Number of rows affected by the statement.
@@ -300,6 +304,8 @@ class SqliteUtilsCore:
         pk_values: str | tuple[str, ...],
         updates: dict[str, Any],
         conversions: dict[str, Any] | None = None,
+        where: str | None = None,
+        where_args: list[Any] | None = None,
     ) -> None:
         """Update a row in the specified table.
 
@@ -308,15 +314,63 @@ class SqliteUtilsCore:
             pk_values: Primary key value(s) identifying the row.
             updates: Dictionary of column updates to apply.
             conversions: Dictionary of column names to conversion functions.
+            where: Optional additional WHERE clause conditions. If provided, the update
+                   will only occur if both the primary key matches AND the where conditions are met.
+            where_args: Parameters for the WHERE clause.
 
         Raises:
-            NotFoundError: If the row is not found.
+            NotFoundError: If the row is not found or WHERE conditions are not met.
             DatabaseOperationError: If the update operation fails.
         """
+        table = self.db[table_name]  # type: ignore
+        conversions = conversions or {}
+        where_args = where_args or []
+
+        match pk_values:
+            case str() as pk_value:
+                pk_values_list = [pk_value]
+            case tuple() as pk_values:
+                pk_values_list = list(pk_values)
+
+        # Soundness check that the record exists (raises error if not) and needs updating:
+        self.get(table_name, pk_values)
+        if not updates:
+            return
+        validate_column_names(updates.keys())
+
+        # Build UPDATE statement
+        sets: list[str] = []
+        wheres: list[str] = []
+        args: list[Any] = []
+
+        for key, value in updates.items():
+            sets.append(f"[{key}] = {conversions.get(key, '?')}")
+            args.append(jsonify_if_needed(value))
+
+        # Build WHERE clause
+        wheres = [f"[{pk_name}] = ?" for pk_name in table.pks]  # type: ignore
+        args.extend(pk_values_list)
+
+        if where:
+            wheres.append(where)
+            args.extend(where_args)
+
+        sql = (
+            f"UPDATE [{table_name}] SET {', '.join(sets)} WHERE {' AND '.join(wheres)}"
+        )
+
         try:
-            self.db[table_name].update(pk_values, updates, conversions=conversions)  # type: ignore
-        except SqliteUtilsNotFoundError as e:
-            raise NotFoundError("Record not found.") from e
+            with self.transaction():
+                match self.execute(sql, args):
+                    case 0:
+                        raise NotFoundError("Record not found.")
+                    case 1:
+                        pass
+                    case _ as row_count:
+                        raise DatabaseOperationError(
+                            f"Update affected {row_count} rows, expected 1. Rolling back transaction."
+                        )
+                table.last_pk = pk_values[0] if len(table.pks) == 1 else pk_values  # type: ignore
         except sqlite3.Error as e:
             raise DatabaseOperationError("Failed to update.") from e
 

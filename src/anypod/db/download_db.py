@@ -5,6 +5,8 @@ including the Download dataclass, DownloadStatus enum, and DownloadDatabase
 class for all database interactions.
 """
 
+from collections.abc import Generator
+from contextlib import contextmanager
 from dataclasses import asdict
 from datetime import datetime
 import logging
@@ -126,6 +128,16 @@ class DownloadDatabase:
             unique=False,
         )
 
+    @contextmanager
+    def transaction(self) -> Generator[None]:
+        """Provide a database transaction context manager.
+
+        Returns:
+            Context manager for database transactions.
+        """
+        with self._db.transaction():
+            yield
+
     def close(self) -> None:
         """Closes the database connection."""
         logger.info(
@@ -193,7 +205,7 @@ class DownloadDatabase:
     def mark_as_queued_from_upcoming(self, feed: str, id: str) -> None:
         """Transition a download from UPCOMING to QUEUED status.
 
-        Checks that the current status is UPCOMING, then sets status to QUEUED.
+        Updates status to QUEUED only if current status is UPCOMING.
         Preserves retries and last_error values.
 
         Args:
@@ -213,23 +225,21 @@ class DownloadDatabase:
             "Attempting to mark download as QUEUED from UPCOMING.", extra=log_params
         )
 
-        current_download = self.get_download_by_id(feed, id)
-        if current_download.status != DownloadStatus.UPCOMING:
-            raise DatabaseOperationError(
-                f"Download status is not UPCOMING (is {current_download.status}), cannot transition.",
-                feed_id=feed,
-                download_id=id,
-            )
-
         try:
             self._db.update(
                 self._download_table_name,
                 (feed, id),
                 {"status": str(DownloadStatus.QUEUED)},
+                where="status = ?",
+                where_args=[str(DownloadStatus.UPCOMING)],
             )
         except NotFoundError as e:
-            raise DownloadNotFoundError(
-                "Download not found.", feed_id=feed, download_id=id
+            # Check if download exists and get actual status for better error message
+            current_download = self.get_download_by_id(feed, id)
+            raise DatabaseOperationError(
+                f"Download status is not UPCOMING (is {current_download.status}), cannot transition.",
+                feed_id=feed,
+                download_id=id,
             ) from e
         except DatabaseOperationError as e:
             e.feed_id = feed
@@ -240,7 +250,9 @@ class DownloadDatabase:
             extra=log_params,
         )
 
-    def requeue_download(self, feed: str, id: str) -> None:
+    def requeue_download(
+        self, feed: str, id: str, from_status: DownloadStatus | None = None
+    ) -> None:
         """Re-queue a download by resetting its status and error counters.
 
         This can happen due to:
@@ -253,17 +265,21 @@ class DownloadDatabase:
         Args:
             feed: The feed identifier.
             id: The download identifier.
+            from_status: Optional status to check before updating. If provided, the update
+                        will only occur if the current status matches this value.
 
         Raises:
             DownloadNotFoundError: If the download is not found.
-            DatabaseOperationError: If the database operation fails.
+            DatabaseOperationError: If the database operation fails or current status is wrong.
         """
         log_params = {
             "feed_id": feed,
             "download_id": id,
             "target_status": str(DownloadStatus.QUEUED),
+            "from_status": str(from_status) if from_status else None,
         }
         logger.debug("Attempting to re-queue download.", extra=log_params)
+
         try:
             self._db.update(
                 self._download_table_name,
@@ -273,11 +289,22 @@ class DownloadDatabase:
                     "retries": 0,
                     "last_error": None,
                 },
+                where="status = ?" if from_status else None,
+                where_args=[str(from_status)] if from_status else None,
             )
         except NotFoundError as e:
-            raise DownloadNotFoundError(
-                "Download not found.", feed_id=feed, download_id=id
-            ) from e
+            if from_status is None:
+                raise DownloadNotFoundError(
+                    "Download not found.", feed_id=feed, download_id=id
+                ) from e
+            else:
+                # Check if download exists and get actual status for better error message
+                current_download = self.get_download_by_id(feed, id)
+                raise DatabaseOperationError(
+                    f"Download status is not {from_status} (is {current_download.status}), cannot re-queue.",
+                    feed_id=feed,
+                    download_id=id,
+                ) from e
         except DatabaseOperationError as e:
             e.feed_id = feed
             e.download_id = id
@@ -287,7 +314,7 @@ class DownloadDatabase:
     def mark_as_downloaded(self, feed: str, id: str, ext: str, filesize: int) -> None:
         """Mark a download as DOWNLOADED with updated metadata.
 
-        Checks that the current status is QUEUED, then sets status to DOWNLOADED.
+        Updates status to DOWNLOADED only if current status is QUEUED.
         Resets retries to 0, last_error to NULL, and updates ext and filesize.
 
         Args:
@@ -309,14 +336,6 @@ class DownloadDatabase:
         }
         logger.debug("Attempting to mark download as DOWNLOADED.", extra=log_params)
 
-        current_download = self.get_download_by_id(feed, id)
-        if current_download.status != DownloadStatus.QUEUED:
-            raise DatabaseOperationError(
-                f"Download status is not QUEUED (is {current_download.status}), cannot mark as DOWNLOADED.",
-                feed_id=feed,
-                download_id=id,
-            )
-
         try:
             self._db.update(
                 self._download_table_name,
@@ -328,10 +347,16 @@ class DownloadDatabase:
                     "ext": ext,
                     "filesize": filesize,
                 },
+                where="status = ?",
+                where_args=[str(DownloadStatus.QUEUED)],
             )
         except NotFoundError as e:
-            raise DownloadNotFoundError(
-                "Download not found.", feed_id=feed, download_id=id
+            # Check if download exists and get actual status for better error message
+            current_download = self.get_download_by_id(feed, id)
+            raise DatabaseOperationError(
+                f"Download status is not QUEUED (is {current_download.status}), cannot mark as DOWNLOADED.",
+                feed_id=feed,
+                download_id=id,
             ) from e
         except DatabaseOperationError as e:
             e.feed_id = feed
@@ -373,44 +398,6 @@ class DownloadDatabase:
             e.download_id = id
             raise e
         logger.info("Download marked as SKIPPED.", extra=log_params)
-
-    def unskip_download(
-        self,
-        feed_id: str,
-        download_id: str,
-    ) -> DownloadStatus:
-        """Unskip a download by re-queueing it.
-
-        Checks that the current status is SKIPPED, then calls requeue_download()
-        to set status to QUEUED and reset retries/errors. The Pruner will later
-        determine if it should be archived based on retention rules.
-
-        Args:
-            feed_id: The feed identifier.
-            download_id: The download identifier.
-
-        Returns:
-            DownloadStatus.QUEUED if successful.
-
-        Raises:
-            DownloadNotFoundError: If the download is not found.
-            DatabaseOperationError: If the download is not in SKIPPED status or DB update fails.
-        """
-        log_params = {"feed_id": feed_id, "download_id": download_id}
-        logger.debug("Attempting to unskip download by re-queueing.", extra=log_params)
-
-        current_download = self.get_download_by_id(feed_id, download_id)
-
-        if current_download.status != DownloadStatus.SKIPPED:
-            raise DatabaseOperationError(
-                f"Download status is not SKIPPED (is {current_download.status}), cannot unskip.",
-                feed_id=feed_id,
-                download_id=download_id,
-            )
-
-        self.requeue_download(feed_id, download_id)
-        logger.info("Download unskipped and re-queued.", extra=log_params)
-        return DownloadStatus.QUEUED
 
     def archive_download(self, feed: str, id: str) -> None:
         """Archive a download by setting its status to ARCHIVED.
