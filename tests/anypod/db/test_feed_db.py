@@ -427,15 +427,16 @@ def test_mark_rss_generated(feed_db: FeedDatabase, sample_feed: Feed):
     sample_feed.downloads_since_last_rss = 0
     feed_db.upsert_feed(sample_feed)
 
-    # Mark RSS generated with 3 new downloads
+    # Mark RSS generated with 3 new downloads and total of 15 downloaded items
     new_downloads = 3
-    feed_db.mark_rss_generated(sample_feed.id, new_downloads)
+    total_downloads = 15
+    feed_db.mark_rss_generated(sample_feed.id, new_downloads, total_downloads)
 
     # Verify changes
     updated_feed = feed_db.get_feed_by_id(sample_feed.id)
     assert updated_feed.last_rss_generation is not None
-    assert updated_feed.total_downloads == 13  # 10 + 3
-    assert updated_feed.downloads_since_last_rss == 3
+    assert updated_feed.total_downloads == total_downloads
+    assert updated_feed.downloads_since_last_rss == new_downloads
 
     # Verify timestamp is recent
     current_time = datetime.now(UTC)
@@ -447,7 +448,40 @@ def test_mark_rss_generated(feed_db: FeedDatabase, sample_feed: Feed):
 def test_mark_rss_generated_not_found(feed_db: FeedDatabase):
     """Test marking RSS generated for non-existent feed."""
     with pytest.raises(FeedNotFoundError) as exc_info:
-        feed_db.mark_rss_generated("non_existent_feed", 5)
+        feed_db.mark_rss_generated("non_existent_feed", 5, 10)
+
+    assert exc_info.value.feed_id == "non_existent_feed"
+
+
+@pytest.mark.unit
+def test_update_total_downloads(feed_db: FeedDatabase, sample_feed: Feed):
+    """Test updating total_downloads count."""
+    # Insert feed
+    feed_db.upsert_feed(sample_feed)
+
+    # Verify initial count
+    initial_feed = feed_db.get_feed_by_id(sample_feed.id)
+    assert initial_feed.total_downloads == 5  # from sample_feed fixture
+
+    # Update total downloads
+    new_count = 42
+    feed_db.update_total_downloads(sample_feed.id, new_count)
+
+    # Verify the update
+    updated_feed = feed_db.get_feed_by_id(sample_feed.id)
+    assert updated_feed.total_downloads == new_count
+
+    # Test with zero count
+    feed_db.update_total_downloads(sample_feed.id, 0)
+    zero_feed = feed_db.get_feed_by_id(sample_feed.id)
+    assert zero_feed.total_downloads == 0
+
+
+@pytest.mark.unit
+def test_update_total_downloads_not_found(feed_db: FeedDatabase):
+    """Test updating total_downloads for non-existent feed."""
+    with pytest.raises(FeedNotFoundError) as exc_info:
+        feed_db.update_total_downloads("non_existent_feed", 100)
 
     assert exc_info.value.feed_id == "non_existent_feed"
 

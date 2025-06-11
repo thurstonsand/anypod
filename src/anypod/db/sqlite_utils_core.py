@@ -361,6 +361,30 @@ class SqliteUtilsCore:
         except sqlite3.Error as e:
             raise DatabaseOperationError("Failed to get rows.") from e
 
+    def count_where(
+        self,
+        table_name: str,
+        where: str | None = None,
+        where_args: dict[str, Any] | None = None,
+    ) -> int:
+        """Count rows in a table matching WHERE conditions.
+
+        Args:
+            table_name: Name of the table to count from.
+            where: WHERE clause condition. If None, counts all rows.
+            where_args: Parameters for the WHERE clause.
+
+        Returns:
+            Number of rows matching the conditions.
+
+        Raises:
+            DatabaseOperationError: If the count query fails.
+        """
+        try:
+            return self.db[table_name].count_where(where, where_args=where_args)  # type: ignore
+        except sqlite3.Error as e:
+            raise DatabaseOperationError("Failed to count rows.") from e
+
     def get(self, table_name: str, pk_values: str | tuple[str, ...]) -> dict[str, Any]:
         """Get a single row by primary key.
 

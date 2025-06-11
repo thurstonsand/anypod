@@ -226,8 +226,9 @@ This section details the components that manage the lifecycle of downloads, from
   - [x] Modify `YtdlpWrapper` to make best-effort extraction of non-overridden `FeedMetadataOverrides` fields
   - [x] Mark fields for best-effort extraction when overrides are removed
 - [x] Unit tests for both `DownloadDatabase` and `FeedDatabase`
-- [ ] on pruning, also update `total_downloads` value
+- [x] on pruning, also update `total_downloads` value
 - [ ] feed archiver. this will mean also archiving all downloads associated with that feed
+- [ ] ensure there aren't any read/modify/write loops that arent protected by a transaction
 
 ### 3.5.6 `DataCoordinator` Orchestrator (`data_coordinator/coordinator.py`)
 - [ ] Constructor accepts `Enqueuer`, `Downloader`, `Pruner`, `RSSFeedGenerator`.

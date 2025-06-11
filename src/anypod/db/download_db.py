@@ -9,10 +9,13 @@ from dataclasses import asdict
 from datetime import datetime
 import logging
 from pathlib import Path
+from typing import Any
 
 from ..exceptions import DatabaseOperationError, DownloadNotFoundError, NotFoundError
-from .sqlite_utils_core import SqliteUtilsCore
+from .sqlite_utils_core import SqliteUtilsCore, register_adapter
 from .types import Download, DownloadStatus
+
+register_adapter(DownloadStatus, lambda status: status.value)
 
 logger = logging.getLogger(__name__)
 
@@ -712,3 +715,50 @@ class DownloadDatabase:
             e.feed_id = feed
             raise e
         return [Download.from_row(row) for row in rows]
+
+    def count_downloads_by_status(
+        self,
+        status_to_filter: DownloadStatus,
+        feed: str | None = None,
+    ) -> int:
+        """Count downloads with a specific status.
+
+        Can be filtered by a specific feed.
+
+        Args:
+            status_to_filter: Status to count.
+            feed: Optional feed identifier to filter by.
+
+        Returns:
+            Number of downloads matching the criteria.
+
+        Raises:
+            DatabaseOperationError: If the database query fails.
+        """
+        log_params: dict[str, Any] = {
+            "status": status_to_filter,
+            "feed": feed,
+        }
+        logger.debug("Attempting to count downloads by status.", extra=log_params)
+
+        where = ["status = :status"]
+        where_args: dict[str, Any] = {"status": status_to_filter}
+
+        if feed is not None:
+            where.append("feed = :feed")
+            where_args["feed"] = feed
+
+        try:
+            count = self._db.count_where(
+                self._download_table_name,
+                " AND ".join(where),
+                where_args=where_args,
+            )
+        except DatabaseOperationError as e:
+            e.feed_id = feed
+            raise e
+
+        logger.debug(
+            "Count downloads by status completed.", extra={**log_params, "count": count}
+        )
+        return count

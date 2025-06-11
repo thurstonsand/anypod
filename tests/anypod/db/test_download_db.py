@@ -1010,6 +1010,129 @@ def test_get_downloads_by_status(download_db: DownloadDatabase):
     )
 
 
+# --- Tests for DownloadDatabase.count_downloads_by_status ---
+
+
+@pytest.mark.unit
+def test_count_downloads_by_status(download_db: DownloadDatabase):
+    """Test counting downloads by status with and without feed filtering."""
+    base_time = datetime(2023, 1, 15, 12, 0, 0, tzinfo=UTC)
+    feed1 = "count_feed1"
+    feed2 = "count_feed2"
+
+    # Add downloads with various statuses
+    downloads = [
+        Download(
+            feed=feed1,
+            id="q1",
+            published=base_time,
+            status=DownloadStatus.QUEUED,
+            source_url="url",
+            title="queued1",
+            ext="mp4",
+            mime_type="video/mp4",
+            filesize=1024,
+            duration=1,
+            discovered_at=base_time,
+            updated_at=base_time,
+        ),
+        Download(
+            feed=feed1,
+            id="q2",
+            published=base_time,
+            status=DownloadStatus.QUEUED,
+            source_url="url",
+            title="queued2",
+            ext="mp4",
+            mime_type="video/mp4",
+            filesize=1024,
+            duration=1,
+            discovered_at=base_time,
+            updated_at=base_time,
+        ),
+        Download(
+            feed=feed1,
+            id="d1",
+            published=base_time,
+            status=DownloadStatus.DOWNLOADED,
+            source_url="url",
+            title="downloaded1",
+            ext="mp4",
+            mime_type="video/mp4",
+            filesize=1024,
+            duration=1,
+            discovered_at=base_time,
+            updated_at=base_time,
+        ),
+        Download(
+            feed=feed2,
+            id="q3",
+            published=base_time,
+            status=DownloadStatus.QUEUED,
+            source_url="url",
+            title="queued3",
+            ext="mp4",
+            mime_type="video/mp4",
+            filesize=1024,
+            duration=1,
+            discovered_at=base_time,
+            updated_at=base_time,
+        ),
+        Download(
+            feed=feed2,
+            id="e1",
+            published=base_time,
+            status=DownloadStatus.ERROR,
+            source_url="url",
+            title="error1",
+            ext="mp4",
+            mime_type="video/mp4",
+            filesize=1024,
+            duration=1,
+            discovered_at=base_time,
+            updated_at=base_time,
+        ),
+    ]
+
+    for dl in downloads:
+        download_db.upsert_download(dl)
+
+    # Test counting across all feeds
+    queued_count = download_db.count_downloads_by_status(DownloadStatus.QUEUED)
+    assert queued_count == 3
+
+    downloaded_count = download_db.count_downloads_by_status(DownloadStatus.DOWNLOADED)
+    assert downloaded_count == 1
+
+    error_count = download_db.count_downloads_by_status(DownloadStatus.ERROR)
+    assert error_count == 1
+
+    # Test counting with feed filter
+    feed1_queued = download_db.count_downloads_by_status(
+        DownloadStatus.QUEUED, feed=feed1
+    )
+    assert feed1_queued == 2
+
+    feed2_queued = download_db.count_downloads_by_status(
+        DownloadStatus.QUEUED, feed=feed2
+    )
+    assert feed2_queued == 1
+
+    feed1_downloaded = download_db.count_downloads_by_status(
+        DownloadStatus.DOWNLOADED, feed=feed1
+    )
+    assert feed1_downloaded == 1
+
+    feed2_downloaded = download_db.count_downloads_by_status(
+        DownloadStatus.DOWNLOADED, feed=feed2
+    )
+    assert feed2_downloaded == 0
+
+    # Test counting status that doesn't exist
+    archived_count = download_db.count_downloads_by_status(DownloadStatus.ARCHIVED)
+    assert archived_count == 0
+
+
 # --- Tests for Download.from_row ---
 
 

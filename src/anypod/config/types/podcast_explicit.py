@@ -6,8 +6,6 @@ from typing import Any
 from pydantic import GetCoreSchemaHandler
 from pydantic_core import CoreSchema, core_schema
 
-from ...db.sqlite_utils_core import register_adapter
-
 
 class PodcastExplicit(str, Enum):
     """Explicit content flag values for podcasts.
@@ -56,6 +54,3 @@ class PodcastExplicit(str, Enum):
                 ),
             ]
         )
-
-
-register_adapter(PodcastExplicit, lambda explicit: explicit.value)

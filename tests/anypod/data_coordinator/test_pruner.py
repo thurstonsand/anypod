@@ -15,16 +15,24 @@ import pytest
 
 from anypod.data_coordinator.pruner import Pruner
 from anypod.db import DownloadDatabase
+from anypod.db.feed_db import FeedDatabase
 from anypod.db.types import Download, DownloadStatus
 from anypod.exceptions import (
     DatabaseOperationError,
     DownloadNotFoundError,
+    FeedNotFoundError,
     FileOperationError,
     PruneError,
 )
 from anypod.file_manager import FileManager
 
 # --- Fixtures ---
+
+
+@pytest.fixture
+def mock_feed_db() -> MagicMock:
+    """Provides a mock FeedDatabase."""
+    return MagicMock(spec=FeedDatabase)
 
 
 @pytest.fixture
@@ -42,10 +50,11 @@ def mock_file_manager() -> MagicMock:
 @pytest.fixture
 def pruner(
     mock_download_db: MagicMock,
+    mock_feed_db: MagicMock,
     mock_file_manager: MagicMock,
 ) -> Pruner:
     """Provides a Pruner instance with mocked dependencies."""
-    return Pruner(mock_download_db, mock_file_manager)
+    return Pruner(mock_download_db, mock_feed_db, mock_file_manager)
 
 
 @pytest.fixture
@@ -429,6 +438,74 @@ def test_process_single_download_archive_error_raises_prune_error(
         pruner._process_single_download_for_pruning(sample_queued_item, "test_feed")
 
     assert exc_info.value.__cause__ is db_error
+
+
+# --- Tests for _recalculate_total_downloads ---
+
+
+@pytest.mark.unit
+def test_recalculate_total_downloads_success(
+    pruner: Pruner,
+    mock_download_db: MagicMock,
+    mock_feed_db: MagicMock,
+) -> None:
+    """Test successful recalculation of total_downloads."""
+    mock_download_db.count_downloads_by_status.return_value = 42
+
+    pruner._recalculate_total_downloads("test_feed")
+
+    mock_download_db.count_downloads_by_status.assert_called_once_with(
+        DownloadStatus.DOWNLOADED, feed="test_feed"
+    )
+    mock_feed_db.update_total_downloads.assert_called_once_with("test_feed", 42)
+
+
+@pytest.mark.unit
+def test_recalculate_total_downloads_count_error_logs_and_returns(
+    pruner: Pruner,
+    mock_download_db: MagicMock,
+    mock_feed_db: MagicMock,
+) -> None:
+    """Test that count error is logged and method returns early."""
+    mock_download_db.count_downloads_by_status.side_effect = DatabaseOperationError(
+        "Count failed"
+    )
+
+    pruner._recalculate_total_downloads("test_feed")
+
+    # Should not call update after count fails
+    mock_feed_db.update_total_downloads.assert_not_called()
+
+
+@pytest.mark.unit
+def test_recalculate_total_downloads_feed_not_found_raises_prune_error(
+    pruner: Pruner,
+    mock_download_db: MagicMock,
+    mock_feed_db: MagicMock,
+) -> None:
+    """Test that FeedNotFoundError is re-raised as PruneError."""
+    mock_download_db.count_downloads_by_status.return_value = 42
+    mock_feed_db.update_total_downloads.side_effect = FeedNotFoundError(
+        "Feed not found", feed_id="test_feed"
+    )
+
+    with pytest.raises(PruneError):
+        pruner._recalculate_total_downloads("test_feed")
+
+
+@pytest.mark.unit
+def test_recalculate_total_downloads_update_error_logs_and_returns(
+    pruner: Pruner,
+    mock_download_db: MagicMock,
+    mock_feed_db: MagicMock,
+) -> None:
+    """Test that update error is logged and method returns."""
+    mock_download_db.count_downloads_by_status.return_value = 42
+    mock_feed_db.update_total_downloads.side_effect = DatabaseOperationError(
+        "Update failed"
+    )
+
+    pruner._recalculate_total_downloads("test_feed")
 
 
 # --- Tests for prune_feed_downloads ---

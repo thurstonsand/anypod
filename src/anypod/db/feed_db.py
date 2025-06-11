@@ -10,9 +10,15 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from ..config.types import PodcastCategories, PodcastExplicit
 from ..exceptions import DatabaseOperationError, FeedNotFoundError, NotFoundError
-from .sqlite_utils_core import SqliteUtilsCore
+from .sqlite_utils_core import SqliteUtilsCore, register_adapter
 from .types import Feed
+
+register_adapter(
+    PodcastCategories, lambda categories: str(categories) if categories else None
+)
+register_adapter(PodcastExplicit, lambda explicit: explicit.value if explicit else None)
 
 logger = logging.getLogger(__name__)
 
@@ -270,12 +276,15 @@ class FeedDatabase:
             raise e
         logger.warning("Feed sync failure marked.", extra=log_params)
 
-    def mark_rss_generated(self, feed_id: str, new_downloads_count: int) -> None:
-        """Set last_rss_generation to current timestamp, increment total_downloads by new_downloads_count, set downloads_since_last_rss to new_downloads_count.
+    def mark_rss_generated(
+        self, feed_id: str, new_downloads_count: int, total_downloads_count: int
+    ) -> None:
+        """Set last_rss_generation to current timestamp, set total_downloads to actual count, set downloads_since_last_rss to new_downloads_count.
 
         Args:
             feed_id: The feed identifier.
             new_downloads_count: Number of new downloads since last RSS generation.
+            total_downloads_count: Actual total count of downloaded items for this feed.
 
         Raises:
             FeedNotFoundError: If the feed is not found.
@@ -284,6 +293,7 @@ class FeedDatabase:
         log_params = {
             "feed_id": feed_id,
             "new_downloads_count": new_downloads_count,
+            "total_downloads_count": total_downloads_count,
         }
         logger.debug("Attempting to mark RSS generated for feed.", extra=log_params)
 
@@ -293,11 +303,8 @@ class FeedDatabase:
                 feed_id,
                 {
                     "last_rss_generation": datetime.now(UTC),
-                    "total_downloads": new_downloads_count,
+                    "total_downloads": total_downloads_count,
                     "downloads_since_last_rss": new_downloads_count,
-                },
-                conversions={
-                    "total_downloads": "[total_downloads] + ?",
                 },
             )
         except NotFoundError as e:
@@ -306,6 +313,32 @@ class FeedDatabase:
             e.feed_id = feed_id
             raise e
         logger.info("RSS generation marked for feed.", extra=log_params)
+
+    def update_total_downloads(self, feed_id: str, count: int) -> None:
+        """Set total_downloads to a specific count.
+
+        Args:
+            feed_id: The feed identifier.
+            count: The new total_downloads count.
+
+        Raises:
+            FeedNotFoundError: If the feed is not found.
+            DatabaseOperationError: If the database operation fails.
+        """
+        log_params = {"feed_id": feed_id, "count": count}
+        logger.debug("Attempting to update total_downloads for feed.", extra=log_params)
+        try:
+            self._db.update(
+                self._feed_table_name,
+                feed_id,
+                {"total_downloads": count},
+            )
+        except NotFoundError as e:
+            raise FeedNotFoundError("Feed not found.", feed_id=feed_id) from e
+        except DatabaseOperationError as e:
+            e.feed_id = feed_id
+            raise e
+        logger.info("Total downloads updated for feed.", extra=log_params)
 
     def set_feed_enabled(self, feed_id: str, enabled: bool) -> None:
         """Set is_enabled to the provided value.

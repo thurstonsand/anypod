@@ -6,8 +6,6 @@ from typing import Any, ClassVar
 from pydantic import GetCoreSchemaHandler
 from pydantic_core import CoreSchema, core_schema
 
-from ...db.sqlite_utils_core import register_adapter
-
 
 class PodcastCategories:
     """Encapsulates an Apple Podcasts category/subcategory.
@@ -350,8 +348,3 @@ class PodcastCategories:
                 ),
             ]
         )
-
-
-register_adapter(
-    PodcastCategories, lambda categories: str(categories) if categories else None
-)

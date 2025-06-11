@@ -2,8 +2,6 @@
 
 from enum import Enum
 
-from ..sqlite_utils_core import register_adapter
-
 
 class DownloadStatus(Enum):
     """Represent the status of a download in the processing lifecycle.
@@ -21,6 +19,3 @@ class DownloadStatus(Enum):
 
     def __str__(self) -> str:
         return self.value
-
-
-register_adapter(DownloadStatus, lambda status: status.value)

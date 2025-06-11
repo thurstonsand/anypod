@@ -11,7 +11,6 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
-from ..ytdlp_wrapper.ytdlp_core import YtdlpCore
 from .types import FeedMetadataOverrides
 
 
@@ -77,6 +76,9 @@ class FeedConfig(BaseModel):
                 return {}
             case str():
                 try:
+                    # lazy import to prevent circular import
+                    from ..ytdlp_wrapper.ytdlp_core import YtdlpCore
+
                     args_list = shlex.split(v)
                     parsed_opts = YtdlpCore.parse_options(args_list)
                     return parsed_opts
