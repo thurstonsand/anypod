@@ -11,8 +11,7 @@ from typing import Any
 import pytest
 
 from anypod.db import FeedDatabase
-from anypod.db.feed import Feed
-from anypod.db.source_type import SourceType
+from anypod.db.types import Feed, SourceType
 from anypod.exceptions import FeedNotFoundError
 
 # --- Fixtures ---

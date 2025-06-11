@@ -1,10 +1,11 @@
+"""Data model representing a feed."""
+
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from ..config.podcast_categories import PodcastCategories
-from ..config.podcast_explicit import PodcastExplicit
-from .base_db import parse_datetime, parse_required_datetime
+from ...config.types import PodcastCategories, PodcastExplicit
+from ..base_db import parse_datetime, parse_required_datetime
 from .source_type import SourceType
 
 

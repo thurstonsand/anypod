@@ -11,7 +11,7 @@ import sys
 
 import yaml
 
-from ..db.download_status import DownloadStatus
+from ..db.types import DownloadStatus
 from ..exceptions import YtdlpApiError
 from ..path_manager import PathManager
 from ..ytdlp_wrapper import YtdlpWrapper

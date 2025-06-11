@@ -1,10 +1,12 @@
+"""Apple Podcast category handling utilities."""
+
 import html
 from typing import Any, ClassVar
 
 from pydantic import GetCoreSchemaHandler
 from pydantic_core import CoreSchema, core_schema
 
-from ..db.sqlite_utils_core import register_adapter
+from ...db.sqlite_utils_core import register_adapter
 
 
 class PodcastCategories:

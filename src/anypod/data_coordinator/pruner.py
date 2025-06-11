@@ -10,8 +10,7 @@ import logging
 from typing import Any
 
 from ..db import DownloadDatabase
-from ..db.download import Download
-from ..db.download_status import DownloadStatus
+from ..db.types import Download, DownloadStatus
 from ..exceptions import (
     DatabaseOperationError,
     DownloadNotFoundError,

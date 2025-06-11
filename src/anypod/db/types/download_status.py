@@ -1,6 +1,8 @@
+"""Download status lifecycle values."""
+
 from enum import Enum
 
-from .sqlite_utils_core import register_adapter
+from ..sqlite_utils_core import register_adapter
 
 
 class DownloadStatus(Enum):

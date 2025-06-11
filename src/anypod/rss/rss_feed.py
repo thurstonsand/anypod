@@ -13,8 +13,7 @@ from anypod.rss.feedgen_core import FeedgenCore
 
 from ..config import FeedConfig
 from ..db import DownloadDatabase
-from ..db.download import Download
-from ..db.download_status import DownloadStatus
+from ..db.types import Download, DownloadStatus
 from ..exceptions import DatabaseOperationError, RSSGenerationError
 from ..path_manager import PathManager
 

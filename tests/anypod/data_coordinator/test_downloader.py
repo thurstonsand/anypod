@@ -14,13 +14,11 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from anypod.config import FeedConfig, FeedMetadataOverrides
+from anypod.config import FeedConfig
+from anypod.config.types import FeedMetadataOverrides
 from anypod.data_coordinator.downloader import Downloader
 from anypod.db import DownloadDatabase
-from anypod.db.download import Download
-from anypod.db.download_status import DownloadStatus
-from anypod.db.feed import Feed
-from anypod.db.source_type import SourceType
+from anypod.db.types import Download, DownloadStatus, Feed, SourceType
 from anypod.exceptions import (
     DatabaseOperationError,
     DownloadError,

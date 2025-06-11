@@ -9,7 +9,7 @@ from Anypod download data.
 from feedgen.feed import FeedGenerator  # type: ignore
 
 from anypod.config import FeedConfig
-from anypod.db.download import Download
+from anypod.db.types import Download
 from anypod.exceptions import RSSGenerationError
 from anypod.path_manager import PathManager
 
