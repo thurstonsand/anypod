@@ -250,9 +250,6 @@ This section details the components that manage the lifecycle of downloads, from
   - [ ] (Optional) Automated resolution strategies or reporting for discrepancies.
 - [ ] Unit tests for discrepancy detection logic.
 
-### 3.5.8 General
-- [ ] check for commonalities in generated data in tests and see if we can extract a fixture out of them
-
 ## 4  Feed Generation
 - [x] Determine if a [read/write lock](https://pypi.org/project/readerwriterlock/) for in-memory feed XML cache is needed for concurrency
 - [x] add new fields to Download
@@ -282,11 +279,82 @@ This section details the components that manage the lifecycle of downloads, from
 - [ ] on startup, need to do state reconciliation between db and config file more generally
 
 ## 6  HTTP Server
-- [ ] Create FastAPI app: static mounts `/feeds` & `/media`.
-- [ ] Routes `/errors` and `/healthz`.
-- [ ] Route for manual sync override: endpoint to manually set `last_successful_sync` timestamp for feeds.
-- [ ] Entry in `cli.py` to start `uvicorn`.
-- [ ] Tests with `httpx` for endpoints.
+
+### 6.1 Project Structure Setup
+- [ ] Create new HTTP server module at `src/anypod/server/`
+  - [ ] `__init__.py` - Server module exports
+  - [ ] `app.py` - FastAPI application factory
+  - [ ] `dependencies.py` - Dependency injection setup
+  - [ ] `models/` - Pydantic request/response models
+  - [ ] `routers/` - API route handlers organized by domain
+  - [ ] `middleware.py` - CORS, logging, error handling middleware
+
+### 6.2 FastAPI Application Setup
+- [ ] Add `fastapi`, `uvicorn` to dependencies in pyproject.toml
+- [ ] Create FastAPI app factory with proper dependency injection
+- [ ] Set up CORS, logging, and error handling middleware
+- [ ] Configure OpenAPI documentation with proper metadata
+
+### 6.3 API Models (Pydantic)
+- [ ] `FeedResponse` - Feed data for API responses
+- [ ] `FeedCreateRequest`/`FeedUpdateRequest` - Feed modification requests
+- [ ] `DownloadResponse` - Download data for API responses
+- [ ] `PaginatedResponse[T]` - Generic paginated response wrapper
+- [ ] `StatsResponse` - System and feed statistics
+- [ ] `ErrorResponse` - Standardized error responses
+
+### 6.4 Router Implementation
+- [ ] `feeds.py` - All feed management endpoints
+  - [ ] `GET    /api/feeds`                   - List all feeds with pagination, filtering, and sorting
+  - [ ] `POST   /api/feeds`                   - Create new feed, will write to config file
+  - [ ] `GET    /api/feeds/{feed_id}`         - Get detailed feed information
+  - [ ] `PUT    /api/feeds/{feed_id}`         - Update feed configuration by modifying config file
+  - [ ] `DELETE /api/feeds/{feed_id}`         - Disables feed and archives all downloads
+  - [ ] `POST   /api/feeds/{feed_id}/enable`  - Enable feed processing
+  - [ ] `POST   /api/feeds/{feed_id}/disable` - Disable feed processing
+  - [ ] `POST   /api/feeds/{feed_id}/sync`    - Trigger manual sync/processing
+  - [ ] `GET    /api/feeds/valid`             - Validate feed config before writing to config file
+- [ ] `downloads.py` - Download management endpoints
+  - [ ] `GET    /api/feeds/{feed_id}/downloads`                      - List downloads for feed (paginated, filtered)
+  - [ ] `GET    /api/feeds/{feed_id}/downloads/{download_id}`        - Get specific download details
+  - [ ] `POST   /api/feeds/{feed_id}/downloads/{download_id}/retry`  - Retry failed download
+  - [ ] `POST   /api/feeds/{feed_id}/downloads/{download_id}/skip`   - Mark download as skipped
+  - [ ] `POST   /api/feeds/{feed_id}/downloads/{download_id}/unskip` - Remove skip status
+  - [ ] `DELETE /api/feeds/{feed_id}/downloads/{download_id}`        - Archive download and delete file
+- [ ] `stats.py` - Statistics and monitoring endpoints
+  - [ ] `GET    /api/feeds/{feed_id}/stats` - Detailed feed statistics
+  - [ ] `GET    /api/stats/summary` - System-wide statistics summary including storage
+- [ ] `health.py` - Health check endpoints
+  - [ ] `GET    /api/health` - Application health check
+- [ ] `static.py` - Content delivery endpoints
+  - [ ] `GET    /feeds/{feed_id}.xml` - RSS feed XML
+  - [ ] `GET    /media/{feed_id}/{filename}` - Media file download
+  - [ ] `GET    /thumbnails/{feed_id}/{filename}` - Thumbnail images
+- [ ] Unit tests with `httpx` for all API endpoints
+- [ ] Integration tests with actual database operations
+
+### 6.5 Integration with Existing Components
+- [ ] Create service layer to bridge HTTP API with existing DataCoordinator
+- [ ] Extend FeedDatabase/DownloadDatabase with new query methods for API needs
+- [ ] Add config file read/write utilities for feed CRUD operations
+- [ ] Implement proper error mapping from domain exceptions to HTTP responses
+
+### 6.6 Key Features Implementation
+- [ ] **Pagination**: Implement cursor-based or offset-based pagination
+- [ ] **Filtering**: Add query parameters for status, date ranges, search
+- [ ] **Sorting**: Support multiple sort fields and directions
+- [ ] **Validation**: Comprehensive request validation using Pydantic
+- [ ] **Error Handling**: Consistent error responses with proper HTTP status codes
+
+### 6.7 CLI Integration
+- [ ] Add new `--serve` flag to CLI for running HTTP server mode
+- [ ] Configure server host/port via environment variables
+- [ ] Ensure proper graceful shutdown handling
+- [ ] Entry in `default.py` to start `uvicorn`
+
+### 6.8 Documentation
+- [ ] Comprehensive OpenAPI documentation
+  - [ ] Example requests/responses for all endpoints
 
 ## 7  CLI & Flags
 - [ ] `python -m anypod` parses flags: `--ignore-startup-errors`, `--retry-failed`, `--log-level`.

@@ -122,7 +122,7 @@ CONFIG_FILE=/path/to/feeds.yaml       # Config file path (default: /config/feeds
 - When adding new code/features, don't reference them with "new logic", "new field", etc. It is going to live in the code base for a long time past "new"
 
 ### Docstring Guidelines
-- All functions, methods, classes, and files require Google-style docstrings:
+- All functions, methods, classes, and tops of files require Google-style docstrings:
 
 ```python
 def fetch_metadata(
