@@ -74,6 +74,7 @@ TEST_URLS_PARAMS = [
     ),
 ]
 
+# --- Tests for YtdlpWrapper integration ---
 INVALID_VIDEO_URL = "https://www.youtube.com/watch?v=thisvideodoesnotexistxyz"
 
 # CLI args for minimal quality and limited playlist downloads

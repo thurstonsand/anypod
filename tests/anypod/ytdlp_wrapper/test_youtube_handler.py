@@ -49,6 +49,9 @@ def valid_video_entry(valid_video_entry_data: dict[str, Any]) -> YoutubeEntry:
     return YoutubeEntry(YtdlpInfo(valid_video_entry_data.copy()), FEED_ID)
 
 
+# --- Tests for YoutubeHandler.get_source_specific_ydl_options ---
+
+
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "purpose",
@@ -66,6 +69,124 @@ def test_get_source_specific_ydl_options_returns_empty_dict(
 
 
 FEED_ID = "test_feed"
+
+# --- Tests for YoutubeHandler.extract_feed_metadata ---
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "ref_type, expected_source_type",
+    [
+        (ReferenceType.SINGLE, SourceType.SINGLE_VIDEO),
+        (ReferenceType.CHANNEL, SourceType.CHANNEL),
+        (ReferenceType.COLLECTION, SourceType.PLAYLIST),
+        (ReferenceType.UNKNOWN_RESOLVED_URL, SourceType.UNKNOWN),
+        (ReferenceType.UNKNOWN_DIRECT_FETCH, SourceType.UNKNOWN),
+    ],
+)
+def test_extract_feed_metadata_source_type_mapping(
+    youtube_handler: YoutubeHandler,
+    valid_video_entry_data: dict[str, Any],
+    ref_type: ReferenceType,
+    expected_source_type: SourceType,
+):
+    """Tests that ReferenceType is correctly mapped to SourceType in extract_feed_metadata."""
+    feed_id = "test_mapping_feed"
+    valid_video_entry_data["channel"] = "Test Channel"
+    ytdlp_info = YtdlpInfo(valid_video_entry_data)
+
+    extracted_feed = youtube_handler.extract_feed_metadata(
+        feed_id, ytdlp_info, ref_type
+    )
+
+    assert extracted_feed.source_type == expected_source_type
+    assert extracted_feed.id == feed_id
+    assert extracted_feed.is_enabled is True
+
+
+@pytest.mark.unit
+def test_extract_feed_metadata_with_full_metadata(
+    youtube_handler: YoutubeHandler,
+    valid_video_entry_data: dict[str, Any],
+):
+    """Tests extract_feed_metadata with all available metadata fields."""
+    feed_id = "test_full_metadata_feed"
+    valid_video_entry_data.update(
+        {
+            "title": "Test Feed Title",
+            "description": "Test feed description content",
+            "channel": "Test Channel Name",
+            "uploader": "Test Uploader Name",
+            "thumbnail": "https://example.com/feed_thumbnail.jpg",
+        }
+    )
+    ytdlp_info = YtdlpInfo(valid_video_entry_data)
+    ref_type = ReferenceType.CHANNEL
+
+    extracted_feed = youtube_handler.extract_feed_metadata(
+        feed_id, ytdlp_info, ref_type
+    )
+
+    assert extracted_feed.id == feed_id
+    assert extracted_feed.is_enabled is True
+    assert extracted_feed.source_type == SourceType.CHANNEL
+    assert extracted_feed.title == "Test Feed Title"
+    assert extracted_feed.description == "Test feed description content"
+    assert extracted_feed.author == "Test Uploader Name"  # uploader takes precedence
+    assert extracted_feed.image_url == "https://example.com/feed_thumbnail.jpg"
+    assert extracted_feed.subtitle is None  # Not available from yt-dlp
+    assert extracted_feed.language is None  # Not available from yt-dlp
+
+
+@pytest.mark.unit
+def test_extract_feed_metadata_author_fallback(
+    youtube_handler: YoutubeHandler,
+    valid_video_entry_data: dict[str, Any],
+):
+    """Tests that channel is used as fallback when uploader is not available."""
+    feed_id = "test_author_fallback_feed"
+    valid_video_entry_data["channel"] = "Fallback Channel Name"
+    # Ensure uploader is not present
+    valid_video_entry_data.pop("uploader", None)
+    ytdlp_info = YtdlpInfo(valid_video_entry_data)
+    ref_type = ReferenceType.SINGLE
+
+    extracted_feed = youtube_handler.extract_feed_metadata(
+        feed_id, ytdlp_info, ref_type
+    )
+
+    assert extracted_feed.author == "Fallback Channel Name"
+
+
+@pytest.mark.unit
+def test_extract_feed_metadata_minimal_data(
+    youtube_handler: YoutubeHandler,
+):
+    """Tests extract_feed_metadata with minimal required data only."""
+    feed_id = "test_minimal_feed"
+    minimal_data = {
+        "id": "minimal_video_id",
+        "title": "Minimal Video Title",
+    }
+    ytdlp_info = YtdlpInfo(minimal_data)
+    ref_type = ReferenceType.UNKNOWN_DIRECT_FETCH
+
+    extracted_feed = youtube_handler.extract_feed_metadata(
+        feed_id, ytdlp_info, ref_type
+    )
+
+    assert extracted_feed.id == feed_id
+    assert extracted_feed.is_enabled is True
+    assert extracted_feed.source_type == SourceType.UNKNOWN
+    assert extracted_feed.title == "Minimal Video Title"
+    assert extracted_feed.subtitle is None
+    assert extracted_feed.description is None
+    assert extracted_feed.language is None
+    assert extracted_feed.author is None
+    assert extracted_feed.image_url is None
+
+
+# --- Tests for YoutubeHandler._parse_single_video_entry ---
 
 
 @pytest.mark.unit
@@ -377,6 +498,9 @@ def test_parse_single_video_entry_error_invalid_duration(
     assert expected_msg_part in str(e.value)
 
 
+# --- Tests for YoutubeHandler.determine_fetch_strategy ---
+
+
 @pytest.mark.unit
 def test_determine_fetch_strategy_single_video(youtube_handler: YoutubeHandler):
     """Tests strategy determination for a single YouTube video URL."""
@@ -675,6 +799,9 @@ def test_determine_fetch_strategy_existing_channel_tab_not_main_page(
     assert ref_type == ReferenceType.COLLECTION
 
 
+# --- Tests for YoutubeHandler.parse_metadata_to_downloads ---
+
+
 @pytest.mark.unit
 def test_parse_metadata_to_downloads_incomplete_info_dict(
     youtube_handler: YoutubeHandler,
@@ -911,119 +1038,3 @@ def test_parse_metadata_to_downloads_unknown_type_with_playlist_shape_data(
     assert downloads == []
     expected_yt_entry = YoutubeEntry(ytdlp_info_playlist_shape, feed_id)
     mock_parse_single.assert_called_once_with(expected_yt_entry, feed_id)
-
-
-# --- Tests for extract_feed_metadata functionality ---
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize(
-    "ref_type, expected_source_type",
-    [
-        (ReferenceType.SINGLE, SourceType.SINGLE_VIDEO),
-        (ReferenceType.CHANNEL, SourceType.CHANNEL),
-        (ReferenceType.COLLECTION, SourceType.PLAYLIST),
-        (ReferenceType.UNKNOWN_RESOLVED_URL, SourceType.UNKNOWN),
-        (ReferenceType.UNKNOWN_DIRECT_FETCH, SourceType.UNKNOWN),
-    ],
-)
-def test_extract_feed_metadata_source_type_mapping(
-    youtube_handler: YoutubeHandler,
-    valid_video_entry_data: dict[str, Any],
-    ref_type: ReferenceType,
-    expected_source_type: SourceType,
-):
-    """Tests that ReferenceType is correctly mapped to SourceType in extract_feed_metadata."""
-    feed_id = "test_mapping_feed"
-    valid_video_entry_data["channel"] = "Test Channel"
-    ytdlp_info = YtdlpInfo(valid_video_entry_data)
-
-    extracted_feed = youtube_handler.extract_feed_metadata(
-        feed_id, ytdlp_info, ref_type
-    )
-
-    assert extracted_feed.source_type == expected_source_type
-    assert extracted_feed.id == feed_id
-    assert extracted_feed.is_enabled is True
-
-
-@pytest.mark.unit
-def test_extract_feed_metadata_with_full_metadata(
-    youtube_handler: YoutubeHandler,
-    valid_video_entry_data: dict[str, Any],
-):
-    """Tests extract_feed_metadata with all available metadata fields."""
-    feed_id = "test_full_metadata_feed"
-    valid_video_entry_data.update(
-        {
-            "title": "Test Feed Title",
-            "description": "Test feed description content",
-            "channel": "Test Channel Name",
-            "uploader": "Test Uploader Name",
-            "thumbnail": "https://example.com/feed_thumbnail.jpg",
-        }
-    )
-    ytdlp_info = YtdlpInfo(valid_video_entry_data)
-    ref_type = ReferenceType.CHANNEL
-
-    extracted_feed = youtube_handler.extract_feed_metadata(
-        feed_id, ytdlp_info, ref_type
-    )
-
-    assert extracted_feed.id == feed_id
-    assert extracted_feed.is_enabled is True
-    assert extracted_feed.source_type == SourceType.CHANNEL
-    assert extracted_feed.title == "Test Feed Title"
-    assert extracted_feed.description == "Test feed description content"
-    assert extracted_feed.author == "Test Uploader Name"  # uploader takes precedence
-    assert extracted_feed.image_url == "https://example.com/feed_thumbnail.jpg"
-    assert extracted_feed.subtitle is None  # Not available from yt-dlp
-    assert extracted_feed.language is None  # Not available from yt-dlp
-
-
-@pytest.mark.unit
-def test_extract_feed_metadata_author_fallback(
-    youtube_handler: YoutubeHandler,
-    valid_video_entry_data: dict[str, Any],
-):
-    """Tests that channel is used as fallback when uploader is not available."""
-    feed_id = "test_author_fallback_feed"
-    valid_video_entry_data["channel"] = "Fallback Channel Name"
-    # Ensure uploader is not present
-    valid_video_entry_data.pop("uploader", None)
-    ytdlp_info = YtdlpInfo(valid_video_entry_data)
-    ref_type = ReferenceType.SINGLE
-
-    extracted_feed = youtube_handler.extract_feed_metadata(
-        feed_id, ytdlp_info, ref_type
-    )
-
-    assert extracted_feed.author == "Fallback Channel Name"
-
-
-@pytest.mark.unit
-def test_extract_feed_metadata_minimal_data(
-    youtube_handler: YoutubeHandler,
-):
-    """Tests extract_feed_metadata with minimal required data only."""
-    feed_id = "test_minimal_feed"
-    minimal_data = {
-        "id": "minimal_video_id",
-        "title": "Minimal Video Title",
-    }
-    ytdlp_info = YtdlpInfo(minimal_data)
-    ref_type = ReferenceType.UNKNOWN_DIRECT_FETCH
-
-    extracted_feed = youtube_handler.extract_feed_metadata(
-        feed_id, ytdlp_info, ref_type
-    )
-
-    assert extracted_feed.id == feed_id
-    assert extracted_feed.is_enabled is True
-    assert extracted_feed.source_type == SourceType.UNKNOWN
-    assert extracted_feed.title == "Minimal Video Title"
-    assert extracted_feed.subtitle is None
-    assert extracted_feed.description is None
-    assert extracted_feed.language is None
-    assert extracted_feed.author is None
-    assert extracted_feed.image_url is None

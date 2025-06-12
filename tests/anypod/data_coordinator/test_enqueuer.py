@@ -138,34 +138,163 @@ def create_download(
 FETCH_SINCE_DATE = datetime.now(UTC) - timedelta(days=1)
 
 
-# Basic test case: No upcoming downloads, no new downloads from feed
+# --- Tests for Enqueuer._synchronize_feed_metadata ---
+
+
 @pytest.mark.unit
-def test_enqueue_new_downloads_no_upcoming_no_new(
+def test_synchronize_feed_metadata_handles_removed_overrides(
     enqueuer: Enqueuer,
-    mock_download_db: MagicMock,
-    mock_ytdlp_wrapper: MagicMock,
-    sample_feed_config: FeedConfig,
+    mock_feed_db: MagicMock,
 ):
-    """Test enqueue_new_downloads when no upcoming downloads exist and no new downloads are found."""
-    mock_download_db.get_downloads_by_status.return_value = []  # No upcoming
-    mock_ytdlp_wrapper.fetch_metadata.return_value = (MOCK_FEED, [])  # No new downloads
-
-    queued_count = enqueuer.enqueue_new_downloads(
-        FEED_ID, sample_feed_config, FETCH_SINCE_DATE
+    """Test that feed metadata sync correctly handles when overrides are removed from config."""
+    # Current feed in database has override values that were previously set
+    current_feed_with_overrides = Feed(
+        id=FEED_ID,
+        title="Previously Override Title",
+        subtitle="Previously Override Subtitle",
+        description="Previously override description",
+        language="en-US",
+        author="Override Author",
+        image_url="https://example.com/override.jpg",
+        category=PodcastCategories(["Technology", "Science"]),
+        explicit=PodcastExplicit.NO,
+        is_enabled=True,
+        source_type=SourceType.UNKNOWN,
     )
 
-    assert queued_count == 0
-    mock_download_db.get_downloads_by_status.assert_called_once_with(
-        DownloadStatus.UPCOMING, feed=FEED_ID
+    # Fetched feed metadata from ytdlp (what we'd get from the source)
+    fetched_feed = Feed(
+        id=FEED_ID,
+        title="Source Title",
+        subtitle=None,  # No subtitle in source
+        description="Source description",
+        language=None,  # No language in source
+        author="Source Author",
+        image_url="https://example.com/source.jpg",
+        category=None,  # No category in source
+        explicit=None,  # No explicit flag in source
+        is_enabled=True,
+        source_type=SourceType.UNKNOWN,
     )
-    mock_ytdlp_wrapper.fetch_metadata.assert_called_once_with(
-        FEED_ID,
-        sample_feed_config.url,
-        {
-            "dateafter": FETCH_SINCE_DATE.strftime("%Y%m%d"),
-            **sample_feed_config.yt_args,
-        },
+
+    # Feed config with NO metadata overrides (user removed them)
+    feed_config_no_overrides = FeedConfig(
+        url=FEED_URL,
+        schedule="* * * * *",
+        yt_args="",  # type: ignore
+        max_errors=3,
+        keep_last=None,
+        since=None,
+        metadata=None,  # No overrides
     )
+
+    mock_feed_db.get_feed_by_id.return_value = current_feed_with_overrides
+
+    enqueuer._synchronize_feed_metadata(
+        FEED_ID, fetched_feed, feed_config_no_overrides, {"feed_id": FEED_ID}
+    )
+
+    # Verify update_feed_metadata was called with the right changes
+    mock_feed_db.update_feed_metadata.assert_called_once()
+    call_args = mock_feed_db.update_feed_metadata.call_args
+
+    # Should update to source values, clearing override fields that have no source equivalent
+    expected_updates = {
+        "title": "Source Title",  # Override -> Source value
+        "subtitle": None,  # Override -> None (cleared)
+        "description": "Source description",  # Override -> Source value
+        "language": None,  # Override -> None (cleared)
+        "author": "Source Author",  # Override -> Source value
+        "image_url": "https://example.com/source.jpg",  # Override -> Source value
+        "category": None,  # Override -> None (cleared)
+        "explicit": None,  # Override -> None (cleared)
+    }
+
+    assert call_args[0][0] == FEED_ID  # First positional arg is feed_id
+    actual_updates = call_args[1]  # Keyword arguments
+    assert actual_updates == expected_updates
+
+
+@pytest.mark.unit
+def test_synchronize_feed_metadata_handles_partial_override_removal(
+    enqueuer: Enqueuer,
+    mock_feed_db: MagicMock,
+):
+    """Test metadata sync when some overrides are removed but others remain."""
+    # Current feed in database has multiple override values
+    current_feed = Feed(
+        id=FEED_ID,
+        title="Override Title",
+        subtitle="Override Subtitle",
+        description="Override description",
+        language="en-US",
+        author="Override Author",
+        image_url="https://example.com/override.jpg",
+        category=PodcastCategories(["Technology"]),
+        explicit=PodcastExplicit.YES,
+        is_enabled=True,
+        source_type=SourceType.UNKNOWN,
+    )
+
+    # Fetched metadata from source
+    fetched_feed = Feed(
+        id=FEED_ID,
+        title="Source Title",
+        subtitle=None,
+        description="Source description",
+        language=None,
+        author="Source Author",
+        image_url="https://example.com/source.jpg",
+        category=None,
+        explicit=None,
+        is_enabled=True,
+        source_type=SourceType.UNKNOWN,
+    )
+
+    # Feed config with PARTIAL overrides (user removed some but kept others)
+    partial_overrides = FeedMetadataOverrides(  # type: ignore
+        title="Keep Override Title",  # Still overridden
+        author="Keep Override Author",  # Still overridden
+        # subtitle, description, language, image_url, category, explicit removed
+    )
+
+    feed_config_partial = FeedConfig(
+        url=FEED_URL,
+        schedule="* * * * *",
+        yt_args="",  # type: ignore
+        max_errors=3,
+        keep_last=None,
+        since=None,
+        metadata=partial_overrides,
+    )
+
+    mock_feed_db.get_feed_by_id.return_value = current_feed
+
+    enqueuer._synchronize_feed_metadata(
+        FEED_ID, fetched_feed, feed_config_partial, {"feed_id": FEED_ID}
+    )
+
+    # Verify the right mix of overrides and source values
+    mock_feed_db.update_feed_metadata.assert_called_once()
+    call_args = mock_feed_db.update_feed_metadata.call_args
+
+    expected_updates = {
+        "title": "Keep Override Title",  # Still overridden
+        "subtitle": None,  # Cleared (was override, now source has None)
+        "description": "Source description",  # Now from source
+        "language": None,  # Cleared (was override, now source has None)
+        "author": "Keep Override Author",  # Still overridden
+        "image_url": "https://example.com/source.jpg",  # Now from source
+        "category": None,  # Cleared (was override, now source has None)
+        "explicit": None,  # Cleared (was override, now source has None)
+    }
+
+    assert call_args[0][0] == FEED_ID
+    actual_updates = call_args[1]
+    assert actual_updates == expected_updates
+
+
+# --- Tests for Enqueuer._handle_existing_upcoming_downloads ---
 
 
 @pytest.mark.unit
@@ -329,157 +458,7 @@ def test_handle_existing_upcoming_download_refetch_returns_no_match(
     )
 
 
-@pytest.mark.unit
-def test_synchronize_feed_metadata_handles_removed_overrides(
-    enqueuer: Enqueuer,
-    mock_feed_db: MagicMock,
-):
-    """Test that feed metadata sync correctly handles when overrides are removed from config."""
-    # Current feed in database has override values that were previously set
-    current_feed_with_overrides = Feed(
-        id=FEED_ID,
-        title="Previously Override Title",
-        subtitle="Previously Override Subtitle",
-        description="Previously override description",
-        language="en-US",
-        author="Override Author",
-        image_url="https://example.com/override.jpg",
-        category=PodcastCategories(["Technology", "Science"]),
-        explicit=PodcastExplicit.NO,
-        is_enabled=True,
-        source_type=SourceType.UNKNOWN,
-    )
-
-    # Fetched feed metadata from ytdlp (what we'd get from the source)
-    fetched_feed = Feed(
-        id=FEED_ID,
-        title="Source Title",
-        subtitle=None,  # No subtitle in source
-        description="Source description",
-        language=None,  # No language in source
-        author="Source Author",
-        image_url="https://example.com/source.jpg",
-        category=None,  # No category in source
-        explicit=None,  # No explicit flag in source
-        is_enabled=True,
-        source_type=SourceType.UNKNOWN,
-    )
-
-    # Feed config with NO metadata overrides (user removed them)
-    feed_config_no_overrides = FeedConfig(
-        url=FEED_URL,
-        schedule="* * * * *",
-        yt_args="",  # type: ignore
-        max_errors=3,
-        keep_last=None,
-        since=None,
-        metadata=None,  # No overrides
-    )
-
-    mock_feed_db.get_feed_by_id.return_value = current_feed_with_overrides
-
-    enqueuer._synchronize_feed_metadata(
-        FEED_ID, fetched_feed, feed_config_no_overrides, {"feed_id": FEED_ID}
-    )
-
-    # Verify update_feed_metadata was called with the right changes
-    mock_feed_db.update_feed_metadata.assert_called_once()
-    call_args = mock_feed_db.update_feed_metadata.call_args
-
-    # Should update to source values, clearing override fields that have no source equivalent
-    expected_updates = {
-        "title": "Source Title",  # Override -> Source value
-        "subtitle": None,  # Override -> None (cleared)
-        "description": "Source description",  # Override -> Source value
-        "language": None,  # Override -> None (cleared)
-        "author": "Source Author",  # Override -> Source value
-        "image_url": "https://example.com/source.jpg",  # Override -> Source value
-        "category": None,  # Override -> None (cleared)
-        "explicit": None,  # Override -> None (cleared)
-    }
-
-    assert call_args[0][0] == FEED_ID  # First positional arg is feed_id
-    actual_updates = call_args[1]  # Keyword arguments
-    assert actual_updates == expected_updates
-
-
-@pytest.mark.unit
-def test_synchronize_feed_metadata_handles_partial_override_removal(
-    enqueuer: Enqueuer,
-    mock_feed_db: MagicMock,
-):
-    """Test metadata sync when some overrides are removed but others remain."""
-    # Current feed in database has multiple override values
-    current_feed = Feed(
-        id=FEED_ID,
-        title="Override Title",
-        subtitle="Override Subtitle",
-        description="Override description",
-        language="en-US",
-        author="Override Author",
-        image_url="https://example.com/override.jpg",
-        category=PodcastCategories(["Technology"]),
-        explicit=PodcastExplicit.YES,
-        is_enabled=True,
-        source_type=SourceType.UNKNOWN,
-    )
-
-    # Fetched metadata from source
-    fetched_feed = Feed(
-        id=FEED_ID,
-        title="Source Title",
-        subtitle=None,
-        description="Source description",
-        language=None,
-        author="Source Author",
-        image_url="https://example.com/source.jpg",
-        category=None,
-        explicit=None,
-        is_enabled=True,
-        source_type=SourceType.UNKNOWN,
-    )
-
-    # Feed config with PARTIAL overrides (user removed some but kept others)
-    partial_overrides = FeedMetadataOverrides(  # type: ignore
-        title="Keep Override Title",  # Still overridden
-        author="Keep Override Author",  # Still overridden
-        # subtitle, description, language, image_url, category, explicit removed
-    )
-
-    feed_config_partial = FeedConfig(
-        url=FEED_URL,
-        schedule="* * * * *",
-        yt_args="",  # type: ignore
-        max_errors=3,
-        keep_last=None,
-        since=None,
-        metadata=partial_overrides,
-    )
-
-    mock_feed_db.get_feed_by_id.return_value = current_feed
-
-    enqueuer._synchronize_feed_metadata(
-        FEED_ID, fetched_feed, feed_config_partial, {"feed_id": FEED_ID}
-    )
-
-    # Verify the right mix of overrides and source values
-    mock_feed_db.update_feed_metadata.assert_called_once()
-    call_args = mock_feed_db.update_feed_metadata.call_args
-
-    expected_updates = {
-        "title": "Keep Override Title",  # Still overridden
-        "subtitle": None,  # Cleared (was override, now source has None)
-        "description": "Source description",  # Now from source
-        "language": None,  # Cleared (was override, now source has None)
-        "author": "Keep Override Author",  # Still overridden
-        "image_url": "https://example.com/source.jpg",  # Now from source
-        "category": None,  # Cleared (was override, now source has None)
-        "explicit": None,  # Cleared (was override, now source has None)
-    }
-
-    assert call_args[0][0] == FEED_ID
-    actual_updates = call_args[1]
-    assert actual_updates == expected_updates
+# --- Tests for Enqueuer._fetch_and_process_new_feed_downloads ---
 
 
 @pytest.mark.unit
@@ -633,6 +612,9 @@ def test_fetch_and_process_new_feed_downloads_existing_error_requeued(
     mock_download_db.upsert_download.assert_not_called()
 
 
+# --- Tests for Enqueuer.enqueue_new_downloads ---
+
+
 @pytest.mark.unit
 def test_enqueue_new_downloads_full_flow_mixed_scenarios(
     enqueuer: Enqueuer,
@@ -774,6 +756,35 @@ def test_enqueue_new_downloads_ytdlp_error_on_main_feed_fetch(
     assert exc_info.value.feed_id == FEED_ID
     assert exc_info.value.feed_url == FEED_URL
     # Ensure ytdlp_wrapper.fetch_metadata was called for the main feed
+    mock_ytdlp_wrapper.fetch_metadata.assert_called_once_with(
+        FEED_ID,
+        sample_feed_config.url,
+        {
+            "dateafter": FETCH_SINCE_DATE.strftime("%Y%m%d"),
+            **sample_feed_config.yt_args,
+        },
+    )
+
+
+@pytest.mark.unit
+def test_enqueue_new_downloads_no_upcoming_no_new(
+    enqueuer: Enqueuer,
+    mock_download_db: MagicMock,
+    mock_ytdlp_wrapper: MagicMock,
+    sample_feed_config: FeedConfig,
+):
+    """Test enqueue_new_downloads when no upcoming downloads exist and no new downloads are found."""
+    mock_download_db.get_downloads_by_status.return_value = []  # No upcoming
+    mock_ytdlp_wrapper.fetch_metadata.return_value = (MOCK_FEED, [])  # No new downloads
+
+    queued_count = enqueuer.enqueue_new_downloads(
+        FEED_ID, sample_feed_config, FETCH_SINCE_DATE
+    )
+
+    assert queued_count == 0
+    mock_download_db.get_downloads_by_status.assert_called_once_with(
+        DownloadStatus.UPCOMING, feed=FEED_ID
+    )
     mock_ytdlp_wrapper.fetch_metadata.assert_called_once_with(
         FEED_ID,
         sample_feed_config.url,
