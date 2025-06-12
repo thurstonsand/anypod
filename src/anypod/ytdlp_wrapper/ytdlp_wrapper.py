@@ -237,6 +237,7 @@ class YtdlpWrapper:
             feed_id,
             ytdlp_info,
             ref_type,
+            url,
         )
 
         parsed_downloads = self._source_handler.parse_metadata_to_downloads(

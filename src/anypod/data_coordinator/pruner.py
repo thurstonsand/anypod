@@ -31,20 +31,20 @@ class Pruner:
     deletes associated files, and archives database records.
 
     Attributes:
-        download_db: Database manager for download record operations.
-        feed_db: Database manager for feed record operations.
-        file_manager: File manager for file system operations.
+        _download_db: Database manager for download record operations.
+        _feed_db: Database manager for feed record operations.
+        _file_manager: File manager for file system operations.
     """
 
     def __init__(
         self,
-        download_db: DownloadDatabase,
         feed_db: FeedDatabase,
+        download_db: DownloadDatabase,
         file_manager: FileManager,
     ):
-        self.download_db = download_db
-        self.feed_db = feed_db
-        self.file_manager = file_manager
+        self._feed_db = feed_db
+        self._download_db = download_db
+        self._file_manager = file_manager
         logger.debug("Pruner initialized.")
 
     def _identify_prune_candidates(
@@ -84,7 +84,7 @@ class Pruner:
             )
             try:
                 downloads_for_keep_last = (
-                    self.download_db.get_downloads_to_prune_by_keep_last(
+                    self._download_db.get_downloads_to_prune_by_keep_last(
                         feed_id, keep_last
                     )
                 )
@@ -100,7 +100,7 @@ class Pruner:
         if prune_before_date is not None:
             logger.debug("Identifying prune candidates by date rule.", extra=log_params)
             try:
-                downloads_for_since = self.download_db.get_downloads_to_prune_by_since(
+                downloads_for_since = self._download_db.get_downloads_to_prune_by_since(
                     feed_id, prune_before_date
                 )
             except DatabaseOperationError as e:
@@ -140,7 +140,7 @@ class Pruner:
         )
 
         try:
-            self.file_manager.delete_download_file(feed_id, download.id, download.ext)
+            self._file_manager.delete_download_file(feed_id, download.id, download.ext)
         except FileOperationError as e:
             raise PruneError(
                 message="Failed to delete file during pruning.",
@@ -166,7 +166,7 @@ class Pruner:
         logger.debug("Attempting to archive download.", extra=log_params)
 
         try:
-            self.download_db.archive_download(feed_id, download.id)
+            self._download_db.archive_download(feed_id, download.id)
         except (DownloadNotFoundError, DatabaseOperationError) as e:
             raise PruneError(
                 message="Failed to archive download.",
@@ -231,14 +231,14 @@ class Pruner:
         logger.debug("Recalculating total_downloads for feed.", extra=log_params)
 
         try:
-            with self.download_db.transaction():
+            with self._download_db.transaction():
                 # Count only DOWNLOADED downloads (those that appear in RSS feed)
-                total_count = self.download_db.count_downloads_by_status(
+                total_count = self._download_db.count_downloads_by_status(
                     DownloadStatus.DOWNLOADED, feed=feed_id
                 )
 
                 # Update the feed's total_downloads in the same transaction
-                self.feed_db.update_total_downloads(feed_id, total_count)
+                self._feed_db.update_total_downloads(feed_id, total_count)
         except DatabaseOperationError as e:
             logger.error(
                 "Failed to count downloaded items for total_downloads recalculation.",
@@ -341,3 +341,74 @@ class Pruner:
             },
         )
         return archived_count, files_deleted_count
+
+    def archive_feed(self, feed_id: str) -> tuple[int, int]:
+        """Archive an entire feed by disabling it and archiving all downloads.
+
+        This method disables a feed by setting is_enabled=False and archives
+        all downloads associated with the feed regardless of their current status.
+        Files for DOWNLOADED items are deleted from the filesystem.
+
+        Args:
+            feed_id: The unique identifier of the feed to archive.
+
+        Returns:
+            A tuple (archived_count, files_deleted_count) indicating the number of
+            downloads archived and the number of files successfully deleted.
+
+        Raises:
+            PruneError: If feed disabling or download archiving fails.
+        """
+        log_params: dict[str, Any] = {"feed_id": feed_id}
+        logger.info("Starting feed archival process.", extra=log_params)
+
+        with self._feed_db.transaction():
+            # Get all downloads for this feed by collecting from all status types
+            all_downloads: list[Download] = []
+            for status in DownloadStatus:
+                if status in (DownloadStatus.ARCHIVED, DownloadStatus.SKIPPED):
+                    continue  # Skip already archived or skipped
+                try:
+                    downloads = self._download_db.get_downloads_by_status(
+                        status, feed=feed_id
+                    )
+                    all_downloads.extend(downloads)
+                except DatabaseOperationError as e:
+                    raise PruneError(
+                        message="Failed to retrieve downloads for feed archival.",
+                        feed_id=feed_id,
+                    ) from e
+
+            logger.info(
+                "Downloads to archive for feed.",
+                extra={**log_params, "downloads_count": len(all_downloads)},
+            )
+
+            archived_count = 0
+            files_deleted_count = 0
+
+            for download in all_downloads:
+                file_deleted = self._process_single_download_for_pruning(
+                    download, feed_id
+                )
+                archived_count += 1
+                if file_deleted:
+                    files_deleted_count += 1
+
+            # Recalculate total_downloads after archiving (should be 0)
+            if archived_count > 0:
+                self._recalculate_total_downloads(feed_id)
+
+            # Disable the feed last
+            self._feed_db.set_feed_enabled(feed_id, False)
+            logger.info("Feed disabled successfully.", extra=log_params)
+
+            logger.info(
+                "Feed archival process completed.",
+                extra={
+                    **log_params,
+                    "archived_count": archived_count,
+                    "files_deleted_count": files_deleted_count,
+                },
+            )
+            return archived_count, files_deleted_count

@@ -26,6 +26,9 @@ uv run ruff check                               # Lint code
 uv run ruff format                              # Format code
 uv run pyright                                  # Type checking
 uv run pre-commit run --all-files               # All of the above, prefer to use this one when confirming your code is good
+
+# tool use
+uvx yt-dlp # can research/view real data from youtube videos for research. see @example_feeds.yaml for real links
 ```
 
 ## Architecture
@@ -62,6 +65,9 @@ Download status transitions are implemented as explicit methods, not generic upd
 - Currently synchronous but designed for future async conversion
 
 ### Configuration Example
+
+Full YAML file describing podcasts:
+
 ```yaml
 feeds:
   channel:
@@ -69,6 +75,37 @@ feeds:
     yt_args: "-f worst[ext=mp4] --playlist-items 1-3"
     schedule: "0 3 * * *"
     since: "2022-01-01T00:00:00Z"
+
+  # Feed with full metadata overrides
+  premium_podcast:
+    url: https://www.youtube.com/@premium/videos
+    schedule: "0 6 * * *"
+    metadata:
+      title: "My Premium Podcast"                     # Override feed title
+      subtitle: "Daily insights and discussions"       # Feed subtitle
+      description: "A daily podcast about technology and culture" # Feed description
+      language: "en"                                  # Language code (e.g., 'en', 'es', 'fr')
+      author: "John Doe"                             # Podcast author
+      image_url: "https://example.com/podcast-art.jpg" # Podcast artwork (min 1400x1400px)
+      explicit: "no"                                 # Explicit content: "yes", "no", or "clean"
+      categories:                                    # Apple Podcasts categories (max 2)
+        - "Technology"                               # Main category only
+        - "Business > Entrepreneurship"              # Main > Sub category
+        # Alternative formats:
+        # - {"main": "Technology"}
+        # - {"main": "Business", "sub": "Entrepreneurship"}
+        # Or as comma-separated string: "Technology, Business > Entrepreneurship"
+```
+
+#### Environment Variables
+Configure global application settings via environment variables:
+```bash
+DEBUG_MODE=enqueuer                    # Debug mode: ytdlp, enqueuer, downloader
+LOG_FORMAT=json                        # Log format: human, json (default: human)
+LOG_LEVEL=DEBUG                        # Log level: DEBUG, INFO, WARNING, ERROR (default: INFO)
+LOG_INCLUDE_STACKTRACE=true           # Include stack traces in logs (default: false)
+BASE_URL=https://podcasts.example.com  # Base URL for feeds/media (default: http://localhost:8024)
+CONFIG_FILE=/path/to/feeds.yaml       # Config file path (default: /config/feeds.yaml)
 ```
 
 ## Code Style Guidelines
@@ -82,6 +119,7 @@ feeds:
 - Scope `try` blocks tightly around specific statements that may raise exceptions
 - Bias towards wrapping and re-raising exceptions to the highest possible location
 - Exception messages should not include variable data - use existing exception parameters/attributes instead
+- When adding new code/features, don't reference them with "new logic", "new field", etc. It is going to live in the code base for a long time past "new"
 
 ### Docstring Guidelines
 - All functions, methods, classes, and files require Google-style docstrings:

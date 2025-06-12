@@ -9,13 +9,11 @@ import logging
 
 from readerwriterlock import rwlock
 
-from anypod.rss.feedgen_core import FeedgenCore
-
-from ..config import FeedConfig
 from ..db import DownloadDatabase
-from ..db.types import Download, DownloadStatus
+from ..db.types import Download, DownloadStatus, Feed
 from ..exceptions import DatabaseOperationError, RSSGenerationError
 from ..path_manager import PathManager
+from .feedgen_core import FeedgenCore
 
 logger = logging.getLogger(__name__)
 
@@ -97,15 +95,12 @@ class RSSFeedGenerator:
             },
         )
 
-    def update_feed(self, feed_id: str, feed_config: FeedConfig) -> None:
+    def update_feed(self, feed_id: str, feed: Feed) -> None:
         """Generate RSS XML for a feed and cache it.
 
         Args:
             feed_id: The feed identifier.
-            feed_config: Configuration for the feed.
-
-        Returns:
-            Generated RSS XML as bytes.
+            feed: Feed database object containing metadata.
 
         Raises:
             RSSGenerationError: If feed generation fails.
@@ -120,7 +115,7 @@ class RSSFeedGenerator:
             FeedgenCore(
                 paths=self._paths,
                 feed_id=feed_id,
-                feed_config=feed_config,
+                feed=feed,
             )
             .with_downloads(downloads)
             .xml()

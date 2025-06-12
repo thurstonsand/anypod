@@ -311,9 +311,28 @@ class YoutubeEntry:
 
     @property
     def thumbnail(self) -> str | None:
-        """Get the thumbnail URL for the video."""
+        """Get the best quality JPG or PNG thumbnail URL for the video."""
         with self._annotate_exceptions():
-            return self._ytdlp_info.get("thumbnail", str)
+            # Get thumbnails using the type-safe wrapper
+            thumbnails = self._ytdlp_info.thumbnails()
+            if not thumbnails:
+                # Fallback to default thumbnail field
+                return self._ytdlp_info.get("thumbnail", str)
+
+            # Get the best supported format thumbnail
+            best_thumbnail = thumbnails.best_supported()
+            if not best_thumbnail:
+                # No JPG/PNG thumbnails found, log warning and return None
+                logger.warning(
+                    "No JPG or PNG thumbnails available, skipping thumbnail",
+                    extra={
+                        "source_url": self.webpage_url,
+                        "download_id": self.download_id,
+                    },
+                )
+                return None
+
+            return best_thumbnail.url
 
     @property
     def description(self) -> str | None:
@@ -429,6 +448,7 @@ class YoutubeHandler:
         feed_id: str,
         ytdlp_info: YtdlpInfo,
         ref_type: ReferenceType,
+        source_url: str,
     ) -> Feed:
         """Extract feed-level metadata from yt-dlp response.
 
@@ -436,6 +456,7 @@ class YoutubeHandler:
             feed_id: The feed identifier.
             ytdlp_info: The yt-dlp metadata information.
             ref_type: The type of reference being parsed.
+            source_url: The original source URL for this feed.
 
         Returns:
             Feed object with extracted metadata populated.
@@ -473,6 +494,7 @@ class YoutubeHandler:
             id=feed_id,
             is_enabled=True,
             source_type=source_type,
+            source_url=source_url,
             title=title,
             subtitle=None,  # Not available from yt-dlp
             description=description,

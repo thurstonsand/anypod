@@ -152,6 +152,7 @@ def create_test_feed(feed_db: FeedDatabase, feed_id: str, url: str) -> Feed:
         id=feed_id,
         is_enabled=True,
         source_type=SourceType.UNKNOWN,  # Will be determined by ytdlp
+        source_url="https://example.com/test",
         title=f"Test Feed {feed_id}",
     )
     feed_db.upsert_feed(feed)

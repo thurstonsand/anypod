@@ -96,7 +96,7 @@ def test_extract_feed_metadata_source_type_mapping(
     ytdlp_info = YtdlpInfo(valid_video_entry_data)
 
     extracted_feed = youtube_handler.extract_feed_metadata(
-        feed_id, ytdlp_info, ref_type
+        feed_id, ytdlp_info, ref_type, "https://example.com/source"
     )
 
     assert extracted_feed.source_type == expected_source_type
@@ -124,7 +124,7 @@ def test_extract_feed_metadata_with_full_metadata(
     ref_type = ReferenceType.CHANNEL
 
     extracted_feed = youtube_handler.extract_feed_metadata(
-        feed_id, ytdlp_info, ref_type
+        feed_id, ytdlp_info, ref_type, "https://example.com/source"
     )
 
     assert extracted_feed.id == feed_id
@@ -152,7 +152,7 @@ def test_extract_feed_metadata_author_fallback(
     ref_type = ReferenceType.SINGLE
 
     extracted_feed = youtube_handler.extract_feed_metadata(
-        feed_id, ytdlp_info, ref_type
+        feed_id, ytdlp_info, ref_type, "https://example.com/source"
     )
 
     assert extracted_feed.author == "Fallback Channel Name"
@@ -172,7 +172,7 @@ def test_extract_feed_metadata_minimal_data(
     ref_type = ReferenceType.UNKNOWN_DIRECT_FETCH
 
     extracted_feed = youtube_handler.extract_feed_metadata(
-        feed_id, ytdlp_info, ref_type
+        feed_id, ytdlp_info, ref_type, "https://example.com/source"
     )
 
     assert extracted_feed.id == feed_id

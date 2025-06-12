@@ -16,7 +16,7 @@ from anypod.config.types import (
     PodcastExplicit,
 )
 from anypod.db import DownloadDatabase
-from anypod.db.types import Download, DownloadStatus
+from anypod.db.types import Download, DownloadStatus, Feed, SourceType
 from anypod.exceptions import DatabaseOperationError, RSSGenerationError
 from anypod.path_manager import PathManager
 from anypod.rss.rss_feed import RSSFeedGenerator
@@ -43,6 +43,24 @@ def path_manager(tmp_path: Path) -> PathManager:
     tmp_dir = tmp_path / "tmp"
     paths = PathManager(data_dir, tmp_dir, TEST_BASE_URL)
     return paths
+
+
+@pytest.fixture
+def test_feed() -> Feed:
+    """Fixture to provide a test Feed object."""
+    return Feed(
+        id=TEST_FEED_ID,
+        is_enabled=True,
+        source_type=SourceType.CHANNEL,
+        source_url="https://www.youtube.com/@testchannel",
+        title=TEST_PODCAST_TITLE,
+        description=TEST_PODCAST_DESCRIPTION,
+        language="en",
+        author=TEST_AUTHOR,
+        image_url="https://example.com/artwork.jpg",
+        category=PodcastCategories("Technology"),
+        explicit=PodcastExplicit.NO,
+    )
 
 
 @pytest.fixture
@@ -121,6 +139,7 @@ def rss_generator(
 def test_update_feed_success(
     rss_generator: RSSFeedGenerator,
     mock_download_db: MagicMock,
+    test_feed: Feed,
     feed_config: FeedConfig,
     sample_downloads: list[Download],
 ):
@@ -128,7 +147,7 @@ def test_update_feed_success(
     feed_id = TEST_FEED_ID
     mock_download_db.get_downloads_by_status.return_value = sample_downloads
 
-    rss_generator.update_feed(feed_id, feed_config)
+    rss_generator.update_feed(feed_id, test_feed)
 
     mock_download_db.get_downloads_by_status.assert_called_once_with(
         status_to_filter=DownloadStatus.DOWNLOADED, feed=feed_id
@@ -144,6 +163,7 @@ def test_update_feed_success(
 def test_update_feed_database_error(
     rss_generator: RSSFeedGenerator,
     mock_download_db: MagicMock,
+    test_feed: Feed,
     feed_config: FeedConfig,
 ):
     """Test feed generation with database error."""
@@ -153,7 +173,7 @@ def test_update_feed_database_error(
     )
 
     with pytest.raises(RSSGenerationError) as exc_info:
-        rss_generator.update_feed(feed_id, feed_config)
+        rss_generator.update_feed(feed_id, test_feed)
 
     assert "Failed to retrieve downloads for feed" in str(exc_info.value)
     assert exc_info.value.feed_id == feed_id
@@ -178,6 +198,7 @@ def test_get_feed_xml_not_found(rss_generator: RSSFeedGenerator):
 def test_generated_xml_structure(
     rss_generator: RSSFeedGenerator,
     mock_download_db: MagicMock,
+    test_feed: Feed,
     feed_config: FeedConfig,
     sample_downloads: list[Download],
 ):
@@ -185,7 +206,7 @@ def test_generated_xml_structure(
     feed_id = TEST_FEED_ID
     mock_download_db.get_downloads_by_status.return_value = sample_downloads
 
-    rss_generator.update_feed(feed_id, feed_config)
+    rss_generator.update_feed(feed_id, test_feed)
     xml_bytes = rss_generator.get_feed_xml(feed_id)
 
     # Parse XML and verify structure
@@ -267,6 +288,7 @@ def test_generated_xml_structure(
 def test_generated_xml_enclosure_urls(
     rss_generator: RSSFeedGenerator,
     mock_download_db: MagicMock,
+    test_feed: Feed,
     feed_config: FeedConfig,
     sample_downloads: list[Download],
 ):
@@ -274,7 +296,7 @@ def test_generated_xml_enclosure_urls(
     feed_id = TEST_FEED_ID
     mock_download_db.get_downloads_by_status.return_value = sample_downloads
 
-    rss_generator.update_feed(feed_id, feed_config)
+    rss_generator.update_feed(feed_id, test_feed)
     xml_bytes = rss_generator.get_feed_xml(feed_id)
 
     root = ET.fromstring(xml_bytes)
@@ -305,6 +327,7 @@ def test_generated_xml_enclosure_urls(
 def test_generated_xml_mime_types(
     rss_generator: RSSFeedGenerator,
     mock_download_db: MagicMock,
+    test_feed: Feed,
     feed_config: FeedConfig,
 ):
     """Test that MIME types are correctly preserved in enclosures."""
@@ -342,7 +365,7 @@ def test_generated_xml_mime_types(
 
     mock_download_db.get_downloads_by_status.return_value = downloads_with_various_types
 
-    rss_generator.update_feed(feed_id, feed_config)
+    rss_generator.update_feed(feed_id, test_feed)
     xml_bytes = rss_generator.get_feed_xml(feed_id)
 
     root = ET.fromstring(xml_bytes)
@@ -376,13 +399,14 @@ def test_generated_xml_mime_types(
 def test_empty_downloads_list(
     rss_generator: RSSFeedGenerator,
     mock_download_db: MagicMock,
+    test_feed: Feed,
     feed_config: FeedConfig,
 ):
     """Test RSS generation with no downloads."""
     feed_id = "empty_feed"
     mock_download_db.get_downloads_by_status.return_value = []
 
-    rss_generator.update_feed(feed_id, feed_config)
+    rss_generator.update_feed(feed_id, test_feed)
     xml_bytes = rss_generator.get_feed_xml(feed_id)
 
     root = ET.fromstring(xml_bytes)
@@ -401,19 +425,21 @@ def test_empty_downloads_list(
 
 @pytest.mark.unit
 def test_feed_config_without_metadata_fails():
-    """Test that FeedgenCore raises error when feed config has no metadata."""
+    """Test that FeedgenCore raises error when feed has no required metadata."""
     from anypod.rss.feedgen_core import FeedgenCore
 
-    config_without_metadata = FeedConfig(
-        url="https://example.com",
-        schedule="0 3 * * *",
-        keep_last=10,
-        since=None,
-        metadata=None,
+    # Create a feed without required metadata
+    feed_without_metadata = Feed(
+        id=TEST_FEED_ID,
+        is_enabled=True,
+        source_type=SourceType.CHANNEL,
+        source_url="https://www.youtube.com/@testchannel",
+        title=None,  # Missing required title
+        description=None,  # Missing required description
     )
 
     paths = PathManager(Path("/tmp/data"), Path("/tmp/tmp"), TEST_BASE_URL)
     with pytest.raises(ValueError) as exc_info:
-        FeedgenCore(paths, TEST_FEED_ID, config_without_metadata)
+        FeedgenCore(paths, TEST_FEED_ID, feed_without_metadata)
 
-    assert "Feed metadata is required when creating an RSS feed" in str(exc_info.value)
+    assert "Feed title is required when creating an RSS feed" in str(exc_info.value)

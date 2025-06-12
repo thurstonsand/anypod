@@ -53,6 +53,7 @@ class FeedDatabase:
                 "id": str,
                 "is_enabled": bool,
                 "source_type": str,  # from a SourceType,
+                "source_url": str,
                 # time keeping
                 "created_at": datetime,
                 "updated_at": datetime,
@@ -80,6 +81,7 @@ class FeedDatabase:
                 "id",
                 "is_enabled",
                 "source_type",
+                "source_url",
                 "created_at",
                 "updated_at",
                 "consecutive_failures",
@@ -155,6 +157,7 @@ class FeedDatabase:
                     "id",
                     "is_enabled",
                     "source_type",
+                    "source_url",
                     "total_downloads",
                     "downloads_since_last_rss",
                     "consecutive_failures",
@@ -224,11 +227,14 @@ class FeedDatabase:
             raise e
         return [Feed.from_row(row) for row in rows]
 
-    def mark_sync_success(self, feed_id: str) -> None:
+    def mark_sync_success(
+        self, feed_id: str, sync_time: datetime | None = None
+    ) -> None:
         """Set last_successful_sync to current timestamp, reset consecutive_failures to 0, clear last_error.
 
         Args:
             feed_id: The feed identifier.
+            sync_time: The time to set the last_successful_sync to. If None, the current time is used.
 
         Raises:
             FeedNotFoundError: If the feed is not found.
@@ -241,7 +247,7 @@ class FeedDatabase:
                 self._feed_table_name,
                 feed_id,
                 {
-                    "last_successful_sync": datetime.now(UTC),
+                    "last_successful_sync": sync_time or datetime.now(UTC),
                     "consecutive_failures": 0,
                     "last_error": None,
                 },
@@ -253,12 +259,15 @@ class FeedDatabase:
             raise e
         logger.info("Feed sync success marked.", extra=log_params)
 
-    def mark_sync_failure(self, feed_id: str, error_message: str) -> None:
+    def mark_sync_failure(
+        self, feed_id: str, error_message: str, sync_time: datetime | None = None
+    ) -> None:
         """Set last_failed_sync to current timestamp, increment consecutive_failures, set last_error.
 
         Args:
             feed_id: The feed identifier.
             error_message: The error message to record.
+            sync_time: The time to set the last_failed_sync to. If None, the current time is used.
 
         Raises:
             FeedNotFoundError: If the feed is not found.
@@ -268,7 +277,7 @@ class FeedDatabase:
         logger.debug("Attempting to mark sync failure for feed.", extra=log_params)
 
         updates = {
-            "last_failed_sync": datetime.now(UTC),
+            "last_failed_sync": sync_time or datetime.now(UTC),
             "consecutive_failures": 1,
             "last_error": error_message,
         }

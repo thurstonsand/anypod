@@ -34,6 +34,7 @@ def sample_feed() -> Feed:
         id="test_feed",
         is_enabled=True,
         source_type=SourceType.CHANNEL,
+        source_url="https://www.youtube.com/@testchannel",
         created_at=base_time,
         updated_at=base_time,
         last_successful_sync=base_time + timedelta(hours=1),
@@ -62,6 +63,7 @@ def sample_feed_row_data() -> dict[str, Any]:
         "id": "test_feed_123",
         "is_enabled": True,
         "source_type": str(SourceType.PLAYLIST),
+        "source_url": "https://www.youtube.com/playlist?list=PLtest123",
         "created_at": base_time.isoformat(),
         "updated_at": base_time.isoformat(),
         "last_successful_sync": (base_time - timedelta(hours=1)).isoformat(),
@@ -89,6 +91,7 @@ def minimal_feed() -> Feed:
         id="minimal_feed",
         is_enabled=False,
         source_type=SourceType.SINGLE_VIDEO,
+        source_url="https://www.youtube.com/watch?v=test123",
         # All optional fields use defaults
     )
 
@@ -242,6 +245,7 @@ def test_upsert_feed_updates_existing(feed_db: FeedDatabase, sample_feed: Feed):
         id=sample_feed.id,
         is_enabled=False,  # Changed
         source_type=SourceType.PLAYLIST,  # Changed
+        source_url="https://www.youtube.com/playlist?list=PLupdated",  # Changed
         title="Updated Feed Title",  # Changed
         subtitle="Updated Subtitle",  # Changed
         description="Updated description",  # Changed
@@ -327,9 +331,24 @@ def test_get_feed_by_id_not_found(feed_db: FeedDatabase):
 def test_get_feeds_all_and_filtered(feed_db: FeedDatabase):
     """Test getting all feeds and filtering by enabled status."""
     # Create test feeds
-    feed1 = Feed(id="feed1", is_enabled=True, source_type=SourceType.CHANNEL)
-    feed2 = Feed(id="feed2", is_enabled=False, source_type=SourceType.PLAYLIST)
-    feed3 = Feed(id="feed3", is_enabled=True, source_type=SourceType.SINGLE_VIDEO)
+    feed1 = Feed(
+        id="feed1",
+        is_enabled=True,
+        source_type=SourceType.CHANNEL,
+        source_url="https://www.youtube.com/@channel1",
+    )
+    feed2 = Feed(
+        id="feed2",
+        is_enabled=False,
+        source_type=SourceType.PLAYLIST,
+        source_url="https://www.youtube.com/playlist?list=PLfeed2",
+    )
+    feed3 = Feed(
+        id="feed3",
+        is_enabled=True,
+        source_type=SourceType.SINGLE_VIDEO,
+        source_url="https://www.youtube.com/watch?v=feed3",
+    )
 
     # Insert feeds
     for feed in [feed1, feed2, feed3]:

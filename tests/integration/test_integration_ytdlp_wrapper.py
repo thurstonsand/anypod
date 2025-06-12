@@ -183,6 +183,47 @@ def test_fetch_metadata_success(
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize(
+    "url_type, url, expected_source_type, expected_title_contains", TEST_URLS_PARAMS
+)
+def test_thumbnail_format_validation(
+    ytdlp_wrapper: YtdlpWrapper,
+    url_type: str,
+    url: str,
+    expected_source_type: SourceType,
+    expected_title_contains: str,
+):
+    """Tests that thumbnail URLs returned are in valid PNG or JPG format.
+
+    Verifies that thumbnail filtering correctly selects only JPG or PNG thumbnails,
+    excluding WebP and other unsupported formats for RSS feed compatibility.
+    """
+    feed_id = f"test_thumbnail_{url_type}"
+    _, downloads = ytdlp_wrapper.fetch_metadata(
+        feed_id=feed_id, url=url, yt_cli_args=YT_DLP_MINIMAL_ARGS
+    )
+
+    assert len(downloads) == 1, (
+        f"Expected 1 download for thumbnail test, got {len(downloads)}"
+    )
+
+    download = downloads[0]
+
+    # All test videos should have thumbnails
+    assert download.thumbnail, f"Download should have a thumbnail for {url_type}"
+
+    # Check that thumbnail URL ends with supported format
+    assert download.thumbnail.endswith(".jpg") or download.thumbnail.endswith(".png"), (
+        f"Thumbnail URL should end with .jpg or .png, got: {download.thumbnail}"
+    )
+
+    # Verify it's a valid URL format
+    assert download.thumbnail.startswith("http"), (
+        f"Thumbnail should be a valid HTTP URL, got: {download.thumbnail}"
+    )
+
+
+@pytest.mark.integration
 def test_fetch_metadata_non_existent_video(ytdlp_wrapper: YtdlpWrapper):
     """Tests that fetching metadata for a non-existent video URL raises YtdlpApiError."""
     feed_id = "test_non_existent"

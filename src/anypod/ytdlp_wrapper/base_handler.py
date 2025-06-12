@@ -91,6 +91,7 @@ class SourceHandlerBase(Protocol):
         feed_id: str,
         ytdlp_info: YtdlpInfo,
         ref_type: ReferenceType,
+        source_url: str,
     ) -> Feed:
         """Extract feed-level metadata from yt-dlp response.
 
@@ -98,6 +99,7 @@ class SourceHandlerBase(Protocol):
             feed_id: The feed identifier.
             ytdlp_info: The yt-dlp metadata information.
             ref_type: The type of reference being parsed.
+            source_url: The original source URL for this feed.
 
         Returns:
             Feed object with extracted metadata populated.

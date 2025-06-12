@@ -17,6 +17,7 @@ class Feed:
         id: The feed identifier.
         is_enabled: Whether the feed is enabled for processing.
         source_type: Type of source (e.g., channel, playlist, single_video).
+        source_url: The original source URL for this feed.
 
         Time Keeping:
             created_at: When the feed was created (UTC).
@@ -47,6 +48,7 @@ class Feed:
     id: str
     is_enabled: bool
     source_type: SourceType
+    source_url: str
 
     # time keeping
     created_at: datetime | None = None
@@ -97,6 +99,7 @@ class Feed:
             id=row["id"],
             is_enabled=bool(row["is_enabled"]),
             source_type=source_type_enum,
+            source_url=row["source_url"],
             # time keeping
             created_at=parse_required_datetime(row["created_at"]),
             updated_at=parse_required_datetime(row["updated_at"]),

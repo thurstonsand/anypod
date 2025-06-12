@@ -38,6 +38,7 @@ MOCK_FEED = Feed(
     image_url=None,
     is_enabled=True,
     source_type=SourceType.UNKNOWN,
+    source_url="https://example.com/test",
 )
 
 # --- Fixtures ---

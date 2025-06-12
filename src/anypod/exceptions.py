@@ -179,6 +179,28 @@ class PruneError(DataCoordinatorError):
         self.download_id = download_id
 
 
+class CoordinatorExecutionError(DataCoordinatorError):
+    """Raised when an error occurs during the coordinator process.
+
+    This exception is used for errors that occur during feed processing
+    setup and coordination, before or during phase execution.
+
+    Attributes:
+        feed_id: The feed identifier associated with the error.
+        context: Additional context about what was happening when the error occurred.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        feed_id: str | None = None,
+        context: str | None = None,
+    ):
+        super().__init__(message)
+        self.feed_id = feed_id
+        self.context = context
+
+
 class YtdlpError(AnypodError):
     """Base class for yt-dlp errors."""
 

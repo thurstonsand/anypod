@@ -227,19 +227,21 @@ This section details the components that manage the lifecycle of downloads, from
   - [x] Mark fields for best-effort extraction when overrides are removed
 - [x] Unit tests for both `DownloadDatabase` and `FeedDatabase`
 - [x] on pruning, also update `total_downloads` value
-- [ ] feed archiver. this will mean also archiving all downloads associated with that feed
-- [ ] ensure there aren't any read/modify/write loops that arent protected by a transaction
+- [x] ensure there aren't any read/modify/write loops that arent protected by a transaction
 
 ### 3.5.6 `DataCoordinator` Orchestrator (`data_coordinator/coordinator.py`)
-- [ ] Constructor accepts `Enqueuer`, `Downloader`, `Pruner`, `RSSFeedGenerator`.
-- [ ] `process_feed(feed_id: str, feed_config: FeedConfig) -> ProcessingResults`:
-    - Calls `enqueuer.enqueue_new_downloads()` (fetch_since_date is from last sync).
-    - Calls `downloader.download_queued()` for the feed.
-    - Calls `pruner.prune_feed_downloads()` with feed_config.keep_last and prune_before_date from feed_config.since.
-    - Calls `rss_generator.update_feed()` to regenerate RSS feed.
-    - Aggregates results and handles cross-phase error scenarios.
-    - Returns structured results with counts and any errors.
-- [ ] Unit tests for `DataCoordinator` focusing on orchestration flow and error handling with mocked dependencies.
+- [x] Create `data_coordinator/types/` folder with `__init__.py` and `processing_results.py`
+- [x] Create `ProcessingResults` dataclass with counts, error tracking, status, and timing
+- [x] Add `archive_feed()` method to `Pruner` class (sets `is_enabled=False`)
+- [x] Constructor accepts `Enqueuer`, `Downloader`, `Pruner`, `RSSFeedGenerator`, `FeedDatabase`
+- [x] `process_feed(feed_id: str, feed_config: FeedConfig) -> ProcessingResults`:
+    - Calculate `fetch_since_date` from `feed.last_successful_sync` (NOT feed_config.since)
+    - Execute phases in sequence: enqueue → download → prune → RSS generation
+    - Inline error handling with graceful degradation between phases
+    - Update `last_successful_sync` or `last_failed_sync` based on outcome
+    - Return comprehensive `ProcessingResults` with all counts and errors
+- [x] Update `data_coordinator/__init__.py` to export `DataCoordinator`
+- [x] Integration tests for `DataCoordinator` focusing on full process_feed flow
 
 ### 3.5.7 Discrepancy Detection (in `Pruner` or new service)
 - [ ] Implement discrepancy detection logic:

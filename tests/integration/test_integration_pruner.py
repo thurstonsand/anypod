@@ -13,6 +13,7 @@ from anypod.data_coordinator.pruner import Pruner
 from anypod.db import DownloadDatabase
 from anypod.db.feed_db import FeedDatabase
 from anypod.db.types import Download, DownloadStatus, Feed, SourceType
+from anypod.exceptions import PruneError
 from anypod.file_manager import FileManager
 from anypod.path_manager import PathManager
 
@@ -242,10 +243,10 @@ def file_manager(shared_dirs: tuple[Path, Path]) -> Generator[FileManager]:
 
 @pytest.fixture
 def pruner(
-    download_db: DownloadDatabase, feed_db: FeedDatabase, file_manager: FileManager
+    feed_db: FeedDatabase, download_db: DownloadDatabase, file_manager: FileManager
 ) -> Generator[Pruner]:
     """Provides a Pruner instance for the tests."""
-    yield Pruner(download_db, feed_db, file_manager)
+    yield Pruner(feed_db, download_db, file_manager)
 
 
 def create_dummy_file(file_manager: FileManager, download: Download) -> Path:
@@ -288,6 +289,7 @@ def populated_test_data(
         id=TEST_FEED_ID,
         is_enabled=True,
         source_type=SourceType.CHANNEL,
+        source_url="https://www.youtube.com/@testchannel",
         title="Test Feed",
         description="Test feed for integration tests",
     )
@@ -593,6 +595,7 @@ def test_prune_feed_downloads_empty_feed(
         id=empty_feed_id,
         is_enabled=True,
         source_type=SourceType.CHANNEL,
+        source_url="https://www.youtube.com/@emptyfeed",
         title="Empty Feed",
         description="Test feed with no downloads",
     )
@@ -622,6 +625,7 @@ def test_prune_feed_downloads_only_excluded_statuses(
         id=feed_id,
         is_enabled=True,
         source_type=SourceType.CHANNEL,
+        source_url="https://www.youtube.com/@excludedfeed",
         title="Excluded Only Feed",
         description="Test feed with only excluded statuses",
     )
@@ -701,6 +705,7 @@ def test_prune_feed_downloads_large_dataset(
         id=feed_id,
         is_enabled=True,
         source_type=SourceType.CHANNEL,
+        source_url="https://www.youtube.com/@largefeed",
         title="Large Dataset Feed",
         description="Test feed with large dataset",
     )
@@ -832,3 +837,188 @@ def test_prune_feed_downloads_future_date(
     assert (
         len(archived_downloads) == expected_archived + 1
     )  # +1 for pre-existing archived item
+
+
+# --- Tests for Pruner.archive_feed ---
+
+
+@pytest.mark.integration
+def test_archive_feed_success(
+    pruner: Pruner,
+    download_db: DownloadDatabase,
+    feed_db: FeedDatabase,
+    file_manager: FileManager,
+    populated_test_data: list[Download],
+):
+    """Tests archive_feed successfully archives all non-terminal downloads and disables feed."""
+    # Verify initial state
+    initial_downloaded = download_db.get_downloads_by_status(
+        DownloadStatus.DOWNLOADED, feed=TEST_FEED_ID
+    )
+    initial_queued = download_db.get_downloads_by_status(
+        DownloadStatus.QUEUED, feed=TEST_FEED_ID
+    )
+    initial_upcoming = download_db.get_downloads_by_status(
+        DownloadStatus.UPCOMING, feed=TEST_FEED_ID
+    )
+    initial_error = download_db.get_downloads_by_status(
+        DownloadStatus.ERROR, feed=TEST_FEED_ID
+    )
+
+    total_non_terminal = (
+        len(initial_downloaded)
+        + len(initial_queued)
+        + len(initial_upcoming)
+        + len(initial_error)
+    )
+
+    # Verify files exist for downloaded items
+    for download in initial_downloaded:
+        assert file_manager.download_exists(TEST_FEED_ID, download.id, download.ext)
+
+    # Archive the feed
+    archived_count, files_deleted_count = pruner.archive_feed(TEST_FEED_ID)
+
+    # Verify results
+    assert archived_count == total_non_terminal
+    assert files_deleted_count == len(initial_downloaded)
+
+    # Verify all non-terminal downloads are now archived
+    for status in [
+        DownloadStatus.DOWNLOADED,
+        DownloadStatus.QUEUED,
+        DownloadStatus.UPCOMING,
+        DownloadStatus.ERROR,
+    ]:
+        remaining = download_db.get_downloads_by_status(status, feed=TEST_FEED_ID)
+        assert len(remaining) == 0
+
+    # Verify SKIPPED downloads are unchanged
+    skipped_downloads = download_db.get_downloads_by_status(
+        DownloadStatus.SKIPPED, feed=TEST_FEED_ID
+    )
+    assert len(skipped_downloads) == 1
+
+    # Verify files are deleted for previously downloaded items
+    for download in initial_downloaded:
+        assert not file_manager.download_exists(TEST_FEED_ID, download.id, download.ext)
+
+    # Verify feed is disabled
+    feed = feed_db.get_feed_by_id(TEST_FEED_ID)
+    assert feed.is_enabled is False
+
+    # Verify total_downloads was recalculated to 0
+    assert feed.total_downloads == 0
+
+
+@pytest.mark.integration
+def test_archive_feed_transaction_rollback_on_failure(
+    pruner: Pruner,
+    download_db: DownloadDatabase,
+    feed_db: FeedDatabase,
+    file_manager: FileManager,
+):
+    """Tests archive_feed transaction rollback when download archival fails."""
+    feed_id = "rollback_test_feed"
+
+    # Create test feed
+    test_feed = Feed(
+        id=feed_id,
+        is_enabled=True,
+        source_type=SourceType.CHANNEL,
+        source_url="https://www.youtube.com/@rollbackfeed",
+        title="Rollback Test Feed",
+        description="Feed for testing transaction rollback",
+    )
+    feed_db.upsert_feed(test_feed)
+
+    # Create test downloads
+    test_downloads = [
+        Download(
+            feed=feed_id,
+            id="download_1",
+            source_url="https://example.com/video1",
+            title="Video 1",
+            published=BASE_PUBLISH_DATE - timedelta(days=1),
+            ext="mp4",
+            mime_type="video/mp4",
+            filesize=1024,
+            duration=120,
+            status=DownloadStatus.DOWNLOADED,
+            retries=0,
+            discovered_at=BASE_PUBLISH_DATE,
+            updated_at=BASE_PUBLISH_DATE,
+        ),
+        Download(
+            feed=feed_id,
+            id="download_2",
+            source_url="https://example.com/video2",
+            title="Video 2",
+            published=BASE_PUBLISH_DATE - timedelta(days=2),
+            ext="mp4",
+            mime_type="video/mp4",
+            filesize=1024,
+            duration=180,
+            status=DownloadStatus.QUEUED,
+            retries=0,
+            discovered_at=BASE_PUBLISH_DATE,
+            updated_at=BASE_PUBLISH_DATE,
+        ),
+    ]
+
+    # Insert downloads and create file for downloaded item
+    for download in test_downloads:
+        download_db.upsert_download(download)
+        if download.status == DownloadStatus.DOWNLOADED:
+            create_dummy_file(file_manager, download)
+
+    # Verify initial state
+    initial_downloaded = download_db.get_downloads_by_status(
+        DownloadStatus.DOWNLOADED, feed=feed_id
+    )
+    initial_queued = download_db.get_downloads_by_status(
+        DownloadStatus.QUEUED, feed=feed_id
+    )
+    assert len(initial_downloaded) == 1
+    assert len(initial_queued) == 1
+
+    # Mock archive_download to fail partway through
+    original_archive = download_db.archive_download
+
+    def failing_archive(feed: str, id: str) -> None:
+        if id == "download_2":
+            from anypod.exceptions import DatabaseOperationError
+
+            raise DatabaseOperationError("Simulated archive failure")
+        return original_archive(feed, id)
+
+    download_db.archive_download = failing_archive
+
+    try:
+        # Archive should fail and rollback
+        with pytest.raises(PruneError):
+            pruner.archive_feed(feed_id)
+
+        # Verify rollback occurred - downloads should still be in original states
+        remaining_downloaded = download_db.get_downloads_by_status(
+            DownloadStatus.DOWNLOADED, feed=feed_id
+        )
+        remaining_queued = download_db.get_downloads_by_status(
+            DownloadStatus.QUEUED, feed=feed_id
+        )
+
+        # Transaction should have rolled back
+        assert len(remaining_downloaded) == 1
+        assert len(remaining_queued) == 1
+
+        # Files should still exist for downloaded items
+        for download in initial_downloaded:
+            assert file_manager.download_exists(feed_id, download.id, download.ext)
+
+        # Feed should still be enabled (rollback)
+        feed = feed_db.get_feed_by_id(feed_id)
+        assert feed.is_enabled is True
+
+    finally:
+        # Cleanup
+        download_db.archive_download = original_archive

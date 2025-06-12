@@ -6,12 +6,15 @@ operations of feedgen and provides a clean interface for creating RSS feeds
 from Anypod download data.
 """
 
+import logging
+
 from feedgen.feed import FeedGenerator  # type: ignore
 
-from anypod.config import FeedConfig
-from anypod.db.types import Download
-from anypod.exceptions import RSSGenerationError
-from anypod.path_manager import PathManager
+from ..db.types import Download, Feed
+from ..exceptions import RSSGenerationError
+from ..path_manager import PathManager
+
+logger = logging.getLogger(__name__)
 
 
 class FeedgenCore:
@@ -22,19 +25,22 @@ class FeedgenCore:
     type conversions internally.
 
     Args:
-        host: Base URL for the feed and download links.
+        paths: PathManager instance for resolving URLs and paths.
         feed_id: Unique identifier for the feed.
-        feed_config: Configuration containing metadata and settings.
+        feed: Feed database object containing metadata and settings.
 
     Attributes:
         _fg: Internal FeedGenerator instance.
         _paths: PathManager instance for resolving URLs and paths.
-        _feed_config: Feed configuration reference.
+        _feed: Feed database object reference.
     """
 
-    def __init__(self, paths: PathManager, feed_id: str, feed_config: FeedConfig):
-        if feed_config.metadata is None:
-            raise ValueError("Feed metadata is required when creating an RSS feed.")
+    def __init__(self, paths: PathManager, feed_id: str, feed: Feed):
+        # Check if required metadata is available
+        if not feed.title:
+            raise ValueError("Feed title is required when creating an RSS feed.")
+        if not feed.description:
+            raise ValueError("Feed description is required when creating an RSS feed.")
 
         fg = FeedGenerator()  # type: ignore
         fg.load_extension("podcast")  # type: ignore
@@ -47,25 +53,36 @@ class FeedgenCore:
                 feed_id=feed_id,
             ) from e
 
-        fg.title(feed_config.metadata.title)  # type: ignore
+        fg.title(feed.title)  # type: ignore
         fg.link(href=feed_self_url, rel="self")  # type: ignore
-        fg.link(href=feed_config.url, rel="alternate")  # type: ignore
-        fg.description(feed_config.metadata.description)  # type: ignore
-        fg.podcast.itunes_summary(feed_config.metadata.description)  # type: ignore
-        fg.language(feed_config.metadata.language)  # type: ignore
-        fg.podcast.itunes_category(  # type: ignore
-            feed_config.metadata.categories.as_dict_list()
-        )
-        fg.podcast.itunes_explicit(  # type: ignore
-            str(feed_config.metadata.explicit)
-            if feed_config.metadata.explicit
-            else None
-        )
-        fg.podcast.itunes_image(feed_config.metadata.image_url)  # type: ignore
-        fg.podcast.itunes_author(feed_config.metadata.author)  # type: ignore
+        fg.link(href=feed.source_url, rel="alternate")  # type: ignore
+        fg.description(feed.description)  # type: ignore
+        fg.podcast.itunes_summary(feed.description)  # type: ignore
+        fg.language(feed.language or "en")  # type: ignore
+
+        # Handle optional fields with null checks
+        if feed.category:
+            fg.podcast.itunes_category(  # type: ignore
+                feed.category.as_dict_list()
+            )
+        if feed.explicit:
+            fg.podcast.itunes_explicit(str(feed.explicit))  # type: ignore
+        if feed.image_url:
+            try:
+                fg.podcast.itunes_image(feed.image_url)  # type: ignore
+            except ValueError as e:
+                logger.warning(
+                    f"Invalid feed image URL format: {e}",
+                    extra={
+                        "feed_id": feed_id,
+                    },
+                )
+        if feed.author:
+            fg.podcast.itunes_author(feed.author)  # type: ignore
+
         # always prevent this feed from appearing in the podcast directory
         fg.podcast.itunes_block("yes")  # type: ignore
-        fg.lastBuildDate(None)  # type: ignore
+        fg.lastBuildDate(None)  # type: ignore # None == now()
         fg.generator(  # type: ignore
             "AnyPod: https://github.com/thurstonsan/anypod"
         )
@@ -74,8 +91,7 @@ class FeedgenCore:
 
         self._fg = fg  # type: ignore
         self._paths = paths
-        self._feed_config = feed_config
-        self._feed_metadata = feed_config.metadata
+        self._feed = feed
 
     # TODO: incorporate `updated` and `transcript`
     def with_downloads(self, downloads: list[Download]) -> "FeedgenCore":
@@ -102,7 +118,19 @@ class FeedgenCore:
             fe.podcast.itunes_summary(description)  # type: ignore
 
             if download.thumbnail:
-                fe.podcast.itunes_image(download.thumbnail)  # type: ignore
+                try:
+                    fe.podcast.itunes_image(download.thumbnail)  # type: ignore
+                except ValueError:
+                    # Skip invalid thumbnail URLs rather than failing entire feed generation
+                    # Log warning but continue processing
+                    logger.warning(
+                        "Skipping invalid thumbnail URL for download.",
+                        extra={
+                            "feed_id": download.feed,
+                            "download_id": download.id,
+                            "thumbnail_url": download.thumbnail,
+                        },
+                    )
 
             try:
                 media_url = self._paths.media_file_url(
@@ -122,8 +150,8 @@ class FeedgenCore:
             fe.link(href=download.source_url, rel="alternate")  # type: ignore
             fe.published(download.published)  # type: ignore
             fe.source(  # type: ignore
-                url=self._feed_config.url,
-                title=self._feed_metadata.title,
+                url=self._feed.source_url,
+                title=self._feed.title,
             )
             fe.podcast.itunes_duration(download.duration)  # type: ignore
             # always prevent this entry from appearing in the podcast directory

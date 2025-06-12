@@ -54,7 +54,7 @@ def pruner(
     mock_file_manager: MagicMock,
 ) -> Pruner:
     """Provides a Pruner instance with mocked dependencies."""
-    return Pruner(mock_download_db, mock_feed_db, mock_file_manager)
+    return Pruner(mock_feed_db, mock_download_db, mock_file_manager)
 
 
 @pytest.fixture
@@ -596,3 +596,196 @@ def test_prune_feed_downloads_individual_failure_continues_processing(
     assert archived_count == 2
     assert files_deleted_count == 2
     assert mock_download_db.archive_download.call_count == 3  # All attempts made
+
+
+# --- Tests for Pruner.archive_feed ---
+
+
+@pytest.mark.unit
+def test_archive_feed_success_with_downloads(
+    pruner: Pruner,
+    mock_download_db: MagicMock,
+    mock_feed_db: MagicMock,
+    mock_file_manager: MagicMock,
+    sample_downloaded_item: Download,
+    sample_queued_item: Download,
+    sample_upcoming_item: Download,
+):
+    """Tests archive_feed successfully archives all non-terminal downloads and disables feed."""
+
+    # Setup return values for each status type query
+    def get_downloads_by_status_fn(status_to_filter: DownloadStatus, feed: str | None):
+        return {
+            DownloadStatus.DOWNLOADED: [sample_downloaded_item],
+            DownloadStatus.QUEUED: [sample_queued_item],
+            DownloadStatus.UPCOMING: [sample_upcoming_item],
+            DownloadStatus.ERROR: [],
+        }.get(status_to_filter, [])
+
+    mock_download_db.get_downloads_by_status.side_effect = get_downloads_by_status_fn
+
+    mock_download_db.count_downloads_by_status.return_value = 0
+
+    archived_count, files_deleted_count = pruner.archive_feed("test_feed")
+
+    # Verify all 3 downloads were archived
+    assert archived_count == 3
+    assert files_deleted_count == 1  # Only DOWNLOADED item had file deleted
+
+    # Verify archive_download was called for each download
+    assert mock_download_db.archive_download.call_count == 3
+    expected_calls = [
+        (("test_feed", sample_downloaded_item.id),),
+        (("test_feed", sample_queued_item.id),),
+        (("test_feed", sample_upcoming_item.id),),
+    ]
+    mock_download_db.archive_download.assert_has_calls(expected_calls, any_order=True)
+
+    # Verify file deletion only called for DOWNLOADED item
+    mock_file_manager.delete_download_file.assert_called_once_with(
+        "test_feed", sample_downloaded_item.id, "mp4"
+    )
+
+    # Verify total_downloads was recalculated
+    mock_download_db.count_downloads_by_status.assert_called_once_with(
+        DownloadStatus.DOWNLOADED, feed="test_feed"
+    )
+    mock_feed_db.update_total_downloads.assert_called_once_with("test_feed", 0)
+
+    # Verify feed was disabled
+    mock_feed_db.set_feed_enabled.assert_called_once_with("test_feed", False)
+
+
+@pytest.mark.unit
+def test_archive_feed_skips_archived_and_skipped_downloads(
+    pruner: Pruner,
+    mock_download_db: MagicMock,
+    mock_feed_db: MagicMock,
+    sample_downloaded_item: Download,
+    sample_skipped_item: Download,
+):
+    """Tests archive_feed skips ARCHIVED and SKIPPED downloads during archival."""
+    archived_item = dataclasses.replace(
+        sample_downloaded_item,
+        id="archived_item",
+        status=DownloadStatus.ARCHIVED,
+    )
+
+    # Setup: only return downloaded item, not skipped or archived
+    def get_downloads_by_status_fn(status_to_filter: DownloadStatus, feed: str | None):
+        return {
+            DownloadStatus.DOWNLOADED: [sample_downloaded_item],
+            DownloadStatus.QUEUED: [],
+            DownloadStatus.UPCOMING: [],
+            DownloadStatus.ERROR: [],
+            DownloadStatus.ARCHIVED: [archived_item],  # Should not be queried
+            DownloadStatus.SKIPPED: [sample_skipped_item],  # Should not be queried
+        }.get(status_to_filter, [])
+
+    mock_download_db.get_downloads_by_status.side_effect = get_downloads_by_status_fn
+
+    mock_download_db.count_downloads_by_status.return_value = 0
+
+    archived_count, files_deleted_count = pruner.archive_feed("test_feed")
+
+    # Only the DOWNLOADED item should be archived
+    assert archived_count == 1
+    assert files_deleted_count == 1
+
+    # Verify we didn't query for ARCHIVED or SKIPPED statuses
+    expected_statuses = [
+        DownloadStatus.DOWNLOADED,
+        DownloadStatus.QUEUED,
+        DownloadStatus.UPCOMING,
+        DownloadStatus.ERROR,
+    ]
+    actual_statuses = [
+        call[0][0] for call in mock_download_db.get_downloads_by_status.call_args_list
+    ]
+    assert set(actual_statuses) == set(expected_statuses)
+    assert DownloadStatus.ARCHIVED not in actual_statuses
+    assert DownloadStatus.SKIPPED not in actual_statuses
+
+    # Feed should still be disabled
+    mock_feed_db.set_feed_enabled.assert_called_once_with("test_feed", False)
+
+
+@pytest.mark.unit
+def test_archive_feed_empty_feed_only_disables(
+    pruner: Pruner,
+    mock_download_db: MagicMock,
+    mock_feed_db: MagicMock,
+):
+    """Tests archive_feed with no downloads only disables the feed."""
+    # All status queries return empty lists
+    mock_download_db.get_downloads_by_status.return_value = []
+
+    archived_count, files_deleted_count = pruner.archive_feed("test_feed")
+
+    assert archived_count == 0
+    assert files_deleted_count == 0
+
+    # No archives or file deletions should occur
+    mock_download_db.archive_download.assert_not_called()
+
+    # total_downloads should not be recalculated for empty feed
+    mock_download_db.count_downloads_by_status.assert_not_called()
+    mock_feed_db.update_total_downloads.assert_not_called()
+
+    # Feed should still be disabled
+    mock_feed_db.set_feed_enabled.assert_called_once_with("test_feed", False)
+
+
+@pytest.mark.unit
+def test_archive_feed_database_fetch_error_raises_prune_error(
+    pruner: Pruner,
+    mock_download_db: MagicMock,
+):
+    """Tests archive_feed raises PruneError on database fetch failure."""
+    db_error = DatabaseOperationError("Failed to fetch downloads")
+    mock_download_db.get_downloads_by_status.side_effect = db_error
+
+    with pytest.raises(PruneError) as exc_info:
+        pruner.archive_feed("test_feed")
+
+    assert exc_info.value.feed_id == "test_feed"
+    assert exc_info.value.__cause__ is db_error
+
+
+@pytest.mark.unit
+def test_archive_feed_file_deletion_error_continues_archival(
+    pruner: Pruner,
+    mock_download_db: MagicMock,
+    mock_feed_db: MagicMock,
+    mock_file_manager: MagicMock,
+    sample_downloaded_item: Download,
+):
+    """Tests archive_feed continues when file deletion fails with FileNotFoundError."""
+
+    def get_downloads_by_status_fn(status_to_filter: DownloadStatus, feed: str | None):
+        return {
+            DownloadStatus.DOWNLOADED: [sample_downloaded_item],
+        }.get(status_to_filter, [])
+
+    mock_download_db.get_downloads_by_status.side_effect = get_downloads_by_status_fn
+
+    mock_download_db.count_downloads_by_status.return_value = 0
+
+    # File deletion fails with FileNotFoundError (non-fatal)
+    mock_file_manager.delete_download_file.side_effect = FileNotFoundError(
+        "File already gone"
+    )
+
+    archived_count, files_deleted_count = pruner.archive_feed("test_feed")
+
+    # Archive should succeed even though file deletion failed
+    assert archived_count == 1
+    assert files_deleted_count == 0  # File deletion failed
+
+    # Download should still be archived
+    mock_download_db.archive_download.assert_called_once_with(
+        "test_feed", sample_downloaded_item.id
+    )
+
+    # Feed should still be disabled
+    mock_feed_db.set_feed_enabled.assert_called_once_with("test_feed", False)

@@ -171,6 +171,7 @@ def test_fetch_metadata_returns_feed_and_downloads_tuple(
         id=feed_id,
         is_enabled=True,
         source_type=SourceType.SINGLE_VIDEO,
+        source_url=url,
         title="Test Video Title",
         author="Test Author",
     )
@@ -213,7 +214,7 @@ def test_fetch_metadata_returns_feed_and_downloads_tuple(
 
     # Verify that the handler methods were called with correct parameters
     mock_youtube_handler.extract_feed_metadata.assert_called_once_with(
-        feed_id, mock_main_ytdlp_info, ReferenceType.SINGLE
+        feed_id, mock_main_ytdlp_info, ReferenceType.SINGLE, url
     )
     mock_youtube_handler.parse_metadata_to_downloads.assert_called_once_with(
         feed_id,

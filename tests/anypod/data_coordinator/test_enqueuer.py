@@ -39,6 +39,7 @@ MOCK_FEED = Feed(
     image_url=None,
     is_enabled=True,
     source_type=SourceType.UNKNOWN,
+    source_url="https://example.com/test",
 )
 
 
@@ -160,6 +161,7 @@ def test_synchronize_feed_metadata_handles_removed_overrides(
         explicit=PodcastExplicit.NO,
         is_enabled=True,
         source_type=SourceType.UNKNOWN,
+        source_url="https://example.com/test",
     )
 
     # Fetched feed metadata from ytdlp (what we'd get from the source)
@@ -175,6 +177,7 @@ def test_synchronize_feed_metadata_handles_removed_overrides(
         explicit=None,  # No explicit flag in source
         is_enabled=True,
         source_type=SourceType.UNKNOWN,
+        source_url="https://example.com/test",
     )
 
     # Feed config with NO metadata overrides (user removed them)
@@ -234,6 +237,7 @@ def test_synchronize_feed_metadata_handles_partial_override_removal(
         explicit=PodcastExplicit.YES,
         is_enabled=True,
         source_type=SourceType.UNKNOWN,
+        source_url="https://example.com/test",
     )
 
     # Fetched metadata from source
@@ -249,6 +253,7 @@ def test_synchronize_feed_metadata_handles_partial_override_removal(
         explicit=None,
         is_enabled=True,
         source_type=SourceType.UNKNOWN,
+        source_url="https://example.com/test",
     )
 
     # Feed config with PARTIAL overrides (user removed some but kept others)

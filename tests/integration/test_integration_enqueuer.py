@@ -120,6 +120,7 @@ def create_test_feed(feed_db: FeedDatabase, feed_id: str, url: str) -> Feed:
         id=feed_id,
         is_enabled=True,
         source_type=SourceType.UNKNOWN,  # Will be determined by ytdlp
+        source_url="https://example.com/test",
         title=f"Test Feed {feed_id}",
     )
     feed_db.upsert_feed(feed)
@@ -200,7 +201,7 @@ def test_enqueue_new_downloads_success(
         )
         assert (
             updated_feed.image_url
-            == "https://i.ytimg.com/vi_webp/aqz-KE-bpKQ/maxresdefault.webp"
+            == "https://i.ytimg.com/vi/aqz-KE-bpKQ/maxresdefault.jpg"
         )
         assert updated_feed.subtitle is None
         assert updated_feed.language is None
@@ -561,8 +562,7 @@ def test_enqueue_feed_metadata_synchronization_with_overrides(
 
     # Image URL should come from extracted metadata since not overridden
     assert (
-        updated_feed.image_url
-        == "https://i.ytimg.com/vi_webp/aqz-KE-bpKQ/maxresdefault.webp"
+        updated_feed.image_url == "https://i.ytimg.com/vi/aqz-KE-bpKQ/maxresdefault.jpg"
     )
 
 
@@ -617,8 +617,7 @@ def test_enqueue_feed_metadata_partial_overrides(
         and "UHD High Frame rate version" in updated_feed.description
     )
     assert (
-        updated_feed.image_url
-        == "https://i.ytimg.com/vi_webp/aqz-KE-bpKQ/maxresdefault.webp"
+        updated_feed.image_url == "https://i.ytimg.com/vi/aqz-KE-bpKQ/maxresdefault.jpg"
     )
 
     # These should remain None since not overridden and not in extracted metadata
