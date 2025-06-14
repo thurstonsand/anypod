@@ -9,6 +9,7 @@ description = "Thin yt‑dlp → podcast solution"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "croniter>=6.0.0",
     "feedgen>=1.0.0",
     "pydantic>=2.11.3",
     "pydantic-settings>=2.9.1",

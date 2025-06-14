@@ -14,6 +14,7 @@ from ..db import DownloadDatabase, FeedDatabase
 from ..db.types import Download, DownloadStatus
 from ..exceptions import DatabaseOperationError, EnqueueError
 from ..path_manager import PathManager
+from ..utils.cron_utils import calculate_fetch_until_date
 from ..ytdlp_wrapper import YtdlpWrapper
 
 logger = logging.getLogger(__name__)
@@ -72,10 +73,16 @@ def run_debug_enqueuer_mode(
             # this is not normally how this field is used, but for debug mode, let's reuse this field
             fetch_since_date = feed_config.since or datetime.min.replace(tzinfo=UTC)
 
+            # Calculate fetch_until_date based on cron schedule
+            fetch_until_date = calculate_fetch_until_date(
+                feed_config.schedule, fetch_since_date
+            )
+
             newly_queued_count = enqueuer.enqueue_new_downloads(
                 feed_id=feed_id,
                 feed_config=feed_config,
                 fetch_since_date=fetch_since_date,
+                fetch_until_date=fetch_until_date,
             )
             total_newly_queued_count += newly_queued_count
             processed_feeds_count += 1

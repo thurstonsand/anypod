@@ -22,6 +22,7 @@ from ..exceptions import (
     RSSGenerationError,
 )
 from ..rss import RSSFeedGenerator
+from ..utils.cron_utils import calculate_fetch_until_date
 from .downloader import Downloader
 from .enqueuer import Enqueuer
 from .pruner import Pruner
@@ -84,7 +85,6 @@ class DataCoordinator:
             raise CoordinatorExecutionError(
                 f"Cannot retrieve feed for sync date calculation: {e}",
                 feed_id=feed_id,
-                context="fetch_since_date_calculation",
             ) from e
 
         # Use last successful sync timestamp
@@ -93,7 +93,6 @@ class DataCoordinator:
             raise CoordinatorExecutionError(
                 "No last successful sync found for feed. Expected last_successful_sync to be defined.",
                 feed_id=feed_id,
-                context="fetch_since_date_calculation",
             )
 
         logger.debug(
@@ -127,9 +126,14 @@ class DataCoordinator:
 
         logger.info("Starting enqueue phase.", extra=log_params)
 
+        # Calculate fetch_until_date based on cron schedule
+        fetch_until_date = calculate_fetch_until_date(
+            feed_config.schedule, fetch_since_date
+        )
+
         try:
             enqueued_count = self._enqueuer.enqueue_new_downloads(
-                feed_id, feed_config, fetch_since_date
+                feed_id, feed_config, fetch_since_date, fetch_until_date
             )
         except EnqueueError as e:
             duration = time.time() - phase_start

@@ -64,6 +64,69 @@ Download status transitions are implemented as explicit methods, not generic upd
 - Database: Uses sqlite-utils wrapped in `SqliteUtilsCore` class, not raw SQLite
 - Currently synchronous but designed for future async conversion
 
+## File Structure
+
+Whenever you add a new file, or notice a file that is missing from this list, proactively document it here.
+
+```
+anypod/
+├── src/anypod/
+│   ├── __init__.py
+│   ├── __main__.py              # Entry point
+│   ├── cli/                     # CLI interface and debug modes
+│   │   ├── cli.py               # Main CLI handler
+│   │   ├── default.py           # Default CLI mode
+│   │   ├── debug_downloader.py  # Debug mode for download testing
+│   │   ├── debug_enqueuer.py    # Debug mode for metadata fetching
+│   │   └── debug_ytdlp.py       # Debug mode for yt-dlp testing
+│   ├── config/                  # Configuration management
+│   │   ├── config.py            # Main config loader
+│   │   ├── feed_config.py       # Feed-specific configuration
+│   │   └── types/               # Config type definitions
+│   │       ├── feed_metadata_overrides.py
+│   │       ├── podcast_categories.py
+│   │       └── podcast_explicit.py
+│   ├── data_coordinator/        # Core orchestration logic
+│   │   ├── coordinator.py       # Main coordinator
+│   │   ├── downloader.py        # Download logic
+│   │   ├── enqueuer.py          # Metadata fetch & enqueue
+│   │   ├── pruner.py            # Retention policy implementation
+│   │   └── types/               # Coordinator types
+│   │       ├── phase_result.py
+│   │       └── processing_results.py
+│   ├── db/                      # Database layer
+│   │   ├── base_db.py           # Shared database components
+│   │   ├── download_db.py       # Download-specific operations
+│   │   ├── feed_db.py           # Feed-specific operations
+│   │   ├── sqlite_utils_core.py # SQLite-Utils wrapper
+│   │   └── types/               # Database types
+│   │       ├── download.py
+│   │       ├── download_status.py
+│   │       ├── feed.py
+│   │       └── source_type.py
+│   ├── rss/                     # RSS feed generation
+│   │   ├── feedgen_core.py      # Feed generation logic
+│   │   └── rss_feed.py          # `feedgen` wrapper
+│   ├── utils/                   # Utility functions
+│   │   └── cron_utils.py        # Cron schedule utilities
+│   ├── ytdlp_wrapper/           # `yt-dlp` integration
+│   │   ├── base_handler.py      # Base handler interface for different source types
+│   │   ├── youtube_handler.py   # YouTube source handler
+│   │   ├── ytdlp_core.py        # `yt-dlp` wrapper
+│   │   └── ytdlp_wrapper.py     # High-level wrapper
+│   ├── exceptions.py            # Custom exceptions
+│   ├── file_manager.py          # File operations abstraction
+│   ├── logging_config.py        # Logging configuration
+│   ├── path_manager.py          # Path resolution logic
+│   └── state_reconciler.py      # State reconciliation between config and database
+├── pyproject.toml               # Package configuration
+├── uv.lock                      # Dependency lock file
+├── example_feeds.yaml           # Example configuration
+├── DESIGN_DOC.md                # High level design of system
+├── TASK_LIST.md                 # Work items to build the full system
+└── README.md                    # Public documentation
+```
+
 ### Configuration Example
 
 Full YAML file describing podcasts:
@@ -120,6 +183,7 @@ CONFIG_FILE=/path/to/feeds.yaml       # Config file path (default: /config/feeds
 - Bias towards wrapping and re-raising exceptions to the highest possible location
 - Exception messages should not include variable data - use existing exception parameters/attributes instead
 - When adding new code/features, don't reference them with "new logic", "new field", etc. It is going to live in the code base for a long time past "new"
+- Order functions so each is defined before being referenced within the same file
 
 ### Docstring Guidelines
 - All functions, methods, classes, and tops of files require Google-style docstrings:

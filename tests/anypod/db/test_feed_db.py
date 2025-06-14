@@ -92,6 +92,7 @@ def minimal_feed() -> Feed:
         is_enabled=False,
         source_type=SourceType.SINGLE_VIDEO,
         source_url="https://www.youtube.com/watch?v=test123",
+        last_successful_sync=datetime.min.replace(tzinfo=UTC),
         # All optional fields use defaults
     )
 
@@ -246,6 +247,7 @@ def test_upsert_feed_updates_existing(feed_db: FeedDatabase, sample_feed: Feed):
         is_enabled=False,  # Changed
         source_type=SourceType.PLAYLIST,  # Changed
         source_url="https://www.youtube.com/playlist?list=PLupdated",  # Changed
+        last_successful_sync=datetime.min.replace(tzinfo=UTC),
         title="Updated Feed Title",  # Changed
         subtitle="Updated Subtitle",  # Changed
         description="Updated description",  # Changed
@@ -336,18 +338,21 @@ def test_get_feeds_all_and_filtered(feed_db: FeedDatabase):
         is_enabled=True,
         source_type=SourceType.CHANNEL,
         source_url="https://www.youtube.com/@channel1",
+        last_successful_sync=datetime.min.replace(tzinfo=UTC),
     )
     feed2 = Feed(
         id="feed2",
         is_enabled=False,
         source_type=SourceType.PLAYLIST,
         source_url="https://www.youtube.com/playlist?list=PLfeed2",
+        last_successful_sync=datetime.min.replace(tzinfo=UTC),
     )
     feed3 = Feed(
         id="feed3",
         is_enabled=True,
         source_type=SourceType.SINGLE_VIDEO,
         source_url="https://www.youtube.com/watch?v=feed3",
+        last_successful_sync=datetime.min.replace(tzinfo=UTC),
     )
 
     # Insert feeds

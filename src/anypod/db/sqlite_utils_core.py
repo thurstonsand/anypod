@@ -281,6 +281,7 @@ class SqliteUtilsCore:
         record: dict[str, Any],
         pk: str | tuple[str, ...],
         not_null: set[str] | None = None,
+        defaults: dict[str, Any] | None = None,
     ) -> None:
         """Insert or update a record in the specified table.
 
@@ -289,12 +290,18 @@ class SqliteUtilsCore:
             record: Dictionary containing the row data.
             pk: Primary key column(s).
             not_null: Set of columns that should be NOT NULL.
+            defaults: Default values for columns.
 
         Raises:
             DatabaseOperationError: If the upsert operation fails.
         """
         try:
-            self.db[table_name].upsert(record, pk=pk, not_null=not_null)  # type: ignore
+            self.db[table_name].upsert(  # type: ignore
+                record,
+                pk=pk,  # type: ignore
+                not_null=not_null,  # type: ignore
+                defaults=defaults,  # type: ignore
+            )
         except sqlite3.Error as e:
             raise DatabaseOperationError("Failed to upsert.") from e
 

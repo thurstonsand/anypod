@@ -7,7 +7,9 @@
       "Bash(rg:*)",
       "Bash(cat:*)",
       "WebFetch(domain:github.com)",
-      "Bash(uvx yt-dlp:*)"
+      "Bash(uvx yt-dlp:*)",
+      "Bash(tree:*)",
+      "Bash(ls:*)"
     ],
     "deny": []
   }

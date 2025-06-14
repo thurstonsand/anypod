@@ -290,6 +290,7 @@ def populated_test_data(
         is_enabled=True,
         source_type=SourceType.CHANNEL,
         source_url="https://www.youtube.com/@testchannel",
+        last_successful_sync=datetime.min.replace(tzinfo=UTC),
         title="Test Feed",
         description="Test feed for integration tests",
     )
@@ -596,6 +597,7 @@ def test_prune_feed_downloads_empty_feed(
         is_enabled=True,
         source_type=SourceType.CHANNEL,
         source_url="https://www.youtube.com/@emptyfeed",
+        last_successful_sync=datetime.min.replace(tzinfo=UTC),
         title="Empty Feed",
         description="Test feed with no downloads",
     )
@@ -626,6 +628,7 @@ def test_prune_feed_downloads_only_excluded_statuses(
         is_enabled=True,
         source_type=SourceType.CHANNEL,
         source_url="https://www.youtube.com/@excludedfeed",
+        last_successful_sync=datetime.min.replace(tzinfo=UTC),
         title="Excluded Only Feed",
         description="Test feed with only excluded statuses",
     )
@@ -706,6 +709,7 @@ def test_prune_feed_downloads_large_dataset(
         is_enabled=True,
         source_type=SourceType.CHANNEL,
         source_url="https://www.youtube.com/@largefeed",
+        last_successful_sync=datetime.min.replace(tzinfo=UTC),
         title="Large Dataset Feed",
         description="Test feed with large dataset",
     )
@@ -927,6 +931,7 @@ def test_archive_feed_transaction_rollback_on_failure(
         is_enabled=True,
         source_type=SourceType.CHANNEL,
         source_url="https://www.youtube.com/@rollbackfeed",
+        last_successful_sync=datetime.min.replace(tzinfo=UTC),
         title="Rollback Test Feed",
         description="Feed for testing transaction rollback",
     )

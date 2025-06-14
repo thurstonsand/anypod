@@ -39,3 +39,4 @@ uv run pytest --cov=src --cov-report=xml
 - Avoid string checks on error messages
 - Keep tests fast and independent
 - Aim for meaningful coverage, not 100% blindly
+- Perform a full confirmation run (`uv run pytest --integration`) to ensure all tests pass after you finish writing and verifying.

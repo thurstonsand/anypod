@@ -20,9 +20,9 @@ class Feed:
         source_url: The original source URL for this feed.
 
         Time Keeping:
+            last_successful_sync: Last time a successful sync occurred (UTC).
             created_at: When the feed was created (UTC).
             updated_at: When the feed was last updated (UTC).
-            last_successful_sync: Last time a successful sync occurred (UTC).
             last_rss_generation: Last time RSS was generated for this feed (UTC).
 
         Error Tracking:
@@ -51,9 +51,9 @@ class Feed:
     source_url: str
 
     # time keeping
+    last_successful_sync: datetime
     created_at: datetime | None = None
     updated_at: datetime | None = None
-    last_successful_sync: datetime | None = None
     last_rss_generation: datetime | None = None
 
     # Error tracking
@@ -101,9 +101,9 @@ class Feed:
             source_type=source_type_enum,
             source_url=row["source_url"],
             # time keeping
+            last_successful_sync=parse_required_datetime(row["last_successful_sync"]),
             created_at=parse_required_datetime(row["created_at"]),
             updated_at=parse_required_datetime(row["updated_at"]),
-            last_successful_sync=parse_datetime(row.get("last_successful_sync")),
             last_rss_generation=parse_datetime(row.get("last_rss_generation")),
             # error tracking
             last_failed_sync=parse_datetime(row.get("last_failed_sync")),

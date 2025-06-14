@@ -127,7 +127,7 @@ def run_debug_ytdlp_mode(debug_yaml_path: Path, paths: PathManager) -> None:
             feed, downloads = ytdlp_wrapper.fetch_metadata(
                 feed_id=feed_id,
                 url=url,
-                yt_cli_args=YtdlpCore.parse_options(cli_args),
+                user_yt_cli_args=YtdlpCore.parse_options(cli_args),
             )
 
             if downloads:

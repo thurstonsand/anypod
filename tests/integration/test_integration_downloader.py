@@ -153,6 +153,7 @@ def create_test_feed(feed_db: FeedDatabase, feed_id: str, url: str) -> Feed:
         is_enabled=True,
         source_type=SourceType.UNKNOWN,  # Will be determined by ytdlp
         source_url="https://example.com/test",
+        last_successful_sync=datetime.min.replace(tzinfo=UTC),
         title=f"Test Feed {feed_id}",
     )
     feed_db.upsert_feed(feed)
@@ -184,10 +185,12 @@ def enqueue_test_items(
     # Create feed in database first
     create_test_feed(feed_db, feed_id, feed_config.url)
 
+    fetch_until_date = datetime.now(UTC)
     return enqueuer.enqueue_new_downloads(
         feed_id=feed_id,
         feed_config=feed_config,
         fetch_since_date=fetch_since_date,
+        fetch_until_date=fetch_until_date,
     )
 
 

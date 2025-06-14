@@ -53,6 +53,7 @@ def test_feed() -> Feed:
         is_enabled=True,
         source_type=SourceType.CHANNEL,
         source_url="https://www.youtube.com/@testchannel",
+        last_successful_sync=datetime.min.replace(tzinfo=UTC),
         title=TEST_PODCAST_TITLE,
         description=TEST_PODCAST_DESCRIPTION,
         language="en",
@@ -434,6 +435,7 @@ def test_feed_config_without_metadata_fails():
         is_enabled=True,
         source_type=SourceType.CHANNEL,
         source_url="https://www.youtube.com/@testchannel",
+        last_successful_sync=datetime.min.replace(tzinfo=UTC),
         title=None,  # Missing required title
         description=None,  # Missing required description
     )

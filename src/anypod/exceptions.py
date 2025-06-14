@@ -187,18 +187,15 @@ class CoordinatorExecutionError(DataCoordinatorError):
 
     Attributes:
         feed_id: The feed identifier associated with the error.
-        context: Additional context about what was happening when the error occurred.
     """
 
     def __init__(
         self,
         message: str,
         feed_id: str | None = None,
-        context: str | None = None,
     ):
         super().__init__(message)
         self.feed_id = feed_id
-        self.context = context
 
 
 class YtdlpError(AnypodError):
@@ -275,6 +272,22 @@ class YtdlpApiError(YtdlpError):
 
 class RSSGenerationError(AnypodError):
     """Raised when an error occurs during RSS feed generation.
+
+    Attributes:
+        feed_id: The feed identifier associated with the error.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        feed_id: str | None = None,
+    ):
+        super().__init__(message)
+        self.feed_id = feed_id
+
+
+class StateReconciliationError(AnypodError):
+    """Raised when state reconciliation fails.
 
     Attributes:
         feed_id: The feed identifier associated with the error.

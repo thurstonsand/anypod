@@ -55,9 +55,9 @@ class FeedDatabase:
                 "source_type": str,  # from a SourceType,
                 "source_url": str,
                 # time keeping
+                "last_successful_sync": datetime,
                 "created_at": datetime,
                 "updated_at": datetime,
-                "last_successful_sync": datetime,
                 "last_rss_generation": datetime,
                 # error tracking
                 "last_failed_sync": datetime,
@@ -82,6 +82,7 @@ class FeedDatabase:
                 "is_enabled",
                 "source_type",
                 "source_url",
+                "last_successful_sync",
                 "created_at",
                 "updated_at",
                 "consecutive_failures",
@@ -127,6 +128,8 @@ class FeedDatabase:
 
     # --- CRUD Operations ---
 
+    # TODO: there's some really weird edge cases around upserts the way sqlite-utils does it
+    # this should be greatly simplified in the 4.0 release
     def upsert_feed(self, feed: Feed) -> None:
         """Insert or update a feed in the feeds table.
 
@@ -158,9 +161,10 @@ class FeedDatabase:
                     "is_enabled",
                     "source_type",
                     "source_url",
+                    "last_successful_sync",
+                    "consecutive_failures",
                     "total_downloads",
                     "downloads_since_last_rss",
-                    "consecutive_failures",
                 },
             )
         except DatabaseOperationError as e:

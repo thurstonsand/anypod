@@ -6,6 +6,7 @@ fetch strategy determination and metadata parsing.
 """
 
 from collections.abc import Callable
+from datetime import datetime
 from enum import Enum
 from typing import Any, Protocol
 
@@ -92,6 +93,7 @@ class SourceHandlerBase(Protocol):
         ytdlp_info: YtdlpInfo,
         ref_type: ReferenceType,
         source_url: str,
+        fetch_until_date: datetime | None = None,
     ) -> Feed:
         """Extract feed-level metadata from yt-dlp response.
 
@@ -100,6 +102,7 @@ class SourceHandlerBase(Protocol):
             ytdlp_info: The yt-dlp metadata information.
             ref_type: The type of reference being parsed.
             source_url: The original source URL for this feed.
+            fetch_until_date: The upper bound date for the fetch operation, used for setting last_successful_sync. Optional.
 
         Returns:
             Feed object with extracted metadata populated.
