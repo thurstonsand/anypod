@@ -301,25 +301,25 @@ This section details the components that manage the lifecycle of downloads, from
   - [x] Handle **removed feeds**: mark as disabled in DB (set `is_enabled=False`)
   - [x] Handle **changed feeds**: update metadata and configuration
   - [x] Ensure every active feed has valid `last_successful_sync` before scheduling
-  - [ ] Evaluate what would happen if it fails midway through. Would simply restarting get back to correct state?
-  - [ ] time box the sync time -- currently only has start time, but will also need end time
+  - [x] Evaluate what would happen if it fails midway through. Would simply restarting get back to correct state?
+  - [x] time box the sync time -- currently only has start time, but will also need end time
 
 #### 5.3.2 Config Change Handling
 - [ ] Detect and apply changes to:
   - [x] `enabled`: Update feed's `is_enabled` in database, add/remove from scheduler, trigger initial sync if false->true
     - [x] `last_successful_sync` does not need to be optional as it is set proactively on new feed creation
   - [x] `url`: Update existing feed's `source_url`, reset `consecutive_failures` to 0, clear `last_error`, reset `last_successful_sync` as if it were a new feed; keep download history
-  - [ ] `since` expansion (earlier date): Query archived downloads with `published` >= new `since`, change status from ARCHIVED to QUEUED (will redownload)
-    - [ ] modify `get_downloads_by_status` to allow for filtering by date so we don't retrieve the entire db
-    - [ ] also consider storing these values in the Feed db (`since` and `keep_last`) so we only query the db if there's a change
-    - [ ] modify `requeue_download` -> `requeue_downloads` that can take a variadic list and batch modify
-    - [ ] modify pydantic handling of `since` to accept JUST a day, and then derive TZ from tiered sources:
+  - [x] `since` expansion (earlier date): Query archived downloads with `published` >= new `since`, change status from ARCHIVED to QUEUED (will redownload)
+    - [x] modify `get_downloads_by_status` to allow for filtering by date so we don't retrieve the entire db
+    - [x] also consider storing these values in the Feed db (`since` and `keep_last`) so we only query the db if there's a change
+    - [x] modify `requeue_download` -> `requeue_downloads` that can take a variadic list and batch modify
+    - [x] modify pydantic handling of `since` to accept JUST a day, and then derive TZ from tiered sources:
       1. from the `since` value itself, if included
       2. from a TZ env var
       3. from the system clock (user would have had to override `/etc/localtime`)
   - [x] `since` contraction (later date): Mark downloads with `published` < new `since` for archival on next prune cycle
-  - [] `keep_last` increase: Query archived downloads ordered by `published` DESC, restore up to (new_keep_last - current_count) from ARCHIVED to QUEUED (will redownload)
-    - [ ] modify `count_downloads_by_status` to accept multiple possible statuses and return all of them
+  - [x] `keep_last` increase: Query archived downloads ordered by `published` DESC, restore up to (new_keep_last - current_count) from ARCHIVED to QUEUED (will redownload)
+    - [x] modify `count_downloads_by_status` to accept multiple possible statuses and return all of them
   - [x] `keep_last` decrease: No immediate action - will apply naturally on next prune cycle
   - [x] `metadata` changes: Update feed table immediately (title, subtitle, description, language, author, image_url, categories, explicit), trigger RSS regeneration
 

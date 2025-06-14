@@ -34,6 +34,10 @@ class Feed:
             total_downloads: Total number of downloads for this feed.
             downloads_since_last_rss: Number of downloads since last RSS generation.
 
+        Retention Policies:
+            since: Only process downloads published after this date (UTC).
+            keep_last: Maximum number of downloads to keep (oldest will be pruned).
+
         Feed Metadata:
             title: Feed title.
             subtitle: Feed subtitle.
@@ -64,6 +68,10 @@ class Feed:
     # Download tracking
     total_downloads: int = 0
     downloads_since_last_rss: int = 0
+
+    # Retention policies
+    since: datetime | None = None
+    keep_last: int | None = None
 
     # Feed metadata
     title: str | None = None
@@ -112,6 +120,9 @@ class Feed:
             # download tracking
             total_downloads=row.get("total_downloads", 0),
             downloads_since_last_rss=row.get("downloads_since_last_rss", 0),
+            # retention policies
+            since=parse_datetime(row.get("since")),
+            keep_last=row.get("keep_last"),
             # feed metadata
             title=row.get("title"),
             subtitle=row.get("subtitle"),

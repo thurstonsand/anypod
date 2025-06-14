@@ -597,7 +597,7 @@ class Enqueuer:
                     extra=current_log_params,
                 )
                 try:
-                    self._download_db.requeue_download(feed_id, fetched_download.id)
+                    self._download_db.requeue_downloads(feed_id, fetched_download.id)
                     logger.info(
                         "Successfully re-queued existing ERROR item.",
                         extra=current_log_params,

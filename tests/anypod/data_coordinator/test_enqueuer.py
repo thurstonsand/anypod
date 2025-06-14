@@ -374,7 +374,7 @@ def test_handle_existing_upcoming_download_remains_upcoming(
         FEED_ID, upcoming_dl.source_url, sample_feed_config.yt_args
     )
     mock_download_db.mark_as_queued_from_upcoming.assert_not_called()
-    mock_download_db.requeue_download.assert_not_called()
+    mock_download_db.requeue_downloads.assert_not_called()
 
 
 @pytest.mark.unit
@@ -403,7 +403,7 @@ def test_handle_existing_upcoming_download_refetch_fails_bumps_retries(
         max_allowed_errors=sample_feed_config.max_errors,
     )
     mock_download_db.mark_as_queued_from_upcoming.assert_not_called()
-    mock_download_db.requeue_download.assert_not_called()
+    mock_download_db.requeue_downloads.assert_not_called()
 
 
 @pytest.mark.unit
@@ -438,7 +438,7 @@ def test_handle_existing_upcoming_download_refetch_fails_transitions_to_error(
         max_allowed_errors=sample_feed_config.max_errors,
     )
     mock_download_db.mark_as_queued_from_upcoming.assert_not_called()
-    mock_download_db.requeue_download.assert_not_called()
+    mock_download_db.requeue_downloads.assert_not_called()
 
 
 @pytest.mark.unit
@@ -594,7 +594,7 @@ def test_fetch_and_process_new_feed_downloads_existing_downloaded_ignored(
 
     assert count == 0
     mock_download_db.get_download_by_id.assert_called_once_with(FEED_ID, "video_done")
-    mock_download_db.requeue_download.assert_not_called()
+    mock_download_db.requeue_downloads.assert_not_called()
     mock_download_db.upsert_download.assert_not_called()
 
 
@@ -605,7 +605,7 @@ def test_fetch_and_process_new_feed_downloads_existing_error_requeued(
     mock_download_db: MagicMock,
     sample_feed_config: FeedConfig,
 ):
-    """Test that if DB status is ERROR and fetched status is QUEUED, it calls requeue_download."""
+    """Test that if DB status is ERROR and fetched status is QUEUED, it calls requeue_downloads."""
     existing_error_in_db = create_download("video_err", DownloadStatus.ERROR, retries=1)
     fetched_as_queued = create_download("video_err", DownloadStatus.QUEUED)
 
@@ -618,7 +618,7 @@ def test_fetch_and_process_new_feed_downloads_existing_error_requeued(
 
     assert count == 1  # Because it was re-queued
     mock_download_db.get_download_by_id.assert_called_once_with(FEED_ID, "video_err")
-    mock_download_db.requeue_download.assert_called_once_with(FEED_ID, "video_err")
+    mock_download_db.requeue_downloads.assert_called_once_with(FEED_ID, "video_err")
     mock_download_db.upsert_download.assert_not_called()
 
 

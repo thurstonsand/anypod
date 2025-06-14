@@ -305,6 +305,54 @@ class SqliteUtilsCore:
         except sqlite3.Error as e:
             raise DatabaseOperationError("Failed to upsert.") from e
 
+    def multi_update(
+        self,
+        table_name: str,
+        updates: dict[str, Any],
+        where: str,
+        where_args: list[Any] | None = None,
+        conversions: dict[str, Any] | None = None,
+    ) -> int:
+        """Update multiple rows in the specified table.
+
+        Args:
+            table_name: Name of the table to update.
+            updates: Dictionary of column updates to apply.
+            where: WHERE clause conditions for selecting rows to update.
+            where_args: Parameters for the WHERE clause.
+            conversions: Dictionary of column names to conversion functions.
+
+        Returns:
+            Number of rows affected by the update.
+
+        Raises:
+            DatabaseOperationError: If the update operation fails.
+        """
+        if not updates:
+            return 0
+
+        conversions = conversions or {}
+        where_args = where_args or []
+        validate_column_names(updates.keys())
+
+        # Build UPDATE statement
+        sets: list[str] = []
+        args: list[Any] = []
+
+        for key, value in updates.items():
+            sets.append(f"[{key}] = {conversions.get(key, '?')}")
+            args.append(jsonify_if_needed(value))
+
+        # Add WHERE args
+        args.extend(where_args)
+
+        sql = f"UPDATE [{table_name}] SET {', '.join(sets)} WHERE {where}"
+
+        try:
+            return self.execute(sql, args)
+        except sqlite3.Error as e:
+            raise DatabaseOperationError(f"Failed to update table {table_name}.") from e
+
     def update(
         self,
         table_name: str,
@@ -343,32 +391,22 @@ class SqliteUtilsCore:
         self.get(table_name, pk_values)
         if not updates:
             return
-        validate_column_names(updates.keys())
-
-        # Build UPDATE statement
-        sets: list[str] = []
-        wheres: list[str] = []
-        args: list[Any] = []
-
-        for key, value in updates.items():
-            sets.append(f"[{key}] = {conversions.get(key, '?')}")
-            args.append(jsonify_if_needed(value))
 
         # Build WHERE clause
         wheres = [f"[{pk_name}] = ?" for pk_name in table.pks]  # type: ignore
-        args.extend(pk_values_list)
+        all_where_args = pk_values_list[:]
 
         if where:
             wheres.append(where)
-            args.extend(where_args)
+            all_where_args.extend(where_args)
 
-        sql = (
-            f"UPDATE [{table_name}] SET {', '.join(sets)} WHERE {' AND '.join(wheres)}"
-        )
+        where_clause = " AND ".join(wheres)
 
         try:
             with self.transaction():
-                match self.execute(sql, args):
+                match self.multi_update(
+                    table_name, updates, where_clause, all_where_args, conversions
+                ):
                     case 0:
                         raise NotFoundError("Record not found.")
                     case 1:

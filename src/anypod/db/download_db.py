@@ -250,66 +250,91 @@ class DownloadDatabase:
             extra=log_params,
         )
 
-    def requeue_download(
-        self, feed: str, id: str, from_status: DownloadStatus | None = None
-    ) -> None:
-        """Re-queue a download by resetting its status and error counters.
+    def requeue_downloads(
+        self,
+        feed: str,
+        download_ids: str | list[str],
+        from_status: DownloadStatus | None = None,
+    ) -> int:
+        """Re-queue one or more downloads by resetting their status and error counters.
 
         This can happen due to:
-        - Manually re-queueing an ERROR'd download.
-        - Manually re-queueing to get the latest version of a download (previously DOWNLOADED).
-        - Un-SKIPPING a video (if it doesn't get ARCHIVED).
+        - Manually re-queueing ERROR'd downloads.
+        - Manually re-queueing to get the latest version of downloads (previously DOWNLOADED).
+        - Un-SKIPPING videos (if they don't get ARCHIVED).
+        - Restoring ARCHIVED downloads when retention policies change.
 
         Sets status to QUEUED and resets retries to 0 and last_error to NULL.
 
         Args:
             feed: The feed identifier.
-            id: The download identifier.
+            download_ids: download identifier(s) to requeue.
             from_status: Optional status to check before updating. If provided, the update
                         will only occur if the current status matches this value.
 
+        Returns:
+            Number of downloads successfully requeued.
+
         Raises:
-            DownloadNotFoundError: If the download is not found.
-            DatabaseOperationError: If the database operation fails or current status is wrong.
+            DatabaseOperationError: If database operations fail.
         """
+        if isinstance(download_ids, str):
+            download_ids = [download_ids]
+
+        if not download_ids:
+            return 0
+
         log_params = {
             "feed_id": feed,
-            "download_id": id,
-            "target_status": str(DownloadStatus.QUEUED),
+            "download_count": len(download_ids),
             "from_status": str(from_status) if from_status else None,
         }
-        logger.debug("Attempting to re-queue download.", extra=log_params)
+        logger.debug("Attempting to re-queue downloads.", extra=log_params)
+
+        # Build WHERE clause for bulk update
+        placeholders = ", ".join(["?"] * len(download_ids))
+        where_clause = f"feed = ? AND id IN ({placeholders})"
+        where_args = [feed, *list(download_ids)]
+
+        if from_status:
+            where_clause += " AND status = ?"
+            where_args.append(str(from_status))
+
+        updates = {
+            "status": str(DownloadStatus.QUEUED),
+            "retries": 0,
+            "last_error": None,
+        }
 
         try:
-            self._db.update(
-                self._download_table_name,
-                (feed, id),
-                {
-                    "status": str(DownloadStatus.QUEUED),
-                    "retries": 0,
-                    "last_error": None,
-                },
-                where="status = ?" if from_status else None,
-                where_args=[str(from_status)] if from_status else None,
-            )
-        except NotFoundError as e:
-            if from_status is None:
-                raise DownloadNotFoundError(
-                    "Download not found.", feed_id=feed, download_id=id
-                ) from e
-            else:
-                # Check if download exists and get actual status for better error message
-                current_download = self.get_download_by_id(feed, id)
-                raise DatabaseOperationError(
-                    f"Download status is not {from_status} (is {current_download.status}), cannot re-queue.",
-                    feed_id=feed,
-                    download_id=id,
-                ) from e
+            with self._db.transaction():
+                count_requeued = self._db.multi_update(
+                    self._download_table_name,
+                    updates,
+                    where_clause,
+                    where_args,
+                )
+
+                expected_count = len(download_ids)
+                if count_requeued != expected_count:
+                    raise DatabaseOperationError(
+                        f"Expected to requeue {expected_count} downloads but only {count_requeued} were updated. "
+                        f"Some downloads may not exist or may not have the expected status. Rolling back changes.",
+                        feed_id=feed,
+                    )
         except DatabaseOperationError as e:
             e.feed_id = feed
-            e.download_id = id
+            logger.error("Failed to requeue downloads.", extra=log_params, exc_info=e)
             raise e
-        logger.info("Download re-queued.", extra=log_params)
+        else:
+            logger.info(
+                "Downloads requeued.",
+                extra={
+                    **log_params,
+                    "count_requeued": count_requeued,
+                },
+            )
+            return count_requeued
 
     def mark_as_downloaded(self, feed: str, id: str, ext: str, filesize: int) -> None:
         """Mark a download as DOWNLOADED with updated metadata.
@@ -658,16 +683,20 @@ class DownloadDatabase:
         feed: str | None = None,
         limit: int = -1,
         offset: int = 0,
+        published_after: datetime | None = None,
+        published_before: datetime | None = None,
     ) -> list[Download]:
         """Retrieve downloads with a specific status, newest first.
 
-        Can be filtered by a specific feed.
+        Can be filtered by a specific feed and date ranges.
 
         Args:
             status_to_filter: The DownloadStatus to filter by.
             feed: Optional feed name to filter by.
             limit: Maximum number of records to return (-1 for no limit).
             offset: Number of records to skip (for pagination).
+            published_after: Optional datetime to filter downloads published after this date (inclusive).
+            published_before: Optional datetime to filter downloads published before this date (exclusive).
 
         Returns:
             List of Download objects matching the status and other criteria, sorted newest first.
@@ -680,14 +709,24 @@ class DownloadDatabase:
             "feed_id": feed if feed else "<all>",
             "limit": limit,
             "offset": offset,
+            "published_after": published_after.isoformat() if published_after else None,
+            "published_before": published_before.isoformat()
+            if published_before
+            else None,
         }
         logger.debug("Attempting to get downloads by status.", extra=log_params)
 
         where = ["status = :status"]
-        where_args = {"status": str(status_to_filter)}
+        where_args: dict[str, Any] = {"status": str(status_to_filter)}
         if feed:
             where.append("feed = :feed")
             where_args["feed"] = feed
+        if published_after:
+            where.append("published >= :published_after")
+            where_args["published_after"] = published_after
+        if published_before:
+            where.append("published < :published_before")
+            where_args["published_before"] = published_before
 
         try:
             rows = self._db.rows_where(
@@ -705,15 +744,15 @@ class DownloadDatabase:
 
     def count_downloads_by_status(
         self,
-        status_to_filter: DownloadStatus,
+        status_to_filter: DownloadStatus | list[DownloadStatus],
         feed: str | None = None,
     ) -> int:
-        """Count downloads with a specific status.
+        """Count downloads with one or more specific statuses.
 
         Can be filtered by a specific feed.
 
         Args:
-            status_to_filter: Status to count.
+            status_to_filter: Single status or list of statuses to count.
             feed: Optional feed identifier to filter by.
 
         Returns:
@@ -723,13 +762,22 @@ class DownloadDatabase:
             DatabaseOperationError: If the database query fails.
         """
         log_params: dict[str, Any] = {
-            "status": status_to_filter,
+            "statuses": status_to_filter,
             "feed": feed,
         }
         logger.debug("Attempting to count downloads by status.", extra=log_params)
 
-        where = ["status = :status"]
-        where_args: dict[str, Any] = {"status": status_to_filter}
+        if isinstance(status_to_filter, DownloadStatus):
+            where = ["status = :status"]
+            where_args: dict[str, Any] = {"status": str(status_to_filter)}
+        else:
+            placeholders: list[str] = []
+            where_args: dict[str, Any] = {}
+            for i, status in enumerate(status_to_filter):
+                status_key = f"status_{i}"
+                placeholders.append(f":{status_key}")
+                where_args[status_key] = str(status)
+            where = [f"status IN ({', '.join(placeholders)})"]
 
         if feed is not None:
             where.append("feed = :feed")

@@ -351,7 +351,7 @@ def test_status_transitions(
     assert download.last_error == "Simulated error on downloaded item"
 
     # DOWNLOADED (with error info) -> REQUEUED
-    download_db.requeue_download(feed_id, dl_id)
+    download_db.requeue_downloads(feed_id, dl_id)
     download = download_db.get_download_by_id(feed_id, dl_id)
     assert download.status == DownloadStatus.QUEUED
     assert download.retries == 0, "Retries should be reset on REQUEUE"
@@ -372,7 +372,7 @@ def test_status_transitions(
     )
 
     # SKIPPED -> UNSKIP (which re-queues)
-    download_db.requeue_download(feed_id, dl_id, from_status=DownloadStatus.SKIPPED)
+    download_db.requeue_downloads(feed_id, dl_id, from_status=DownloadStatus.SKIPPED)
     download = download_db.get_download_by_id(feed_id, dl_id)
     assert download.status == DownloadStatus.QUEUED
     assert download.retries == 0, "Retries should be reset on UNSKIP (via REQUEUE)"
@@ -416,14 +416,14 @@ def test_status_transitions(
     # Test non_existent_download for each relevant method
     with pytest.raises(DownloadNotFoundError):
         download_db.mark_as_queued_from_upcoming("bad", "bad")
-    with pytest.raises(DownloadNotFoundError):
-        download_db.requeue_download("bad", "bad")
+    with pytest.raises(DatabaseOperationError):
+        download_db.requeue_downloads("bad", "bad")
     with pytest.raises(DownloadNotFoundError):
         download_db.mark_as_downloaded("bad", "bad", "mp4", 0)
     with pytest.raises(DownloadNotFoundError):
         download_db.skip_download("bad", "bad")
-    with pytest.raises(DownloadNotFoundError):
-        download_db.requeue_download("bad", "bad", from_status=DownloadStatus.SKIPPED)
+    with pytest.raises(DatabaseOperationError):
+        download_db.requeue_downloads("bad", "bad", from_status=DownloadStatus.SKIPPED)
     with pytest.raises(DownloadNotFoundError):
         download_db.archive_download("bad", "bad")
 
@@ -455,6 +455,140 @@ def test_status_transitions(
             "mp4",
             1024,
         )
+
+
+@pytest.mark.unit
+def test_requeue_downloads_multi(download_db: DownloadDatabase):
+    """Test requeue_downloads method with single/multiple downloads."""
+    base_time = datetime(2023, 1, 1, 12, 0, 0, tzinfo=UTC)
+    feed_id = "requeue_test_feed"
+
+    # Create multiple downloads in different states
+    downloads = [
+        Download(
+            feed=feed_id,
+            id="error1",
+            published=base_time,
+            status=DownloadStatus.ERROR,
+            source_url="url",
+            title="Error 1",
+            ext="mp4",
+            mime_type="video/mp4",
+            filesize=1024,
+            duration=1,
+            retries=3,
+            last_error="Some error",
+            discovered_at=base_time,
+            updated_at=base_time,
+        ),
+        Download(
+            feed=feed_id,
+            id="error2",
+            published=base_time,
+            status=DownloadStatus.ERROR,
+            source_url="url",
+            title="Error 2",
+            ext="mp4",
+            mime_type="video/mp4",
+            filesize=1024,
+            duration=1,
+            retries=2,
+            last_error="Another error",
+            discovered_at=base_time,
+            updated_at=base_time,
+        ),
+        Download(
+            feed=feed_id,
+            id="skipped1",
+            published=base_time,
+            status=DownloadStatus.SKIPPED,
+            source_url="url",
+            title="Skipped 1",
+            ext="mp4",
+            mime_type="video/mp4",
+            filesize=1024,
+            duration=1,
+            retries=1,
+            last_error="Skip error",
+            discovered_at=base_time,
+            updated_at=base_time,
+        ),
+        Download(
+            feed=feed_id,
+            id="archived1",
+            published=base_time,
+            status=DownloadStatus.ARCHIVED,
+            source_url="url",
+            title="Archived 1",
+            ext="mp4",
+            mime_type="video/mp4",
+            filesize=1024,
+            duration=1,
+            retries=0,
+            discovered_at=base_time,
+            updated_at=base_time,
+        ),
+    ]
+
+    for dl in downloads:
+        download_db.upsert_download(dl)
+
+    # Test requeue_downloads with single string download ID
+    count = download_db.requeue_downloads(feed_id, "error1")
+    assert count == 1
+
+    error1 = download_db.get_download_by_id(feed_id, "error1")
+    assert error1.status == DownloadStatus.QUEUED
+    assert error1.retries == 0
+    assert error1.last_error is None
+
+    # Test requeue_downloads with single download ID in list
+    count = download_db.requeue_downloads(feed_id, ["error2"])
+    assert count == 1
+
+    error2 = download_db.get_download_by_id(feed_id, "error2")
+    assert error2.status == DownloadStatus.QUEUED
+    assert error2.retries == 0
+    assert error2.last_error is None
+
+    # Test requeue_downloads with multiple download IDs
+    count = download_db.requeue_downloads(feed_id, ["skipped1", "archived1"])
+    assert count == 2
+
+    skipped1 = download_db.get_download_by_id(feed_id, "skipped1")
+    assert skipped1.status == DownloadStatus.QUEUED
+    assert skipped1.retries == 0
+    assert skipped1.last_error is None
+
+    archived1 = download_db.get_download_by_id(feed_id, "archived1")
+    assert archived1.status == DownloadStatus.QUEUED
+    assert archived1.retries == 0
+    assert archived1.last_error is None
+
+    # Test with from_status filter
+    # First reset both downloads to SKIPPED
+    download_db.skip_download(feed_id, "error1")
+    download_db.skip_download(feed_id, "error2")
+
+    # Requeue only SKIPPED ones
+    count = download_db.requeue_downloads(
+        feed_id, ["error1", "error2"], from_status=DownloadStatus.SKIPPED
+    )
+    assert count == 2  # Both should be requeued
+
+    error1_recheck = download_db.get_download_by_id(feed_id, "error1")
+    assert error1_recheck.status == DownloadStatus.QUEUED
+
+    error2_recheck = download_db.get_download_by_id(feed_id, "error2")
+    assert error2_recheck.status == DownloadStatus.QUEUED
+
+    # Test empty list
+    count = download_db.requeue_downloads(feed_id, [])
+    assert count == 0
+
+    # Test nonexistent download ID without from_status - should fail
+    with pytest.raises(DatabaseOperationError):
+        download_db.requeue_downloads(feed_id, ["nonexistent"])
 
 
 @pytest.mark.unit
@@ -983,8 +1117,8 @@ def test_get_downloads_by_status(download_db: DownloadDatabase):
     assert len(offset_too_high_error) == 0
 
     # --- Test no downloads at all (after updating existing downloads to a different status) ---
-    download_db.requeue_download(feed=feed1, id="f1e1_old")  # ERROR -> QUEUED
-    download_db.requeue_download(feed=feed1, id="f1e2_new")  # ERROR -> QUEUED
+    download_db.requeue_downloads(feed1, "f1e1_old")  # ERROR -> QUEUED
+    download_db.requeue_downloads(feed1, "f1e2_new")  # ERROR -> QUEUED
     download_db.skip_download(feed=feed2, id="f2e1")  # ERROR -> SKIPPED
 
     all_errors_cleared = download_db.get_downloads_by_status(
@@ -1007,6 +1141,180 @@ def test_get_downloads_by_status(download_db: DownloadDatabase):
     assert len(all_upcoming_cleared) == 0, (
         "Should return empty list when all UPCOMING downloads are cleared"
     )
+
+
+@pytest.mark.unit
+def test_get_downloads_by_status_date_filtering(download_db: DownloadDatabase):
+    """Test get_downloads_by_status with published_after and published_before date filtering."""
+    base_time = datetime(2023, 6, 15, 12, 0, 0, tzinfo=UTC)
+    feed_id = "date_filter_feed"
+
+    # Create downloads with different published dates
+    downloads = [
+        Download(
+            feed=feed_id,
+            id="old_queued",
+            published=base_time - timedelta(days=10),  # Very old
+            status=DownloadStatus.QUEUED,
+            source_url="url",
+            title="Old Queued",
+            ext="mp4",
+            mime_type="video/mp4",
+            filesize=1024,
+            duration=1,
+            discovered_at=base_time,
+            updated_at=base_time,
+        ),
+        Download(
+            feed=feed_id,
+            id="mid_queued",
+            published=base_time - timedelta(days=5),  # Middle
+            status=DownloadStatus.QUEUED,
+            source_url="url",
+            title="Mid Queued",
+            ext="mp4",
+            mime_type="video/mp4",
+            filesize=1024,
+            duration=1,
+            discovered_at=base_time,
+            updated_at=base_time,
+        ),
+        Download(
+            feed=feed_id,
+            id="recent_queued",
+            published=base_time - timedelta(days=1),  # Recent
+            status=DownloadStatus.QUEUED,
+            source_url="url",
+            title="Recent Queued",
+            ext="mp4",
+            mime_type="video/mp4",
+            filesize=1024,
+            duration=1,
+            discovered_at=base_time,
+            updated_at=base_time,
+        ),
+        Download(
+            feed=feed_id,
+            id="future_queued",
+            published=base_time + timedelta(days=2),  # Future
+            status=DownloadStatus.QUEUED,
+            source_url="url",
+            title="Future Queued",
+            ext="mp4",
+            mime_type="video/mp4",
+            filesize=1024,
+            duration=1,
+            discovered_at=base_time,
+            updated_at=base_time,
+        ),
+        Download(
+            feed=feed_id,
+            id="old_downloaded",
+            published=base_time - timedelta(days=8),  # Old, different status
+            status=DownloadStatus.DOWNLOADED,
+            source_url="url",
+            title="Old Downloaded",
+            ext="mp4",
+            mime_type="video/mp4",
+            filesize=1024,
+            duration=1,
+            discovered_at=base_time,
+            updated_at=base_time,
+        ),
+    ]
+
+    for dl in downloads:
+        download_db.upsert_download(dl)
+
+    # Test published_after filtering (inclusive)
+    after_cutoff = base_time - timedelta(days=6)
+    after_filtered = download_db.get_downloads_by_status(
+        status_to_filter=DownloadStatus.QUEUED,
+        feed=feed_id,
+        published_after=after_cutoff,
+    )
+    after_ids = [dl.id for dl in after_filtered]
+    # Should include: mid_queued (day -5), recent_queued (day -1), future_queued (day +2)
+    # Should exclude: old_queued (day -10)
+    assert len(after_filtered) == 3
+    assert set(after_ids) == {"mid_queued", "recent_queued", "future_queued"}
+
+    # Test published_before filtering (exclusive)
+    before_cutoff = base_time - timedelta(days=2)
+    before_filtered = download_db.get_downloads_by_status(
+        status_to_filter=DownloadStatus.QUEUED,
+        feed=feed_id,
+        published_before=before_cutoff,
+    )
+    before_ids = [dl.id for dl in before_filtered]
+    # Should include: old_queued (day -10), mid_queued (day -5)
+    # Should exclude: recent_queued (day -1), future_queued (day +2)
+    assert len(before_filtered) == 2
+    assert set(before_ids) == {"old_queued", "mid_queued"}
+
+    # Test both published_after and published_before together (date range)
+    range_after = base_time - timedelta(days=6)
+    range_before = base_time - timedelta(days=2)
+    range_filtered = download_db.get_downloads_by_status(
+        status_to_filter=DownloadStatus.QUEUED,
+        feed=feed_id,
+        published_after=range_after,
+        published_before=range_before,
+    )
+    range_ids = [dl.id for dl in range_filtered]
+    # Should include: mid_queued (day -5)
+    # Should exclude: old_queued (day -10, before range), recent_queued (day -1, after range), future_queued (day +2, after range)
+    assert len(range_filtered) == 1
+    assert range_ids == ["mid_queued"]
+
+    # Test date filtering with different status
+    old_downloaded_filtered = download_db.get_downloads_by_status(
+        status_to_filter=DownloadStatus.DOWNLOADED,
+        feed=feed_id,
+        published_before=base_time - timedelta(days=7),
+    )
+    assert len(old_downloaded_filtered) == 1
+    assert old_downloaded_filtered[0].id == "old_downloaded"
+
+    # Test date filtering that excludes everything
+    far_future_after = base_time + timedelta(days=10)
+    empty_filtered = download_db.get_downloads_by_status(
+        status_to_filter=DownloadStatus.QUEUED,
+        feed=feed_id,
+        published_after=far_future_after,
+    )
+    assert len(empty_filtered) == 0
+
+    # Test date filtering that includes everything
+    far_past_after = base_time - timedelta(days=20)
+    all_filtered = download_db.get_downloads_by_status(
+        status_to_filter=DownloadStatus.QUEUED,
+        feed=feed_id,
+        published_after=far_past_after,
+    )
+    assert len(all_filtered) == 4  # All 4 QUEUED downloads
+
+    # Test date filtering works correctly with ordering (newest first)
+    ordered_filtered = download_db.get_downloads_by_status(
+        status_to_filter=DownloadStatus.QUEUED,
+        feed=feed_id,
+        published_after=base_time - timedelta(days=6),
+    )
+    ordered_ids = [dl.id for dl in ordered_filtered]
+    # Should be ordered newest first: future_queued, recent_queued, mid_queued
+    assert ordered_ids == ["future_queued", "recent_queued", "mid_queued"]
+
+    # Test date filtering with limit and offset
+    limited_filtered = download_db.get_downloads_by_status(
+        status_to_filter=DownloadStatus.QUEUED,
+        feed=feed_id,
+        published_after=base_time - timedelta(days=6),
+        limit=2,
+        offset=1,
+    )
+    limited_ids = [dl.id for dl in limited_filtered]
+    # Should skip first (future_queued) and get next 2: recent_queued, mid_queued
+    assert limited_ids == ["recent_queued", "mid_queued"]
 
 
 # --- Tests for DownloadDatabase.count_downloads_by_status ---
@@ -1064,6 +1372,20 @@ def test_count_downloads_by_status(download_db: DownloadDatabase):
             updated_at=base_time,
         ),
         Download(
+            feed=feed1,
+            id="u1",
+            published=base_time,
+            status=DownloadStatus.UPCOMING,
+            source_url="url",
+            title="upcoming1",
+            ext="mp4",
+            mime_type="video/mp4",
+            filesize=1024,
+            duration=1,
+            discovered_at=base_time,
+            updated_at=base_time,
+        ),
+        Download(
             feed=feed2,
             id="q3",
             published=base_time,
@@ -1091,12 +1413,26 @@ def test_count_downloads_by_status(download_db: DownloadDatabase):
             discovered_at=base_time,
             updated_at=base_time,
         ),
+        Download(
+            feed=feed2,
+            id="u2",
+            published=base_time,
+            status=DownloadStatus.UPCOMING,
+            source_url="url",
+            title="upcoming2",
+            ext="mp4",
+            mime_type="video/mp4",
+            filesize=1024,
+            duration=1,
+            discovered_at=base_time,
+            updated_at=base_time,
+        ),
     ]
 
     for dl in downloads:
         download_db.upsert_download(dl)
 
-    # Test counting across all feeds
+    # Test counting single status across all feeds
     queued_count = download_db.count_downloads_by_status(DownloadStatus.QUEUED)
     assert queued_count == 3
 
@@ -1106,7 +1442,10 @@ def test_count_downloads_by_status(download_db: DownloadDatabase):
     error_count = download_db.count_downloads_by_status(DownloadStatus.ERROR)
     assert error_count == 1
 
-    # Test counting with feed filter
+    upcoming_count = download_db.count_downloads_by_status(DownloadStatus.UPCOMING)
+    assert upcoming_count == 2
+
+    # Test counting single status with feed filter
     feed1_queued = download_db.count_downloads_by_status(
         DownloadStatus.QUEUED, feed=feed1
     )
@@ -1127,9 +1466,41 @@ def test_count_downloads_by_status(download_db: DownloadDatabase):
     )
     assert feed2_downloaded == 0
 
+    # Test counting multiple statuses across all feeds
+    active_count = download_db.count_downloads_by_status(
+        [DownloadStatus.QUEUED, DownloadStatus.UPCOMING]
+    )
+    assert active_count == 5  # 3 QUEUED + 2 UPCOMING
+
+    processing_count = download_db.count_downloads_by_status(
+        [DownloadStatus.QUEUED, DownloadStatus.DOWNLOADED, DownloadStatus.ERROR]
+    )
+    assert processing_count == 5  # 3 QUEUED + 1 DOWNLOADED + 1 ERROR
+
+    # Test counting multiple statuses with feed filter
+    feed1_active = download_db.count_downloads_by_status(
+        [DownloadStatus.QUEUED, DownloadStatus.UPCOMING], feed=feed1
+    )
+    assert feed1_active == 3  # 2 QUEUED + 1 UPCOMING
+
+    feed2_active = download_db.count_downloads_by_status(
+        [DownloadStatus.QUEUED, DownloadStatus.UPCOMING], feed=feed2
+    )
+    assert feed2_active == 2  # 1 QUEUED + 1 UPCOMING
+
     # Test counting status that doesn't exist
     archived_count = download_db.count_downloads_by_status(DownloadStatus.ARCHIVED)
     assert archived_count == 0
+
+    # Test counting multiple statuses where none exist
+    empty_count = download_db.count_downloads_by_status(
+        [DownloadStatus.ARCHIVED, DownloadStatus.SKIPPED]
+    )
+    assert empty_count == 0
+
+    # Test with empty list (edge case)
+    empty_list_count = download_db.count_downloads_by_status([])
+    assert empty_list_count == 0
 
 
 # --- Tests for Download.from_row ---

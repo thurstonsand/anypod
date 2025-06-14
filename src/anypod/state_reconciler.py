@@ -17,7 +17,6 @@ from .db.feed_db import FeedDatabase
 from .db.types import DownloadStatus, Feed, SourceType
 from .exceptions import (
     DatabaseOperationError,
-    DownloadNotFoundError,
     FeedNotFoundError,
     PruneError,
     StateReconciliationError,
@@ -83,6 +82,9 @@ class StateReconciler:
             source_type=SourceType.UNKNOWN,  # to be defined later by ytdlp_wrapper
             source_url=feed_config.url,
             last_successful_sync=initial_sync,
+            # Retention policies
+            since=feed_config.since,
+            keep_last=feed_config.keep_last,
             # Feed metadata
             title=title,
             subtitle=subtitle,
@@ -124,21 +126,15 @@ class StateReconciler:
             return False
 
         # Find archived downloads that should be restored due to 'since' expansion
-        # TODO: future optimization: we can filter the sql query by date instead of returning all archived downloads
         try:
-            archived_downloads = self._download_db.get_downloads_by_status(
-                DownloadStatus.ARCHIVED, feed=feed_id
+            downloads_to_restore = self._download_db.get_downloads_by_status(
+                DownloadStatus.ARCHIVED, feed=feed_id, published_after=config.since
             )
         except DatabaseOperationError as e:
             raise StateReconciliationError(
                 "Failed to fetch archived downloads for 'since' policy check.",
                 feed_id=feed_id,
             ) from e
-
-        # Filter downloads that fall within the new 'since' range
-        downloads_to_restore = [
-            dl for dl in archived_downloads if dl.published >= config.since
-        ]
 
         if not downloads_to_restore:
             logger.debug(
@@ -152,23 +148,21 @@ class StateReconciler:
             extra={**log_params, "since_date": config.since.isoformat()},
         )
 
-        # Restore downloads to QUEUED status
-        for download in downloads_to_restore:
-            try:
-                self._download_db.requeue_download(feed_id, download.id)
-                logger.debug(
-                    "Restored archived download to QUEUED.",
-                    extra={
-                        **log_params,
-                        "download_id": download.id,
-                        "published": download.published.isoformat(),
-                    },
-                )
-            except (DatabaseOperationError, DownloadNotFoundError) as e:
-                raise StateReconciliationError(
-                    "Failed to restore archived download.",
-                    feed_id=feed_id,
-                ) from e
+        # Restore downloads to QUEUED status in batch
+        download_ids = [dl.id for dl in downloads_to_restore]
+        try:
+            count_restored = self._download_db.requeue_downloads(
+                feed_id, download_ids, from_status=DownloadStatus.ARCHIVED
+            )
+            logger.info(
+                f"Successfully restored {count_restored} archived downloads to QUEUED.",
+                extra={**log_params, "count_restored": count_restored},
+            )
+        except DatabaseOperationError as e:
+            raise StateReconciliationError(
+                "Failed to restore archived downloads.",
+                feed_id=feed_id,
+            ) from e
 
         return True
 
@@ -200,11 +194,8 @@ class StateReconciler:
         current_downloaded_count = db_feed.total_downloads
 
         try:
-            current_queued_count = self._download_db.count_downloads_by_status(
-                DownloadStatus.QUEUED, feed=feed_id
-            )
-            current_upcoming_count = self._download_db.count_downloads_by_status(
-                DownloadStatus.UPCOMING, feed=feed_id
+            current_active_count = self._download_db.count_downloads_by_status(
+                [DownloadStatus.QUEUED, DownloadStatus.UPCOMING], feed=feed_id
             )
         except DatabaseOperationError as e:
             raise StateReconciliationError(
@@ -212,9 +203,7 @@ class StateReconciler:
                 feed_id=feed_id,
             ) from e
 
-        current_total = (
-            current_downloaded_count + current_queued_count + current_upcoming_count
-        )
+        current_total = current_downloaded_count + current_active_count
 
         # If we're under the keep_last limit, try to restore archived downloads
         if current_total < config.keep_last:
@@ -251,23 +240,21 @@ class StateReconciler:
                 extra={**log_params, "keep_last": config.keep_last},
             )
 
-            # Restore downloads to QUEUED status
-            for download in archived_downloads:
-                try:
-                    self._download_db.requeue_download(feed_id, download.id)
-                    logger.debug(
-                        "Restored archived download to QUEUED.",
-                        extra={
-                            **log_params,
-                            "download_id": download.id,
-                            "published": download.published.isoformat(),
-                        },
-                    )
-                except (DatabaseOperationError, DownloadNotFoundError) as e:
-                    raise StateReconciliationError(
-                        "Failed to restore archived download.",
-                        feed_id=feed_id,
-                    ) from e
+            # Restore downloads to QUEUED status in batch
+            download_ids = [dl.id for dl in archived_downloads]
+            try:
+                count_restored = self._download_db.requeue_downloads(
+                    feed_id, download_ids, from_status=DownloadStatus.ARCHIVED
+                )
+                logger.info(
+                    f"Successfully restored {count_restored} archived downloads to QUEUED.",
+                    extra={**log_params, "count_restored": count_restored},
+                )
+            except DatabaseOperationError as e:
+                raise StateReconciliationError(
+                    "Failed to restore archived downloads.",
+                    feed_id=feed_id,
+                ) from e
 
             return True
 
@@ -277,31 +264,6 @@ class StateReconciler:
                 extra=log_params,
             )
             return False
-
-    def _apply_retention_policy_changes(
-        self, feed_id: str, config: FeedConfig, db_feed: Feed
-    ) -> bool:
-        """Apply retention policy changes (since, keep_last) to existing downloads.
-
-        Args:
-            feed_id: The feed identifier.
-            config: The FeedConfig from YAML.
-            db_feed: The existing Feed from database.
-
-        Returns:
-            True if any retention changes were applied.
-
-        Raises:
-            StateReconciliationError: If database operations fail.
-        """
-        log_params = {"feed_id": feed_id}
-
-        since_changes = self._handle_since_changes(feed_id, config, log_params)
-        keep_last_changes = self._handle_keep_last_changes(
-            feed_id, config, db_feed, log_params
-        )
-
-        return since_changes or keep_last_changes
 
     def _handle_existing_feed(
         self, feed_id: str, feed_config: FeedConfig, db_feed: Feed
@@ -389,31 +351,21 @@ class StateReconciler:
             if metadata.explicit != db_feed.explicit:
                 updated_feed.explicit = metadata.explicit
 
-        # Apply retention policy changes
-        retention_changes = self._apply_retention_policy_changes(
-            feed_id, feed_config, db_feed
-        )
+        if feed_config.since != db_feed.since:
+            updated_feed.since = feed_config.since
+            self._handle_since_changes(feed_id, feed_config, log_params)
 
-        match (updated_feed != db_feed, retention_changes):
-            case (True, True):
-                logger.info(
-                    "Feed configuration and retention policy changes applied.",
-                    extra=log_params,
-                )
-                self._feed_db.upsert_feed(updated_feed)
-                return True
-            case (True, False):
-                logger.info("Feed configuration changes applied.", extra=log_params)
-                self._feed_db.upsert_feed(updated_feed)
-                return True
-            case (False, True):
-                logger.info("Retention policy changes applied.", extra=log_params)
-                return True
-            case _:
-                logger.debug(
-                    "No feed configuration changes detected.", extra=log_params
-                )
-                return False
+        if feed_config.keep_last != db_feed.keep_last:
+            updated_feed.keep_last = feed_config.keep_last
+            self._handle_keep_last_changes(feed_id, feed_config, db_feed, log_params)
+
+        if updated_feed != db_feed:
+            logger.info("Feed configuration changes applied.", extra=log_params)
+            self._feed_db.upsert_feed(updated_feed)
+            return True
+        else:
+            logger.debug("No feed configuration changes detected.", extra=log_params)
+            return False
 
     def _handle_removed_feed(self, feed_id: str) -> None:
         """Handle a removed feed by marking it as disabled in the database.

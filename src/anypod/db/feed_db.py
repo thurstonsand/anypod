@@ -66,6 +66,9 @@ class FeedDatabase:
                 # download tracking
                 "total_downloads": int,
                 "downloads_since_last_rss": int,
+                # retention policies
+                "since": datetime,
+                "keep_last": int,
                 # feed metadata
                 "title": str,
                 "subtitle": str,
