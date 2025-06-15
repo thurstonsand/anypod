@@ -60,7 +60,7 @@ class RSSFeedGenerator:
             # Sorted by newest first
             downloads = self._download_db.get_downloads_by_status(
                 status_to_filter=DownloadStatus.DOWNLOADED,
-                feed=feed_id,
+                feed_id=feed_id,
             )
         except DatabaseOperationError as e:
             raise RSSGenerationError(

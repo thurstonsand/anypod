@@ -171,7 +171,7 @@ def test_enqueue_new_downloads_success(
 
     # Verify downloads are in the database
     queued_downloads = download_db.get_downloads_by_status(
-        DownloadStatus.QUEUED, feed=feed_id
+        DownloadStatus.QUEUED, feed_id=feed_id
     )
     assert len(queued_downloads) >= 1, f"Expected queued downloads in DB for {url_type}"
 
@@ -306,7 +306,7 @@ def test_enqueue_new_downloads_with_date_filter(
 
     # Verify downloads in database match what was reported
     queued_downloads = download_db.get_downloads_by_status(
-        DownloadStatus.QUEUED, feed=feed_id
+        DownloadStatus.QUEUED, feed_id=feed_id
     )
     assert len(queued_downloads) == queued_count
 
@@ -343,7 +343,7 @@ def test_enqueue_handles_existing_upcoming_downloads(
 
     # Verify it's in UPCOMING status
     upcoming_downloads = download_db.get_downloads_by_status(
-        DownloadStatus.UPCOMING, feed=feed_id
+        DownloadStatus.UPCOMING, feed_id=feed_id
     )
     assert len(upcoming_downloads) == 1
     assert upcoming_downloads[0].status == DownloadStatus.UPCOMING
@@ -362,7 +362,7 @@ def test_enqueue_handles_existing_upcoming_downloads(
 
     # Verify the download is now QUEUED
     queued_downloads = download_db.get_downloads_by_status(
-        DownloadStatus.QUEUED, feed=feed_id
+        DownloadStatus.QUEUED, feed_id=feed_id
     )
     assert len(queued_downloads) >= 1
 
@@ -375,7 +375,7 @@ def test_enqueue_handles_existing_upcoming_downloads(
 
     # Should be no more UPCOMING downloads for this feed
     remaining_upcoming = download_db.get_downloads_by_status(
-        DownloadStatus.UPCOMING, feed=feed_id
+        DownloadStatus.UPCOMING, feed_id=feed_id
     )
     assert len(remaining_upcoming) == 0
 
@@ -424,7 +424,7 @@ def test_enqueue_handles_existing_downloaded_items(
 
     # Verify the item remains DOWNLOADED
     downloaded_downloads = download_db.get_downloads_by_status(
-        DownloadStatus.DOWNLOADED, feed=feed_id
+        DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
     assert len(downloaded_downloads) == 1
     assert downloaded_downloads[0].id == BIG_BUCK_BUNNY_VIDEO_ID
@@ -432,7 +432,7 @@ def test_enqueue_handles_existing_downloaded_items(
 
     # Verify no items were queued
     queued_downloads = download_db.get_downloads_by_status(
-        DownloadStatus.QUEUED, feed=feed_id
+        DownloadStatus.QUEUED, feed_id=feed_id
     )
     assert len(queued_downloads) == 0
 
@@ -462,7 +462,7 @@ def test_enqueue_multiple_runs_idempotent(
 
     # Get downloads after first run
     first_run_downloads = download_db.get_downloads_by_status(
-        DownloadStatus.QUEUED, feed=feed_id
+        DownloadStatus.QUEUED, feed_id=feed_id
     )
 
     # Second run - should not queue new items (they already exist)
@@ -479,7 +479,7 @@ def test_enqueue_multiple_runs_idempotent(
 
     # Downloads should be the same
     second_run_downloads = download_db.get_downloads_by_status(
-        DownloadStatus.QUEUED, feed=feed_id
+        DownloadStatus.QUEUED, feed_id=feed_id
     )
     assert len(second_run_downloads) == len(first_run_downloads)
 
@@ -518,7 +518,7 @@ def test_enqueue_with_impossible_filter(
 
     # Verify downloads exist in database (the filter will apply during actual download)
     queued_downloads = download_db.get_downloads_by_status(
-        DownloadStatus.QUEUED, feed=feed_id
+        DownloadStatus.QUEUED, feed_id=feed_id
     )
     assert len(queued_downloads) == 0
 

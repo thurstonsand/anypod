@@ -320,7 +320,7 @@ def test_handle_existing_upcoming_downloads_none_found(
     count = enqueuer._handle_existing_upcoming_downloads(FEED_ID, sample_feed_config)
     assert count == 0
     mock_download_db.get_downloads_by_status.assert_called_once_with(
-        DownloadStatus.UPCOMING, feed=FEED_ID
+        DownloadStatus.UPCOMING, feed_id=FEED_ID
     )
 
 
@@ -687,7 +687,7 @@ def test_enqueue_new_downloads_full_flow_mixed_scenarios(
     # Assert calls for _handle_existing_upcoming_downloads
     assert mock_download_db.get_downloads_by_status.call_count == 1
     assert mock_download_db.get_downloads_by_status.call_args_list[0] == call(
-        DownloadStatus.UPCOMING, feed=FEED_ID
+        DownloadStatus.UPCOMING, feed_id=FEED_ID
     )
 
     # Assert ytdlp_wrapper.fetch_metadata calls
@@ -795,7 +795,7 @@ def test_enqueue_new_downloads_no_upcoming_no_new(
 
     assert queued_count == 0
     mock_download_db.get_downloads_by_status.assert_called_once_with(
-        DownloadStatus.UPCOMING, feed=FEED_ID
+        DownloadStatus.UPCOMING, feed_id=FEED_ID
     )
     mock_ytdlp_wrapper.fetch_metadata.assert_called_once_with(
         FEED_ID,

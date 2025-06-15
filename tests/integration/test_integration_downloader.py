@@ -212,7 +212,7 @@ def test_download_queued_single_video_success(
 
     # Verify item is in QUEUED status
     queued_downloads = download_db.get_downloads_by_status(
-        DownloadStatus.QUEUED, feed=feed_id
+        DownloadStatus.QUEUED, feed_id=feed_id
     )
     assert len(queued_downloads) >= 1
     original_download = queued_downloads[0]
@@ -233,7 +233,7 @@ def test_download_queued_single_video_success(
 
     # Verify database was updated
     downloaded_items = download_db.get_downloads_by_status(
-        DownloadStatus.DOWNLOADED, feed=feed_id
+        DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
     assert len(downloaded_items) >= 1
 
@@ -257,7 +257,7 @@ def test_download_queued_single_video_success(
 
     # Verify no more queued items for this feed
     remaining_queued = download_db.get_downloads_by_status(
-        DownloadStatus.QUEUED, feed=feed_id
+        DownloadStatus.QUEUED, feed_id=feed_id
     )
     assert len(remaining_queued) == 0
 
@@ -280,7 +280,7 @@ def test_download_queued_multiple_videos_success(
 
     # Get original queued items
     original_queued = download_db.get_downloads_by_status(
-        DownloadStatus.QUEUED, feed=feed_id
+        DownloadStatus.QUEUED, feed_id=feed_id
     )
     original_count = len(original_queued)
     assert original_count >= 1
@@ -298,7 +298,7 @@ def test_download_queued_multiple_videos_success(
 
     # Verify database updates
     downloaded_items = download_db.get_downloads_by_status(
-        DownloadStatus.DOWNLOADED, feed=feed_id
+        DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
     assert len(downloaded_items) == success_count
 
@@ -341,7 +341,7 @@ def test_download_queued_with_limit(
     # If we got a success, verify it
     if success_count > 0:
         downloaded_items = download_db.get_downloads_by_status(
-            DownloadStatus.DOWNLOADED, feed=feed_id
+            DownloadStatus.DOWNLOADED, feed_id=feed_id
         )
         assert len(downloaded_items) == success_count
 
@@ -369,7 +369,7 @@ def test_download_queued_no_queued_items(
 
     # Verify no downloads in database for this feed
     all_downloads = download_db.get_downloads_by_status(
-        DownloadStatus.DOWNLOADED, feed=feed_id
+        DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
     assert len(all_downloads) == 0
 
@@ -404,7 +404,7 @@ def test_download_queued_handles_invalid_urls(
 
     # Verify it's queued
     queued_downloads = download_db.get_downloads_by_status(
-        DownloadStatus.QUEUED, feed=feed_id
+        DownloadStatus.QUEUED, feed_id=feed_id
     )
     assert len(queued_downloads) == 1
 
@@ -513,7 +513,7 @@ def test_download_queued_mixed_success_and_failure(
 
     # Verify we have at least 2 queued items
     queued_downloads = download_db.get_downloads_by_status(
-        DownloadStatus.QUEUED, feed=feed_id
+        DownloadStatus.QUEUED, feed_id=feed_id
     )
     assert len(queued_downloads) >= 2
 
@@ -531,7 +531,7 @@ def test_download_queued_mixed_success_and_failure(
 
     # Verify successful downloads
     downloaded_items = download_db.get_downloads_by_status(
-        DownloadStatus.DOWNLOADED, feed=feed_id
+        DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
     assert len(downloaded_items) == success_count
 
@@ -571,7 +571,7 @@ def test_download_queued_file_properties(
 
     # Get the downloaded item
     downloaded_items = download_db.get_downloads_by_status(
-        DownloadStatus.DOWNLOADED, feed=feed_id
+        DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
     downloaded_item = downloaded_items[0]
 
@@ -624,7 +624,7 @@ def test_filesize_metadata_flow(
 
     # Get the queued item and check initial filesize
     queued_items = download_db.get_downloads_by_status(
-        DownloadStatus.QUEUED, feed=feed_id
+        DownloadStatus.QUEUED, feed_id=feed_id
     )
     queued_item = queued_items[0]
     initial_filesize = queued_item.filesize
@@ -642,7 +642,7 @@ def test_filesize_metadata_flow(
 
     # Get the downloaded item
     downloaded_items = download_db.get_downloads_by_status(
-        DownloadStatus.DOWNLOADED, feed=feed_id
+        DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
     downloaded_item = downloaded_items[0]
     final_filesize = downloaded_item.filesize

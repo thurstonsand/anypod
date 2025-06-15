@@ -680,7 +680,7 @@ class DownloadDatabase:
     def get_downloads_by_status(
         self,
         status_to_filter: DownloadStatus,
-        feed: str | None = None,
+        feed_id: str | None = None,
         limit: int = -1,
         offset: int = 0,
         published_after: datetime | None = None,
@@ -692,7 +692,7 @@ class DownloadDatabase:
 
         Args:
             status_to_filter: The DownloadStatus to filter by.
-            feed: Optional feed name to filter by.
+            feed_id: Optional feed name to filter by.
             limit: Maximum number of records to return (-1 for no limit).
             offset: Number of records to skip (for pagination).
             published_after: Optional datetime to filter downloads published after this date (inclusive).
@@ -706,7 +706,7 @@ class DownloadDatabase:
         """
         log_params = {
             "status": str(status_to_filter),
-            "feed_id": feed if feed else "<all>",
+            "feed_id": feed_id if feed_id else "<all>",
             "limit": limit,
             "offset": offset,
             "published_after": published_after.isoformat() if published_after else None,
@@ -718,9 +718,9 @@ class DownloadDatabase:
 
         where = ["status = :status"]
         where_args: dict[str, Any] = {"status": str(status_to_filter)}
-        if feed:
+        if feed_id:
             where.append("feed = :feed")
-            where_args["feed"] = feed
+            where_args["feed"] = feed_id
         if published_after:
             where.append("published >= :published_after")
             where_args["published_after"] = published_after
@@ -738,14 +738,14 @@ class DownloadDatabase:
                 offset=offset,
             )
         except DatabaseOperationError as e:
-            e.feed_id = feed
+            e.feed_id = feed_id
             raise e
         return [Download.from_row(row) for row in rows]
 
     def count_downloads_by_status(
         self,
         status_to_filter: DownloadStatus | list[DownloadStatus],
-        feed: str | None = None,
+        feed_id: str | None = None,
     ) -> int:
         """Count downloads with one or more specific statuses.
 
@@ -753,7 +753,7 @@ class DownloadDatabase:
 
         Args:
             status_to_filter: Single status or list of statuses to count.
-            feed: Optional feed identifier to filter by.
+            feed_id: Optional feed identifier to filter by.
 
         Returns:
             Number of downloads matching the criteria.
@@ -763,7 +763,7 @@ class DownloadDatabase:
         """
         log_params: dict[str, Any] = {
             "statuses": status_to_filter,
-            "feed": feed,
+            "feed_id": feed_id,
         }
         logger.debug("Attempting to count downloads by status.", extra=log_params)
 
@@ -779,9 +779,9 @@ class DownloadDatabase:
                 where_args[status_key] = str(status)
             where = [f"status IN ({', '.join(placeholders)})"]
 
-        if feed is not None:
-            where.append("feed = :feed")
-            where_args["feed"] = feed
+        if feed_id is not None:
+            where.append("feed = :feed_id")
+            where_args["feed_id"] = feed_id
 
         try:
             count = self._db.count_where(
@@ -790,7 +790,7 @@ class DownloadDatabase:
                 where_args=where_args,
             )
         except DatabaseOperationError as e:
-            e.feed_id = feed
+            e.feed_id = feed_id
             raise e
 
         logger.debug(

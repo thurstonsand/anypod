@@ -260,7 +260,7 @@ def test_process_feed_complete_success(
 
     # Verify database state consistency
     downloaded_items = download_db.get_downloads_by_status(
-        DownloadStatus.DOWNLOADED, feed=feed_id
+        DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
     assert len(downloaded_items) >= 1, "Should have downloaded items in database"
     assert len(downloaded_items) == results.total_downloaded
@@ -274,7 +274,7 @@ def test_process_feed_complete_success(
 
     # Verify no items left in QUEUED status
     queued_items = download_db.get_downloads_by_status(
-        DownloadStatus.QUEUED, feed=feed_id
+        DownloadStatus.QUEUED, feed_id=feed_id
     )
     assert len(queued_items) == 0, (
         "Should have no queued items after successful processing"
@@ -337,7 +337,7 @@ def test_process_feed_incremental_processing(
 
     # Verify initial state
     initial_downloaded = download_db.get_downloads_by_status(
-        DownloadStatus.DOWNLOADED, feed=feed_id
+        DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
     assert len(initial_downloaded) == 1
     initial_download_id = initial_downloaded[0].id
@@ -358,7 +358,7 @@ def test_process_feed_incremental_processing(
 
     # Verify existing download is untouched
     final_downloaded = download_db.get_downloads_by_status(
-        DownloadStatus.DOWNLOADED, feed=feed_id
+        DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
     assert len(final_downloaded) == 1
     assert final_downloaded[0].id == initial_download_id
@@ -397,7 +397,7 @@ def test_process_feed_idempotency(
 
     # Capture state after first run
     first_downloaded = download_db.get_downloads_by_status(
-        DownloadStatus.DOWNLOADED, feed=feed_id
+        DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
     first_downloaded_count = len(first_downloaded)
     first_download_ids = {dl.id for dl in first_downloaded}
@@ -430,7 +430,7 @@ def test_process_feed_idempotency(
 
     # Verify stable state - same downloads exist
     second_downloaded = download_db.get_downloads_by_status(
-        DownloadStatus.DOWNLOADED, feed=feed_id
+        DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
     second_downloaded_count = len(second_downloaded)
     second_download_ids = {dl.id for dl in second_downloaded}
@@ -497,7 +497,7 @@ def test_process_feed_with_retention_pruning(
 
     # Verify initial state - 3 old downloads
     initial_downloaded = download_db.get_downloads_by_status(
-        DownloadStatus.DOWNLOADED, feed=feed_id
+        DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
     assert len(initial_downloaded) == 3
 
@@ -525,7 +525,7 @@ def test_process_feed_with_retention_pruning(
 
     # Verify final state - should have only keep_last=1 downloaded items
     final_downloaded = download_db.get_downloads_by_status(
-        DownloadStatus.DOWNLOADED, feed=feed_id
+        DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
     assert len(final_downloaded) == 1, (
         f"Should have exactly 1 downloaded item (keep_last=1), got {len(final_downloaded)}"
@@ -552,6 +552,6 @@ def test_process_feed_with_retention_pruning(
 
     # Verify archived items exist in database
     archived_downloads = download_db.get_downloads_by_status(
-        DownloadStatus.ARCHIVED, feed=feed_id
+        DownloadStatus.ARCHIVED, feed_id=feed_id
     )
     assert len(archived_downloads) >= 2, "Should have archived old downloads"

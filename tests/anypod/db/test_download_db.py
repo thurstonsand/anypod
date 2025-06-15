@@ -1051,7 +1051,7 @@ def test_get_downloads_by_status(download_db: DownloadDatabase):
         assert row.status == DownloadStatus.ERROR
 
     feed1_errors = download_db.get_downloads_by_status(
-        status_to_filter=DownloadStatus.ERROR, feed=feed1
+        status_to_filter=DownloadStatus.ERROR, feed_id=feed1
     )
     assert len(feed1_errors) == 2, "Should fetch 2 ERROR downloads for feed1"
     assert [row.id for row in feed1_errors] == ["f1e2_new", "f1e1_old"]
@@ -1073,21 +1073,21 @@ def test_get_downloads_by_status(download_db: DownloadDatabase):
         assert row.status == DownloadStatus.UPCOMING
 
     feed1_upcoming = download_db.get_downloads_by_status(
-        status_to_filter=DownloadStatus.UPCOMING, feed=feed1
+        status_to_filter=DownloadStatus.UPCOMING, feed_id=feed1
     )
     assert len(feed1_upcoming) == 1, "Should fetch 1 UPCOMING download for feed1"
     assert feed1_upcoming[0].id == "f1upcoming"
 
     # --- Test QUEUED status (feed1 has one) ---
     feed1_queued = download_db.get_downloads_by_status(
-        status_to_filter=DownloadStatus.QUEUED, feed=feed1
+        status_to_filter=DownloadStatus.QUEUED, feed_id=feed1
     )
     assert len(feed1_queued) == 1, "Should fetch 1 QUEUED download for feed1"
     assert feed1_queued[0].id == "f1q1"
 
     # --- Test DOWNLOADED status (feed3_no_match has one) ---
     downloaded_f3 = download_db.get_downloads_by_status(
-        status_to_filter=DownloadStatus.DOWNLOADED, feed="feed3_no_match"
+        status_to_filter=DownloadStatus.DOWNLOADED, feed_id="feed3_no_match"
     )
     assert len(downloaded_f3) == 1, "Should fetch 1 DOWNLOADED for feed3_no_match"
     assert downloaded_f3[0].id == "f3d1"
@@ -1101,7 +1101,7 @@ def test_get_downloads_by_status(download_db: DownloadDatabase):
 
     # --- Test no downloads for a status/feed combination ---
     no_feed2_queued = download_db.get_downloads_by_status(
-        status_to_filter=DownloadStatus.QUEUED, feed=feed2
+        status_to_filter=DownloadStatus.QUEUED, feed_id=feed2
     )
     assert len(no_feed2_queued) == 0
 
@@ -1230,7 +1230,7 @@ def test_get_downloads_by_status_date_filtering(download_db: DownloadDatabase):
     after_cutoff = base_time - timedelta(days=6)
     after_filtered = download_db.get_downloads_by_status(
         status_to_filter=DownloadStatus.QUEUED,
-        feed=feed_id,
+        feed_id=feed_id,
         published_after=after_cutoff,
     )
     after_ids = [dl.id for dl in after_filtered]
@@ -1243,7 +1243,7 @@ def test_get_downloads_by_status_date_filtering(download_db: DownloadDatabase):
     before_cutoff = base_time - timedelta(days=2)
     before_filtered = download_db.get_downloads_by_status(
         status_to_filter=DownloadStatus.QUEUED,
-        feed=feed_id,
+        feed_id=feed_id,
         published_before=before_cutoff,
     )
     before_ids = [dl.id for dl in before_filtered]
@@ -1257,7 +1257,7 @@ def test_get_downloads_by_status_date_filtering(download_db: DownloadDatabase):
     range_before = base_time - timedelta(days=2)
     range_filtered = download_db.get_downloads_by_status(
         status_to_filter=DownloadStatus.QUEUED,
-        feed=feed_id,
+        feed_id=feed_id,
         published_after=range_after,
         published_before=range_before,
     )
@@ -1270,7 +1270,7 @@ def test_get_downloads_by_status_date_filtering(download_db: DownloadDatabase):
     # Test date filtering with different status
     old_downloaded_filtered = download_db.get_downloads_by_status(
         status_to_filter=DownloadStatus.DOWNLOADED,
-        feed=feed_id,
+        feed_id=feed_id,
         published_before=base_time - timedelta(days=7),
     )
     assert len(old_downloaded_filtered) == 1
@@ -1280,7 +1280,7 @@ def test_get_downloads_by_status_date_filtering(download_db: DownloadDatabase):
     far_future_after = base_time + timedelta(days=10)
     empty_filtered = download_db.get_downloads_by_status(
         status_to_filter=DownloadStatus.QUEUED,
-        feed=feed_id,
+        feed_id=feed_id,
         published_after=far_future_after,
     )
     assert len(empty_filtered) == 0
@@ -1289,7 +1289,7 @@ def test_get_downloads_by_status_date_filtering(download_db: DownloadDatabase):
     far_past_after = base_time - timedelta(days=20)
     all_filtered = download_db.get_downloads_by_status(
         status_to_filter=DownloadStatus.QUEUED,
-        feed=feed_id,
+        feed_id=feed_id,
         published_after=far_past_after,
     )
     assert len(all_filtered) == 4  # All 4 QUEUED downloads
@@ -1297,7 +1297,7 @@ def test_get_downloads_by_status_date_filtering(download_db: DownloadDatabase):
     # Test date filtering works correctly with ordering (newest first)
     ordered_filtered = download_db.get_downloads_by_status(
         status_to_filter=DownloadStatus.QUEUED,
-        feed=feed_id,
+        feed_id=feed_id,
         published_after=base_time - timedelta(days=6),
     )
     ordered_ids = [dl.id for dl in ordered_filtered]
@@ -1307,7 +1307,7 @@ def test_get_downloads_by_status_date_filtering(download_db: DownloadDatabase):
     # Test date filtering with limit and offset
     limited_filtered = download_db.get_downloads_by_status(
         status_to_filter=DownloadStatus.QUEUED,
-        feed=feed_id,
+        feed_id=feed_id,
         published_after=base_time - timedelta(days=6),
         limit=2,
         offset=1,
@@ -1447,22 +1447,22 @@ def test_count_downloads_by_status(download_db: DownloadDatabase):
 
     # Test counting single status with feed filter
     feed1_queued = download_db.count_downloads_by_status(
-        DownloadStatus.QUEUED, feed=feed1
+        DownloadStatus.QUEUED, feed_id=feed1
     )
     assert feed1_queued == 2
 
     feed2_queued = download_db.count_downloads_by_status(
-        DownloadStatus.QUEUED, feed=feed2
+        DownloadStatus.QUEUED, feed_id=feed2
     )
     assert feed2_queued == 1
 
     feed1_downloaded = download_db.count_downloads_by_status(
-        DownloadStatus.DOWNLOADED, feed=feed1
+        DownloadStatus.DOWNLOADED, feed_id=feed1
     )
     assert feed1_downloaded == 1
 
     feed2_downloaded = download_db.count_downloads_by_status(
-        DownloadStatus.DOWNLOADED, feed=feed2
+        DownloadStatus.DOWNLOADED, feed_id=feed2
     )
     assert feed2_downloaded == 0
 
@@ -1479,12 +1479,12 @@ def test_count_downloads_by_status(download_db: DownloadDatabase):
 
     # Test counting multiple statuses with feed filter
     feed1_active = download_db.count_downloads_by_status(
-        [DownloadStatus.QUEUED, DownloadStatus.UPCOMING], feed=feed1
+        [DownloadStatus.QUEUED, DownloadStatus.UPCOMING], feed_id=feed1
     )
     assert feed1_active == 3  # 2 QUEUED + 1 UPCOMING
 
     feed2_active = download_db.count_downloads_by_status(
-        [DownloadStatus.QUEUED, DownloadStatus.UPCOMING], feed=feed2
+        [DownloadStatus.QUEUED, DownloadStatus.UPCOMING], feed_id=feed2
     )
     assert feed2_active == 2  # 1 QUEUED + 1 UPCOMING
 

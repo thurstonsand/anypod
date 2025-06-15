@@ -17,7 +17,6 @@ from .db.feed_db import FeedDatabase
 from .db.types import DownloadStatus, Feed, SourceType
 from .exceptions import (
     DatabaseOperationError,
-    FeedNotFoundError,
     PruneError,
     StateReconciliationError,
 )
@@ -57,8 +56,7 @@ class StateReconciler:
             feed_config: The FeedConfig from YAML.
 
         Raises:
-            DatabaseOperationError: If inserting the feed fails.
-            ValueError: If feed creation fails.
+            StateReconciliationError: If database operations fail.
         """
         log_params = {"feed_id": feed_id, "feed_url": feed_config.url}
         logger.info("Processing new feed.", extra=log_params)
@@ -98,12 +96,10 @@ class StateReconciler:
         try:
             self._feed_db.upsert_feed(new_feed)
         except (DatabaseOperationError, ValueError) as e:
-            logger.warning(
+            raise StateReconciliationError(
                 "Failed to insert new feed into database.",
-                extra=log_params,
-                exc_info=e,
-            )
-            raise
+                feed_id=feed_id,
+            ) from e
 
     def _handle_since_changes(
         self, feed_id: str, config: FeedConfig, log_params: dict[str, Any]
@@ -128,7 +124,7 @@ class StateReconciler:
         # Find archived downloads that should be restored due to 'since' expansion
         try:
             downloads_to_restore = self._download_db.get_downloads_by_status(
-                DownloadStatus.ARCHIVED, feed=feed_id, published_after=config.since
+                DownloadStatus.ARCHIVED, feed_id=feed_id, published_after=config.since
             )
         except DatabaseOperationError as e:
             raise StateReconciliationError(
@@ -195,7 +191,7 @@ class StateReconciler:
 
         try:
             current_active_count = self._download_db.count_downloads_by_status(
-                [DownloadStatus.QUEUED, DownloadStatus.UPCOMING], feed=feed_id
+                [DownloadStatus.QUEUED, DownloadStatus.UPCOMING], feed_id=feed_id
             )
         except DatabaseOperationError as e:
             raise StateReconciliationError(
@@ -219,7 +215,7 @@ class StateReconciler:
                 # Get archived downloads, newest first
                 archived_downloads = self._download_db.get_downloads_by_status(
                     DownloadStatus.ARCHIVED,
-                    feed=feed_id,
+                    feed_id=feed_id,
                     limit=restore_count,
                 )
             except DatabaseOperationError as e:
@@ -279,8 +275,7 @@ class StateReconciler:
             True if any changes were applied.
 
         Raises:
-            FeedNotFoundError: If feed is not found during update.
-            DatabaseOperationError: If database operations fail.
+            StateReconciliationError: If database operations fail.
         """
         log_params = {"feed_id": feed_id}
 
@@ -361,7 +356,13 @@ class StateReconciler:
 
         if updated_feed != db_feed:
             logger.info("Feed configuration changes applied.", extra=log_params)
-            self._feed_db.upsert_feed(updated_feed)
+            try:
+                self._feed_db.upsert_feed(updated_feed)
+            except DatabaseOperationError as e:
+                raise StateReconciliationError(
+                    "Failed to update feed configuration.",
+                    feed_id=feed_id,
+                ) from e
             return True
         else:
             logger.debug("No feed configuration changes detected.", extra=log_params)
@@ -432,7 +433,7 @@ class StateReconciler:
                 # New feed - add to database
                 try:
                     self._handle_new_feed(feed_id, feed_config)
-                except (DatabaseOperationError, ValueError) as e:
+                except StateReconciliationError as e:
                     logger.warning(
                         "Failed to add new feed, continuing with others.",
                         extra={"feed_id": feed_id},
@@ -447,7 +448,7 @@ class StateReconciler:
                 try:
                     if self._handle_existing_feed(feed_id, feed_config, db_feed):
                         changed_count += 1
-                except (DatabaseOperationError, FeedNotFoundError) as e:
+                except StateReconciliationError as e:
                     logger.warning(
                         "Failed to update existing feed, continuing with others.",
                         extra={"feed_id": feed_id},
@@ -464,7 +465,7 @@ class StateReconciler:
                 # Feed is enabled in DB but not present in config - mark as removed
                 try:
                     self._handle_removed_feed(feed_id)
-                except (DatabaseOperationError, FeedNotFoundError) as e:
+                except StateReconciliationError as e:
                     logger.warning(
                         "Failed to disable removed feed, continuing with others.",
                         extra={"feed_id": feed_id},

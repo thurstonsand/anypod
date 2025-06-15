@@ -15,8 +15,8 @@ class FeedMetadataOverrides(BaseModel):
     language: str | None = Field(
         None, description="Podcast language (e.g., 'en', 'es')"
     )
-    categories: PodcastCategories = Field(
-        default_factory=PodcastCategories,
+    categories: PodcastCategories | None = Field(
+        None,
         description="Apple Podcasts category/categories (max 2)",
     )
     explicit: PodcastExplicit | None = Field(None, description="Explicit content flag")

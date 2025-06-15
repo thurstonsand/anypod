@@ -1,0 +1,650 @@
+# pyright: reportPrivateUsage=false
+
+"""Tests for the StateReconciler class.
+
+This module contains unit tests for the StateReconciler, which manages
+synchronization between YAML configuration and database state during startup
+and when configuration changes are detected.
+"""
+
+from copy import deepcopy
+from datetime import UTC, datetime
+from unittest.mock import MagicMock
+
+import pytest
+
+from anypod.config import FeedConfig
+from anypod.config.types import (
+    FeedMetadataOverrides,
+    PodcastCategories,
+    PodcastExplicit,
+)
+from anypod.data_coordinator.pruner import Pruner
+from anypod.db import DownloadDatabase
+from anypod.db.feed_db import FeedDatabase
+from anypod.db.types import Download, DownloadStatus, Feed, SourceType
+from anypod.exceptions import (
+    DatabaseOperationError,
+    PruneError,
+    StateReconciliationError,
+)
+from anypod.state_reconciler import StateReconciler
+
+# Test constants
+FEED_ID = "test_feed"
+FEED_URL = "https://example.com/feed"
+NEW_FEED_ID = "new_feed"
+NEW_FEED_URL = "https://example.com/new_feed"
+REMOVED_FEED_ID = "removed_feed"
+TEST_CRON_SCHEDULE = "0 * * * *"
+
+# Mock Feed objects for testing
+BASE_TIME = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
+MOCK_FEED = Feed(
+    id=FEED_ID,
+    title="Test Feed",
+    subtitle=None,
+    description=None,
+    language=None,
+    author=None,
+    image_url=None,
+    is_enabled=True,
+    source_type=SourceType.UNKNOWN,
+    source_url=FEED_URL,
+    last_successful_sync=BASE_TIME,
+    since=None,
+    keep_last=None,
+    total_downloads=10,
+)
+
+MOCK_DISABLED_FEED = Feed(
+    id=REMOVED_FEED_ID,
+    title="Removed Feed",
+    subtitle=None,
+    description=None,
+    language=None,
+    author=None,
+    image_url=None,
+    is_enabled=True,
+    source_type=SourceType.UNKNOWN,
+    source_url="https://example.com/removed",
+    last_successful_sync=BASE_TIME,
+)
+
+# Mock Downloads for testing
+MOCK_ARCHIVED_DOWNLOAD_1 = Download(
+    feed=FEED_ID,
+    id="archived_1",
+    source_url="https://example.com/video1",
+    title="Archived Video 1",
+    published=datetime(2024, 6, 1, tzinfo=UTC),
+    ext="mp4",
+    mime_type="video/mp4",
+    filesize=1024000,
+    duration=120,
+    status=DownloadStatus.ARCHIVED,
+    discovered_at=datetime(2024, 6, 1, tzinfo=UTC),
+    updated_at=datetime(2024, 6, 1, tzinfo=UTC),
+)
+
+MOCK_ARCHIVED_DOWNLOAD_2 = Download(
+    feed=FEED_ID,
+    id="archived_2",
+    source_url="https://example.com/video2",
+    title="Archived Video 2",
+    published=datetime(2024, 7, 1, tzinfo=UTC),
+    ext="mp4",
+    mime_type="video/mp4",
+    filesize=1024000,
+    duration=120,
+    status=DownloadStatus.ARCHIVED,
+    discovered_at=datetime(2024, 7, 1, tzinfo=UTC),
+    updated_at=datetime(2024, 7, 1, tzinfo=UTC),
+)
+
+
+# --- Fixtures ---
+
+
+@pytest.fixture
+def mock_feed_db() -> MagicMock:
+    """Provides a MagicMock for FeedDatabase."""
+    return MagicMock(spec=FeedDatabase)
+
+
+@pytest.fixture
+def mock_download_db() -> MagicMock:
+    """Provides a MagicMock for DownloadDatabase."""
+    return MagicMock(spec=DownloadDatabase)
+
+
+@pytest.fixture
+def mock_pruner() -> MagicMock:
+    """Provides a MagicMock for Pruner."""
+    return MagicMock(spec=Pruner)
+
+
+@pytest.fixture
+def state_reconciler(
+    mock_feed_db: MagicMock, mock_download_db: MagicMock, mock_pruner: MagicMock
+) -> StateReconciler:
+    """Provides a StateReconciler instance with mocked dependencies."""
+    return StateReconciler(mock_feed_db, mock_download_db, mock_pruner)
+
+
+@pytest.fixture
+def base_feed_config() -> FeedConfig:
+    """Provides a basic FeedConfig for testing."""
+    return FeedConfig(
+        url=FEED_URL,
+        schedule=TEST_CRON_SCHEDULE,
+        enabled=True,
+        keep_last=None,
+        since=None,
+        yt_args=None,  # type: ignore
+        metadata=None,
+    )
+
+
+@pytest.fixture
+def feed_config_with_metadata() -> FeedConfig:
+    """Provides a FeedConfig with metadata overrides."""
+    return FeedConfig(
+        url=FEED_URL,
+        schedule=TEST_CRON_SCHEDULE,
+        enabled=True,
+        keep_last=None,
+        since=None,
+        yt_args=None,  # type: ignore
+        metadata=FeedMetadataOverrides(
+            title="Custom Title",
+            subtitle="Custom Subtitle",
+            description="Custom Description",
+            language="en",
+            author="Test Author",
+            image_url="https://example.com/image.jpg",
+            categories=PodcastCategories("Technology"),
+            explicit=PodcastExplicit.NO,
+        ),
+    )
+
+
+# --- Tests for StateReconciler._handle_new_feed ---
+
+
+@pytest.mark.unit
+def test_handle_new_feed_basic(
+    state_reconciler: StateReconciler,
+    mock_feed_db: MagicMock,
+    base_feed_config: FeedConfig,
+) -> None:
+    """New feed is inserted with correct values."""
+    state_reconciler._handle_new_feed(NEW_FEED_ID, base_feed_config)
+
+    mock_feed_db.upsert_feed.assert_called_once()
+    inserted_feed = mock_feed_db.upsert_feed.call_args[0][0]
+    assert inserted_feed.id == NEW_FEED_ID
+    assert inserted_feed.source_url == base_feed_config.url
+    assert inserted_feed.is_enabled is True
+    assert inserted_feed.source_type == SourceType.UNKNOWN
+    assert inserted_feed.last_successful_sync is not None
+
+
+@pytest.mark.unit
+def test_handle_new_feed_with_metadata(
+    state_reconciler: StateReconciler,
+    mock_feed_db: MagicMock,
+    feed_config_with_metadata: FeedConfig,
+) -> None:
+    """New feed with metadata is inserted correctly."""
+    state_reconciler._handle_new_feed(NEW_FEED_ID, feed_config_with_metadata)
+
+    mock_feed_db.upsert_feed.assert_called_once()
+    inserted_feed = mock_feed_db.upsert_feed.call_args[0][0]
+
+    # For type safety - we know metadata is not None in this fixture
+    assert feed_config_with_metadata.metadata is not None
+    metadata = feed_config_with_metadata.metadata
+
+    assert inserted_feed.title == metadata.title
+    assert inserted_feed.subtitle == metadata.subtitle
+    assert inserted_feed.description == metadata.description
+    assert inserted_feed.language == metadata.language
+    assert inserted_feed.author == metadata.author
+    assert inserted_feed.image_url == metadata.image_url
+    assert inserted_feed.category == metadata.categories
+    assert inserted_feed.explicit == metadata.explicit
+
+
+@pytest.mark.unit
+def test_handle_new_feed_with_since(
+    state_reconciler: StateReconciler,
+    mock_feed_db: MagicMock,
+    base_feed_config: FeedConfig,
+) -> None:
+    """New feed with 'since' date uses it as initial sync time."""
+    since_date = datetime(2023, 1, 1, tzinfo=UTC)
+    config = deepcopy(base_feed_config)
+    config.since = since_date
+
+    state_reconciler._handle_new_feed(NEW_FEED_ID, config)
+
+    mock_feed_db.upsert_feed.assert_called_once()
+    inserted_feed = mock_feed_db.upsert_feed.call_args[0][0]
+    assert inserted_feed.last_successful_sync == since_date
+    assert inserted_feed.since == since_date
+
+
+@pytest.mark.unit
+def test_handle_new_feed_database_error(
+    state_reconciler: StateReconciler,
+    mock_feed_db: MagicMock,
+    base_feed_config: FeedConfig,
+) -> None:
+    """Database error during new feed insertion is propagated."""
+    mock_feed_db.upsert_feed.side_effect = DatabaseOperationError("DB error")
+
+    with pytest.raises(StateReconciliationError):
+        state_reconciler._handle_new_feed(NEW_FEED_ID, base_feed_config)
+
+
+# --- Tests for StateReconciler._handle_removed_feed ---
+
+
+@pytest.mark.unit
+def test_handle_removed_feed(
+    state_reconciler: StateReconciler, mock_pruner: MagicMock
+) -> None:
+    """Removed feed is archived via pruner."""
+    state_reconciler._handle_removed_feed(REMOVED_FEED_ID)
+
+    mock_pruner.archive_feed.assert_called_once_with(REMOVED_FEED_ID)
+
+
+@pytest.mark.unit
+def test_handle_removed_feed_pruner_error(
+    state_reconciler: StateReconciler, mock_pruner: MagicMock
+) -> None:
+    """Pruner error during feed removal is wrapped."""
+    mock_pruner.archive_feed.side_effect = PruneError("Prune failed")
+
+    with pytest.raises(StateReconciliationError) as exc_info:
+        state_reconciler._handle_removed_feed(REMOVED_FEED_ID)
+
+    assert exc_info.value.feed_id == REMOVED_FEED_ID
+
+
+# --- Tests for StateReconciler._handle_existing_feed ---
+
+
+@pytest.mark.unit
+def test_handle_existing_feed_no_changes(
+    state_reconciler: StateReconciler,
+    mock_feed_db: MagicMock,
+    base_feed_config: FeedConfig,
+) -> None:
+    """No changes to existing feed results in no database update."""
+    existing_feed = deepcopy(MOCK_FEED)
+
+    result = state_reconciler._handle_existing_feed(
+        existing_feed.id, base_feed_config, existing_feed
+    )
+
+    assert result is False
+    mock_feed_db.upsert_feed.assert_not_called()
+
+
+@pytest.mark.unit
+def test_handle_existing_feed_enable(
+    state_reconciler: StateReconciler,
+    mock_feed_db: MagicMock,
+    base_feed_config: FeedConfig,
+) -> None:
+    """Enabling a disabled feed resets error state."""
+    disabled_feed = deepcopy(MOCK_FEED)
+    disabled_feed.is_enabled = False
+    disabled_feed.consecutive_failures = 3
+    disabled_feed.last_failed_sync = datetime.now(UTC)
+    disabled_feed.last_error = "Previous error"
+
+    config = deepcopy(base_feed_config)
+    config.enabled = True
+
+    result = state_reconciler._handle_existing_feed(FEED_ID, config, disabled_feed)
+
+    assert result is True
+    mock_feed_db.upsert_feed.assert_called_once()
+    updated_feed = mock_feed_db.upsert_feed.call_args[0][0]
+    assert updated_feed.is_enabled is True
+    assert updated_feed.consecutive_failures == 0
+    assert updated_feed.last_failed_sync is None
+    assert updated_feed.last_error is None
+
+
+@pytest.mark.unit
+def test_handle_existing_feed_disable(
+    state_reconciler: StateReconciler,
+    mock_feed_db: MagicMock,
+    base_feed_config: FeedConfig,
+) -> None:
+    """Disabling an enabled feed only updates enabled status."""
+    enabled_feed = deepcopy(MOCK_FEED)
+    enabled_feed.is_enabled = True
+
+    config = deepcopy(base_feed_config)
+    config.enabled = False
+
+    result = state_reconciler._handle_existing_feed(FEED_ID, config, enabled_feed)
+
+    assert result is True
+    mock_feed_db.upsert_feed.assert_called_once()
+    updated_feed = mock_feed_db.upsert_feed.call_args[0][0]
+    assert updated_feed.is_enabled is False
+
+
+@pytest.mark.unit
+def test_handle_existing_feed_url_change(
+    state_reconciler: StateReconciler,
+    mock_feed_db: MagicMock,
+    base_feed_config: FeedConfig,
+) -> None:
+    """URL change resets error state."""
+    existing_feed = deepcopy(MOCK_FEED)
+    existing_feed.source_url = "https://old.example.com/feed"
+    existing_feed.consecutive_failures = 2
+    existing_feed.last_error = "Old error"
+
+    config = deepcopy(base_feed_config)
+    config.url = "https://new.example.com/feed"
+
+    result = state_reconciler._handle_existing_feed(FEED_ID, config, existing_feed)
+
+    assert result is True
+    mock_feed_db.upsert_feed.assert_called_once()
+    updated_feed = mock_feed_db.upsert_feed.call_args[0][0]
+    assert updated_feed.source_url == "https://new.example.com/feed"
+    assert updated_feed.consecutive_failures == 0
+    assert updated_feed.last_error is None
+
+
+@pytest.mark.unit
+def test_handle_existing_feed_metadata_changes(
+    state_reconciler: StateReconciler,
+    mock_feed_db: MagicMock,
+    feed_config_with_metadata: FeedConfig,
+) -> None:
+    """Metadata changes are applied correctly."""
+    existing_feed = deepcopy(MOCK_FEED)
+    existing_feed.title = "Old Title"
+    existing_feed.description = "Old Description"
+
+    result = state_reconciler._handle_existing_feed(
+        FEED_ID, feed_config_with_metadata, existing_feed
+    )
+
+    assert result is True
+    mock_feed_db.upsert_feed.assert_called_once()
+    updated_feed = mock_feed_db.upsert_feed.call_args[0][0]
+
+    # For type safety - we know metadata is not None in this fixture
+    assert feed_config_with_metadata.metadata is not None
+    metadata = feed_config_with_metadata.metadata
+
+    assert updated_feed.title == metadata.title
+    assert updated_feed.subtitle == metadata.subtitle
+    assert updated_feed.description == metadata.description
+    assert updated_feed.language == metadata.language
+    assert updated_feed.author == metadata.author
+    assert updated_feed.image_url == metadata.image_url
+
+
+# --- Tests for StateReconciler._handle_since_changes and _handle_keep_last_changes ---
+
+
+@pytest.mark.unit
+def test_handle_since_expansion(
+    state_reconciler: StateReconciler,
+    mock_download_db: MagicMock,
+    base_feed_config: FeedConfig,
+) -> None:
+    """Expanding 'since' date restores archived downloads."""
+    # Setup: 2 archived downloads, expanding 'since' to include them
+    config = deepcopy(base_feed_config)
+    config.since = datetime(2024, 5, 1, tzinfo=UTC)  # Earlier than archived
+
+    mock_download_db.get_downloads_by_status.return_value = [
+        MOCK_ARCHIVED_DOWNLOAD_1,
+        MOCK_ARCHIVED_DOWNLOAD_2,
+    ]
+    mock_download_db.requeue_downloads.return_value = 2
+
+    log_params = {"feed_id": FEED_ID}
+    result = state_reconciler._handle_since_changes(FEED_ID, config, log_params)
+
+    assert result is True
+    mock_download_db.get_downloads_by_status.assert_called_once_with(
+        DownloadStatus.ARCHIVED, feed_id=FEED_ID, published_after=config.since
+    )
+    mock_download_db.requeue_downloads.assert_called_once_with(
+        FEED_ID, ["archived_1", "archived_2"], from_status=DownloadStatus.ARCHIVED
+    )
+
+
+@pytest.mark.unit
+def test_handle_since_no_downloads_to_restore(
+    state_reconciler: StateReconciler,
+    mock_download_db: MagicMock,
+    base_feed_config: FeedConfig,
+) -> None:
+    """No archived downloads to restore returns False."""
+    config = deepcopy(base_feed_config)
+    config.since = datetime(2024, 8, 1, tzinfo=UTC)  # Later than all archived
+
+    mock_download_db.get_downloads_by_status.return_value = []
+
+    log_params = {"feed_id": FEED_ID}
+    result = state_reconciler._handle_since_changes(FEED_ID, config, log_params)
+
+    assert result is False
+    mock_download_db.requeue_downloads.assert_not_called()
+
+
+@pytest.mark.unit
+def test_handle_since_database_error(
+    state_reconciler: StateReconciler,
+    mock_download_db: MagicMock,
+    base_feed_config: FeedConfig,
+) -> None:
+    """Database error during 'since' handling is wrapped."""
+    config = deepcopy(base_feed_config)
+    config.since = datetime(2024, 1, 1, tzinfo=UTC)
+
+    mock_download_db.get_downloads_by_status.side_effect = DatabaseOperationError(
+        "DB error"
+    )
+
+    with pytest.raises(StateReconciliationError) as exc_info:
+        state_reconciler._handle_since_changes(FEED_ID, config, {})
+
+    assert exc_info.value.feed_id == FEED_ID
+
+
+@pytest.mark.unit
+def test_handle_keep_last_increase(
+    state_reconciler: StateReconciler,
+    mock_download_db: MagicMock,
+    base_feed_config: FeedConfig,
+) -> None:
+    """Increasing keep_last restores archived downloads."""
+    config = deepcopy(base_feed_config)
+    config.keep_last = 15  # Current is 10, so restore 5 more
+
+    mock_download_db.count_downloads_by_status.return_value = 2  # 2 queued/upcoming
+    mock_download_db.get_downloads_by_status.return_value = [
+        MOCK_ARCHIVED_DOWNLOAD_1,
+        MOCK_ARCHIVED_DOWNLOAD_2,
+    ]
+    mock_download_db.requeue_downloads.return_value = 2
+
+    db_feed = deepcopy(MOCK_FEED)
+    db_feed.total_downloads = 10
+
+    log_params = {"feed_id": FEED_ID}
+    result = state_reconciler._handle_keep_last_changes(
+        FEED_ID, config, db_feed, log_params
+    )
+
+    assert result is True
+    mock_download_db.get_downloads_by_status.assert_called_once_with(
+        DownloadStatus.ARCHIVED,
+        feed_id=FEED_ID,
+        limit=3,  # 15 - (10 + 2)
+    )
+    mock_download_db.requeue_downloads.assert_called_once_with(
+        FEED_ID, ["archived_1", "archived_2"], from_status=DownloadStatus.ARCHIVED
+    )
+
+
+@pytest.mark.unit
+def test_handle_keep_last_already_at_limit(
+    state_reconciler: StateReconciler,
+    mock_download_db: MagicMock,
+    base_feed_config: FeedConfig,
+) -> None:
+    """No restoration when already at keep_last limit."""
+    config = deepcopy(base_feed_config)
+    config.keep_last = 10  # Same as current
+
+    mock_download_db.count_downloads_by_status.return_value = 0  # No queued
+
+    db_feed = deepcopy(MOCK_FEED)
+    db_feed.total_downloads = 10
+
+    log_params = {"feed_id": FEED_ID}
+    result = state_reconciler._handle_keep_last_changes(
+        FEED_ID, config, db_feed, log_params
+    )
+
+    assert result is False
+    mock_download_db.get_downloads_by_status.assert_not_called()
+
+
+# --- Tests for StateReconciler.reconcile_startup_state ---
+
+
+@pytest.mark.unit
+def test_reconcile_startup_state_all_scenarios(
+    state_reconciler: StateReconciler,
+    mock_feed_db: MagicMock,
+    mock_download_db: MagicMock,
+    mock_pruner: MagicMock,
+    base_feed_config: FeedConfig,
+) -> None:
+    """Full startup reconciliation with new, existing, and removed feeds."""
+    # Setup: 1 existing feed, 1 removed feed in DB
+    mock_feed_db.get_feeds.return_value = [MOCK_FEED, MOCK_DISABLED_FEED]
+
+    # Setup config: 1 existing feed (updated), 1 new feed
+    config_feeds = {
+        FEED_ID: base_feed_config,  # Existing
+        NEW_FEED_ID: FeedConfig(
+            url=NEW_FEED_URL,
+            schedule=TEST_CRON_SCHEDULE,
+            enabled=True,
+            keep_last=None,
+            since=None,
+            yt_args=None,  # type: ignore
+            metadata=None,
+        ),  # New
+    }
+
+    # Mock behaviors
+    mock_download_db.count_downloads_by_status.return_value = 0
+    mock_download_db.get_downloads_by_status.return_value = []
+
+    # Execute
+    ready_feeds = state_reconciler.reconcile_startup_state(config_feeds)
+
+    # Verify results
+    assert set(ready_feeds) == {FEED_ID, NEW_FEED_ID}
+
+    # Verify new feed was inserted
+    assert mock_feed_db.upsert_feed.call_count >= 1
+    new_feed_call = None
+    for call_args in mock_feed_db.upsert_feed.call_args_list:
+        feed = call_args[0][0]
+        if feed.id == NEW_FEED_ID:
+            new_feed_call = feed
+            break
+    assert new_feed_call is not None
+    assert new_feed_call.source_url == NEW_FEED_URL
+
+    # Verify removed feed was archived
+    mock_pruner.archive_feed.assert_called_once_with(REMOVED_FEED_ID)
+
+
+@pytest.mark.unit
+def test_reconcile_startup_state_database_error(
+    state_reconciler: StateReconciler,
+    mock_feed_db: MagicMock,
+) -> None:
+    """Database error during startup fetch is fatal."""
+    mock_feed_db.get_feeds.side_effect = DatabaseOperationError("DB error")
+
+    with pytest.raises(StateReconciliationError):
+        state_reconciler.reconcile_startup_state({})
+
+
+@pytest.mark.unit
+def test_reconcile_startup_state_disabled_feeds_not_ready(
+    state_reconciler: StateReconciler,
+    mock_feed_db: MagicMock,
+    base_feed_config: FeedConfig,
+) -> None:
+    """Disabled feeds are not included in ready list."""
+    mock_feed_db.get_feeds.return_value = [MOCK_FEED]
+
+    disabled_config = deepcopy(base_feed_config)
+    disabled_config.enabled = False
+
+    config_feeds = {FEED_ID: disabled_config}
+
+    ready_feeds = state_reconciler.reconcile_startup_state(config_feeds)
+
+    assert ready_feeds == []
+
+
+@pytest.mark.unit
+def test_reconcile_startup_state_continues_on_individual_errors(
+    state_reconciler: StateReconciler,
+    mock_feed_db: MagicMock,
+    base_feed_config: FeedConfig,
+) -> None:
+    """Individual feed errors don't stop overall reconciliation."""
+    mock_feed_db.get_feeds.return_value = []
+
+    # First feed will fail, second should succeed
+    config_feeds = {
+        "failing_feed": base_feed_config,
+        NEW_FEED_ID: FeedConfig(
+            url=NEW_FEED_URL,
+            schedule=TEST_CRON_SCHEDULE,
+            enabled=True,
+            keep_last=None,
+            since=None,
+            yt_args=None,  # type: ignore
+            metadata=None,
+        ),
+    }
+
+    # Make first insert fail, second succeed
+    mock_feed_db.upsert_feed.side_effect = [
+        DatabaseOperationError("Insert failed"),
+        None,
+    ]
+
+    ready_feeds = state_reconciler.reconcile_startup_state(config_feeds)
+
+    # Only the successful feed should be ready
+    assert ready_feeds == [NEW_FEED_ID]
+    assert mock_feed_db.upsert_feed.call_count == 2

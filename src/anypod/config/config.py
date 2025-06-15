@@ -198,7 +198,7 @@ class AppSettings(BaseSettings):
         description="Specifies the debug mode to run ('ytdlp', 'enqueuer', or None for default).",
     )
     log_format: Literal["human", "json"] = Field(
-        default="human",
+        default="json",
         validation_alias="LOG_FORMAT",
         description="Format for application logs ('human' or 'json').",
     )

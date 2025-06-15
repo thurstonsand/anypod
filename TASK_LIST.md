@@ -295,7 +295,7 @@ This section details the components that manage the lifecycle of downloads, from
 ### 5.3 Init State Reconciliation
 
 #### 5.3.1 Create State Reconciler Module (`src/anypod/state_reconciler.py`)
-- [ ] Startup reconciliation implementation:
+- [x] Startup reconciliation implementation:
   - [x] Compare config feeds with database feeds
   - [x] Handle **new feeds**: insert into DB and set initial `last_successful_sync`
   - [x] Handle **removed feeds**: mark as disabled in DB (set `is_enabled=False`)
@@ -305,7 +305,7 @@ This section details the components that manage the lifecycle of downloads, from
   - [x] time box the sync time -- currently only has start time, but will also need end time
 
 #### 5.3.2 Config Change Handling
-- [ ] Detect and apply changes to:
+- [x] Detect and apply changes to:
   - [x] `enabled`: Update feed's `is_enabled` in database, add/remove from scheduler, trigger initial sync if false->true
     - [x] `last_successful_sync` does not need to be optional as it is set proactively on new feed creation
   - [x] `url`: Update existing feed's `source_url`, reset `consecutive_failures` to 0, clear `last_error`, reset `last_successful_sync` as if it were a new feed; keep download history
@@ -331,14 +331,13 @@ This section details the components that manage the lifecycle of downloads, from
 
 ### 5.5 Dependencies and Testing
 - [ ] Unit tests for scheduler with mocked jobs
-- [ ] Unit tests for state reconciler covering:
-  - [ ] New feed addition
-  - [ ] Feed removal
-  - [ ] Feed configuration changes
-  - [ ] Metadata override changes
-- [ ] Integration tests for full startup sequence
+- [x] Unit tests for state reconciler covering:
+  - [x] New feed addition
+  - [x] Feed removal
+  - [x] Feed configuration changes
+  - [x] Metadata override changes
+- [x] Integration tests for full startup sequence
 - [ ] Tests for graceful shutdown handling
-- [ ] Tests for config-reload scenarios
 
 ### 5.6 Update CLI Default Mode (`src/anypod/cli/default.py`)
 - [ ] Main service orchestration:

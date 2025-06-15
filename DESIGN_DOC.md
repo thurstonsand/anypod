@@ -1,15 +1,15 @@
 # Anypod – Design Document
 
-**Last updated:** 2025-05-07
+**Last updated:** 2025-06-14
 
 ---
 
-## 1  Purpose
+## Purpose
 Anypod is a thin Python wrapper around **yt-dlp** that converts any yt-dlp–supported source—**video *or* audio**—into an RSS feed consumable by podcast players. It runs as a long-lived Docker container and is configured solely through YAML.
 
 ---
 
-## 2  Non-Goals
+## Non-Goals
 * Live-stream capture (only post-VOD downloads)
 * Transcoding in the MVP (requires MP4/M4A from source)
 * Graphical UI (a JSON-driven admin dashboard can come later)
@@ -41,14 +41,16 @@ Anypod is a thin Python wrapper around **yt-dlp** that converts any yt-dlp–sup
 
 ---
 
-## 3  High-Level Architecture
+## High-Level Architecture
 ```mermaid
 graph TD
   %% ─────── Config & Scheduling ───────
   subgraph Config & Scheduler
     A[YAML feeds.yml]
-    B["APScheduler (per-feed cron)"]
-    A --> B
+    B["Scheduler (per-feed cron)"]
+    SR[StateReconciler]
+    A --> SR
+    SR --> B
   end
 
   B --> DC
@@ -57,10 +59,11 @@ graph TD
   subgraph Storage & Coordination
     direction LR
     DC[DataCoordinator]
-    DB[SQLite]
+    DB[SQLite Database]
     FM[FileManager]
     DC --> DB
     DC --> FM
+    SR --> DB
     FM -- media files --> Disk[Filesystem]
   end
 
@@ -84,63 +87,165 @@ graph TD
 ```
 
 
-### 3.1 Layer Responsibilities
+### Layer Responsibilities
 
 | Layer                               | Responsibility                                                                                                   | Key Points                                                                                           |
 |-------------------------------------|------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------|
-| **`ConfigLoader`**                  | Parse & validate YAML into strongly‑typed models.                                                                | Environment‑variable overrides; default value injection; early failure on schema mismatch.           |
+| **`AppSettings` (config/)**         | Parse & validate YAML into strongly‑typed models.                                                                | Environment‑variable overrides; default value injection; early failure on schema mismatch.           |
+| **`StateReconciler`**               | Synchronize YAML configuration with database state on startup and config changes.                               | Handles feed creation/removal/updates; manages retention policy changes; preserves download history. |
 | **`Scheduler`**                     | Trigger periodic `DataCoordinator.process_feed` jobs per‑feed cron schedule.                                     | Async scheduler; cron expressions validated at startup; stateless job store.                         |
-| **`DatabaseManager`**               | Persistent metadata store (status, retries, paths, etc.). `Download` model includes `from_row` for mapping.      | Single connection pool                                                                               |
-| **`FileManager`**                   | All filesystem interaction: save/read/delete media, atomic RSS writes, directory hygiene, free‑space checks.     | Path resolution lives here; future back‑ends (S3/GCS) become plug‑ins.                               |
-| **`YtdlpWrapper`**                  | Thin wrapper around `yt-dlp` for fetching media metadata and downloading media content.                          | Abstracts `yt-dlp` specifics; provides `fetch_metadata` and `download_media`.                        |
-| **`FeedGen`**                       | Generates RSS XML feed files based on current download metadata.                                                 | Manages in-memory feed cache; uses `DatabaseManager` & `FileManager`. Called by `DataCoordinator`.   |
-| **DataCoordinator Module**          | Houses services that orchestrate data lifecycle operations using foundational components and `FeedGen`.         | Uses `DatabaseManager`, `FileManager`, `YtdlpWrapper`, `FeedGen`. Main class is `DataCoordinator`. |
+| **Database Classes**                | Persistent metadata store (status, retries, paths, etc.). Specialized classes for downloads and feeds.          | `DownloadDatabase` + `FeedDatabase` + `SqliteUtilsCore`; proper state transitions.                 |
+| **`FileManager`**                   | All filesystem interaction: save/read/delete media, atomic RSS writes, directory hygiene, free‑space checks.     | Centralized path management; future back‑ends (S3/GCS) become plug‑ins.                             |
+| **`YtdlpWrapper`**                  | Thin wrapper around `yt-dlp` for fetching media metadata and downloading media content.                          | Handler-based system; abstracts `yt-dlp` specifics; provides `fetch_metadata` and `download_media`. |
+| **`FeedGen`** (rss/)**              | Generates RSS XML feed files based on current download metadata.                                                 | Manages in-memory feed cache with read/write locks; uses database classes & `FileManager`.          |
+| **DataCoordinator Module**          | Houses services that orchestrate data lifecycle operations using foundational components and `FeedGen`.         | Uses database classes, `FileManager`, `YtdlpWrapper`, `FeedGen`. Main class is `DataCoordinator`.   |
 |   ↳ **`DataCoordinator`**           | High-level orchestration of enqueue, download, prune, and feed generation phases.                                | Delegates to `Enqueuer`, `Downloader`, `Pruner`, and calls `FeedGen`. Ensures sequence.            |
-|   ↳ **`Enqueuer`**                  | Fetches media metadata in two phases—(1) re-poll existing 'upcoming' entries to transition them to 'queued' when VOD; (2) fetch latest feed media and insert new 'queued' or 'upcoming' entries. | Uses `YtdlpWrapper` for metadata, `DatabaseManager` for DB writes.                                   |
-|   ↳ **`Downloader`**                | Processes queued downloads: triggers downloads via `YtdlpWrapper`, saves files, and updates database records.        | Uses `YtdlpWrapper`, `FileManager`, `DatabaseManager`. Handles download success/failure.             |
-|   ↳ **`Pruner`**                    | Implements retention policies by identifying and removing old/stale downloads and their files.                   | Uses `DatabaseManager` for selection, `FileManager` for deletion.                                    |
+|   ↳ **`Enqueuer`**                  | Fetches media metadata in two phases—(1) re-poll existing 'upcoming' entries to transition them to 'queued' when VOD; (2) fetch latest feed media and insert new 'queued' or 'upcoming' entries. | Uses `YtdlpWrapper` for metadata, database classes for DB writes.                                    |
+|   ↳ **`Downloader`**                | Processes queued downloads: triggers downloads via `YtdlpWrapper`, saves files, and updates database records.        | Uses `YtdlpWrapper`, `FileManager`, database classes. Handles download success/failure.             |
+|   ↳ **`Pruner`**                    | Implements retention policies by identifying and removing old/stale downloads and their files.                   | Uses database classes for selection, `FileManager` for deletion.                                     |
 | **HTTP (FastAPI)**                  | Serve static RSS & media and expose health/error JSON.                                                           | Delegates look‑ups to `DataCoordinator` or relevant services; zero business logic.                   |
 
 ---
 
-## 4  Configuration Example
+## Configuration Example
 ```yaml
 feeds:
-  this_american_life:
-    url: https://www.youtube.com/@thisamericanlife/playlists
-    yt_args: |
-      -f "(bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4])"
-      --cookies /cookies/tal.txt
-    schedule: "0 3 * * *"          # cron (required)
+  channel:
+    url: https://www.youtube.com/@example
+    yt_args: "-f worst[ext=mp4] --playlist-items 1-3"
+    schedule: "0 3 * * *"
+    since: "2022-01-01T00:00:00Z"
     keep_last: 100                 # prune policy (optional)
-    since: "2024-01-01T00:00:00Z"  # ignore older downloads (optional)
-  radio_lab:
-    ...
+    max_errors: 5                  # maximum download attempts (default: 3)
+    enabled: true                  # whether feed is processed (default: true)
+
+  # Feed with full metadata overrides
+  premium_podcast:
+    url: https://www.youtube.com/@premium/videos
+    yt_args: "-f best[ext=mp4]/best/best"
+    schedule: "0 6 * * *"
+    metadata:
+      title: "My Premium Podcast"                     # Override feed title
+      subtitle: "Daily insights and discussions"       # Feed subtitle
+      description: "A daily podcast about technology and culture" # Feed description
+      language: "en"                                  # Language code (e.g., 'en', 'es', 'fr')
+      author: "John Doe"                             # Podcast author
+      image_url: "https://example.com/podcast-art.jpg" # Podcast artwork (min 1400x1400px)
+      explicit: "no"                                 # Explicit content: "yes", "no", or "clean"
+      categories:                                    # Apple Podcasts categories (max 2)
+        - "Technology"                               # Main category only
+        - "Business > Entrepreneurship"              # Main > Sub category
 ```
-*Only the keys above are validated; any other text inside `yt_args` is passed verbatim to yt-dlp.*
+
+### Environment Variables
+Configure global application settings via environment variables:
+```bash
+DEBUG_MODE=enqueuer                    # Debug mode: ytdlp, enqueuer, downloader
+LOG_FORMAT=json                        # Log format: human, json (default: human)
+LOG_LEVEL=DEBUG                        # Log level: DEBUG, INFO, WARNING, ERROR (default: INFO)
+LOG_INCLUDE_STACKTRACE=true           # Include stack traces in logs (default: false)
+BASE_URL=https://podcasts.example.com  # Base URL for feeds/media (default: http://localhost:8024)
+CONFIG_FILE=/path/to/feeds.yaml       # Config file path (default: /config/feeds.yaml)
+TZ=America/New_York                    # Timezone for date parsing (default: system timezone)
+```
+
+*The `yt_args` field is parsed using shell-like syntax and converted to yt-dlp options dictionary, not passed verbatim.*
 
 ---
 
-## 5  Database Schema
+## Startup & Configuration Management
+
+Anypod reconciles static YAML configuration with dynamic runtime state through a dedicated **StateReconciler** component that runs on startup and handles configuration changes.
+
+### State Reconciliation Process
+
+On startup, the system compares the YAML feed configuration against the database state:
+
+* **New feeds** are inserted into the database with initial sync timestamps
+* **Removed feeds** are marked as disabled rather than deleted (preserving download history)
+* **Modified feeds** have their metadata and configuration updated in the database
+* **Retention policy changes** trigger requeuing or archival of existing downloads as appropriate
+
+This ensures the database always reflects the current configuration while preserving historical data.
+
+### Initial Population
+
+After reconciliation, the system performs an initial sync of all enabled feeds to ensure RSS feeds are available before the HTTP server starts. This guarantees that subscribers have immediate access to feed content upon service startup.
+
+## Database Schema
+
+### Downloads Table
 ```sql
-CREATE TABLE IF NOT EXISTS downloads (
-  feed         TEXT NOT NULL,
-  id           TEXT NOT NULL,
-  source_url   TEXT NOT NULL,
-  title        TEXT NOT NULL,
-  published    TEXT NOT NULL,            -- ISO 8601 datetime string
-  ext          TEXT NOT NULL,
-  duration     REAL NOT NULL,            -- seconds
-  thumbnail    TEXT,                     -- URL
-  status       TEXT NOT NULL,            -- upcoming | queued | downloaded | error | skipped
-  retries      INTEGER NOT NULL DEFAULT 0,
-  last_error   TEXT,
-  PRIMARY KEY  (feed, id)
+CREATE TABLE downloads (
+  feed                TEXT NOT NULL,
+  id                  TEXT NOT NULL,
+  source_url          TEXT NOT NULL,
+  title               TEXT NOT NULL,
+  published           TEXT NOT NULL,           -- ISO 8601 datetime string
+  ext                 TEXT NOT NULL,
+  mime_type           TEXT NOT NULL,
+  filesize            INTEGER NOT NULL,        -- bytes
+  duration            INTEGER NOT NULL,        -- seconds
+  status              TEXT NOT NULL,           -- upcoming | queued | downloaded | error | skipped | archived
+  discovered_at       TEXT NOT NULL,           -- ISO 8601 datetime string
+  updated_at          TEXT NOT NULL,           -- ISO 8601 datetime string
+  thumbnail           TEXT,                    -- URL
+  description         TEXT,                    -- description from source
+  quality_info        TEXT,                    -- quality metadata
+  retries             INTEGER NOT NULL DEFAULT 0,
+  last_error          TEXT,
+  downloaded_at       TEXT,                    -- ISO 8601 datetime string
+  PRIMARY KEY (feed, id)
 );
 CREATE INDEX idx_feed_status ON downloads(feed, status);
+CREATE INDEX idx_feed_published ON downloads(feed, published);
 ```
-* `ext` is **NOT NULL**; absence indicates a metadata-extraction bug.
-* `mime` is derived from `ext` at feed-generation time via lookup table.
+
+### Feeds Table
+```sql
+CREATE TABLE feeds (
+  id                        TEXT NOT NULL PRIMARY KEY,
+  is_enabled                INTEGER NOT NULL,        -- boolean as integer
+  source_type               TEXT NOT NULL,           -- channel | playlist | single_video | unknown
+  source_url                TEXT NOT NULL,
+
+  -- Time keeping
+  last_successful_sync      TEXT NOT NULL,                                                   -- ISO 8601 datetime string
+  created_at                TEXT NOT NULL DEFAULT STRFTIME('%Y-%m-%dT%H:%M:%f+00:00','now'), -- ISO 8601 datetime string
+  updated_at                TEXT NOT NULL DEFAULT STRFTIME('%Y-%m-%dT%H:%M:%f+00:00','now'), -- ISO 8601 datetime string
+  last_rss_generation       TEXT,                                                            -- ISO 8601 datetime string
+
+  -- Error tracking
+  last_failed_sync          TEXT,                    -- ISO 8601 datetime string
+  consecutive_failures      INTEGER NOT NULL DEFAULT 0,
+  last_error                TEXT,
+
+  -- Download tracking
+  total_downloads           INTEGER NOT NULL DEFAULT 0,
+  downloads_since_last_rss  INTEGER NOT NULL DEFAULT 0,
+
+  -- Retention policies
+  since                     TEXT,                    -- ISO 8601 datetime string
+  keep_last                 INTEGER,
+
+  -- Feed metadata overrides
+  title                     TEXT,
+  subtitle                  TEXT,
+  description               TEXT,
+  language                  TEXT,
+  author                    TEXT,
+  image_url                 TEXT,
+  category                  TEXT,                    -- PodcastCategories as string
+  explicit                  TEXT                     -- PodcastExplicit as string
+);
+```
+
+**Key Schema Notes:**
+* `ext` and `mime_type` are both **NOT NULL**; absence indicates a metadata-extraction bug.
+* All datetime fields are stored as ISO 8601 strings in TEXT columns.
+* `downloaded_at` is automatically set by database trigger when status changes to DOWNLOADED.
+* `updated_at` is automatically updated by database trigger on any row change.
+* The `feeds` table stores both configuration and runtime state for each feed.
 
 ### Status Lifecycle
 The `status` field in the `downloads` table tracks the state of each download.
@@ -244,54 +349,69 @@ graph TD
 
 ---
 
-## 6  Processing Flow
+## Processing Flow
 ```mermaid
 sequenceDiagram
   autonumber
   participant S as Scheduler
   participant DC as DataCoordinator
-  participant Store as Persistent_Storage [DB + Filesystem]
-  participant YTDLW as YtdlpWrapper
-  participant FG as FeedGen
+  participant DB as Database
+  participant YW as YtdlpWrapper
+  participant FM as FileManager
 
   S->>DC: process_feed(feed_config)
 
-  DC->>YTDLW: Discover New Media
-  YTDLW-->>DC: Raw Media Metadata
-  DC->>Store: Enqueue New Downloads (Metadata -> DB)
+  Note over DC,YW: Phase 1: Enqueuing
+  DB->>DC: Pull existing UPCOMING downloads
+  YW->>DC: Re-fetch metadata for UPCOMING downloads
+  DC->>DB: Transition UPCOMING to QUEUED (if VOD ready)
+  YW->>DC: Fetch latest media metadata for feed
+  DC->>DB: Insert new downloads (UPCOMING/QUEUED)
 
-  DC->>Store: Get Queued Downloads (DB)
-  Store-->>DC: Queued Downloadables
-  DC->>YTDLW: Download Media Content (to temp file path)
-  YTDLW-->>DC: Path to Downloaded Media File (in temp location)
-  DC->>Store: Store Media & Update Status (Move file to permanent storage, Status -> DB)
+  Note over DC,FM: Phase 2: Downloading
+  DB->>DC: Pull QUEUED downloads
+  DC->>YW: Send for download
+  YW-->>YW: Download media files to tmp location
+  YW->>FM: Move files to permanent storage
+  YW->>DC: Send updated metadata
+  DC->>DB: Mark as DOWNLOADED, update metadata
 
-  DC->>Store: Identify Old/Stale Media (DB + Policies)
-  Store-->>DC: Downloads to Prune
-  DC->>Store: Remove Stale Media (Filesystem + DB update)
+  Note over DC,FM: Phase 3: Pruning
+  DB->>DC: Pull downloads to prune (by retention rules)
+  DC->>FM: Mark files for deletion
+  DC->>DB: Mark downloads as ARCHIVED
 
-  DC->>FG: Generate Feed XML
-  FG->>Store: Fetch Feed Data (DB)
-  Store-->>FG: Data for Feed
-  FG->>Store: Save Feed XML (Filesystem)
-  FG-->>DC: Feed Generation Complete
+  Note over DC,DB: Phase 4: RSS Generation
+  DB->>DC: Pull DOWNLOADED downloads for feed
+  DC-->>DC: Generate RSS XML, cache in memory
 ```
 
-The `Scheduler` triggers a `DataCoordinator.process_feed(feed_config)` call. The `DataCoordinator` then orchestrates the conceptual flow of data through distinct phases, interacting with key components:
+The `Scheduler` triggers the `DataCoordinator` to process a feed, whid is done with four distinct phases using specialized services:
 
-1.  **Media Discovery & Enqueuing**: The `DataCoordinator` uses the `YtdlpWrapper` to discover available media. New metadata is then passed to persistent storage, resulting in new downloads being enqueued in the `Database`.
+1.  **Enqueuing Phase**: The `Enqueuer` performs a two-stage process:
+    - Re-polls existing UPCOMING downloads to check if they're now available as VOD
+    - Fetches latest metadata from the feed source and inserts new downloads
+    - Updates feed metadata in the database
 
-2.  **Media Downloading & Storage**: The `DataCoordinator` retrieves queued downloads from the `Database`. For each, it uses the `YtdlpWrapper` to download the actual media content. `YtdlpWrapper` saves the completed file to a temporary location on a designated data volume and returns the path to this file. The `DataCoordinator` (via its `Downloader` service and `FileManager`) then moves this file to its final permanent storage location on the `Filesystem`, and the download's status is updated to `downloaded` in the `Database`.
+2.  **Download Phase**: The `Downloader` processes queued downloads:
+    - Downloads media files to temporary locations via `YtdlpWrapper`
+    - Moves completed files to permanent storage via `FileManager`
+    - Updates database with DOWNLOADED status and final metadata
 
-3.  **Pruning**: Based on configured retention policies, the `DataCoordinator` identifies old or stale media by querying the `Database`. The corresponding media files are removed from the `Filesystem`, and their database records are updated (e.g., to `archived`).
+3.  **Pruning Phase**: The `Pruner` applies retention policies:
+    - Identifies downloads that exceed `keep_last` or fall outside `since` date
+    - Removes media files from storage and marks downloads as ARCHIVED
 
-4.  **Feed Generation**: Finally, the `DataCoordinator` instructs `FeedGen` to generate the RSS feed. `FeedGen` fetches the required data from the `Database`, constructs the XML, and saves it to the `Filesystem`. The `DataCoordinator` is notified upon completion.
+4.  **RSS Generation Phase**: The `RSSFeedGenerator` creates podcast feeds:
+    - Fetches DOWNLOADED items from database
+    - Generates RSS XML and caches it in memory with thread-safe locking
+    - RSS is served from memory cache, not filesystem
 
-*This high-level flow is managed by the `DataCoordinator`, which internally uses its specialized services (`Enqueuer`, `Downloader`, `Pruner`) to execute these steps. The `YtdlpWrapper` handles direct interactions with yt-dlp, while `DatabaseManager` and `FileManager` (represented collectively as `Persistent_Storage` in the diagram) manage data persistence.*
+Each phase includes comprehensive error handling and retry logic. Failed operations increment retry counters and transition downloads to ERROR status when limits are exceeded.
 
 ---
 
-### 7 YouTube URL Handling by `YtdlpWrapper`
+## YouTube URL Handling by `YtdlpWrapper`
 
 The `YtdlpWrapper` is designed to provide a consistent interface for fetching metadata regardless of the exact type of YouTube URL provided in the feed configuration. It intelligently handles:
 
@@ -311,14 +431,15 @@ This resolution logic aims to simplify configuration for the end-user, as they c
 
 ---
 
-## 8  Feed Persistence
+## Feed Persistence
 
-- The `FeedGen` module maintains a **write-once/read-many-locked in-memory cache**:
-  - When the scheduler generates a feed, it replaces the cached bytes under a write lock.
-  - HTTP handlers retrieve the feed after receiving a read lock.
-  - On startup the cache is populated since all feeds will be retrieved immediately.
+The `RSSFeedGenerator` module maintains a **write-once/read-many-locked in-memory cache**:
+- RSS XML is stored as bytes in memory keyed by `feed_id` with thread-safe read/write locking
+- When the DataCoordinator generates a feed, it replaces the cached bytes under a write lock
+- HTTP handlers retrieve cached feeds after acquiring a read lock
+- Cache population on startup will occur when the scheduler and HTTP server are implemented
 
-## 9  HTTP Endpoints
+## HTTP Endpoints
 | Path | Description |
 |------|-------------|
 | `/feeds/{feed}.xml` | Podcast RSS |
@@ -328,33 +449,50 @@ This resolution logic aims to simplify configuration for the end-user, as they c
 
 ---
 
-## 10 Logging Guidelines
+## Logging Guidelines
 
-*   **Structured Logging:** add relevant context to the `extra` dictionary instead of in the message directly.
-*   **Context is Key:**
-    *   All log messages include a `context_id` for tracing.
-    *   Always include `feed_id` and relevant download id (e.g., `source_url` or `download.id`) in the `extra` dictionary for logs related to feed/media processing.
-*   **Clear Log Levels:** Adhere to standard log level semantics:
-    *   `DEBUG`: For developer tracing, verbose.
-    *   `INFO`: For operator awareness of normal system operations and milestones.
-    *   `WARNING`: For recoverable issues or potential problems that don't stop current operations but may need attention (e.g., a transient download failure that will be retried).
-    *   `ERROR`: For specific, non-recoverable failures of an operation that require attention (e.g., metadata parsing failure for a download). The system should log the error and continue with other tasks.
-    *   `CRITICAL`: For severe runtime errors threatening application stability or causing shutdown.
-*   **Actionable Messages:** Log messages (especially `WARNING`/`ERROR`) should provide clear, concise information about the event. The `extra` dict carries detailed context.
-*   **Error Context Propagation:** Custom exceptions should carry diagnostic data. A utility function (`exc_extract`) is used to gather this data from the exception chain and include it in the `extra` field of error logs.
-*   **Security:** Never log secrets (API keys, passwords) or PII. Be cautious with logging overly verbose data structures at `INFO` level or above.
-
----
-
-## 11  Command-Line Flags (MVP)
-* `--config-file PATH` – custom YAML path (default `/config/feeds.yml`)
-* `--ignore-startup-errors` – keep running if validation fails (feed disabled in memory)
-* `--retry-failed` – reset `error` → `queued` rows before scheduler starts
-* `--log-level LEVEL`
+*   **Structured Logging:** Add relevant context to the `extra` dictionary instead of embedding it in log messages. Both JSON and human-readable formats are supported.
+*   **Context Propagation:**
+    *   Include `feed_id` and relevant download identifiers in the `extra` dictionary for feed/media processing logs.
+    *   Context IDs enable correlation of related log messages across the complete processing flow for each feed operation.
+*   **Log Level Semantics:**
+    *   `DEBUG`: Developer tracing and verbose operational details.
+    *   `INFO`: Normal system operations, milestones, and successful completions.
+    *   `WARNING`: Recoverable issues that don't stop operations but may need attention (e.g., retryable download failures).
+    *   `ERROR`: Specific operation failures requiring attention while system continues with other tasks.
+    *   `CRITICAL`: Severe runtime errors threatening application stability.
+*   **Enhanced Exception Handling:** Custom exceptions carry diagnostic data. The logging system automatically extracts custom attributes from exception chains and builds semantic traces for comprehensive error context.
+*   **Security:** Never log secrets (API keys, passwords) or PII. The logging system handles unserializable values gracefully.
+*   **Configuration:** Log format (JSON/human), level, and stack trace inclusion are configurable via CLI flags or environment variables.
 
 ---
 
-## 12  Deployment
+## Command-Line Flags
+
+### Usage
+```bash
+uv run anypod [options]
+```
+
+### Core Flags
+* `--config-file PATH` – custom YAML path (default `/config/feeds.yaml`)
+* `--debug-mode {ytdlp,enqueuer,downloader}` – run specific debug mode instead of full service
+* `--base-url URL` – base URL for feeds/media (default: http://localhost:8024)
+* `--tz TIMEZONE` – timezone for date parsing (default: system timezone)
+* `--ignore-startup-errors` – TODO
+* `--retry-failed` – TODO
+
+### Logging Flags
+* `--log-level {DEBUG,INFO,WARNING,ERROR}` – logging level (default: INFO)
+* `--log-format {human,json}` – log output format (default: json)
+* `--log-include-stacktrace` – include stack traces in error logs (default: false)
+
+### Environment Variables
+All CLI flags can alternatively be set via environment variables using uppercase names with underscores (e.g., `DEBUG_MODE=enqueuer`, `LOG_LEVEL=DEBUG`).
+
+---
+
+## Deployment
 | Aspect | Setting |
 |--------|---------|
 | **Image** | `ghcr.io/thurstonsand/anypod:latest` |
@@ -365,14 +503,25 @@ This resolution logic aims to simplify configuration for the end-user, as they c
 
 ---
 
-## 13  Dependencies & Tooling
-* Managed by **uv** (`pyproject.toml` + `uv.lock`).
-* yt-dlp pinned to specific commit.
-* Dev deps: ruff · pytest-asyncio · pytest-cov · pyright · pre-commit
+## Dependencies & Tooling
+* **Package Management:** **uv** with `pyproject.toml` + `uv.lock` for reproducible builds
+* **Core Dependencies:** pydantic, sqlite-utils, feedgen, yt-dlp (pinned to minimum version), APScheduler
+* **Development Tools:** ruff (linting/formatting), pyright (type checking), pytest ecosystem (testing), pre-commit (git hooks)
 
 ---
 
-## 14  Future Work
+## Implementation Status & Future Work
+
+### Critical Missing Components (Production Blockers)
+* **Scheduler Implementation** - APScheduler or similar for automatic feed processing
+* **HTTP Server** - FastAPI implementation for serving RSS feeds and media files
+* **Production CLI Mode** - Long-running daemon mode beyond current debug modes
+
+### Database Optimizations
+* **Additional Indexes** - Analyze query patterns and add indexes as needed for performance
+* **Query Performance** - Review complex queries in `DownloadDatabase` and `FeedDatabase`
+
+### Future Enhancements
 * Admin dashboard (React + shadcn/ui)
 * Automatic retries with jitter
 * Transcoding fallback (ffmpeg) for non-MP4/M4A sources

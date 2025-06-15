@@ -151,7 +151,7 @@ def test_update_feed_success(
     rss_generator.update_feed(feed_id, test_feed)
 
     mock_download_db.get_downloads_by_status.assert_called_once_with(
-        status_to_filter=DownloadStatus.DOWNLOADED, feed=feed_id
+        status_to_filter=DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
 
     # Verify feed is cached

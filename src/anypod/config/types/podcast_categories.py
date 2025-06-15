@@ -227,43 +227,45 @@ class PodcastCategories:
             ValueError: If more than 2 categories or invalid categories.
         """
         match categories:
-            case None:
-                self._categories: list[tuple[str, str | None]] = []
+            case None | "" | []:
+                raise ValueError(
+                    "Empty categories are not allowed. Use None instead of empty PodcastCategories."
+                )
             case str() as multi_cat_str if "," in multi_cat_str:
                 cat_strs = multi_cat_str.split(",")
                 if len(cat_strs) > 2:
                     raise ValueError(
                         f"Maximum 2 categories allowed, got {len(cat_strs)} in {multi_cat_str}"
                     )
-                self._categories = [
+                self._categories = {
                     PodcastCategories._parse_str_category(cat_str)
                     for cat_str in cat_strs
-                ]
+                }
             case str() as multi_cat_str:
-                self._categories = [
+                self._categories = {
                     PodcastCategories._parse_str_category(multi_cat_str)
-                ]
+                }
             case list() as cats if len(cats) > 2:
                 raise ValueError(f"Maximum 2 categories allowed, got {len(cats)}")
             case list() as cats:
-                self._categories: list[tuple[str, str | None]] = []
+                self._categories: set[tuple[str, str | None]] = set()
                 for cat in cats:
                     match cat:
                         case str() as cat_str:
-                            self._categories.append(
+                            self._categories.add(
                                 PodcastCategories._parse_str_category(cat_str)
                             )
                         # Guarantee that "main" and "sub" are the only valid keys, and that "main" is present
                         case dict() as cat_dict if "main" in cat_dict and all(
                             key in {"main", "sub"} for key in cat_dict
                         ):
-                            self._categories.append(
+                            self._categories.add(
                                 PodcastCategories._validate_single_category(
                                     cat_dict["main"], cat_dict.get("sub")
                                 )
                             )
                         case tuple() as cat_tuple if len(cat_tuple) == 2:
-                            self._categories.append(
+                            self._categories.add(
                                 PodcastCategories._validate_single_category(
                                     cat[0], cat[1]
                                 )
@@ -271,17 +273,11 @@ class PodcastCategories:
                         case _:
                             raise ValueError(f"Invalid category item: {cat!r}")
 
-    def __getitem__(self, index: int) -> tuple[str, str | None]:
-        """Get a category by index."""
-        return self._categories[index]
-
-    def __setitem__(self, index: int, value: tuple[str, str | None]) -> None:
-        """Set a category by index."""
-        self._categories[index] = value
-
-    def __delitem__(self, index: int) -> None:
-        """Delete a category by index."""
-        del self._categories[index]
+        # Ensure we never create empty categories
+        if not self._categories:
+            raise ValueError(
+                "Empty categories are not allowed. Use None instead of empty PodcastCategories."
+            )
 
     def __len__(self) -> int:
         """Return the number of categories."""
@@ -294,6 +290,12 @@ class PodcastCategories:
     def __iter__(self):
         """Iterate over the categories as (main, sub) tuples."""
         return iter(self._categories)
+
+    def __eq__(self, other: object) -> bool:
+        """Check equality with another PodcastCategories instance."""
+        if not isinstance(other, PodcastCategories):
+            return False
+        return self._categories == other._categories
 
     def __str__(self) -> str:
         """String representation for database storage."""
@@ -313,7 +315,7 @@ class PodcastCategories:
         """
         return [
             {"cat": main, "sub": sub} if sub else {"cat": main}
-            for main, sub in self._categories
+            for main, sub in sorted(self._categories)
         ]
 
     @classmethod

@@ -142,7 +142,7 @@ class Enqueuer:
         logger.debug("Fetching upcoming downloads from DB.", extra=log_params)
         try:
             return self._download_db.get_downloads_by_status(
-                DownloadStatus.UPCOMING, feed=feed_id
+                DownloadStatus.UPCOMING, feed_id=feed_id
             )
         except (DatabaseOperationError, ValueError) as e:
             raise EnqueueError(
