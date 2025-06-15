@@ -234,7 +234,7 @@ class Pruner:
             with self._download_db.transaction():
                 # Count only DOWNLOADED downloads (those that appear in RSS feed)
                 total_count = self._download_db.count_downloads_by_status(
-                    DownloadStatus.DOWNLOADED, feed=feed_id
+                    DownloadStatus.DOWNLOADED, feed_id=feed_id
                 )
 
                 # Update the feed's total_downloads in the same transaction
@@ -370,7 +370,7 @@ class Pruner:
                     continue  # Skip already archived or skipped
                 try:
                     downloads = self._download_db.get_downloads_by_status(
-                        status, feed=feed_id
+                        status, feed_id=feed_id
                     )
                     all_downloads.extend(downloads)
                 except DatabaseOperationError as e:

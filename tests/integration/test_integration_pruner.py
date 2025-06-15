@@ -290,6 +290,7 @@ def populated_test_data(
         is_enabled=True,
         source_type=SourceType.CHANNEL,
         source_url="https://www.youtube.com/@testchannel",
+        last_successful_sync=datetime.min.replace(tzinfo=UTC),
         title="Test Feed",
         description="Test feed for integration tests",
     )
@@ -359,7 +360,7 @@ def test_prune_feed_downloads_keep_last_success(
 
     # Verify remaining downloads in database
     remaining_downloaded = download_db.get_downloads_by_status(
-        DownloadStatus.DOWNLOADED, feed=TEST_FEED_ID
+        DownloadStatus.DOWNLOADED, feed_id=TEST_FEED_ID
     )
     assert len(remaining_downloaded) == 2  # Should keep 2 most recent
 
@@ -383,7 +384,7 @@ def test_prune_feed_downloads_keep_last_success(
 
     # Verify archived downloads increased
     archived_downloads = download_db.get_downloads_by_status(
-        DownloadStatus.ARCHIVED, feed=TEST_FEED_ID
+        DownloadStatus.ARCHIVED, feed_id=TEST_FEED_ID
     )
     # Should have the original archived item plus the newly archived ones
     assert (
@@ -391,7 +392,7 @@ def test_prune_feed_downloads_keep_last_success(
     )  # +1 for pre-existing archived item
 
     skipped_downloads = download_db.get_downloads_by_status(
-        DownloadStatus.SKIPPED, feed=TEST_FEED_ID
+        DownloadStatus.SKIPPED, feed_id=TEST_FEED_ID
     )
     assert len(skipped_downloads) == 1
 
@@ -430,7 +431,7 @@ def test_prune_feed_downloads_since_date_success(
 
     # Verify remaining DOWNLOADED items (only items newer than cutoff)
     remaining_downloaded = download_db.get_downloads_by_status(
-        DownloadStatus.DOWNLOADED, feed=TEST_FEED_ID
+        DownloadStatus.DOWNLOADED, feed_id=TEST_FEED_ID
     )
     assert len(remaining_downloaded) == 2
 
@@ -452,7 +453,7 @@ def test_prune_feed_downloads_since_date_success(
 
     # Verify SKIPPED items were not affected (should still be SKIPPED)
     skipped_downloads = download_db.get_downloads_by_status(
-        DownloadStatus.SKIPPED, feed=TEST_FEED_ID
+        DownloadStatus.SKIPPED, feed_id=TEST_FEED_ID
     )
     assert len(skipped_downloads) == 1
 
@@ -531,7 +532,7 @@ def test_prune_feed_downloads_no_candidates(
 
     # Verify nothing changed
     downloaded_items = download_db.get_downloads_by_status(
-        DownloadStatus.DOWNLOADED, feed=TEST_FEED_ID
+        DownloadStatus.DOWNLOADED, feed_id=TEST_FEED_ID
     )
     assert len(downloaded_items) == 5
 
@@ -576,7 +577,7 @@ def test_prune_feed_downloads_missing_files(
 
     # Verify the download was still archived despite missing file
     archived_downloads = download_db.get_downloads_by_status(
-        DownloadStatus.ARCHIVED, feed=TEST_FEED_ID
+        DownloadStatus.ARCHIVED, feed_id=TEST_FEED_ID
     )
     archived_ids = {dl.id for dl in archived_downloads}
     assert "downloaded_old_1" in archived_ids
@@ -596,6 +597,7 @@ def test_prune_feed_downloads_empty_feed(
         is_enabled=True,
         source_type=SourceType.CHANNEL,
         source_url="https://www.youtube.com/@emptyfeed",
+        last_successful_sync=datetime.min.replace(tzinfo=UTC),
         title="Empty Feed",
         description="Test feed with no downloads",
     )
@@ -626,6 +628,7 @@ def test_prune_feed_downloads_only_excluded_statuses(
         is_enabled=True,
         source_type=SourceType.CHANNEL,
         source_url="https://www.youtube.com/@excludedfeed",
+        last_successful_sync=datetime.min.replace(tzinfo=UTC),
         title="Excluded Only Feed",
         description="Test feed with only excluded statuses",
     )
@@ -680,12 +683,12 @@ def test_prune_feed_downloads_only_excluded_statuses(
 
     # Verify items remain in their original status
     skipped_items = download_db.get_downloads_by_status(
-        DownloadStatus.SKIPPED, feed=feed_id
+        DownloadStatus.SKIPPED, feed_id=feed_id
     )
     assert len(skipped_items) == 1
 
     archived_items = download_db.get_downloads_by_status(
-        DownloadStatus.ARCHIVED, feed=feed_id
+        DownloadStatus.ARCHIVED, feed_id=feed_id
     )
     assert len(archived_items) == 1
 
@@ -706,6 +709,7 @@ def test_prune_feed_downloads_large_dataset(
         is_enabled=True,
         source_type=SourceType.CHANNEL,
         source_url="https://www.youtube.com/@largefeed",
+        last_successful_sync=datetime.min.replace(tzinfo=UTC),
         title="Large Dataset Feed",
         description="Test feed with large dataset",
     )
@@ -753,10 +757,10 @@ def test_prune_feed_downloads_large_dataset(
 
         # Verify 10 most recent remain non-archived
         remaining_downloaded = download_db.get_downloads_by_status(
-            DownloadStatus.DOWNLOADED, feed=feed_id
+            DownloadStatus.DOWNLOADED, feed_id=feed_id
         )
         remaining_queued = download_db.get_downloads_by_status(
-            DownloadStatus.QUEUED, feed=feed_id
+            DownloadStatus.QUEUED, feed_id=feed_id
         )
 
         total_remaining = len(remaining_downloaded) + len(remaining_queued)
@@ -819,20 +823,20 @@ def test_prune_feed_downloads_future_date(
         DownloadStatus.UPCOMING,
     ]:
         remaining_downloads.extend(
-            download_db.get_downloads_by_status(status, feed=TEST_FEED_ID)
+            download_db.get_downloads_by_status(status, feed_id=TEST_FEED_ID)
         )
 
     assert len(remaining_downloads) == 0
 
     # SKIPPED should remain
     skipped_downloads = download_db.get_downloads_by_status(
-        DownloadStatus.SKIPPED, feed=TEST_FEED_ID
+        DownloadStatus.SKIPPED, feed_id=TEST_FEED_ID
     )
     assert len(skipped_downloads) == 1
 
     # ARCHIVED should now include the newly archived items plus the original
     archived_downloads = download_db.get_downloads_by_status(
-        DownloadStatus.ARCHIVED, feed=TEST_FEED_ID
+        DownloadStatus.ARCHIVED, feed_id=TEST_FEED_ID
     )
     assert (
         len(archived_downloads) == expected_archived + 1
@@ -853,16 +857,16 @@ def test_archive_feed_success(
     """Tests archive_feed successfully archives all non-terminal downloads and disables feed."""
     # Verify initial state
     initial_downloaded = download_db.get_downloads_by_status(
-        DownloadStatus.DOWNLOADED, feed=TEST_FEED_ID
+        DownloadStatus.DOWNLOADED, feed_id=TEST_FEED_ID
     )
     initial_queued = download_db.get_downloads_by_status(
-        DownloadStatus.QUEUED, feed=TEST_FEED_ID
+        DownloadStatus.QUEUED, feed_id=TEST_FEED_ID
     )
     initial_upcoming = download_db.get_downloads_by_status(
-        DownloadStatus.UPCOMING, feed=TEST_FEED_ID
+        DownloadStatus.UPCOMING, feed_id=TEST_FEED_ID
     )
     initial_error = download_db.get_downloads_by_status(
-        DownloadStatus.ERROR, feed=TEST_FEED_ID
+        DownloadStatus.ERROR, feed_id=TEST_FEED_ID
     )
 
     total_non_terminal = (
@@ -890,12 +894,12 @@ def test_archive_feed_success(
         DownloadStatus.UPCOMING,
         DownloadStatus.ERROR,
     ]:
-        remaining = download_db.get_downloads_by_status(status, feed=TEST_FEED_ID)
+        remaining = download_db.get_downloads_by_status(status, feed_id=TEST_FEED_ID)
         assert len(remaining) == 0
 
     # Verify SKIPPED downloads are unchanged
     skipped_downloads = download_db.get_downloads_by_status(
-        DownloadStatus.SKIPPED, feed=TEST_FEED_ID
+        DownloadStatus.SKIPPED, feed_id=TEST_FEED_ID
     )
     assert len(skipped_downloads) == 1
 
@@ -927,6 +931,7 @@ def test_archive_feed_transaction_rollback_on_failure(
         is_enabled=True,
         source_type=SourceType.CHANNEL,
         source_url="https://www.youtube.com/@rollbackfeed",
+        last_successful_sync=datetime.min.replace(tzinfo=UTC),
         title="Rollback Test Feed",
         description="Feed for testing transaction rollback",
     )
@@ -974,10 +979,10 @@ def test_archive_feed_transaction_rollback_on_failure(
 
     # Verify initial state
     initial_downloaded = download_db.get_downloads_by_status(
-        DownloadStatus.DOWNLOADED, feed=feed_id
+        DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
     initial_queued = download_db.get_downloads_by_status(
-        DownloadStatus.QUEUED, feed=feed_id
+        DownloadStatus.QUEUED, feed_id=feed_id
     )
     assert len(initial_downloaded) == 1
     assert len(initial_queued) == 1
@@ -1001,10 +1006,10 @@ def test_archive_feed_transaction_rollback_on_failure(
 
         # Verify rollback occurred - downloads should still be in original states
         remaining_downloaded = download_db.get_downloads_by_status(
-            DownloadStatus.DOWNLOADED, feed=feed_id
+            DownloadStatus.DOWNLOADED, feed_id=feed_id
         )
         remaining_queued = download_db.get_downloads_by_status(
-            DownloadStatus.QUEUED, feed=feed_id
+            DownloadStatus.QUEUED, feed_id=feed_id
         )
 
         # Transaction should have rolled back

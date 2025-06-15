@@ -153,6 +153,7 @@ def create_test_feed(feed_db: FeedDatabase, feed_id: str, url: str) -> Feed:
         is_enabled=True,
         source_type=SourceType.UNKNOWN,  # Will be determined by ytdlp
         source_url="https://example.com/test",
+        last_successful_sync=datetime.min.replace(tzinfo=UTC),
         title=f"Test Feed {feed_id}",
     )
     feed_db.upsert_feed(feed)
@@ -184,10 +185,12 @@ def enqueue_test_items(
     # Create feed in database first
     create_test_feed(feed_db, feed_id, feed_config.url)
 
+    fetch_until_date = datetime.now(UTC)
     return enqueuer.enqueue_new_downloads(
         feed_id=feed_id,
         feed_config=feed_config,
         fetch_since_date=fetch_since_date,
+        fetch_until_date=fetch_until_date,
     )
 
 
@@ -209,7 +212,7 @@ def test_download_queued_single_video_success(
 
     # Verify item is in QUEUED status
     queued_downloads = download_db.get_downloads_by_status(
-        DownloadStatus.QUEUED, feed=feed_id
+        DownloadStatus.QUEUED, feed_id=feed_id
     )
     assert len(queued_downloads) >= 1
     original_download = queued_downloads[0]
@@ -230,7 +233,7 @@ def test_download_queued_single_video_success(
 
     # Verify database was updated
     downloaded_items = download_db.get_downloads_by_status(
-        DownloadStatus.DOWNLOADED, feed=feed_id
+        DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
     assert len(downloaded_items) >= 1
 
@@ -254,7 +257,7 @@ def test_download_queued_single_video_success(
 
     # Verify no more queued items for this feed
     remaining_queued = download_db.get_downloads_by_status(
-        DownloadStatus.QUEUED, feed=feed_id
+        DownloadStatus.QUEUED, feed_id=feed_id
     )
     assert len(remaining_queued) == 0
 
@@ -277,7 +280,7 @@ def test_download_queued_multiple_videos_success(
 
     # Get original queued items
     original_queued = download_db.get_downloads_by_status(
-        DownloadStatus.QUEUED, feed=feed_id
+        DownloadStatus.QUEUED, feed_id=feed_id
     )
     original_count = len(original_queued)
     assert original_count >= 1
@@ -295,7 +298,7 @@ def test_download_queued_multiple_videos_success(
 
     # Verify database updates
     downloaded_items = download_db.get_downloads_by_status(
-        DownloadStatus.DOWNLOADED, feed=feed_id
+        DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
     assert len(downloaded_items) == success_count
 
@@ -338,7 +341,7 @@ def test_download_queued_with_limit(
     # If we got a success, verify it
     if success_count > 0:
         downloaded_items = download_db.get_downloads_by_status(
-            DownloadStatus.DOWNLOADED, feed=feed_id
+            DownloadStatus.DOWNLOADED, feed_id=feed_id
         )
         assert len(downloaded_items) == success_count
 
@@ -366,7 +369,7 @@ def test_download_queued_no_queued_items(
 
     # Verify no downloads in database for this feed
     all_downloads = download_db.get_downloads_by_status(
-        DownloadStatus.DOWNLOADED, feed=feed_id
+        DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
     assert len(all_downloads) == 0
 
@@ -401,7 +404,7 @@ def test_download_queued_handles_invalid_urls(
 
     # Verify it's queued
     queued_downloads = download_db.get_downloads_by_status(
-        DownloadStatus.QUEUED, feed=feed_id
+        DownloadStatus.QUEUED, feed_id=feed_id
     )
     assert len(queued_downloads) == 1
 
@@ -510,7 +513,7 @@ def test_download_queued_mixed_success_and_failure(
 
     # Verify we have at least 2 queued items
     queued_downloads = download_db.get_downloads_by_status(
-        DownloadStatus.QUEUED, feed=feed_id
+        DownloadStatus.QUEUED, feed_id=feed_id
     )
     assert len(queued_downloads) >= 2
 
@@ -528,7 +531,7 @@ def test_download_queued_mixed_success_and_failure(
 
     # Verify successful downloads
     downloaded_items = download_db.get_downloads_by_status(
-        DownloadStatus.DOWNLOADED, feed=feed_id
+        DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
     assert len(downloaded_items) == success_count
 
@@ -568,7 +571,7 @@ def test_download_queued_file_properties(
 
     # Get the downloaded item
     downloaded_items = download_db.get_downloads_by_status(
-        DownloadStatus.DOWNLOADED, feed=feed_id
+        DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
     downloaded_item = downloaded_items[0]
 
@@ -621,7 +624,7 @@ def test_filesize_metadata_flow(
 
     # Get the queued item and check initial filesize
     queued_items = download_db.get_downloads_by_status(
-        DownloadStatus.QUEUED, feed=feed_id
+        DownloadStatus.QUEUED, feed_id=feed_id
     )
     queued_item = queued_items[0]
     initial_filesize = queued_item.filesize
@@ -639,7 +642,7 @@ def test_filesize_metadata_flow(
 
     # Get the downloaded item
     downloaded_items = download_db.get_downloads_by_status(
-        DownloadStatus.DOWNLOADED, feed=feed_id
+        DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
     downloaded_item = downloaded_items[0]
     final_filesize = downloaded_item.filesize

@@ -121,6 +121,7 @@ def create_test_feed(feed_db: FeedDatabase, feed_id: str, url: str) -> Feed:
         is_enabled=True,
         source_type=SourceType.UNKNOWN,  # Will be determined by ytdlp
         source_url="https://example.com/test",
+        last_successful_sync=datetime.min.replace(tzinfo=UTC),
         title=f"Test Feed {feed_id}",
     )
     feed_db.upsert_feed(feed)
@@ -157,10 +158,12 @@ def test_enqueue_new_downloads_success(
     fetch_since_date = datetime.min.replace(tzinfo=UTC)
 
     # Enqueue new downloads
+    fetch_until_date = datetime.now(UTC)
     queued_count = enqueuer.enqueue_new_downloads(
         feed_id=feed_id,
         feed_config=feed_config,
         fetch_since_date=fetch_since_date,
+        fetch_until_date=fetch_until_date,
     )
 
     # Verify that downloads were queued
@@ -168,7 +171,7 @@ def test_enqueue_new_downloads_success(
 
     # Verify downloads are in the database
     queued_downloads = download_db.get_downloads_by_status(
-        DownloadStatus.QUEUED, feed=feed_id
+        DownloadStatus.QUEUED, feed_id=feed_id
     )
     assert len(queued_downloads) >= 1, f"Expected queued downloads in DB for {url_type}"
 
@@ -256,10 +259,12 @@ def test_enqueue_new_downloads_invalid_url(enqueuer: Enqueuer, feed_db: FeedData
     fetch_since_date = datetime.min.replace(tzinfo=UTC)
 
     with pytest.raises(EnqueueError) as excinfo:
+        fetch_until_date = datetime.now(UTC)
         enqueuer.enqueue_new_downloads(
             feed_id=feed_id,
             feed_config=feed_config,
             fetch_since_date=fetch_since_date,
+            fetch_until_date=fetch_until_date,
         )
 
     assert "Could not fetch main feed metadata" in str(excinfo.value)
@@ -288,10 +293,12 @@ def test_enqueue_new_downloads_with_date_filter(
     # Use a very recent date to potentially filter out older content
     fetch_since_date = datetime(2025, 1, 1, tzinfo=UTC)
 
+    fetch_until_date = datetime.now(UTC)
     queued_count = enqueuer.enqueue_new_downloads(
         feed_id=feed_id,
         feed_config=feed_config,
         fetch_since_date=fetch_since_date,
+        fetch_until_date=fetch_until_date,
     )
 
     # Should still work, even if no results due to date filtering
@@ -299,7 +306,7 @@ def test_enqueue_new_downloads_with_date_filter(
 
     # Verify downloads in database match what was reported
     queued_downloads = download_db.get_downloads_by_status(
-        DownloadStatus.QUEUED, feed=feed_id
+        DownloadStatus.QUEUED, feed_id=feed_id
     )
     assert len(queued_downloads) == queued_count
 
@@ -336,16 +343,18 @@ def test_enqueue_handles_existing_upcoming_downloads(
 
     # Verify it's in UPCOMING status
     upcoming_downloads = download_db.get_downloads_by_status(
-        DownloadStatus.UPCOMING, feed=feed_id
+        DownloadStatus.UPCOMING, feed_id=feed_id
     )
     assert len(upcoming_downloads) == 1
     assert upcoming_downloads[0].status == DownloadStatus.UPCOMING
 
     # Run enqueuer - should transition UPCOMING to QUEUED since Big Buck Bunny is a VOD
+    fetch_until_date = datetime.now(UTC)
     queued_count = enqueuer.enqueue_new_downloads(
         feed_id=feed_id,
         feed_config=feed_config,
         fetch_since_date=datetime.min.replace(tzinfo=UTC),
+        fetch_until_date=fetch_until_date,
     )
 
     # Should have at least 1 queued (the transitioned one)
@@ -353,7 +362,7 @@ def test_enqueue_handles_existing_upcoming_downloads(
 
     # Verify the download is now QUEUED
     queued_downloads = download_db.get_downloads_by_status(
-        DownloadStatus.QUEUED, feed=feed_id
+        DownloadStatus.QUEUED, feed_id=feed_id
     )
     assert len(queued_downloads) >= 1
 
@@ -366,7 +375,7 @@ def test_enqueue_handles_existing_upcoming_downloads(
 
     # Should be no more UPCOMING downloads for this feed
     remaining_upcoming = download_db.get_downloads_by_status(
-        DownloadStatus.UPCOMING, feed=feed_id
+        DownloadStatus.UPCOMING, feed_id=feed_id
     )
     assert len(remaining_upcoming) == 0
 
@@ -402,10 +411,12 @@ def test_enqueue_handles_existing_downloaded_items(
     download_db.upsert_download(downloaded_item)
 
     # Run enqueuer
+    fetch_until_date = datetime.now(UTC)
     queued_count = enqueuer.enqueue_new_downloads(
         feed_id=feed_id,
         feed_config=feed_config,
         fetch_since_date=datetime.min.replace(tzinfo=UTC),
+        fetch_until_date=fetch_until_date,
     )
 
     # Should NOT have queued the item since it's already DOWNLOADED
@@ -413,7 +424,7 @@ def test_enqueue_handles_existing_downloaded_items(
 
     # Verify the item remains DOWNLOADED
     downloaded_downloads = download_db.get_downloads_by_status(
-        DownloadStatus.DOWNLOADED, feed=feed_id
+        DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
     assert len(downloaded_downloads) == 1
     assert downloaded_downloads[0].id == BIG_BUCK_BUNNY_VIDEO_ID
@@ -421,7 +432,7 @@ def test_enqueue_handles_existing_downloaded_items(
 
     # Verify no items were queued
     queued_downloads = download_db.get_downloads_by_status(
-        DownloadStatus.QUEUED, feed=feed_id
+        DownloadStatus.QUEUED, feed_id=feed_id
     )
     assert len(queued_downloads) == 0
 
@@ -440,23 +451,27 @@ def test_enqueue_multiple_runs_idempotent(
     fetch_since_date = datetime.min.replace(tzinfo=UTC)
 
     # First run
+    fetch_until_date = datetime.now(UTC)
     first_queued_count = enqueuer.enqueue_new_downloads(
         feed_id=feed_id,
         feed_config=feed_config,
         fetch_since_date=fetch_since_date,
+        fetch_until_date=fetch_until_date,
     )
     assert first_queued_count >= 1
 
     # Get downloads after first run
     first_run_downloads = download_db.get_downloads_by_status(
-        DownloadStatus.QUEUED, feed=feed_id
+        DownloadStatus.QUEUED, feed_id=feed_id
     )
 
     # Second run - should not queue new items (they already exist)
+    fetch_until_date = datetime.now(UTC)
     second_queued_count = enqueuer.enqueue_new_downloads(
         feed_id=feed_id,
         feed_config=feed_config,
         fetch_since_date=fetch_since_date,
+        fetch_until_date=fetch_until_date,
     )
 
     # Second run should queue 0 new items since they already exist
@@ -464,7 +479,7 @@ def test_enqueue_multiple_runs_idempotent(
 
     # Downloads should be the same
     second_run_downloads = download_db.get_downloads_by_status(
-        DownloadStatus.QUEUED, feed=feed_id
+        DownloadStatus.QUEUED, feed_id=feed_id
     )
     assert len(second_run_downloads) == len(first_run_downloads)
 
@@ -490,10 +505,12 @@ def test_enqueue_with_impossible_filter(
     fetch_since_date = datetime.min.replace(tzinfo=UTC)
 
     # The filter applies to download, not metadata fetch, so downloads are still created
+    fetch_until_date = datetime.now(UTC)
     queued_count = enqueuer.enqueue_new_downloads(
         feed_id=feed_id,
         feed_config=feed_config,
         fetch_since_date=fetch_since_date,
+        fetch_until_date=fetch_until_date,
     )
 
     # Metadata fetching still works, downloads are created
@@ -501,7 +518,7 @@ def test_enqueue_with_impossible_filter(
 
     # Verify downloads exist in database (the filter will apply during actual download)
     queued_downloads = download_db.get_downloads_by_status(
-        DownloadStatus.QUEUED, feed=feed_id
+        DownloadStatus.QUEUED, feed_id=feed_id
     )
     assert len(queued_downloads) == 0
 
@@ -539,10 +556,12 @@ def test_enqueue_feed_metadata_synchronization_with_overrides(
     fetch_since_date = datetime.min.replace(tzinfo=UTC)
 
     # Enqueue new downloads
+    fetch_until_date = datetime.now(UTC)
     queued_count = enqueuer.enqueue_new_downloads(
         feed_id=feed_id,
         feed_config=feed_config,
         fetch_since_date=fetch_since_date,
+        fetch_until_date=fetch_until_date,
     )
 
     # Verify downloads were processed
@@ -595,10 +614,12 @@ def test_enqueue_feed_metadata_partial_overrides(
     fetch_since_date = datetime.min.replace(tzinfo=UTC)
 
     # Enqueue new downloads
+    fetch_until_date = datetime.now(UTC)
     queued_count = enqueuer.enqueue_new_downloads(
         feed_id=feed_id,
         feed_config=feed_config,
         fetch_since_date=fetch_since_date,
+        fetch_until_date=fetch_until_date,
     )
 
     # Verify downloads were processed

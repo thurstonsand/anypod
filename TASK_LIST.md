@@ -272,13 +272,85 @@ This section details the components that manage the lifecycle of downloads, from
 - [x] tests refactor
 
 ## 5  Scheduler / Worker Loop
-- [ ] Init APScheduler (asyncio).
-- [ ] For each feed add cron trigger → `DataCoordinator.process_feed()`.
-- [ ] Implement scheduler that orchestrates full feed processing pipeline via DataCoordinator.
-- [ ] On startup, trigger `DataCoordinator.process_feed()` for all feeds to ensure RSS feeds are available before starting HTTP server.
-- [ ] on startup, need to do state reconciliation between db and config file more generally
+
+### 5.1 Create Scheduler Module (`src/anypod/schedule/scheduler.py`)
+- [ ] Core scheduler implementation:
+  - [ ] Add `apscheduler` to dependencies in pyproject.toml
+  - [ ] Use APScheduler with `AsyncIOScheduler` for async support
+  - [ ] Schedule jobs based on feed cron expressions from config
+  - [ ] Manage job lifecycle (add/remove/pause/resume)
+  - [ ] Handle graceful shutdown with proper job cleanup
+  - [ ] Each feed gets its own job with unique ID (the feed ID)
+  - [ ] Job-level retry handling (not individual downloads)
+  - [ ] implement context id injection (see `logging_config.py`)
+
+### 5.2 Create Worker Module (`src/anypod/schedule/worker.py`)
+- [ ] Job execution wrapper:
+  - [ ] Wrap `DataCoordinator.process_feed` calls
+  - [ ] Handle job-level error handling and logging
+  - [ ] Manage concurrency/locking if needed
+  - [ ] Update feed's `consecutive_failures` counter on job failures
+  - [ ] Ensure graceful degradation (other feeds continue if one fails) unless there is a config issue, which should cause failure and addressing by user
+
+### 5.3 Init State Reconciliation
+
+#### 5.3.1 Create State Reconciler Module (`src/anypod/state_reconciler.py`)
+- [x] Startup reconciliation implementation:
+  - [x] Compare config feeds with database feeds
+  - [x] Handle **new feeds**: insert into DB and set initial `last_successful_sync`
+  - [x] Handle **removed feeds**: mark as disabled in DB (set `is_enabled=False`)
+  - [x] Handle **changed feeds**: update metadata and configuration
+  - [x] Ensure every active feed has valid `last_successful_sync` before scheduling
+  - [x] Evaluate what would happen if it fails midway through. Would simply restarting get back to correct state?
+  - [x] time box the sync time -- currently only has start time, but will also need end time
+
+#### 5.3.2 Config Change Handling
+- [x] Detect and apply changes to:
+  - [x] `enabled`: Update feed's `is_enabled` in database, add/remove from scheduler, trigger initial sync if false->true
+    - [x] `last_successful_sync` does not need to be optional as it is set proactively on new feed creation
+  - [x] `url`: Update existing feed's `source_url`, reset `consecutive_failures` to 0, clear `last_error`, reset `last_successful_sync` as if it were a new feed; keep download history
+  - [x] `since` expansion (earlier date): Query archived downloads with `published` >= new `since`, change status from ARCHIVED to QUEUED (will redownload)
+    - [x] modify `get_downloads_by_status` to allow for filtering by date so we don't retrieve the entire db
+    - [x] also consider storing these values in the Feed db (`since` and `keep_last`) so we only query the db if there's a change
+    - [x] modify `requeue_download` -> `requeue_downloads` that can take a variadic list and batch modify
+    - [x] modify pydantic handling of `since` to accept JUST a day, and then derive TZ from tiered sources:
+      1. from the `since` value itself, if included
+      2. from a TZ env var
+      3. from the system clock (user would have had to override `/etc/localtime`)
+  - [x] `since` contraction (later date): Mark downloads with `published` < new `since` for archival on next prune cycle
+  - [x] `keep_last` increase: Query archived downloads ordered by `published` DESC, restore up to (new_keep_last - current_count) from ARCHIVED to QUEUED (will redownload)
+    - [x] modify `count_downloads_by_status` to accept multiple possible statuses and return all of them
+  - [x] `keep_last` decrease: No immediate action - will apply naturally on next prune cycle
+  - [x] `metadata` changes: Update feed table immediately (title, subtitle, description, language, author, image_url, categories, explicit), trigger RSS regeneration
+
+### 5.4 Initial Sync Strategy
+- [ ] After reconciliation, trigger immediate sync:
+  - [ ] Process all enabled feeds to populate RSS
+  - [ ] Ensure RSS feeds available before HTTP server starts
+  - [ ] Handle failures gracefully without blocking startup, unless config is wrong -- that should cause failure until fixed
+
+### 5.5 Dependencies and Testing
+- [ ] Unit tests for scheduler with mocked jobs
+- [x] Unit tests for state reconciler covering:
+  - [x] New feed addition
+  - [x] Feed removal
+  - [x] Feed configuration changes
+  - [x] Metadata override changes
+- [x] Integration tests for full startup sequence
+- [ ] Tests for graceful shutdown handling
+
+### 5.6 Update CLI Default Mode (`src/anypod/cli/default.py`)
+- [ ] Main service orchestration:
+  - [ ] Initialize all components (databases, services)
+  - [ ] Run state reconciler on startup (see section 5.4)
+  - [ ] Start scheduler with reconciled feeds
+  - [ ] Perform initial sync for all feeds to populate RSS
+  - [ ] Keep service running until shutdown signal
+  - [ ] Implement graceful shutdown handling
 
 ## 6  HTTP Server
+
+- [ ] how do i break out the api and static serving? different ports? for security reasons, we need to expose static but not apis
 
 ### 6.1 Project Structure Setup
 - [ ] Create new HTTP server module at `src/anypod/server/`

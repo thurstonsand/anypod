@@ -53,6 +53,7 @@ def test_feed() -> Feed:
         is_enabled=True,
         source_type=SourceType.CHANNEL,
         source_url="https://www.youtube.com/@testchannel",
+        last_successful_sync=datetime.min.replace(tzinfo=UTC),
         title=TEST_PODCAST_TITLE,
         description=TEST_PODCAST_DESCRIPTION,
         language="en",
@@ -150,7 +151,7 @@ def test_update_feed_success(
     rss_generator.update_feed(feed_id, test_feed)
 
     mock_download_db.get_downloads_by_status.assert_called_once_with(
-        status_to_filter=DownloadStatus.DOWNLOADED, feed=feed_id
+        status_to_filter=DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
 
     # Verify feed is cached
@@ -434,6 +435,7 @@ def test_feed_config_without_metadata_fails():
         is_enabled=True,
         source_type=SourceType.CHANNEL,
         source_url="https://www.youtube.com/@testchannel",
+        last_successful_sync=datetime.min.replace(tzinfo=UTC),
         title=None,  # Missing required title
         description=None,  # Missing required description
     )

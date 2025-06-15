@@ -144,7 +144,7 @@ def test_fetch_metadata_success(
     """
     feed_id = f"test_{url_type}"
     feed, downloads = ytdlp_wrapper.fetch_metadata(
-        feed_id=feed_id, url=url, yt_cli_args=YT_DLP_MINIMAL_ARGS
+        feed_id=feed_id, url=url, user_yt_cli_args=YT_DLP_MINIMAL_ARGS
     )
 
     assert len(downloads) == 1, (
@@ -200,7 +200,7 @@ def test_thumbnail_format_validation(
     """
     feed_id = f"test_thumbnail_{url_type}"
     _, downloads = ytdlp_wrapper.fetch_metadata(
-        feed_id=feed_id, url=url, yt_cli_args=YT_DLP_MINIMAL_ARGS
+        feed_id=feed_id, url=url, user_yt_cli_args=YT_DLP_MINIMAL_ARGS
     )
 
     assert len(downloads) == 1, (
@@ -232,7 +232,7 @@ def test_fetch_metadata_non_existent_video(ytdlp_wrapper: YtdlpWrapper):
         ytdlp_wrapper.fetch_metadata(
             feed_id=feed_id,
             url=INVALID_VIDEO_URL,
-            yt_cli_args=YT_DLP_MINIMAL_ARGS,
+            user_yt_cli_args=YT_DLP_MINIMAL_ARGS,
         )
 
 
@@ -261,7 +261,7 @@ def test_fetch_metadata_with_impossible_filter(
     )
 
     feed, downloads = ytdlp_wrapper.fetch_metadata(
-        feed_id=feed_id, url=url, yt_cli_args=impossible_filter_args
+        feed_id=feed_id, url=url, user_yt_cli_args=impossible_filter_args
     )
     assert len(downloads) == 0, (
         f"Expected 0 downloads for impossible filter, got {len(downloads)}"

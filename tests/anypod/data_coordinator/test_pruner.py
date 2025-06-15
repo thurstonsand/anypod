@@ -455,7 +455,7 @@ def test_recalculate_total_downloads_success(
     pruner._recalculate_total_downloads("test_feed")
 
     mock_download_db.count_downloads_by_status.assert_called_once_with(
-        DownloadStatus.DOWNLOADED, feed="test_feed"
+        DownloadStatus.DOWNLOADED, feed_id="test_feed"
     )
     mock_feed_db.update_total_downloads.assert_called_once_with("test_feed", 42)
 
@@ -614,7 +614,9 @@ def test_archive_feed_success_with_downloads(
     """Tests archive_feed successfully archives all non-terminal downloads and disables feed."""
 
     # Setup return values for each status type query
-    def get_downloads_by_status_fn(status_to_filter: DownloadStatus, feed: str | None):
+    def get_downloads_by_status_fn(
+        status_to_filter: DownloadStatus, feed_id: str | None
+    ):
         return {
             DownloadStatus.DOWNLOADED: [sample_downloaded_item],
             DownloadStatus.QUEUED: [sample_queued_item],
@@ -648,7 +650,7 @@ def test_archive_feed_success_with_downloads(
 
     # Verify total_downloads was recalculated
     mock_download_db.count_downloads_by_status.assert_called_once_with(
-        DownloadStatus.DOWNLOADED, feed="test_feed"
+        DownloadStatus.DOWNLOADED, feed_id="test_feed"
     )
     mock_feed_db.update_total_downloads.assert_called_once_with("test_feed", 0)
 
@@ -672,7 +674,9 @@ def test_archive_feed_skips_archived_and_skipped_downloads(
     )
 
     # Setup: only return downloaded item, not skipped or archived
-    def get_downloads_by_status_fn(status_to_filter: DownloadStatus, feed: str | None):
+    def get_downloads_by_status_fn(
+        status_to_filter: DownloadStatus, feed_id: str | None
+    ):
         return {
             DownloadStatus.DOWNLOADED: [sample_downloaded_item],
             DownloadStatus.QUEUED: [],
@@ -762,7 +766,9 @@ def test_archive_feed_file_deletion_error_continues_archival(
 ):
     """Tests archive_feed continues when file deletion fails with FileNotFoundError."""
 
-    def get_downloads_by_status_fn(status_to_filter: DownloadStatus, feed: str | None):
+    def get_downloads_by_status_fn(
+        status_to_filter: DownloadStatus, feed_id: str | None
+    ):
         return {
             DownloadStatus.DOWNLOADED: [sample_downloaded_item],
         }.get(status_to_filter, [])

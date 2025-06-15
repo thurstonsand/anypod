@@ -9,8 +9,9 @@ from enum import Enum
 import logging
 from pathlib import Path
 from typing import Any, Literal, cast
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic.fields import FieldInfo
 from pydantic_core import PydanticUndefined
 from pydantic_settings import (
@@ -197,7 +198,7 @@ class AppSettings(BaseSettings):
         description="Specifies the debug mode to run ('ytdlp', 'enqueuer', or None for default).",
     )
     log_format: Literal["human", "json"] = Field(
-        default="human",
+        default="json",
         validation_alias="LOG_FORMAT",
         description="Format for application logs ('human' or 'json').",
     )
@@ -215,6 +216,11 @@ class AppSettings(BaseSettings):
         default="http://localhost:8024",
         validation_alias="BASE_URL",
         description="Base URL for RSS feeds and media files (e.g., 'https://podcasts.example.com').",
+    )
+    tz: ZoneInfo | None = Field(
+        default=None,
+        validation_alias="TZ",
+        description="Timezone for date parsing in config files (e.g., 'America/New_York', 'Europe/London'). Must be explicitly set.",
     )
 
     # Feeds config
@@ -239,6 +245,36 @@ class AppSettings(BaseSettings):
         cli_kebab_case=True,
         extra="ignore",
     )
+
+    @field_validator("tz", mode="before")
+    @classmethod
+    def parse_timezone_string(cls, v: Any) -> ZoneInfo | None:
+        """Parse timezone string into a ZoneInfo object.
+
+        Args:
+            v: Value to parse, can be string or None.
+
+        Returns:
+            ZoneInfo object for the timezone, or None if not provided.
+
+        Raises:
+            ValueError: If the timezone string is invalid.
+            TypeError: If the value is not a string or None.
+        """
+        match v:
+            case None:
+                return None
+            case str() as s if not s.strip():  # Handle empty string
+                return None
+            case str() as s:
+                try:
+                    return ZoneInfo(s.strip())
+                except ZoneInfoNotFoundError as e:
+                    raise ValueError(
+                        f"Invalid timezone string '{s}'. Must be a valid timezone name (e.g., 'America/New_York', 'UTC')."
+                    ) from e
+            case _:
+                raise TypeError(f"tz must be a string, got {type(v).__name__}")
 
     @classmethod
     def settings_customise_sources(

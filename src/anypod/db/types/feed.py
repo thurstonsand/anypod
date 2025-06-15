@@ -20,9 +20,9 @@ class Feed:
         source_url: The original source URL for this feed.
 
         Time Keeping:
+            last_successful_sync: Last time a successful sync occurred (UTC).
             created_at: When the feed was created (UTC).
             updated_at: When the feed was last updated (UTC).
-            last_successful_sync: Last time a successful sync occurred (UTC).
             last_rss_generation: Last time RSS was generated for this feed (UTC).
 
         Error Tracking:
@@ -33,6 +33,10 @@ class Feed:
         Download Tracking:
             total_downloads: Total number of downloads for this feed.
             downloads_since_last_rss: Number of downloads since last RSS generation.
+
+        Retention Policies:
+            since: Only process downloads published after this date (UTC).
+            keep_last: Maximum number of downloads to keep (oldest will be pruned).
 
         Feed Metadata:
             title: Feed title.
@@ -51,9 +55,9 @@ class Feed:
     source_url: str
 
     # time keeping
+    last_successful_sync: datetime
     created_at: datetime | None = None
     updated_at: datetime | None = None
-    last_successful_sync: datetime | None = None
     last_rss_generation: datetime | None = None
 
     # Error tracking
@@ -64,6 +68,10 @@ class Feed:
     # Download tracking
     total_downloads: int = 0
     downloads_since_last_rss: int = 0
+
+    # Retention policies
+    since: datetime | None = None
+    keep_last: int | None = None
 
     # Feed metadata
     title: str | None = None
@@ -101,9 +109,9 @@ class Feed:
             source_type=source_type_enum,
             source_url=row["source_url"],
             # time keeping
+            last_successful_sync=parse_required_datetime(row["last_successful_sync"]),
             created_at=parse_required_datetime(row["created_at"]),
             updated_at=parse_required_datetime(row["updated_at"]),
-            last_successful_sync=parse_datetime(row.get("last_successful_sync")),
             last_rss_generation=parse_datetime(row.get("last_rss_generation")),
             # error tracking
             last_failed_sync=parse_datetime(row.get("last_failed_sync")),
@@ -112,6 +120,9 @@ class Feed:
             # download tracking
             total_downloads=row.get("total_downloads", 0),
             downloads_since_last_rss=row.get("downloads_since_last_rss", 0),
+            # retention policies
+            since=parse_datetime(row.get("since")),
+            keep_last=row.get("keep_last"),
             # feed metadata
             title=row.get("title"),
             subtitle=row.get("subtitle"),

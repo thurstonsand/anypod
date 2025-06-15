@@ -142,7 +142,7 @@ class Enqueuer:
         logger.debug("Fetching upcoming downloads from DB.", extra=log_params)
         try:
             return self._download_db.get_downloads_by_status(
-                DownloadStatus.UPCOMING, feed=feed_id
+                DownloadStatus.UPCOMING, feed_id=feed_id
             )
         except (DatabaseOperationError, ValueError) as e:
             raise EnqueueError(
@@ -345,6 +345,7 @@ class Enqueuer:
         feed_id: str,
         feed_config: FeedConfig,
         fetch_since_date: datetime,
+        fetch_until_date: datetime,
         log_params: dict[str, Any],
     ) -> tuple[Feed, list[Download]]:
         """Fetch all media metadata for the feed URL with date filtering.
@@ -353,6 +354,7 @@ class Enqueuer:
             feed_id: The feed identifier.
             feed_config: The feed configuration object.
             fetch_since_date: Only fetch downloads published after this date.
+            fetch_until_date: Only fetch downloads published before this date.
             log_params: Relevant logging parameters.
 
         Returns:
@@ -362,19 +364,24 @@ class Enqueuer:
         Raises:
             EnqueueError: If the main ytdlp fetch fails.
         """
-        current_yt_cli_args = dict(feed_config.yt_args)  # Make a copy
-        if fetch_since_date:
-            date_str = fetch_since_date.strftime("%Y%m%d")
-            current_yt_cli_args["dateafter"] = date_str
-            logger.info(
-                f"Fetching feed downloads --dateafter {date_str}.", extra=log_params
-            )
+        # Use user-configured yt_args directly (date filtering handled by wrapper)
+        user_yt_cli_args = dict(feed_config.yt_args)  # Make a copy
+        logger.info(
+            "Fetching feed downloads.",
+            extra={
+                **log_params,
+                "fetch_since_date": fetch_since_date.isoformat(),
+                "fetch_until_date": fetch_until_date.isoformat(),
+            },
+        )
 
         try:
             fetched_feed, all_fetched_downloads = self._ytdlp_wrapper.fetch_metadata(
                 feed_id,
                 feed_config.url,
-                current_yt_cli_args,
+                user_yt_cli_args,
+                fetch_since_date,
+                fetch_until_date,
             )
         except YtdlpApiError as e:
             raise EnqueueError(
@@ -590,7 +597,7 @@ class Enqueuer:
                     extra=current_log_params,
                 )
                 try:
-                    self._download_db.requeue_download(feed_id, fetched_download.id)
+                    self._download_db.requeue_downloads(feed_id, fetched_download.id)
                     logger.info(
                         "Successfully re-queued existing ERROR item.",
                         extra=current_log_params,
@@ -711,8 +718,9 @@ class Enqueuer:
         feed_id: str,
         feed_config: FeedConfig,
         fetch_since_date: datetime,
+        fetch_until_date: datetime,
     ) -> int:
-        """Fetch all media metadata for the feed URL after the given date.
+        """Fetch all media metadata for the feed URL within the given date range.
 
         For each download:
         - If new: inserts with status QUEUED (if VOD) or UPCOMING (if live/scheduled).
@@ -721,6 +729,7 @@ class Enqueuer:
             feed_id: The unique identifier for the feed.
             feed_config: The configuration object for the feed.
             fetch_since_date: Fetches downloads published after this date.
+            fetch_until_date: Fetches downloads published before this date.
 
         Returns:
             The count of downloads newly set to QUEUED status (either new VODs or
@@ -733,7 +742,7 @@ class Enqueuer:
         )
 
         fetched_feed, all_fetched_downloads = self._fetch_all_metadata_for_feed_url(
-            feed_id, feed_config, fetch_since_date, feed_log_params
+            feed_id, feed_config, fetch_since_date, fetch_until_date, feed_log_params
         )
 
         # Synchronize feed metadata with database
@@ -757,6 +766,7 @@ class Enqueuer:
         feed_id: str,
         feed_config: FeedConfig,
         fetch_since_date: datetime,
+        fetch_until_date: datetime,
     ) -> int:
         """Fetch media metadata for a feed and enqueue new downloads.
 
@@ -764,7 +774,7 @@ class Enqueuer:
         1. Re-polls existing database entries with status UPCOMING for the given feed.
            If an UPCOMING download is now a VOD (Video on Demand), its status is updated to QUEUED.
         2. Fetches the latest media metadata from the feed source using YtdlpWrapper,
-           optionally filtered by fetch_since_date.
+           filtered by fetch_since_date and fetch_until_date.
            - For each new download not already in the database:
              - If its parsed status is QUEUED (VOD), it's inserted as QUEUED.
              - If its parsed status is UPCOMING (live/scheduled), it's inserted as UPCOMING.
@@ -775,6 +785,7 @@ class Enqueuer:
             feed_id: The unique identifier for the feed.
             feed_config: The configuration object for the feed, containing URL and yt-dlp arguments.
             fetch_since_date: Fetching will only look for downloads published after this date.
+            fetch_until_date: Fetching will only look for downloads published before this date.
 
         Returns:
             The total count of downloads that were newly set to QUEUED status
@@ -798,7 +809,7 @@ class Enqueuer:
 
         # Fetch and process all feed downloads
         queued_from_feed_fetch = self._fetch_and_process_new_feed_downloads(
-            feed_id, feed_config, fetch_since_date
+            feed_id, feed_config, fetch_since_date, fetch_until_date
         )
         logger.info(
             "New/updated downloads set to QUEUED.",

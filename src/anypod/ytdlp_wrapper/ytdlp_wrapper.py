@@ -5,6 +5,7 @@ for metadata fetching and media downloading, integrating with source-specific
 handlers for different platforms.
 """
 
+from datetime import datetime
 import logging
 from pathlib import Path
 from typing import Any
@@ -138,17 +139,22 @@ class YtdlpWrapper:
         self,
         feed_id: str,
         url: str,
-        yt_cli_args: dict[str, Any],
+        user_yt_cli_args: dict[str, Any],
+        fetch_since_date: datetime | None = None,
+        fetch_until_date: datetime | None = None,
     ) -> tuple[Feed, list[Download]]:
         """Fetches metadata for a given feed and URL using yt-dlp.
 
         This method determines the appropriate fetch strategy for the provided URL,
         acquires metadata, and parses it into feed metadata and a list of found downloads.
+        Date filtering is applied automatically using dateafter and datebefore arguments when dates are provided.
 
         Args:
             feed_id: The identifier for the feed.
             url: The URL to fetch metadata from.
-            yt_cli_args: Additional command-line arguments for yt-dlp.
+            user_yt_cli_args: User-configured command-line arguments for yt-dlp.
+            fetch_since_date: The lower bound date for the fetch operation (inclusive). Optional.
+            fetch_until_date: The upper bound date for the fetch operation (exclusive). Optional.
 
         Returns:
             A tuple of (feed, downloads) where feed is a Feed object with extracted
@@ -157,14 +163,23 @@ class YtdlpWrapper:
         Raises:
             YtdlpApiError: If no fetchable URL is determined or if no information is extracted.
         """
-        logger.info(
-            "Fetching metadata for feed.",
-            extra={
-                "feed_id": feed_id,
-                "url": url,
-                "num_yt_cli_args": len(yt_cli_args),
-            },
-        )
+        # Add date filtering to user-provided arguments if dates are provided
+        yt_cli_args = dict(user_yt_cli_args)  # Make a copy
+        log_extra = {
+            "feed_id": feed_id,
+            "url": url,
+            "num_user_yt_cli_args": len(user_yt_cli_args),
+        }
+
+        if fetch_since_date is not None:
+            yt_cli_args["dateafter"] = fetch_since_date.strftime("%Y%m%d")
+            log_extra["fetch_since_date"] = fetch_since_date.isoformat()
+
+        if fetch_until_date is not None:
+            yt_cli_args["datebefore"] = fetch_until_date.strftime("%Y%m%d")
+            log_extra["fetch_until_date"] = fetch_until_date.isoformat()
+
+        logger.info("Fetching metadata for feed.", extra=log_extra)
 
         source_specific_discovery_opts = (
             self._source_handler.get_source_specific_ydl_options(FetchPurpose.DISCOVERY)
@@ -238,6 +253,7 @@ class YtdlpWrapper:
             ytdlp_info,
             ref_type,
             url,
+            fetch_until_date,
         )
 
         parsed_downloads = self._source_handler.parse_metadata_to_downloads(

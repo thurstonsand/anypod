@@ -8,7 +8,7 @@ media fetching, FileManager for storage, and DownloadDatabase for status updates
 """
 
 import dataclasses
-import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import MagicMock, call, patch
 
@@ -39,6 +39,7 @@ MOCK_FEED = Feed(
     is_enabled=True,
     source_type=SourceType.UNKNOWN,
     source_url="https://example.com/test",
+    last_successful_sync=datetime.min.replace(tzinfo=UTC),
 )
 
 # --- Fixtures ---
@@ -75,7 +76,7 @@ def downloader(
 @pytest.fixture
 def sample_download() -> Download:
     """Provides a sample Download object."""
-    base_time = datetime.datetime(2023, 1, 1, 12, 0, 0, tzinfo=datetime.UTC)
+    base_time = datetime(2023, 1, 1, 12, 0, 0, tzinfo=UTC)
     return Download(
         feed="test_feed",
         id="test_dl_id_1",

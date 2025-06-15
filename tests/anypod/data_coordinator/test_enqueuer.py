@@ -40,6 +40,7 @@ MOCK_FEED = Feed(
     is_enabled=True,
     source_type=SourceType.UNKNOWN,
     source_url="https://example.com/test",
+    last_successful_sync=datetime.min.replace(tzinfo=UTC),
 )
 
 
@@ -137,6 +138,7 @@ def create_download(
 
 
 FETCH_SINCE_DATE = datetime.now(UTC) - timedelta(days=1)
+FETCH_UNTIL_DATE = datetime.now(UTC)
 
 
 # --- Tests for Enqueuer._synchronize_feed_metadata ---
@@ -162,6 +164,7 @@ def test_synchronize_feed_metadata_handles_removed_overrides(
         is_enabled=True,
         source_type=SourceType.UNKNOWN,
         source_url="https://example.com/test",
+        last_successful_sync=datetime.min.replace(tzinfo=UTC),
     )
 
     # Fetched feed metadata from ytdlp (what we'd get from the source)
@@ -178,6 +181,7 @@ def test_synchronize_feed_metadata_handles_removed_overrides(
         is_enabled=True,
         source_type=SourceType.UNKNOWN,
         source_url="https://example.com/test",
+        last_successful_sync=datetime.min.replace(tzinfo=UTC),
     )
 
     # Feed config with NO metadata overrides (user removed them)
@@ -238,6 +242,7 @@ def test_synchronize_feed_metadata_handles_partial_override_removal(
         is_enabled=True,
         source_type=SourceType.UNKNOWN,
         source_url="https://example.com/test",
+        last_successful_sync=datetime.min.replace(tzinfo=UTC),
     )
 
     # Fetched metadata from source
@@ -254,6 +259,7 @@ def test_synchronize_feed_metadata_handles_partial_override_removal(
         is_enabled=True,
         source_type=SourceType.UNKNOWN,
         source_url="https://example.com/test",
+        last_successful_sync=datetime.min.replace(tzinfo=UTC),
     )
 
     # Feed config with PARTIAL overrides (user removed some but kept others)
@@ -314,7 +320,7 @@ def test_handle_existing_upcoming_downloads_none_found(
     count = enqueuer._handle_existing_upcoming_downloads(FEED_ID, sample_feed_config)
     assert count == 0
     mock_download_db.get_downloads_by_status.assert_called_once_with(
-        DownloadStatus.UPCOMING, feed=FEED_ID
+        DownloadStatus.UPCOMING, feed_id=FEED_ID
     )
 
 
@@ -368,7 +374,7 @@ def test_handle_existing_upcoming_download_remains_upcoming(
         FEED_ID, upcoming_dl.source_url, sample_feed_config.yt_args
     )
     mock_download_db.mark_as_queued_from_upcoming.assert_not_called()
-    mock_download_db.requeue_download.assert_not_called()
+    mock_download_db.requeue_downloads.assert_not_called()
 
 
 @pytest.mark.unit
@@ -397,7 +403,7 @@ def test_handle_existing_upcoming_download_refetch_fails_bumps_retries(
         max_allowed_errors=sample_feed_config.max_errors,
     )
     mock_download_db.mark_as_queued_from_upcoming.assert_not_called()
-    mock_download_db.requeue_download.assert_not_called()
+    mock_download_db.requeue_downloads.assert_not_called()
 
 
 @pytest.mark.unit
@@ -432,7 +438,7 @@ def test_handle_existing_upcoming_download_refetch_fails_transitions_to_error(
         max_allowed_errors=sample_feed_config.max_errors,
     )
     mock_download_db.mark_as_queued_from_upcoming.assert_not_called()
-    mock_download_db.requeue_download.assert_not_called()
+    mock_download_db.requeue_downloads.assert_not_called()
 
 
 @pytest.mark.unit
@@ -477,16 +483,15 @@ def test_fetch_and_process_new_feed_downloads_no_new_downloads(
     mock_ytdlp_wrapper.fetch_metadata.return_value = (MOCK_FEED, [])
 
     count = enqueuer._fetch_and_process_new_feed_downloads(
-        FEED_ID, sample_feed_config, FETCH_SINCE_DATE
+        FEED_ID, sample_feed_config, FETCH_SINCE_DATE, FETCH_UNTIL_DATE
     )
     assert count == 0
     mock_ytdlp_wrapper.fetch_metadata.assert_called_once_with(
         FEED_ID,
         sample_feed_config.url,
-        {
-            "dateafter": FETCH_SINCE_DATE.strftime("%Y%m%d"),
-            **sample_feed_config.yt_args,
-        },
+        sample_feed_config.yt_args,
+        FETCH_SINCE_DATE,
+        FETCH_UNTIL_DATE,
     )
     mock_download_db.get_download_by_id.assert_not_called()
     mock_download_db.upsert_download.assert_not_called()
@@ -507,7 +512,7 @@ def test_fetch_and_process_new_feed_downloads_new_vod_download(
     )
 
     count = enqueuer._fetch_and_process_new_feed_downloads(
-        FEED_ID, sample_feed_config, FETCH_SINCE_DATE
+        FEED_ID, sample_feed_config, FETCH_SINCE_DATE, FETCH_UNTIL_DATE
     )
 
     assert count == 1
@@ -530,7 +535,7 @@ def test_fetch_and_process_new_feed_downloads_new_upcoming_download(
     )
 
     count = enqueuer._fetch_and_process_new_feed_downloads(
-        FEED_ID, sample_feed_config, FETCH_SINCE_DATE
+        FEED_ID, sample_feed_config, FETCH_SINCE_DATE, FETCH_UNTIL_DATE
     )
 
     assert count == 0  # Not QUEUED yet
@@ -555,7 +560,7 @@ def test_fetch_and_process_new_feed_downloads_existing_upcoming_now_vod(
     mock_download_db.get_download_by_id.return_value = existing_upcoming_in_db
 
     count = enqueuer._fetch_and_process_new_feed_downloads(
-        FEED_ID, sample_feed_config, FETCH_SINCE_DATE
+        FEED_ID, sample_feed_config, FETCH_SINCE_DATE, FETCH_UNTIL_DATE
     )
 
     assert count == 1
@@ -584,12 +589,12 @@ def test_fetch_and_process_new_feed_downloads_existing_downloaded_ignored(
     mock_download_db.get_download_by_id.return_value = existing_downloaded_in_db
 
     count = enqueuer._fetch_and_process_new_feed_downloads(
-        FEED_ID, sample_feed_config, FETCH_SINCE_DATE
+        FEED_ID, sample_feed_config, FETCH_SINCE_DATE, FETCH_UNTIL_DATE
     )
 
     assert count == 0
     mock_download_db.get_download_by_id.assert_called_once_with(FEED_ID, "video_done")
-    mock_download_db.requeue_download.assert_not_called()
+    mock_download_db.requeue_downloads.assert_not_called()
     mock_download_db.upsert_download.assert_not_called()
 
 
@@ -600,7 +605,7 @@ def test_fetch_and_process_new_feed_downloads_existing_error_requeued(
     mock_download_db: MagicMock,
     sample_feed_config: FeedConfig,
 ):
-    """Test that if DB status is ERROR and fetched status is QUEUED, it calls requeue_download."""
+    """Test that if DB status is ERROR and fetched status is QUEUED, it calls requeue_downloads."""
     existing_error_in_db = create_download("video_err", DownloadStatus.ERROR, retries=1)
     fetched_as_queued = create_download("video_err", DownloadStatus.QUEUED)
 
@@ -608,12 +613,12 @@ def test_fetch_and_process_new_feed_downloads_existing_error_requeued(
     mock_download_db.get_download_by_id.return_value = existing_error_in_db
 
     count = enqueuer._fetch_and_process_new_feed_downloads(
-        FEED_ID, sample_feed_config, FETCH_SINCE_DATE
+        FEED_ID, sample_feed_config, FETCH_SINCE_DATE, FETCH_UNTIL_DATE
     )
 
     assert count == 1  # Because it was re-queued
     mock_download_db.get_download_by_id.assert_called_once_with(FEED_ID, "video_err")
-    mock_download_db.requeue_download.assert_called_once_with(FEED_ID, "video_err")
+    mock_download_db.requeue_downloads.assert_called_once_with(FEED_ID, "video_err")
     mock_download_db.upsert_download.assert_not_called()
 
 
@@ -669,7 +674,7 @@ def test_enqueue_new_downloads_full_flow_mixed_scenarios(
 
     # --- Execute ---
     total_queued = enqueuer.enqueue_new_downloads(
-        FEED_ID, sample_feed_config, FETCH_SINCE_DATE
+        FEED_ID, sample_feed_config, FETCH_SINCE_DATE, FETCH_UNTIL_DATE
     )
 
     # --- Assertions ---
@@ -682,7 +687,7 @@ def test_enqueue_new_downloads_full_flow_mixed_scenarios(
     # Assert calls for _handle_existing_upcoming_downloads
     assert mock_download_db.get_downloads_by_status.call_count == 1
     assert mock_download_db.get_downloads_by_status.call_args_list[0] == call(
-        DownloadStatus.UPCOMING, feed=FEED_ID
+        DownloadStatus.UPCOMING, feed_id=FEED_ID
     )
 
     # Assert ytdlp_wrapper.fetch_metadata calls
@@ -697,10 +702,9 @@ def test_enqueue_new_downloads_full_flow_mixed_scenarios(
             call(
                 FEED_ID,
                 sample_feed_config.url,
-                {
-                    "dateafter": FETCH_SINCE_DATE.strftime("%Y%m%d"),
-                    **sample_feed_config.yt_args,
-                },
+                sample_feed_config.yt_args,
+                FETCH_SINCE_DATE,
+                FETCH_UNTIL_DATE,
             ),
         ]
     )
@@ -736,7 +740,9 @@ def test_enqueue_new_downloads_db_error_on_get_upcoming(
         "DB error"
     )
     with pytest.raises(EnqueueError) as exc_info:
-        enqueuer.enqueue_new_downloads(FEED_ID, sample_feed_config, FETCH_SINCE_DATE)
+        enqueuer.enqueue_new_downloads(
+            FEED_ID, sample_feed_config, FETCH_SINCE_DATE, FETCH_UNTIL_DATE
+        )
     assert "Could not fetch upcoming downloads from DB" in str(exc_info.value)
     assert exc_info.value.feed_id == FEED_ID
 
@@ -755,7 +761,9 @@ def test_enqueue_new_downloads_ytdlp_error_on_main_feed_fetch(
     )
 
     with pytest.raises(EnqueueError) as exc_info:
-        enqueuer.enqueue_new_downloads(FEED_ID, sample_feed_config, FETCH_SINCE_DATE)
+        enqueuer.enqueue_new_downloads(
+            FEED_ID, sample_feed_config, FETCH_SINCE_DATE, FETCH_UNTIL_DATE
+        )
 
     assert "Could not fetch main feed metadata" in str(exc_info.value)
     assert exc_info.value.feed_id == FEED_ID
@@ -764,10 +772,9 @@ def test_enqueue_new_downloads_ytdlp_error_on_main_feed_fetch(
     mock_ytdlp_wrapper.fetch_metadata.assert_called_once_with(
         FEED_ID,
         sample_feed_config.url,
-        {
-            "dateafter": FETCH_SINCE_DATE.strftime("%Y%m%d"),
-            **sample_feed_config.yt_args,
-        },
+        sample_feed_config.yt_args,
+        FETCH_SINCE_DATE,
+        FETCH_UNTIL_DATE,
     )
 
 
@@ -783,18 +790,17 @@ def test_enqueue_new_downloads_no_upcoming_no_new(
     mock_ytdlp_wrapper.fetch_metadata.return_value = (MOCK_FEED, [])  # No new downloads
 
     queued_count = enqueuer.enqueue_new_downloads(
-        FEED_ID, sample_feed_config, FETCH_SINCE_DATE
+        FEED_ID, sample_feed_config, FETCH_SINCE_DATE, FETCH_UNTIL_DATE
     )
 
     assert queued_count == 0
     mock_download_db.get_downloads_by_status.assert_called_once_with(
-        DownloadStatus.UPCOMING, feed=FEED_ID
+        DownloadStatus.UPCOMING, feed_id=FEED_ID
     )
     mock_ytdlp_wrapper.fetch_metadata.assert_called_once_with(
         FEED_ID,
         sample_feed_config.url,
-        {
-            "dateafter": FETCH_SINCE_DATE.strftime("%Y%m%d"),
-            **sample_feed_config.yt_args,
-        },
+        sample_feed_config.yt_args,
+        FETCH_SINCE_DATE,
+        FETCH_UNTIL_DATE,
     )
