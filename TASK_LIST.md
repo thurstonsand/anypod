@@ -27,8 +27,9 @@ src/
             downloader.py       # Downloader class (processes download queue)
             pruner.py           # Pruner class (handles pruning logic)
         ytdlp_wrapper.py      # yt‑dlp direct wrapper
-        scheduler.py          # APScheduler initialisation
-        worker.py             # cron‑triggered job logic (delegates to DataCoordinator)
+        schedule/             # Scheduled feed processing
+            apscheduler_core.py # Type-safe APScheduler wrapper
+            scheduler.py      # Main feed scheduler using APScheduler
         feedgen.py            # thin wrapper
         http.py               # FastAPI app + routing
         utils.py              # misc helpers
@@ -271,30 +272,25 @@ This section details the components that manage the lifecycle of downloads, from
 - [x] `RSSFeedGenerator` refactor
 - [x] tests refactor
 
-## 5  Scheduler / Worker Loop
+## 5  Scheduler
 
-### 5.1 Create Scheduler Module (`src/anypod/schedule/scheduler.py`)
-- [ ] Core scheduler implementation:
-  - [ ] Add `apscheduler` to dependencies in pyproject.toml
-  - [ ] Use APScheduler with `AsyncIOScheduler` for async support
-  - [ ] Schedule jobs based on feed cron expressions from config
-  - [ ] Manage job lifecycle (add/remove/pause/resume)
-  - [ ] Handle graceful shutdown with proper job cleanup
-  - [ ] Each feed gets its own job with unique ID (the feed ID)
-  - [ ] Job-level retry handling (not individual downloads)
-  - [ ] implement context id injection (see `logging_config.py`)
+### 5.1 Create Scheduler Module (`src/anypod/schedule/`)
+- [x] Core scheduler implementation:
+  - [x] Add `apscheduler` to dependencies in pyproject.toml
+  - [x] Create type-safe APScheduler wrapper (`apscheduler_core.py`)
+  - [x] Use APScheduler with `AsyncIOScheduler` for async support
+  - [x] Schedule jobs based on feed cron expressions from config
+  - [x] Manage job lifecycle (add/remove/pause/resume)
+  - [x] Handle graceful shutdown with proper job cleanup
+  - [x] Each feed gets its own job with unique ID (the feed ID)
+  - [x] Job-level error handling with proper exception chaining
+  - [x] Direct DataCoordinator integration (no separate worker)
+  - [x] Context ID injection for log correlation
+  - [x] Invalid cron expression validation with SchedulerError
 
-### 5.2 Create Worker Module (`src/anypod/schedule/worker.py`)
-- [ ] Job execution wrapper:
-  - [ ] Wrap `DataCoordinator.process_feed` calls
-  - [ ] Handle job-level error handling and logging
-  - [ ] Manage concurrency/locking if needed
-  - [ ] Update feed's `consecutive_failures` counter on job failures
-  - [ ] Ensure graceful degradation (other feeds continue if one fails) unless there is a config issue, which should cause failure and addressing by user
+### 5.2 Init State Reconciliation
 
-### 5.3 Init State Reconciliation
-
-#### 5.3.1 Create State Reconciler Module (`src/anypod/state_reconciler.py`)
+#### 5.2.1 Create State Reconciler Module (`src/anypod/state_reconciler.py`)
 - [x] Startup reconciliation implementation:
   - [x] Compare config feeds with database feeds
   - [x] Handle **new feeds**: insert into DB and set initial `last_successful_sync`
@@ -304,7 +300,7 @@ This section details the components that manage the lifecycle of downloads, from
   - [x] Evaluate what would happen if it fails midway through. Would simply restarting get back to correct state?
   - [x] time box the sync time -- currently only has start time, but will also need end time
 
-#### 5.3.2 Config Change Handling
+#### 5.2.2 Config Change Handling
 - [x] Detect and apply changes to:
   - [x] `enabled`: Update feed's `is_enabled` in database, add/remove from scheduler, trigger initial sync if false->true
     - [x] `last_successful_sync` does not need to be optional as it is set proactively on new feed creation
@@ -323,13 +319,13 @@ This section details the components that manage the lifecycle of downloads, from
   - [x] `keep_last` decrease: No immediate action - will apply naturally on next prune cycle
   - [x] `metadata` changes: Update feed table immediately (title, subtitle, description, language, author, image_url, categories, explicit), trigger RSS regeneration
 
-### 5.4 Initial Sync Strategy
+### 5.3 Initial Sync Strategy
 - [ ] After reconciliation, trigger immediate sync:
   - [ ] Process all enabled feeds to populate RSS
   - [ ] Ensure RSS feeds available before HTTP server starts
   - [ ] Handle failures gracefully without blocking startup, unless config is wrong -- that should cause failure until fixed
 
-### 5.5 Dependencies and Testing
+### 5.4 Dependencies and Testing
 - [ ] Unit tests for scheduler with mocked jobs
 - [x] Unit tests for state reconciler covering:
   - [x] New feed addition
@@ -339,7 +335,7 @@ This section details the components that manage the lifecycle of downloads, from
 - [x] Integration tests for full startup sequence
 - [ ] Tests for graceful shutdown handling
 
-### 5.6 Update CLI Default Mode (`src/anypod/cli/default.py`)
+### 5.5 Update CLI Default Mode (`src/anypod/cli/default.py`)
 - [ ] Main service orchestration:
   - [ ] Initialize all components (databases, services)
   - [ ] Run state reconciler on startup (see section 5.4)

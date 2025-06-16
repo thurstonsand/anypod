@@ -9,7 +9,8 @@
       "WebFetch(domain:github.com)",
       "Bash(uvx yt-dlp:*)",
       "Bash(tree:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(mkdir:*)"
     ],
     "deny": []
   }
