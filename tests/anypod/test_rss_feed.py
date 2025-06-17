@@ -9,9 +9,7 @@ from xml.etree import ElementTree as ET
 
 import pytest
 
-from anypod.config import FeedConfig
 from anypod.config.types import (
-    FeedMetadataOverrides,
     PodcastCategories,
     PodcastExplicit,
 )
@@ -61,28 +59,6 @@ def test_feed() -> Feed:
         image_url="https://example.com/artwork.jpg",
         category=PodcastCategories("Technology"),
         explicit=PodcastExplicit.NO,
-    )
-
-
-@pytest.fixture
-def feed_config() -> FeedConfig:
-    """Fixture to provide a complete feed configuration."""
-    metadata = FeedMetadataOverrides(
-        title=TEST_PODCAST_TITLE,
-        subtitle="A test podcast subtitle",
-        description=TEST_PODCAST_DESCRIPTION,
-        language="en",
-        categories=PodcastCategories("Technology"),
-        explicit=PodcastExplicit.NO,
-        image_url="https://example.com/artwork.jpg",
-        author=TEST_AUTHOR,
-    )
-    return FeedConfig(
-        url="https://youtube.com/@testchannel",
-        schedule="0 3 * * *",
-        keep_last=2,
-        since=datetime(2023, 1, 1, 0, 0, 0, tzinfo=UTC),
-        metadata=metadata,
     )
 
 
@@ -141,7 +117,6 @@ def test_update_feed_success(
     rss_generator: RSSFeedGenerator,
     mock_download_db: MagicMock,
     test_feed: Feed,
-    feed_config: FeedConfig,
     sample_downloads: list[Download],
 ):
     """Test successful feed generation and caching."""
@@ -165,7 +140,6 @@ def test_update_feed_database_error(
     rss_generator: RSSFeedGenerator,
     mock_download_db: MagicMock,
     test_feed: Feed,
-    feed_config: FeedConfig,
 ):
     """Test feed generation with database error."""
     feed_id = TEST_FEED_ID
@@ -200,7 +174,6 @@ def test_generated_xml_structure(
     rss_generator: RSSFeedGenerator,
     mock_download_db: MagicMock,
     test_feed: Feed,
-    feed_config: FeedConfig,
     sample_downloads: list[Download],
 ):
     """Test that generated XML has correct RSS structure and content."""
@@ -290,7 +263,6 @@ def test_generated_xml_enclosure_urls(
     rss_generator: RSSFeedGenerator,
     mock_download_db: MagicMock,
     test_feed: Feed,
-    feed_config: FeedConfig,
     sample_downloads: list[Download],
 ):
     """Test that enclosure URLs are correctly formatted."""
@@ -329,7 +301,6 @@ def test_generated_xml_mime_types(
     rss_generator: RSSFeedGenerator,
     mock_download_db: MagicMock,
     test_feed: Feed,
-    feed_config: FeedConfig,
 ):
     """Test that MIME types are correctly preserved in enclosures."""
     feed_id = TEST_FEED_ID
@@ -401,7 +372,6 @@ def test_empty_downloads_list(
     rss_generator: RSSFeedGenerator,
     mock_download_db: MagicMock,
     test_feed: Feed,
-    feed_config: FeedConfig,
 ):
     """Test RSS generation with no downloads."""
     feed_id = "empty_feed"

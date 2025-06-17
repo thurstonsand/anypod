@@ -1,10 +1,12 @@
 """Aggregated config data types."""
 
+from .cron_expression import CronExpression
 from .feed_metadata_overrides import FeedMetadataOverrides
 from .podcast_categories import PodcastCategories
 from .podcast_explicit import PodcastExplicit
 
 __all__ = [
+    "CronExpression",
     "FeedMetadataOverrides",
     "PodcastCategories",
     "PodcastExplicit",

@@ -187,7 +187,7 @@ def test_synchronize_feed_metadata_handles_removed_overrides(
     # Feed config with NO metadata overrides (user removed them)
     feed_config_no_overrides = FeedConfig(
         url=FEED_URL,
-        schedule="* * * * *",
+        schedule="* * * * *",  # type: ignore
         yt_args="",  # type: ignore
         max_errors=3,
         keep_last=None,
@@ -271,7 +271,7 @@ def test_synchronize_feed_metadata_handles_partial_override_removal(
 
     feed_config_partial = FeedConfig(
         url=FEED_URL,
-        schedule="* * * * *",
+        schedule="* * * * *",  # type: ignore
         yt_args="",  # type: ignore
         max_errors=3,
         keep_last=None,

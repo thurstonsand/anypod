@@ -9,7 +9,7 @@ from types import UnionType
 from typing import Any, Union, get_origin
 
 import yt_dlp  # type: ignore
-from yt_dlp.utils import ExtractorError, UserNotLive  # type: ignore
+from yt_dlp.utils import DateRange, ExtractorError, UserNotLive  # type: ignore
 
 from ..exceptions import YtdlpApiError, YtdlpFieldInvalidError, YtdlpFieldMissingError
 
@@ -310,6 +310,22 @@ class YtdlpCore:
                 message="Unexpected error occurred while extracting metadata.",
                 url=url,
             ) from e
+
+    @staticmethod
+    def set_date_range(
+        ydl_opts: dict[str, Any],
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> None:
+        """Set date range filter in yt-dlp options using DateRange object.
+
+        Args:
+            ydl_opts: Dictionary of yt-dlp options to modify in place.
+            start_date: Start date in YYYYMMDD format, or None for no start limit.
+            end_date: End date in YYYYMMDD format, or None for no end limit.
+        """
+        if start_date is not None or end_date is not None:
+            ydl_opts["daterange"] = DateRange(start=start_date, end=end_date)
 
     @staticmethod
     def download(ydl_opts: dict[str, Any], url: str) -> None:

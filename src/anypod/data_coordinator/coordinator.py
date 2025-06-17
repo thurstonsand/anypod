@@ -10,6 +10,7 @@ import logging
 import time
 
 from ..config import FeedConfig
+from ..config.types import CronExpression
 from ..db import FeedDatabase
 from ..exceptions import (
     CoordinatorExecutionError,
@@ -22,7 +23,6 @@ from ..exceptions import (
     RSSGenerationError,
 )
 from ..rss import RSSFeedGenerator
-from ..utils.cron_utils import calculate_fetch_until_date
 from .downloader import Downloader
 from .enqueuer import Enqueuer
 from .pruner import Pruner
@@ -105,6 +105,34 @@ class DataCoordinator:
 
         return fetch_since_date
 
+    def _calculate_fetch_until_date(
+        self, cron_schedule: CronExpression, fetch_since_date: datetime
+    ) -> datetime:
+        """Calculate the fetch_until_date based on cron schedule.
+
+        The until date is calculated as the minimum of:
+        1. Current time (to avoid querying future dates)
+        2. fetch_since_date + 2 * cron_interval
+
+        The cron interval is calculated by finding the two most recent cron ticks
+        and using their difference, which ensures an accurate interval even when
+        the current time is just milliseconds after a cron tick.
+
+        Args:
+            cron_schedule: The CronExpression schedule.
+            fetch_since_date: The start date for fetching.
+
+        Returns:
+            The calculated until date for fetching.
+        """
+        now = datetime.now(UTC)
+        most_recent_tick = cron_schedule.prev(now)
+        previous_tick = cron_schedule.prev(most_recent_tick)
+        cron_interval = most_recent_tick - previous_tick
+        calculated_until = fetch_since_date + (2 * cron_interval)
+        fetch_until_date = min(now, calculated_until)
+        return fetch_until_date
+
     def _execute_enqueue_phase(
         self,
         feed_id: str,
@@ -127,7 +155,7 @@ class DataCoordinator:
         logger.info("Starting enqueue phase.", extra=log_params)
 
         # Calculate fetch_until_date based on cron schedule
-        fetch_until_date = calculate_fetch_until_date(
+        fetch_until_date = self._calculate_fetch_until_date(
             feed_config.schedule, fetch_since_date
         )
 

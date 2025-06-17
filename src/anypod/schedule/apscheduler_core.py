@@ -21,7 +21,7 @@ from apscheduler.jobstores.memory import MemoryJobStore  # type: ignore
 from apscheduler.schedulers.asyncio import AsyncIOScheduler  # type: ignore
 from apscheduler.triggers.cron import CronTrigger  # type: ignore
 
-from ..exceptions import SchedulerError
+from ..config.types import CronExpression
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +60,27 @@ class APSchedulerCore:
         self._scheduler.add_listener(  # type: ignore
             self._dispatch_job_completed_event,  # type: ignore
             EVENT_JOB_EXECUTED,
+        )
+
+    @staticmethod
+    def _trigger_from_cron_expression(expr: CronExpression, jitter: int) -> CronTrigger:  # type: ignore
+        """Convert a CronExpression to a CronTrigger.
+
+        Args:
+            expr: The CronExpression to convert.
+            jitter: The jitter to apply to the cron trigger.
+
+        Returns:
+            CronTrigger instance with appropriate fields set.
+        """
+        return CronTrigger(  # type: ignore
+            minute=expr.minute,
+            hour=expr.hour,
+            day=expr.day,
+            month=expr.month,
+            day_of_week=expr.day_of_week,
+            second=expr.second,
+            jitter=jitter,
         )
 
     def _dispatch_job_completed_event(self, event: JobExecutionEvent) -> None:  # type: ignore
@@ -153,7 +174,8 @@ class APSchedulerCore:
     def schedule_job[**P, R](
         self,
         job_id: str,
-        cron_expression: str,
+        cron_expression: CronExpression,
+        jitter: int,
         callback: Callable[P, R],
         *args: P.args,
         **kwargs: P.kwargs,
@@ -162,7 +184,8 @@ class APSchedulerCore:
 
         Args:
             job_id: The job identifier.
-            cron_expression: The cron expression to schedule the job.
+            cron_expression: The CronExpression to schedule the job.
+            jitter: The jitter to apply to the cron trigger.
             callback: The callback function to call when the job is executed.
             args: The arguments to pass to the callback function.
             kwargs: The keyword arguments to pass to the callback function.
@@ -170,15 +193,7 @@ class APSchedulerCore:
         Raises:
             SchedulerError: If the cron expression is invalid.
         """
-        try:
-            trigger = CronTrigger.from_crontab(  # type: ignore
-                cron_expression,
-            )
-        except ValueError as e:
-            raise SchedulerError(
-                f"Invalid cron expression '{cron_expression}'", feed_id=job_id
-            ) from e
-        trigger.jitter = 10
+        trigger = self._trigger_from_cron_expression(cron_expression, jitter=jitter)  # type: ignore
         self._scheduler.add_job(  # type: ignore
             callback,
             args=args,

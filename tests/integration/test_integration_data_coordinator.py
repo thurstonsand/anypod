@@ -197,7 +197,21 @@ def setup_feed_with_initial_sync(feed_db: FeedDatabase, feed_id: str) -> Feed:
     _ = create_test_feed(feed_db, feed_id)
 
     # Set an initial last_successful_sync timestamp to enable process_feed
-    initial_sync_time = datetime.min.replace(tzinfo=UTC)
+    # Use November 10, 2014 at 12:00 to ensure Big Buck Bunny (published 2014-11-10 14:05:55) is in range
+    # With hourly cron, this creates a 2-hour window from 12:00-14:00 that includes the video
+    initial_sync_time = datetime(2014, 11, 10, 12, 0, 0, tzinfo=UTC)
+    feed_db.mark_sync_success(feed_id, sync_time=initial_sync_time)
+
+    return feed_db.get_feed_by_id(feed_id)
+
+
+def setup_feed_with_channel_sync(feed_db: FeedDatabase, feed_id: str) -> Feed:
+    """Create and setup a test feed for channel testing with sync timestamp."""
+    _ = create_test_feed(feed_db, feed_id)
+
+    # Set sync timestamp for July 9, 2024 to include newest coletdjnz videos (July 10, 2024)
+    # With hourly cron, this creates a 2-hour window that includes the videos
+    initial_sync_time = datetime(2024, 7, 9, 22, 0, 0, tzinfo=UTC)
     feed_db.mark_sync_success(feed_id, sync_time=initial_sync_time)
 
     return feed_db.get_feed_by_id(feed_id)
@@ -464,8 +478,8 @@ def test_process_feed_with_retention_pruning(
         keep_last=1,  # Keep only the most recent item
     )
 
-    # Setup feed with initial sync timestamp
-    setup_feed_with_initial_sync(feed_db, feed_id)
+    # Setup feed with channel sync timestamp (for 2024 videos)
+    setup_feed_with_channel_sync(feed_db, feed_id)
 
     # Manually insert several old downloaded items to test pruning
     base_time = datetime(2020, 1, 1, tzinfo=UTC)
@@ -555,3 +569,71 @@ def test_process_feed_with_retention_pruning(
         DownloadStatus.ARCHIVED, feed_id=feed_id
     )
     assert len(archived_downloads) >= 2, "Should have archived old downloads"
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "test_case, sync_timestamp, expected_enqueue_count, description",
+    [
+        (
+            "excludes_out_of_range",
+            datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+            0,
+            "Recent sync timestamp (2024) should exclude Big Buck Bunny (2014) due to date filtering",
+        ),
+        (
+            "includes_in_range",
+            datetime(2014, 11, 10, 12, 0, 0, tzinfo=UTC),
+            1,
+            "Sync timestamp before video publish time should include Big Buck Bunny in date range",
+        ),
+    ],
+)
+def test_date_filtering_behavior(
+    data_coordinator: DataCoordinator,
+    feed_db: FeedDatabase,
+    test_case: str,
+    sync_timestamp: datetime,
+    expected_enqueue_count: int,
+    description: str,
+):
+    """Test that date filtering correctly includes/excludes videos based on sync timestamp.
+
+    This test demonstrates that the same logic with different sync timestamps produces
+    different results: videos are either included or excluded based on the date range
+    calculated from the sync timestamp and cron schedule.
+
+    Big Buck Bunny was published on 2014-11-10 14:05:55 UTC.
+    With hourly cron schedule, sync timestamp creates a 2-hour window.
+    """
+    feed_id = f"test_date_filtering_{test_case}"
+    feed_config = create_feed_config()
+
+    # Create feed
+    create_test_feed(feed_db, feed_id)
+
+    # Set sync timestamp - this determines the date filtering window
+    feed_db.mark_sync_success(feed_id, sync_time=sync_timestamp)
+
+    # Process the feed - same logic, different date filtering result
+    results = data_coordinator.process_feed(feed_id, feed_config)
+
+    # Verify overall processing succeeded for both cases
+    assert results.overall_success is True, f"Processing should succeed for {test_case}"
+    assert results.fatal_error is None, f"No fatal errors for {test_case}"
+
+    # Other phases should work regardless of date filtering
+    assert results.download_result.success is True, (
+        f"Download should succeed for {test_case}"
+    )
+    assert results.prune_result.success is True, f"Prune should succeed for {test_case}"
+    assert results.rss_generation_result.success is True, (
+        f"RSS generation should succeed for {test_case}"
+    )
+
+    # The key assertion: date filtering determines enqueue count
+    assert results.enqueue_result.success is True, (
+        f"Enqueue phase should succeed for {test_case}"
+    )
+    assert results.enqueue_result.count == expected_enqueue_count, description
+    assert results.download_result.count == expected_enqueue_count, description

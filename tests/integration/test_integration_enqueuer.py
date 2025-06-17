@@ -251,7 +251,7 @@ def test_enqueue_new_downloads_invalid_url(enqueuer: Enqueuer, feed_db: FeedData
     feed_config = FeedConfig(
         url=INVALID_VIDEO_URL,
         yt_args=YT_DLP_MINIMAL_ARGS_STR,  # type: ignore
-        schedule=TEST_CRON_SCHEDULE,
+        schedule=TEST_CRON_SCHEDULE,  # type: ignore
         keep_last=None,
         since=None,
         max_errors=MAX_ERRORS,
@@ -285,7 +285,7 @@ def test_enqueue_new_downloads_with_date_filter(
     feed_config = FeedConfig(
         url=COLETDJNZ_CHANNEL_VIDEOS,
         yt_args=YT_DLP_MINIMAL_ARGS_STR,  # type: ignore
-        schedule=TEST_CRON_SCHEDULE,
+        schedule=TEST_CRON_SCHEDULE,  # type: ignore
         keep_last=None,
         since=None,
         max_errors=MAX_ERRORS,
@@ -497,7 +497,7 @@ def test_enqueue_with_impossible_filter(
     feed_config = FeedConfig(
         url=BIG_BUCK_BUNNY_SHORT_URL,
         yt_args='--playlist-items 1 --format worst*[ext=mp4]/worst[ext=mp4]/best[ext=mp4] --match-filters "duration > 10000000"',  # type: ignore
-        schedule=TEST_CRON_SCHEDULE,
+        schedule=TEST_CRON_SCHEDULE,  # type: ignore
         keep_last=None,
         since=None,
         max_errors=MAX_ERRORS,
@@ -547,7 +547,7 @@ def test_enqueue_feed_metadata_synchronization_with_overrides(
     feed_config = FeedConfig(
         url=BIG_BUCK_BUNNY_SHORT_URL,
         yt_args=YT_DLP_MINIMAL_ARGS_STR,  # type: ignore
-        schedule=TEST_CRON_SCHEDULE,
+        schedule=TEST_CRON_SCHEDULE,  # type: ignore
         keep_last=None,
         since=None,
         max_errors=MAX_ERRORS,
@@ -576,7 +576,7 @@ def test_enqueue_feed_metadata_synchronization_with_overrides(
     assert updated_feed.description == "Custom description that overrides extracted one"
     assert updated_feed.language == "en-US"
     assert updated_feed.author == "Custom Author"
-    assert str(updated_feed.category) == "Technology, Science"
+    assert updated_feed.category == PodcastCategories(["Technology", "Science"])
     assert str(updated_feed.explicit) == "no"
 
     # Image URL should come from extracted metadata since not overridden
@@ -605,7 +605,7 @@ def test_enqueue_feed_metadata_partial_overrides(
     feed_config = FeedConfig(
         url=BIG_BUCK_BUNNY_SHORT_URL,
         yt_args=YT_DLP_MINIMAL_ARGS_STR,  # type: ignore
-        schedule=TEST_CRON_SCHEDULE,
+        schedule=TEST_CRON_SCHEDULE,  # type: ignore
         keep_last=None,
         since=None,
         max_errors=MAX_ERRORS,

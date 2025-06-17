@@ -150,7 +150,7 @@ def test_new_feed_addition(
     config_feeds = {
         "new_feed": FeedConfig(
             url="https://example.com/new_feed",
-            schedule=TEST_CRON_SCHEDULE,
+            schedule=TEST_CRON_SCHEDULE,  # type: ignore
             enabled=True,
             keep_last=50,
             since=datetime(2023, 1, 1, tzinfo=UTC),
@@ -209,7 +209,7 @@ def test_reconciliation_is_idempotent(
     config_feeds = {
         "test_feed": FeedConfig(
             url="https://example.com/test",
-            schedule=TEST_CRON_SCHEDULE,
+            schedule=TEST_CRON_SCHEDULE,  # type: ignore
             enabled=True,
             keep_last=10,
             since=datetime(2024, 1, 1, tzinfo=UTC),
@@ -326,7 +326,7 @@ def test_feed_enable_disable_transitions(
     config_feeds = {
         "toggle_feed": FeedConfig(
             url="https://example.com/toggle",
-            schedule=TEST_CRON_SCHEDULE,
+            schedule=TEST_CRON_SCHEDULE,  # type: ignore
             enabled=True,
             keep_last=None,
             since=None,
@@ -378,7 +378,7 @@ def test_url_change_resets_error_state(
     config_feeds = {
         "url_change": FeedConfig(
             url="https://new.example.com/feed",
-            schedule=TEST_CRON_SCHEDULE,
+            schedule=TEST_CRON_SCHEDULE,  # type: ignore
             enabled=True,
             keep_last=None,
             since=None,
@@ -438,7 +438,7 @@ def test_since_expansion_restores_downloads(
     config_feeds = {
         "since_test": FeedConfig(
             url="https://example.com/since",
-            schedule=TEST_CRON_SCHEDULE,
+            schedule=TEST_CRON_SCHEDULE,  # type: ignore
             enabled=True,
             since=datetime(2024, 7, 15, tzinfo=UTC),  # Between the two downloads
             keep_last=None,
@@ -507,7 +507,7 @@ def test_keep_last_increase_restores_downloads(
     config_feeds = {
         "keep_last_test": FeedConfig(
             url="https://example.com/keep",
-            schedule=TEST_CRON_SCHEDULE,
+            schedule=TEST_CRON_SCHEDULE,  # type: ignore
             enabled=True,
             keep_last=4,
             since=None,
@@ -556,7 +556,7 @@ def test_metadata_updates(
     config_feeds = {
         "meta_test": FeedConfig(
             url="https://example.com/meta",
-            schedule=TEST_CRON_SCHEDULE,
+            schedule=TEST_CRON_SCHEDULE,  # type: ignore
             enabled=True,
             keep_last=None,
             since=None,
@@ -632,7 +632,7 @@ def test_multiple_feeds_parallel_changes(
     config_feeds = {
         "feed1": FeedConfig(  # No changes
             url="https://example.com/feed1",
-            schedule=TEST_CRON_SCHEDULE,
+            schedule=TEST_CRON_SCHEDULE,  # type: ignore
             enabled=True,
             keep_last=None,
             since=None,
@@ -641,7 +641,7 @@ def test_multiple_feeds_parallel_changes(
         ),
         "feed2": FeedConfig(  # Enable
             url="https://example.com/feed2",
-            schedule=TEST_CRON_SCHEDULE,
+            schedule=TEST_CRON_SCHEDULE,  # type: ignore
             enabled=True,
             keep_last=None,
             since=None,
@@ -651,7 +651,7 @@ def test_multiple_feeds_parallel_changes(
         # feed3 removed
         "feed4": FeedConfig(  # New feed
             url="https://example.com/feed4",
-            schedule=TEST_CRON_SCHEDULE,
+            schedule=TEST_CRON_SCHEDULE,  # type: ignore
             enabled=True,
             keep_last=None,
             since=None,

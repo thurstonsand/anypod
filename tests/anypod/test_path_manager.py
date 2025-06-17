@@ -3,7 +3,7 @@
 """Tests for the PathManager class and its path/URL generation functionality."""
 
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -87,16 +87,16 @@ def test_feed_data_dir_idempotent(path_manager: PathManager):
 
 
 @pytest.mark.unit
-def test_feed_data_dir_handles_mkdir_error(path_manager: PathManager):
+@patch.object(Path, "mkdir", side_effect=OSError("Permission denied"))
+def test_feed_data_dir_handles_mkdir_error(mock_mkdir: Mock, path_manager: PathManager):
     """Tests that feed_data_dir handles directory creation errors properly."""
     feed_id = "error_feed"
 
-    with patch.object(Path, "mkdir", side_effect=OSError("Permission denied")):
-        with pytest.raises(FileOperationError) as exc_info:
-            path_manager.feed_data_dir(feed_id)
+    with pytest.raises(FileOperationError) as exc_info:
+        path_manager.feed_data_dir(feed_id)
 
-        assert exc_info.value.file_name is not None
-        assert feed_id in exc_info.value.file_name
+    assert exc_info.value.file_name is not None
+    assert feed_id in exc_info.value.file_name
 
 
 # --- Tests for feed_tmp_dir ---
@@ -128,16 +128,17 @@ def test_feed_tmp_dir_idempotent(path_manager: PathManager):
 
 
 @pytest.mark.unit
-def test_feed_tmp_dir_handles_mkdir_error(path_manager: PathManager):
+@patch.object(Path, "mkdir")
+def test_feed_tmp_dir_handles_mkdir_error(mock_mkdir: Mock, path_manager: PathManager):
     """Tests that feed_tmp_dir handles directory creation errors properly."""
     feed_id = "tmp_error_feed"
+    mock_mkdir.side_effect = OSError("Disk full")
 
-    with patch.object(Path, "mkdir", side_effect=OSError("Disk full")):
-        with pytest.raises(FileOperationError) as exc_info:
-            path_manager.feed_tmp_dir(feed_id)
+    with pytest.raises(FileOperationError) as exc_info:
+        path_manager.feed_tmp_dir(feed_id)
 
-        assert exc_info.value.file_name is not None
-        assert feed_id in exc_info.value.file_name
+    assert exc_info.value.file_name is not None
+    assert feed_id in exc_info.value.file_name
 
 
 # --- Tests for URL generation methods ---
