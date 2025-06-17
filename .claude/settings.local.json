@@ -10,7 +10,8 @@
       "Bash(uvx yt-dlp:*)",
       "Bash(tree:*)",
       "Bash(ls:*)",
-      "Bash(mkdir:*)"
+      "Bash(mkdir:*)",
+      "Bash(gh pr view:*)"
     ],
     "deny": []
   }

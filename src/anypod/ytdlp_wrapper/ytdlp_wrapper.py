@@ -147,14 +147,21 @@ class YtdlpWrapper:
 
         This method determines the appropriate fetch strategy for the provided URL,
         acquires metadata, and parses it into feed metadata and a list of found downloads.
-        Date filtering is applied automatically using dateafter and datebefore arguments when dates are provided.
+
+        Date filtering uses yt-dlp's day-level precision: both fetch_since_date and
+        fetch_until_date are converted to YYYYMMDD format before being passed to yt-dlp.
+        This means overlapping date windows that fall on the same day will use identical
+        date ranges in yt-dlp, potentially returning duplicate results that are handled
+        by the deduplication logic in the Enqueuer.
 
         Args:
             feed_id: The identifier for the feed.
             url: The URL to fetch metadata from.
             user_yt_cli_args: User-configured command-line arguments for yt-dlp.
-            fetch_since_date: The lower bound date for the fetch operation (inclusive). Optional.
-            fetch_until_date: The upper bound date for the fetch operation (exclusive). Optional.
+            fetch_since_date: The lower bound date for the fetch operation (inclusive).
+                Converted to YYYYMMDD format for yt-dlp compatibility.
+            fetch_until_date: The upper bound date for the fetch operation (exclusive).
+                Converted to YYYYMMDD format for yt-dlp compatibility.
 
         Returns:
             A tuple of (feed, downloads) where feed is a Feed object with extracted
@@ -165,24 +172,22 @@ class YtdlpWrapper:
         """
         # Add date filtering to user-provided arguments if dates are provided
         yt_cli_args = dict(user_yt_cli_args)  # Make a copy
-        log_extra = {
+        log_extra: dict[str, Any] = {
             "feed_id": feed_id,
             "url": url,
             "num_user_yt_cli_args": len(user_yt_cli_args),
         }
 
-        if fetch_since_date is not None or fetch_until_date is not None:
-            start_date = (
-                fetch_since_date.strftime("%Y%m%d") if fetch_since_date else None
-            )
-            end_date = fetch_until_date.strftime("%Y%m%d") if fetch_until_date else None
+        start_date = fetch_since_date.strftime("%Y%m%d") if fetch_since_date else None
+        end_date = fetch_until_date.strftime("%Y%m%d") if fetch_until_date else None
+        YtdlpCore.set_date_range(yt_cli_args, start_date, end_date)
 
-            YtdlpCore.set_date_range(yt_cli_args, start_date, end_date)
-
-            if fetch_since_date:
-                log_extra["fetch_since_date"] = fetch_since_date.isoformat()
-            if fetch_until_date:
-                log_extra["fetch_until_date"] = fetch_until_date.isoformat()
+        if fetch_since_date:
+            log_extra["fetch_since_date"] = fetch_since_date.isoformat()
+            log_extra["fetch_since_date_day_aligned"] = start_date
+        if fetch_until_date:
+            log_extra["fetch_until_date"] = fetch_until_date.isoformat()
+            log_extra["fetch_until_date_day_aligned"] = end_date
 
         logger.info("Fetching metadata for feed.", extra=log_extra)
 

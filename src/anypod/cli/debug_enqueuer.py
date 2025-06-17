@@ -72,14 +72,8 @@ def run_debug_enqueuer_mode(
             # this is not normally how this field is used, but for debug mode, let's reuse this field
             fetch_since_date = feed_config.since or datetime.min.replace(tzinfo=UTC)
 
-            # Calculate fetch_until_date based on cron schedule
-            # mirrors what is done in coordinator
-            now = datetime.now(UTC)
-            most_recent_tick = feed_config.schedule.prev(now)
-            previous_tick = feed_config.schedule.prev(most_recent_tick)
-            cron_interval = most_recent_tick - previous_tick
-            calculated_until = fetch_since_date + (2 * cron_interval)
-            fetch_until_date = min(now, calculated_until)
+            # Use current time as fetch_until_date for day-aligned yt-dlp precision
+            fetch_until_date = datetime.now(UTC)
 
             newly_queued_count = enqueuer.enqueue_new_downloads(
                 feed_id=feed_id,

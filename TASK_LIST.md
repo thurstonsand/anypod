@@ -290,28 +290,23 @@ This section details the components that manage the lifecycle of downloads, from
   - [x] remove explicit references to monkeypatch
 
 #### 5.1.1 yt-dlp Day-Level Date Precision Accommodation
-- [ ] **Date Window Calculation Logic (`DataCoordinator`)**:
-  - [ ] Replace `_calculate_fetch_until_date` with day-aligned logic
-  - [ ] `fetch_since_date` should still be `last_successful_sync`
-  - [ ] `fetch_until_date` should just be now(); let's simplify this logic, no 2 * cron tick or anything. we can remove that from coordinator.py and debug_enqueuer.py
-  - [ ] that may mean that most of the time, these values will fall on the same day. that's fine, and we will dedup results later
-  - [ ] Update `last_successful_sync` to earliest of (start of next day, `fetch_until_date`) after successful processing
-  - [ ] Enhanced logging: log both high-resolution calculated window and day-aligned yt-dlp window while in the context of ytdlp_wrapper
-- [ ] **Deduplication Enforcement**:
-  - [ ] Verify `Enqueuer` properly handles duplicate video IDs across multiple day fetches
-  - [ ] if whatever is in the db is identical to what we retrieved, don't update (which will trigger `updated_at`)
+- [x] **Date Window Calculation Logic (`DataCoordinator`)**:
+  - [x] Replace `_calculate_fetch_until_date` with day-aligned logic
+  - [x] `fetch_since_date` should still be `last_successful_sync`
+  - [x] `fetch_until_date` should just be now(); let's simplify this logic, no 2 * cron tick or anything. we can remove that from coordinator.py and debug_enqueuer.py
+  - [x] that may mean that most of the time, these values will fall on the same day. that's fine, and we will dedup results later
+  - [x] Update `last_successful_sync` to `fetch_until_date` to ensure full coverage (was previously `now()`)
+  - [x] Enhanced logging: log both high-resolution calculated window and day-aligned yt-dlp window while in the context of ytdlp_wrapper
+- [x] **Deduplication Enforcement**:
+  - [x] Verify `Enqueuer` properly handles duplicate video IDs across multiple day fetches
+  - [x] if whatever is in the db is identical to what we retrieved, don't update (which will trigger `updated_at`)
     - it is possible that some metadata might have updated (e.g. uploader might have changed description); so check for that and update if needed
   - [ ] Add deduplication tests: same video appearing in multiple day windows
-  - [ ] Verify no updates occurred (`updated_at` is unchanged)
-- [ ] **Test Infrastructure Updates**:
-  - [ ] Use test dates that span different days to verify multi-day behavior
-  - [ ] Verify deduplication works when same video appears in multiple day windows
-- [ ] **Documentation Updates**:
-  - [ ] Update method docstrings: document day-aligned window strategy clearly
-  - [ ] Explain why day boundaries are used instead of hour/minute precision
-  - [ ] Update DESIGN_DOC.md: add section explaining yt-dlp day-level precision limitation
-    - [ ] Document day-aligned window strategy and deduplication approach for overlapping windows
-    - [ ] Explain day-aligned behavior and deduplication
+  - [x] Verify no updates occurred (`updated_at` is unchanged)
+  - [x] Verify deduplication works when same video appears in multiple day windows
+- [x] **Documentation Updates**:
+  - [x] Update method docstrings: document day-aligned window strategy clearly
+  - [x] Update DESIGN_DOC.md: add section explaining yt-dlp day-level precision limitation
 - [ ] **State Reconciler Alignment**:
   - [ ] Update `since` parameter handling: should only be a `date`, not a `datetime`
   - [ ] When `since` changes, use day-aligned logic for requeuing archived downloads

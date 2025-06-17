@@ -510,6 +510,18 @@ All CLI flags can alternatively be set via environment variables using uppercase
 
 ---
 
+## yt-dlp Date Precision Limitation
+
+yt-dlp only allows for day-level date precision when filtering by date (`YYYYMMDD`):
+
+yt-dlp's `daterange` parameter only supports YYYYMMDD format, not hour/minute/second precision. This means:
+- `fetch_since_date = 2025-06-17T08:00:00Z` becomes `start_date = "20250617"`
+- `fetch_until_date = 2025-06-17T10:00:00Z` becomes `end_date = "20250617"`
+- Both become identical date ranges when passed to yt-dlp
+- Anypod may often query the same days (depending on how user sets up their cron), so it dedups anything it's seen before.
+
+---
+
 ## Implementation Status & Future Work
 
 ### Critical Missing Components (Production Blockers)

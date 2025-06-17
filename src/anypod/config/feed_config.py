@@ -47,7 +47,8 @@ class FeedConfig(BaseModel):
         None, ge=1, description="Prune policy - number of latest downloads to keep"
     )
     since: datetime | None = Field(
-        None, description="ISO8601 timestamp to ignore older downloads"
+        None,
+        description="Date in YYYYMMDD format; downloads older than this date are ignored",
     )
     max_errors: int = Field(
         default=3,
@@ -122,8 +123,8 @@ class FeedConfig(BaseModel):
                     f"schedule must be a string or CronExpression, got {type(v).__name__}"
                 )
 
-    @classmethod
-    def _get_local_timezone(cls) -> tzinfo:
+    @staticmethod
+    def _get_local_timezone() -> tzinfo:
         """Get local timezone using tiered lookup.
 
         Tiered timezone lookup:
@@ -151,82 +152,45 @@ class FeedConfig(BaseModel):
         # On Windows, it uses the Windows registry.
         return datetime.now().astimezone().tzinfo or ZoneInfo("UTC")
 
-    @classmethod
-    def _to_utc_datetime(cls, date_string: str) -> datetime:
-        """Convert a date string to a UTC datetime object with robust timezone handling.
-
-        The function determines the timezone based on the following precedence:
-        1. Explicit timezone offset in the ISO 8601 string (e.g., '-04:00').
-        2. The TZ environment variable (e.g., 'America/New_York').
-        3. The system's local timezone (e.g., from /etc/localtime).
-
-        Args:
-            date_string: The date and time as a string.
-
-        Returns:
-            A timezone-aware datetime object in UTC.
-
-        Raises:
-            ValueError: If the date string or timezone is invalid.
-        """
-        # 1. Attempt to parse as ISO 8601 with an explicit timezone
-        try:
-            # fromisoformat handles Z, +HH:MM, and -HH:MM
-            dt_aware = datetime.fromisoformat(date_string)
-            # If the datetime object has timezone info, convert to UTC and return
-            if dt_aware.tzinfo:
-                return dt_aware.astimezone(UTC)
-        except ValueError:
-            # This error is caught to allow parsing as a naive datetime next.
-            # If it fails again below, a new ValueError will be raised.
-            pass
-
-        # The input string does not have an explicit offset, so it's a naive datetime.
-        # We must now determine the intended local timezone.
-        local_tz = cls._get_local_timezone()
-        return (
-            datetime.fromisoformat(date_string).replace(tzinfo=local_tz).astimezone(UTC)
-        )
-
     @field_validator("since", mode="before")
     @classmethod
     def parse_since_date(cls, v: Any) -> datetime | None:
-        """Parse since date string into a UTC datetime object.
+        """Parse since date string in YYYYMMDD format into a UTC datetime object.
 
-        Accepts date strings in various formats and converts them to UTC using
-        a tiered timezone lookup system:
-        1. Explicit timezone offset in the ISO 8601 string (e.g., '-04:00')
-        2. TZ environment variable
-        3. System's local timezone (from /etc/localtime on Unix)
+        Accepts date strings in YYYYMMDD format only and converts them to UTC
+        representing 00:00 local time using a tiered timezone lookup system:
+        1. TZ environment variable
+        2. System's local timezone (from /etc/localtime on Unix)
 
         Args:
-            v: Value to parse, can be string, datetime, or None.
+            v: Value to parse, can be string or None.
 
         Returns:
-            UTC datetime object, or None if not provided.
+            UTC datetime object representing 00:00 local time, or None if not provided.
 
         Raises:
-            ValueError: If the date string cannot be parsed.
-            TypeError: If the value is not a string, datetime, or None.
+            ValueError: If the date string format is invalid or date is invalid.
+            TypeError: If the value is not a string or None.
         """
         match v:
             case None:
                 return None
             case str() as s if not s.strip():  # Handle empty string
                 return None
-            case datetime() as dt:
-                # Already a datetime, ensure it's UTC
-                if dt.tzinfo is None:
-                    # Naive datetime - apply tiered timezone lookup
-                    local_tz = cls._get_local_timezone()
-                    localized = dt.replace(tzinfo=local_tz)
-                    return localized.astimezone(UTC)
-                else:
-                    # Already timezone-aware, convert to UTC
-                    return dt.astimezone(UTC)
             case str() as s:
-                return cls._to_utc_datetime(s.strip())
+                date_string = s.strip()
+                try:
+                    naive_dt = datetime.strptime(date_string, "%Y%m%d")  # noqa: DTZ007 # we want the naive dt here
+                except ValueError as e:
+                    raise ValueError(
+                        f"Invalid date '{date_string}' must be in YYYYMMDD format"
+                    ) from e
+                return naive_dt.replace(
+                    tzinfo=FeedConfig._get_local_timezone()
+                ).astimezone(UTC)
+            case datetime():
+                return v.astimezone(UTC)
             case _:
                 raise TypeError(
-                    f"since must be a string, datetime, or None, got {type(v).__name__}"
+                    f"since must be a string in YYYYMMDD format or None, got {type(v).__name__}"
                 )

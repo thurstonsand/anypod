@@ -29,6 +29,9 @@ uv run pre-commit run --all-files               # All of the above, prefer to us
 
 # tool use
 uvx yt-dlp # can research/view real data from youtube videos for research. see @example_feeds.yaml for real links
+
+# git
+git commit # the pre-commit hooks will trigger on commit. If they error, the commit will fail
 ```
 
 ## Architecture

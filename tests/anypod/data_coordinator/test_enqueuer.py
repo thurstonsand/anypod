@@ -804,3 +804,100 @@ def test_enqueue_new_downloads_no_upcoming_no_new(
         FETCH_SINCE_DATE,
         FETCH_UNTIL_DATE,
     )
+
+
+@pytest.mark.unit
+def test_enqueue_deduplication_with_same_day_overlapping_windows(
+    enqueuer: Enqueuer,
+    mock_download_db: MagicMock,
+    mock_ytdlp_wrapper: MagicMock,
+    sample_feed_config: FeedConfig,
+):
+    """Test that deduplication works correctly when same video appears in overlapping day windows.
+
+    This tests the scenario where yt-dlp's day-level date precision causes the same video
+    to be found in multiple runs with overlapping date windows that fall on the same day.
+    """
+    # Create a test download that will be "found" in both runs
+    test_download = create_download(
+        id="test_video_same_day",
+        status=DownloadStatus.QUEUED,
+        published_offset_days=-1,  # Published yesterday
+    )
+
+    # Mock ytdlp_wrapper to return the same video both times
+    mock_ytdlp_wrapper.fetch_metadata.return_value = (MOCK_FEED, [test_download])
+
+    # Mock database to simulate the same video being found in both runs
+    call_count = {"value": 0}
+
+    def mock_get_download_by_id(feed_id: str, download_id: str) -> Download:
+        call_count["value"] += 1
+        if download_id == "test_video_same_day" and call_count["value"] > 1:
+            # Second call: return the existing download (simulates deduplication)
+            existing = create_download(
+                id="test_video_same_day",
+                status=DownloadStatus.QUEUED,
+                published_offset_days=-1,
+            )
+            existing.updated_at = datetime(
+                2025, 6, 17, 10, 0, 0, tzinfo=UTC
+            )  # Fixed timestamp
+            return existing
+        else:
+            # First call: no existing download, raise exception
+            raise DownloadNotFoundError(
+                "Download not found.", feed_id=feed_id, download_id=download_id
+            )
+
+    mock_download_db.get_download_by_id.side_effect = mock_get_download_by_id
+    mock_download_db.get_downloads_by_status.return_value = []  # No upcoming downloads
+
+    # First run: overlapping day window (e.g., 8am to 10am same day)
+    first_since = datetime(2025, 6, 17, 8, 0, 0, tzinfo=UTC)
+    first_until = datetime(2025, 6, 17, 10, 0, 0, tzinfo=UTC)
+
+    first_count = enqueuer.enqueue_new_downloads(
+        FEED_ID, sample_feed_config, first_since, first_until
+    )
+
+    # Second run: overlapping day window (e.g., 9am to 11am same day)
+    # Due to yt-dlp's day-level precision, both will use same YYYYMMDD date
+    second_since = datetime(2025, 6, 17, 9, 0, 0, tzinfo=UTC)
+    second_until = datetime(2025, 6, 17, 11, 0, 0, tzinfo=UTC)
+
+    second_count = enqueuer.enqueue_new_downloads(
+        FEED_ID, sample_feed_config, second_since, second_until
+    )
+
+    # Deduplication should work correctly
+    assert first_count == 1, "First run should queue the new download"
+    assert second_count == 0, (
+        "Second run should not queue the same download (deduplication)"
+    )
+
+    # Verify ytdlp_wrapper was called twice (once for each run)
+    assert mock_ytdlp_wrapper.fetch_metadata.call_count == 2
+
+    # Verify first call used first date window
+    first_call = mock_ytdlp_wrapper.fetch_metadata.call_args_list[0]
+    assert first_call[0][3] == first_since  # fetch_since_date
+    assert first_call[0][4] == first_until  # fetch_until_date
+
+    # Verify second call used second date window
+    second_call = mock_ytdlp_wrapper.fetch_metadata.call_args_list[1]
+    assert second_call[0][3] == second_since  # fetch_since_date
+    assert second_call[0][4] == second_until  # fetch_until_date
+
+    # Verify database operations for deduplication
+    assert mock_download_db.get_download_by_id.call_count == 2
+
+    # First run should insert the download
+    mock_download_db.upsert_download.assert_called()
+    upsert_calls = mock_download_db.upsert_download.call_args_list
+    assert len(upsert_calls) == 1, "Only first run should insert the download"
+
+    # The upserted download should be the test download
+    upserted_download = upsert_calls[0][0][0]
+    assert upserted_download.id == "test_video_same_day"
+    assert upserted_download.status == DownloadStatus.QUEUED

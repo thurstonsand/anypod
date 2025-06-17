@@ -10,7 +10,6 @@ import logging
 import time
 
 from ..config import FeedConfig
-from ..config.types import CronExpression
 from ..db import FeedDatabase
 from ..exceptions import (
     CoordinatorExecutionError,
@@ -105,59 +104,26 @@ class DataCoordinator:
 
         return fetch_since_date
 
-    def _calculate_fetch_until_date(
-        self, cron_schedule: CronExpression, fetch_since_date: datetime
-    ) -> datetime:
-        """Calculate the fetch_until_date based on cron schedule.
-
-        The until date is calculated as the minimum of:
-        1. Current time (to avoid querying future dates)
-        2. fetch_since_date + 2 * cron_interval
-
-        The cron interval is calculated by finding the two most recent cron ticks
-        and using their difference, which ensures an accurate interval even when
-        the current time is just milliseconds after a cron tick.
-
-        Args:
-            cron_schedule: The CronExpression schedule.
-            fetch_since_date: The start date for fetching.
-
-        Returns:
-            The calculated until date for fetching.
-        """
-        now = datetime.now(UTC)
-        most_recent_tick = cron_schedule.prev(now)
-        previous_tick = cron_schedule.prev(most_recent_tick)
-        cron_interval = most_recent_tick - previous_tick
-        calculated_until = fetch_since_date + (2 * cron_interval)
-        fetch_until_date = min(now, calculated_until)
-        return fetch_until_date
-
     def _execute_enqueue_phase(
         self,
         feed_id: str,
         feed_config: FeedConfig,
         fetch_since_date: datetime,
+        fetch_until_date: datetime,
     ) -> PhaseResult:
         """Execute the enqueue phase of feed processing.
 
         Args:
             feed_id: The feed identifier.
             feed_config: The feed configuration.
-            fetch_since_date: Date to use for filtering new downloads.
+            fetch_since_date: Date to use for filtering new downloads (from last_successful_sync).
+            fetch_until_date: Upper bound date for filtering new downloads (current time).
 
         Returns:
             PhaseResult with enqueue phase results.
         """
         phase_start = time.time()
         log_params = {"feed_id": feed_id, "phase": "enqueue"}
-
-        logger.info("Starting enqueue phase.", extra=log_params)
-
-        # Calculate fetch_until_date based on cron schedule
-        fetch_until_date = self._calculate_fetch_until_date(
-            feed_config.schedule, fetch_since_date
-        )
 
         try:
             enqueued_count = self._enqueuer.enqueue_new_downloads(
@@ -352,13 +318,18 @@ class DataCoordinator:
             )
 
     def _update_feed_sync_status(
-        self, feed_id: str, success: bool, error: Exception | None = None
+        self,
+        feed_id: str,
+        success: bool,
+        fetch_until_date: datetime,
+        error: Exception | None = None,
     ) -> bool:
         """Update the feed's sync status in the database.
 
         Args:
             feed_id: The feed identifier.
             success: Whether the sync was successful.
+            fetch_until_date: The upper bound date used during fetch. Used as new sync time if successful.
             error: The error that occurred (if any).
 
         Returns:
@@ -368,8 +339,11 @@ class DataCoordinator:
 
         try:
             if success:
-                self._feed_db.mark_sync_success(feed_id)
-                logger.info("Feed sync status updated to success.", extra=log_params)
+                self._feed_db.mark_sync_success(feed_id, fetch_until_date)
+                logger.info(
+                    "Feed sync status updated to success.",
+                    extra={**log_params, "sync_time": fetch_until_date.isoformat()},
+                )
             else:
                 error_message = str(error) if error else "Unknown error"
                 self._feed_db.mark_sync_failure(feed_id, error_message)
@@ -420,13 +394,15 @@ class DataCoordinator:
             start_time=start_time,
         )
 
+        # Calculate fetch dates (used in finally block too)
+        fetch_until_date = datetime.now(UTC)
+
         try:
-            # Calculate fetch_since_date
             fetch_since_date = self._calculate_fetch_since_date(feed_id)
 
             # Phase 1: Enqueue new downloads
             results.enqueue_result = self._execute_enqueue_phase(
-                feed_id, feed_config, fetch_since_date
+                feed_id, feed_config, fetch_since_date, fetch_until_date
             )
 
             # Phase 2: Download queued media (always attempt, even if enqueue failed)
@@ -476,7 +452,7 @@ class DataCoordinator:
                 else None
             )
             results.feed_sync_updated = self._update_feed_sync_status(
-                feed_id, results.overall_success, sync_error
+                feed_id, results.overall_success, fetch_until_date, sync_error
             )
 
             # Log final results

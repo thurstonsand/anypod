@@ -5,6 +5,7 @@
 # tests/test_config.py
 import os
 from pathlib import Path
+from typing import Any
 from unittest.mock import Mock, patch
 
 from pydantic import ValidationError
@@ -343,3 +344,59 @@ def test_feed_config_no_yt_args_uses_default_factory():
     """Tests that if yt_args is not provided, it defaults to an empty dict."""
     feed = FeedConfig(url="http://example.com", schedule="* * * * *")  # type: ignore
     assert feed.yt_args == {}
+
+
+# --- Tests for FeedConfig.since validator ---
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "since_value,expected_year,expected_month,expected_day,expected_hour",
+    [
+        ("20240115", 2024, 1, 15, 5),  # January 15, 2024 (EST, no DST) -> 05:00 UTC
+        ("2024031", 2024, 3, 1, 5),  # March 1, 2024 (strptime parses 7 digits as this)
+    ],
+)
+@patch.dict(os.environ, {"TZ": "America/New_York"})
+def test_feed_config_since_valid_values(
+    since_value: str,
+    expected_year: int,
+    expected_month: int,
+    expected_day: int,
+    expected_hour: int,
+):
+    """Tests that valid since strings are correctly parsed."""
+    feed = FeedConfig(  # type: ignore
+        url="http://example.com",
+        schedule="* * * * *",
+        since=since_value,
+    )
+    assert feed.since is not None
+    assert feed.since.year == expected_year
+    assert feed.since.month == expected_month
+    assert feed.since.day == expected_day
+    assert feed.since.hour == expected_hour  # 00:00 EST = 05:00 UTC
+    assert feed.since.minute == 0
+    assert feed.since.second == 0
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "since_value,expected_exception",
+    [
+        ("202403155", ValidationError),  # Too long - has unconverted data
+        ("2024-03-15", ValidationError),  # Contains dashes - doesn't match format
+        ("20240230", ValidationError),  # February 30 doesn't exist
+        (20240315, TypeError),  # Wrong type
+    ],
+)
+def test_feed_config_since_invalid_values(
+    since_value: Any, expected_exception: type[Exception]
+):
+    """Tests that invalid since values raise appropriate exceptions."""
+    with pytest.raises(expected_exception):
+        FeedConfig(
+            url="http://example.com",
+            schedule="* * * * *",
+            since=since_value,
+        )  # type: ignore
