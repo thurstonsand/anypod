@@ -3,11 +3,12 @@
 """Tests for the configuration loading and validation functionality."""
 
 # tests/test_config.py
+import os
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 from pydantic import ValidationError
 import pytest
-from pytest import MonkeyPatch
 import yaml
 
 from anypod.config.config import AppSettings, FeedConfig, YamlFileFromFieldSource
@@ -50,24 +51,15 @@ def sample_config_file(tmp_path: Path) -> Path:
 
 
 @pytest.mark.unit
-def test_load_from_default_location(monkeypatch: MonkeyPatch, tmp_path: Path):
-    """Tests if AppSettings loads configuration from the default file path when no overrides are provided.
-
-    We monkeypatch _get_yaml_path.
-    """
+@patch.object(YamlFileFromFieldSource, "_get_yaml_path")
+def test_load_from_default_location(mock_get_yaml_path: Mock, tmp_path: Path):
+    """Tests if AppSettings loads configuration from the default file path when no overrides are provided."""
     default_config_path = tmp_path / "default_feeds.yaml"
     with Path.open(default_config_path, "w", encoding="utf-8") as f:
         yaml.dump(SAMPLE_FEEDS_DATA, f)
 
-    # Define a properly typed mock function for _get_yaml_path
-    def mock_get_yaml_path(self_source: YamlFileFromFieldSource) -> Path:
-        return default_config_path
-
-    # Monkeypatch _get_yaml_path to use our typed mock function
-    monkeypatch.setattr(YamlFileFromFieldSource, "_get_yaml_path", mock_get_yaml_path)
-
-    # Clear environment variables that might interfere
-    monkeypatch.delenv("CONFIG_FILE", raising=False)
+    # Configure the mock to return our test config path
+    mock_get_yaml_path.return_value = default_config_path
 
     settings = AppSettings()  # type: ignore
 
@@ -77,7 +69,7 @@ def test_load_from_default_location(monkeypatch: MonkeyPatch, tmp_path: Path):
         settings.feeds["podcast1"].url == SAMPLE_FEEDS_DATA["feeds"]["podcast1"]["url"]
     )
     assert (
-        settings.feeds["podcast1"].schedule
+        str(settings.feeds["podcast1"].schedule)
         == SAMPLE_FEEDS_DATA["feeds"]["podcast1"]["schedule"]
     )
     assert (
@@ -95,7 +87,7 @@ def test_load_from_default_location(monkeypatch: MonkeyPatch, tmp_path: Path):
     )
     assert settings.feeds["podcast2"].yt_args == EXPECTED_PODCAST2_YT_ARGS
     assert (
-        settings.feeds["podcast2"].schedule
+        str(settings.feeds["podcast2"].schedule)
         == SAMPLE_FEEDS_DATA["feeds"]["podcast2"]["schedule"]
     )
     assert settings.feeds["podcast2"].max_errors == 3, (  # Asserting default value
@@ -110,11 +102,11 @@ def test_load_from_default_location(monkeypatch: MonkeyPatch, tmp_path: Path):
 
 
 @pytest.mark.unit
-def test_override_location_with_env_var(
-    monkeypatch: MonkeyPatch, sample_config_file: Path
-):
+@patch.dict(os.environ, {"CONFIG_FILE": ""})
+def test_override_location_with_env_var(sample_config_file: Path):
     """Tests if AppSettings loads configuration from the path specified by the CONFIG_FILE environment variable."""
-    monkeypatch.setenv("CONFIG_FILE", str(sample_config_file))
+    # Set the CONFIG_FILE environment variable to our test config file path
+    os.environ["CONFIG_FILE"] = str(sample_config_file)
 
     settings = AppSettings()  # type: ignore
 
@@ -135,17 +127,10 @@ def test_override_location_with_env_var(
 
 
 @pytest.mark.unit
-def test_override_location_with_init_arg(
-    monkeypatch: MonkeyPatch, sample_config_file: Path
-):
+@patch.dict(os.environ, {"CONFIG_FILE": "/path/to/nonexistent/file.yaml"})
+def test_override_location_with_init_arg(sample_config_file: Path):
     """Tests if AppSettings loads configuration from the path specified via an initialization argument, overriding defaults and env vars."""
-    # Set an env var to ensure the init arg takes precedence
-    monkeypatch.setenv("CONFIG_FILE", "/path/to/nonexistent/file.yaml")
-
     settings = AppSettings(config_file=sample_config_file)
-
-    # Clean up env var after test
-    monkeypatch.delenv("CONFIG_FILE", raising=False)
 
     assert len(settings.feeds) == len(SAMPLE_FEEDS_DATA["feeds"]), (
         "Number of loaded feeds should match sample data when overridden by init arg"
@@ -158,7 +143,7 @@ def test_override_location_with_init_arg(
         settings.feeds["podcast1"].url == SAMPLE_FEEDS_DATA["feeds"]["podcast1"]["url"]
     )
     assert (
-        settings.feeds["podcast1"].schedule
+        str(settings.feeds["podcast1"].schedule)
         == SAMPLE_FEEDS_DATA["feeds"]["podcast1"]["schedule"]
     )
     assert (
@@ -180,7 +165,7 @@ def test_override_location_with_init_arg(
     )
     assert settings.feeds["podcast2"].yt_args == EXPECTED_PODCAST2_YT_ARGS
     assert (
-        settings.feeds["podcast2"].schedule
+        str(settings.feeds["podcast2"].schedule)
         == SAMPLE_FEEDS_DATA["feeds"]["podcast2"]["schedule"]
     )
     assert settings.feeds["podcast2"].max_errors == 3, (  # Asserting default value
@@ -189,11 +174,9 @@ def test_override_location_with_init_arg(
 
 
 @pytest.mark.unit
-def test_nonexistent_config_file_raises_error(monkeypatch: MonkeyPatch):
+@patch.dict(os.environ, {"CONFIG_FILE": "/path/to/hopefully/nonexistent/feeds.yaml"})
+def test_nonexistent_config_file_raises_error():
     """Tests that instantiating AppSettings raises an error if the specified config file does not exist, and that the cause is FileNotFoundError."""
-    non_existent_path = "/path/to/hopefully/nonexistent/feeds.yaml"
-    monkeypatch.setenv("CONFIG_FILE", non_existent_path)
-
     with pytest.raises(
         ConfigLoadError, match="Failed to load or parse YAML configuration file"
     ) as exc_info:

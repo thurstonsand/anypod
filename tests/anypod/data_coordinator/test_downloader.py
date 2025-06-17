@@ -100,7 +100,7 @@ def sample_feed_config() -> FeedConfig:
     return FeedConfig(
         url="http://example.com/feed_url",
         yt_args="--format best",  # type: ignore # this gets preprocessed into a dict
-        schedule="0 0 * * *",
+        schedule="0 0 * * *",  # type: ignore
         keep_last=10,
         since=None,
         max_errors=3,
@@ -112,7 +112,7 @@ def sample_feed_config() -> FeedConfig:
 
 
 @pytest.mark.unit
-@patch("pathlib.Path.stat", return_value=MagicMock(st_size=1024))
+@patch.object(Path, "stat", return_value=MagicMock(st_size=1024))
 def test_handle_download_success_updates_db(
     _mock_stat: MagicMock,
     downloader: Downloader,
@@ -133,7 +133,7 @@ def test_handle_download_success_updates_db(
 
 
 @pytest.mark.unit
-@patch("pathlib.Path.stat", return_value=MagicMock(st_size=1024))
+@patch.object(Path, "stat", return_value=MagicMock(st_size=1024))
 def test_handle_download_success_db_update_fails_raises_downloader_error(
     _mock_stat: MagicMock,
     downloader: Downloader,

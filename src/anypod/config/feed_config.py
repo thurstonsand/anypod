@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, Field, field_validator
 
-from .types import FeedMetadataOverrides
+from .types import CronExpression, FeedMetadataOverrides
 
 
 class FeedConfig(BaseModel):
@@ -22,7 +22,7 @@ class FeedConfig(BaseModel):
     Attributes:
         url: Feed source URL (e.g., YouTube channel, playlist).
         yt_args: Parsed arguments for yt-dlp from user-provided string.
-        schedule: Cron schedule string for feed processing.
+        schedule: Cron schedule expression for feed processing.
         keep_last: Number of latest downloads to keep (prune policy).
         since: Only download newer downloads since this ISO8601 timestamp (prune policy).
         max_errors: Max attempts for downloading before marking as ERROR.
@@ -40,7 +40,9 @@ class FeedConfig(BaseModel):
         default_factory=dict[str, Any],
         description="Parsed arguments for yt-dlp, from user-provided string in config.",
     )
-    schedule: str = Field(..., min_length=1, description="Cron schedule string")
+    schedule: CronExpression = Field(
+        ..., description="Cron schedule expression (supports seconds)"
+    )
     keep_last: int | None = Field(
         None, ge=1, description="Prune policy - number of latest downloads to keep"
     )
@@ -90,6 +92,35 @@ class FeedConfig(BaseModel):
                     ) from e
             case _:
                 raise TypeError(f"yt_args must be a string, got {type(v).__name__}")
+
+    @field_validator("schedule", mode="before")
+    @classmethod
+    def parse_schedule(cls, v: Any) -> CronExpression:
+        """Parse schedule into a CronExpression.
+
+        Args:
+            v: Value to parse, can be string, CronExpression, or None.
+
+        Returns:
+            CronExpression instance.
+
+        Raises:
+            ValueError: If the schedule cannot be parsed.
+            TypeError: If the value is not a string or CronExpression.
+        """
+        match v:
+            case CronExpression():
+                return v
+            case str() if v.strip():
+                return CronExpression(v.strip())
+            case str():  # Empty string
+                raise ValueError("Schedule cannot be empty")
+            case None:
+                raise ValueError("Schedule is required")
+            case _:
+                raise TypeError(
+                    f"schedule must be a string or CronExpression, got {type(v).__name__}"
+                )
 
     @classmethod
     def _get_local_timezone(cls) -> tzinfo:

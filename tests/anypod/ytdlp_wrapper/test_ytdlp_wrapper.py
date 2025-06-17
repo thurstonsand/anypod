@@ -231,8 +231,8 @@ def test_fetch_metadata_returns_feed_and_downloads_tuple(
 @pytest.mark.unit
 @patch.object(YtdlpWrapper, "_prepare_ydl_options")
 @patch.object(YtdlpCore, "download")
-@patch("pathlib.Path.is_file", return_value=True)
-@patch("pathlib.Path.stat")
+@patch.object(Path, "is_file", return_value=True)
+@patch.object(Path, "stat")
 @patch.object(YtdlpWrapper, "_prepare_download_dir")
 @patch.object(Path, "glob", return_value=[])
 def test_download_media_to_file_success_simplified(

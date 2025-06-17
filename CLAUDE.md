@@ -107,8 +107,9 @@ anypod/
 │   ├── rss/                     # RSS feed generation
 │   │   ├── feedgen_core.py      # Feed generation logic
 │   │   └── rss_feed.py          # `feedgen` wrapper
-│   ├── utils/                   # Utility functions
-│   │   └── cron_utils.py        # Cron schedule utilities
+│   ├── schedule/                # Scheduled feed processing
+│   │   ├── apscheduler_core.py  # Type-safe APScheduler wrapper
+│   │   └── scheduler.py         # Main feed scheduler using APScheduler
 │   ├── ytdlp_wrapper/           # `yt-dlp` integration
 │   │   ├── base_handler.py      # Base handler interface for different source types
 │   │   ├── youtube_handler.py   # YouTube source handler

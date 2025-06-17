@@ -137,7 +137,7 @@ def base_feed_config() -> FeedConfig:
     """Provides a basic FeedConfig for testing."""
     return FeedConfig(
         url=FEED_URL,
-        schedule=TEST_CRON_SCHEDULE,
+        schedule=TEST_CRON_SCHEDULE,  # type: ignore
         enabled=True,
         keep_last=None,
         since=None,
@@ -151,7 +151,7 @@ def feed_config_with_metadata() -> FeedConfig:
     """Provides a FeedConfig with metadata overrides."""
     return FeedConfig(
         url=FEED_URL,
-        schedule=TEST_CRON_SCHEDULE,
+        schedule=TEST_CRON_SCHEDULE,  # type: ignore
         enabled=True,
         keep_last=None,
         since=None,
@@ -549,7 +549,7 @@ def test_reconcile_startup_state_all_scenarios(
         FEED_ID: base_feed_config,  # Existing
         NEW_FEED_ID: FeedConfig(
             url=NEW_FEED_URL,
-            schedule=TEST_CRON_SCHEDULE,
+            schedule=TEST_CRON_SCHEDULE,  # type: ignore
             enabled=True,
             keep_last=None,
             since=None,
@@ -628,7 +628,7 @@ def test_reconcile_startup_state_continues_on_individual_errors(
         "failing_feed": base_feed_config,
         NEW_FEED_ID: FeedConfig(
             url=NEW_FEED_URL,
-            schedule=TEST_CRON_SCHEDULE,
+            schedule=TEST_CRON_SCHEDULE,  # type: ignore
             enabled=True,
             keep_last=None,
             since=None,

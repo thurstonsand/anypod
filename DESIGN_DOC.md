@@ -386,7 +386,7 @@ sequenceDiagram
   DC-->>DC: Generate RSS XML, cache in memory
 ```
 
-The `Scheduler` triggers the `DataCoordinator` to process a feed, whid is done with four distinct phases using specialized services:
+The `Scheduler` triggers the `DataCoordinator` to process a feed, which is done with four distinct phases using specialized services:
 
 1.  **Enqueuing Phase**: The `Enqueuer` performs a two-stage process:
     - Re-polls existing UPCOMING downloads to check if they're now available as VOD
@@ -513,7 +513,6 @@ All CLI flags can alternatively be set via environment variables using uppercase
 ## Implementation Status & Future Work
 
 ### Critical Missing Components (Production Blockers)
-* **Scheduler Implementation** - APScheduler or similar for automatic feed processing
 * **HTTP Server** - FastAPI implementation for serving RSS feeds and media files
 * **Production CLI Mode** - Long-running daemon mode beyond current debug modes
 

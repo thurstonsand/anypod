@@ -171,13 +171,18 @@ class YtdlpWrapper:
             "num_user_yt_cli_args": len(user_yt_cli_args),
         }
 
-        if fetch_since_date is not None:
-            yt_cli_args["dateafter"] = fetch_since_date.strftime("%Y%m%d")
-            log_extra["fetch_since_date"] = fetch_since_date.isoformat()
+        if fetch_since_date is not None or fetch_until_date is not None:
+            start_date = (
+                fetch_since_date.strftime("%Y%m%d") if fetch_since_date else None
+            )
+            end_date = fetch_until_date.strftime("%Y%m%d") if fetch_until_date else None
 
-        if fetch_until_date is not None:
-            yt_cli_args["datebefore"] = fetch_until_date.strftime("%Y%m%d")
-            log_extra["fetch_until_date"] = fetch_until_date.isoformat()
+            YtdlpCore.set_date_range(yt_cli_args, start_date, end_date)
+
+            if fetch_since_date:
+                log_extra["fetch_since_date"] = fetch_since_date.isoformat()
+            if fetch_until_date:
+                log_extra["fetch_until_date"] = fetch_until_date.isoformat()
 
         logger.info("Fetching metadata for feed.", extra=log_extra)
 

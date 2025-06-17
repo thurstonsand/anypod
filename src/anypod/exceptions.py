@@ -300,3 +300,19 @@ class StateReconciliationError(AnypodError):
     ):
         super().__init__(message)
         self.feed_id = feed_id
+
+
+class SchedulerError(AnypodError):
+    """Base class for scheduler-related errors.
+
+    Attributes:
+        feed_id: The feed identifier associated with the error.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        feed_id: str | None = None,
+    ):
+        super().__init__(message)
+        self.feed_id = feed_id

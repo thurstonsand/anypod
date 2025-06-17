@@ -59,6 +59,19 @@ def custom_record_factory(*args: Any, **kwargs: Any) -> logging.LogRecord:
 _context_id_var: ContextVar[str | None] = ContextVar("context_id", default=None)
 
 
+def set_context_id(context_id: str) -> None:
+    """Set the context ID for the current async context.
+
+    This function sets the context ID in the current async context,
+    which will then be automatically included in all log messages
+    within that context via the ContextIdFilter.
+
+    Args:
+        context_id: The context identifier to set (e.g., "feed_123-1640995200").
+    """
+    _context_id_var.set(context_id)
+
+
 class ContextIdFilter(logging.Filter):
     """A logging filter that injects the current context_id into log records.
 
