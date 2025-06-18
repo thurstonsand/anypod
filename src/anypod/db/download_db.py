@@ -462,6 +462,90 @@ class DownloadDatabase:
             extra=log_params,
         )
 
+    def update_download_metadata(
+        self,
+        feed_id: str,
+        download_id: str,
+        title: str | None = None,
+        published: datetime | None = None,
+        ext: str | None = None,
+        mime_type: str | None = None,
+        filesize: int | None = None,
+        duration: int | None = None,
+        thumbnail: str | None = None,
+        description: str | None = None,
+        quality_info: str | None = None,
+    ) -> None:
+        """Update metadata fields for an existing download.
+
+        Only updates fields that are explicitly provided (not None).
+        Status, error tracking, and timestamp fields are not modified.
+
+        Args:
+            feed_id: The feed identifier.
+            download_id: The download identifier.
+            title: Updated title.
+            published: Updated publication datetime.
+            ext: Updated file extension.
+            mime_type: Updated MIME type.
+            filesize: Updated file size in bytes.
+            duration: Updated duration in seconds.
+            thumbnail: Updated thumbnail URL.
+            description: Updated description.
+            quality_info: Updated quality information.
+
+        Raises:
+            DownloadNotFoundError: If the download is not found.
+            DatabaseOperationError: If the database operation fails.
+        """
+        # Build update dict with only non-None values
+        updates: dict[str, Any] = {}
+        if title is not None:
+            updates["title"] = title
+        if published is not None:
+            updates["published"] = published
+        if ext is not None:
+            updates["ext"] = ext
+        if mime_type is not None:
+            updates["mime_type"] = mime_type
+        if filesize is not None:
+            updates["filesize"] = filesize
+        if duration is not None:
+            updates["duration"] = duration
+        if thumbnail is not None:
+            updates["thumbnail"] = thumbnail
+        if description is not None:
+            updates["description"] = description
+        if quality_info is not None:
+            updates["quality_info"] = quality_info
+
+        if not updates:
+            # No updates to perform
+            return
+
+        log_params: dict[str, Any] = {
+            "feed_id": feed_id,
+            "download_id": download_id,
+            "updated_fields": list(updates.keys()),
+        }
+        logger.debug("Attempting to update download metadata.", extra=log_params)
+
+        try:
+            self._db.update(
+                self._download_table_name,
+                (feed_id, download_id),
+                updates,
+            )
+        except NotFoundError as e:
+            raise DownloadNotFoundError(
+                "Download not found.", feed_id=feed_id, download_id=download_id
+            ) from e
+        except DatabaseOperationError as e:
+            e.feed_id = feed_id
+            e.download_id = download_id
+            raise e
+        logger.info("Download metadata updated.", extra=log_params)
+
     def bump_retries(
         self,
         feed_id: str,

@@ -1,4 +1,5 @@
 {
+  "includeCoAuthoredBy": false,
   "permissions": {
     "allow": [
       "Bash(find:*)",
@@ -11,7 +12,8 @@
       "Bash(tree:*)",
       "Bash(ls:*)",
       "Bash(mkdir:*)",
-      "Bash(gh pr view:*)"
+      "Bash(gh pr view:*)",
+      "Bash(touch:*)"
     ],
     "deny": []
   }

@@ -398,107 +398,64 @@ def test_handle_existing_feed_metadata_changes(
     assert updated_feed.image_url == metadata.image_url
 
 
-# --- Tests for StateReconciler._handle_since_changes and _handle_keep_last_changes ---
+# --- Tests for StateReconciler._handle_pruning_changes ---
 
 
 @pytest.mark.unit
-def test_handle_since_expansion(
+def test_handle_pruning_changes_no_changes(
     state_reconciler: StateReconciler,
     mock_download_db: MagicMock,
-    base_feed_config: FeedConfig,
 ) -> None:
-    """Expanding 'since' date restores archived downloads."""
-    # Setup: 2 archived downloads, expanding 'since' to include them
-    config = deepcopy(base_feed_config)
-    config.since = datetime(2024, 5, 1, tzinfo=UTC)  # Earlier than archived
-
-    mock_download_db.get_downloads_by_status.return_value = [
-        MOCK_ARCHIVED_DOWNLOAD_1,
-        MOCK_ARCHIVED_DOWNLOAD_2,
-    ]
-    mock_download_db.requeue_downloads.return_value = 2
+    """No changes to retention policies returns False."""
+    db_feed = deepcopy(MOCK_FEED)
+    db_feed.since = datetime(2024, 6, 1, tzinfo=UTC)
+    db_feed.keep_last = 10
 
     log_params = {"feed_id": FEED_ID}
-    result = state_reconciler._handle_since_changes(FEED_ID, config, log_params)
-
-    assert result is True
-    mock_download_db.get_downloads_by_status.assert_called_once_with(
-        DownloadStatus.ARCHIVED, feed_id=FEED_ID, published_after=config.since
+    result = state_reconciler._handle_pruning_changes(
+        FEED_ID,
+        config_since=datetime(2024, 6, 1, tzinfo=UTC),  # Same as DB
+        config_keep_last=10,  # Same as DB
+        db_feed=db_feed,
+        log_params=log_params,
     )
-    mock_download_db.requeue_downloads.assert_called_once_with(
-        FEED_ID, ["archived_1", "archived_2"], from_status=DownloadStatus.ARCHIVED
-    )
-
-
-@pytest.mark.unit
-def test_handle_since_no_downloads_to_restore(
-    state_reconciler: StateReconciler,
-    mock_download_db: MagicMock,
-    base_feed_config: FeedConfig,
-) -> None:
-    """No archived downloads to restore returns False."""
-    config = deepcopy(base_feed_config)
-    config.since = datetime(2024, 8, 1, tzinfo=UTC)  # Later than all archived
-
-    mock_download_db.get_downloads_by_status.return_value = []
-
-    log_params = {"feed_id": FEED_ID}
-    result = state_reconciler._handle_since_changes(FEED_ID, config, log_params)
 
     assert result is False
-    mock_download_db.requeue_downloads.assert_not_called()
+    mock_download_db.get_downloads_by_status.assert_not_called()
 
 
 @pytest.mark.unit
-def test_handle_since_database_error(
+def test_handle_pruning_changes_since_expansion_only(
     state_reconciler: StateReconciler,
     mock_download_db: MagicMock,
-    base_feed_config: FeedConfig,
 ) -> None:
-    """Database error during 'since' handling is wrapped."""
-    config = deepcopy(base_feed_config)
-    config.since = datetime(2024, 1, 1, tzinfo=UTC)
+    """Expanding 'since' date restores archived downloads."""
+    db_feed = deepcopy(MOCK_FEED)
+    db_feed.since = datetime(2024, 6, 1, tzinfo=UTC)
+    db_feed.keep_last = None
+    db_feed.total_downloads = 5
 
-    mock_download_db.get_downloads_by_status.side_effect = DatabaseOperationError(
-        "DB error"
-    )
-
-    with pytest.raises(StateReconciliationError) as exc_info:
-        state_reconciler._handle_since_changes(FEED_ID, config, {})
-
-    assert exc_info.value.feed_id == FEED_ID
-
-
-@pytest.mark.unit
-def test_handle_keep_last_increase(
-    state_reconciler: StateReconciler,
-    mock_download_db: MagicMock,
-    base_feed_config: FeedConfig,
-) -> None:
-    """Increasing keep_last restores archived downloads."""
-    config = deepcopy(base_feed_config)
-    config.keep_last = 15  # Current is 10, so restore 5 more
-
-    mock_download_db.count_downloads_by_status.return_value = 2  # 2 queued/upcoming
     mock_download_db.get_downloads_by_status.return_value = [
         MOCK_ARCHIVED_DOWNLOAD_1,
         MOCK_ARCHIVED_DOWNLOAD_2,
     ]
     mock_download_db.requeue_downloads.return_value = 2
 
-    db_feed = deepcopy(MOCK_FEED)
-    db_feed.total_downloads = 10
-
     log_params = {"feed_id": FEED_ID}
-    result = state_reconciler._handle_keep_last_changes(
-        FEED_ID, config, db_feed, log_params
+    result = state_reconciler._handle_pruning_changes(
+        FEED_ID,
+        config_since=datetime(2024, 5, 1, tzinfo=UTC),  # Earlier than DB since
+        config_keep_last=None,
+        db_feed=db_feed,
+        log_params=log_params,
     )
 
     assert result is True
     mock_download_db.get_downloads_by_status.assert_called_once_with(
         DownloadStatus.ARCHIVED,
         feed_id=FEED_ID,
-        limit=3,  # 15 - (10 + 2)
+        published_after=datetime(2024, 5, 1, tzinfo=UTC),
+        limit=-1,  # No keep_last limit
     )
     mock_download_db.requeue_downloads.assert_called_once_with(
         FEED_ID, ["archived_1", "archived_2"], from_status=DownloadStatus.ARCHIVED
@@ -506,27 +463,281 @@ def test_handle_keep_last_increase(
 
 
 @pytest.mark.unit
-def test_handle_keep_last_already_at_limit(
+def test_handle_pruning_changes_since_removal_only(
     state_reconciler: StateReconciler,
     mock_download_db: MagicMock,
-    base_feed_config: FeedConfig,
 ) -> None:
-    """No restoration when already at keep_last limit."""
-    config = deepcopy(base_feed_config)
-    config.keep_last = 10  # Same as current
-
-    mock_download_db.count_downloads_by_status.return_value = 0  # No queued
-
+    """Removing 'since' filter restores all archived downloads."""
     db_feed = deepcopy(MOCK_FEED)
-    db_feed.total_downloads = 10
+    db_feed.since = datetime(2024, 6, 1, tzinfo=UTC)
+    db_feed.keep_last = None
+    db_feed.total_downloads = 5
+
+    mock_download_db.get_downloads_by_status.return_value = [
+        MOCK_ARCHIVED_DOWNLOAD_1,
+        MOCK_ARCHIVED_DOWNLOAD_2,
+    ]
+    mock_download_db.requeue_downloads.return_value = 2
 
     log_params = {"feed_id": FEED_ID}
-    result = state_reconciler._handle_keep_last_changes(
-        FEED_ID, config, db_feed, log_params
+    result = state_reconciler._handle_pruning_changes(
+        FEED_ID,
+        config_since=None,  # Removing since filter
+        config_keep_last=None,
+        db_feed=db_feed,
+        log_params=log_params,
+    )
+
+    assert result is True
+    mock_download_db.get_downloads_by_status.assert_called_once_with(
+        DownloadStatus.ARCHIVED,
+        feed_id=FEED_ID,
+        published_after=None,  # No date filter
+        limit=-1,  # No keep_last limit
+    )
+
+
+@pytest.mark.unit
+def test_handle_pruning_changes_since_stricter_no_restoration(
+    state_reconciler: StateReconciler,
+    mock_download_db: MagicMock,
+) -> None:
+    """Making 'since' filter stricter does not restore downloads."""
+    db_feed = deepcopy(MOCK_FEED)
+    db_feed.since = datetime(2024, 5, 1, tzinfo=UTC)
+    db_feed.keep_last = None
+    db_feed.total_downloads = 5
+
+    log_params = {"feed_id": FEED_ID}
+    result = state_reconciler._handle_pruning_changes(
+        FEED_ID,
+        config_since=datetime(2024, 7, 1, tzinfo=UTC),  # Later than DB since
+        config_keep_last=None,
+        db_feed=db_feed,
+        log_params=log_params,
     )
 
     assert result is False
     mock_download_db.get_downloads_by_status.assert_not_called()
+
+
+@pytest.mark.unit
+def test_handle_pruning_changes_keep_last_increase_only(
+    state_reconciler: StateReconciler,
+    mock_download_db: MagicMock,
+) -> None:
+    """Increasing keep_last restores archived downloads."""
+    db_feed = deepcopy(MOCK_FEED)
+    db_feed.since = None
+    db_feed.keep_last = 5
+    db_feed.total_downloads = 5
+
+    mock_download_db.get_downloads_by_status.return_value = [
+        MOCK_ARCHIVED_DOWNLOAD_1,
+        MOCK_ARCHIVED_DOWNLOAD_2,
+    ]
+    mock_download_db.requeue_downloads.return_value = 2
+
+    log_params = {"feed_id": FEED_ID}
+    result = state_reconciler._handle_pruning_changes(
+        FEED_ID,
+        config_since=None,
+        config_keep_last=10,  # Increase from 5 to 10
+        db_feed=db_feed,
+        log_params=log_params,
+    )
+
+    assert result is True
+    mock_download_db.get_downloads_by_status.assert_called_once_with(
+        DownloadStatus.ARCHIVED,
+        feed_id=FEED_ID,
+        published_after=None,  # No since filter
+        limit=5,  # 10 - 5 available slots
+    )
+
+
+@pytest.mark.unit
+def test_handle_pruning_changes_since_removal_with_keep_last_limit(
+    state_reconciler: StateReconciler,
+    mock_download_db: MagicMock,
+) -> None:
+    """Removing 'since' filter is limited by keep_last constraint."""
+    db_feed = deepcopy(MOCK_FEED)
+    db_feed.since = datetime(2024, 6, 1, tzinfo=UTC)
+    db_feed.keep_last = 8
+    db_feed.total_downloads = 5
+
+    mock_download_db.get_downloads_by_status.return_value = [
+        MOCK_ARCHIVED_DOWNLOAD_1,
+        MOCK_ARCHIVED_DOWNLOAD_2,
+    ]
+    mock_download_db.requeue_downloads.return_value = 2
+
+    log_params = {"feed_id": FEED_ID}
+    result = state_reconciler._handle_pruning_changes(
+        FEED_ID,
+        config_since=None,  # Remove since filter
+        config_keep_last=8,  # But keep_last limits restoration
+        db_feed=db_feed,
+        log_params=log_params,
+    )
+
+    assert result is True
+    mock_download_db.get_downloads_by_status.assert_called_once_with(
+        DownloadStatus.ARCHIVED,
+        feed_id=FEED_ID,
+        published_after=None,  # No date filter
+        limit=3,  # 8 - 5 available slots
+    )
+
+
+@pytest.mark.unit
+def test_handle_pruning_changes_since_expansion_blocked_by_keep_last(
+    state_reconciler: StateReconciler,
+    mock_download_db: MagicMock,
+) -> None:
+    """Since expansion is blocked when keep_last limit is already reached."""
+    db_feed = deepcopy(MOCK_FEED)
+    db_feed.since = datetime(2024, 6, 1, tzinfo=UTC)
+    db_feed.keep_last = 5
+    db_feed.total_downloads = 5  # Already at limit
+
+    log_params = {"feed_id": FEED_ID}
+    result = state_reconciler._handle_pruning_changes(
+        FEED_ID,
+        config_since=datetime(2024, 5, 1, tzinfo=UTC),  # Earlier than DB since
+        config_keep_last=5,  # Already at limit
+        db_feed=db_feed,
+        log_params=log_params,
+    )
+
+    assert result is False
+    mock_download_db.get_downloads_by_status.assert_not_called()
+
+
+@pytest.mark.unit
+def test_handle_pruning_changes_both_policies_change(
+    state_reconciler: StateReconciler,
+    mock_download_db: MagicMock,
+) -> None:
+    """Both since expansion and keep_last increase work together."""
+    db_feed = deepcopy(MOCK_FEED)
+    db_feed.since = datetime(2024, 6, 1, tzinfo=UTC)
+    db_feed.keep_last = 5
+    db_feed.total_downloads = 4
+
+    mock_download_db.get_downloads_by_status.return_value = [
+        MOCK_ARCHIVED_DOWNLOAD_1,
+    ]
+    mock_download_db.requeue_downloads.return_value = 1
+
+    log_params = {"feed_id": FEED_ID}
+    result = state_reconciler._handle_pruning_changes(
+        FEED_ID,
+        config_since=datetime(2024, 5, 1, tzinfo=UTC),  # Earlier than DB since
+        config_keep_last=8,  # Increase from 5 to 8
+        db_feed=db_feed,
+        log_params=log_params,
+    )
+
+    assert result is True
+    mock_download_db.get_downloads_by_status.assert_called_once_with(
+        DownloadStatus.ARCHIVED,
+        feed_id=FEED_ID,
+        published_after=datetime(2024, 5, 1, tzinfo=UTC),  # Since filter applied
+        limit=4,  # 8 - 4 available slots
+    )
+
+
+@pytest.mark.unit
+def test_handle_pruning_changes_since_expansion_limited_by_new_keep_last(
+    state_reconciler: StateReconciler,
+    mock_download_db: MagicMock,
+) -> None:
+    """Since expansion is limited by newly added keep_last constraint."""
+    db_feed = deepcopy(MOCK_FEED)
+    db_feed.since = datetime(2024, 8, 1, tzinfo=UTC)  # Original since date
+    db_feed.keep_last = None  # No previous keep_last
+    db_feed.total_downloads = 10
+
+    # Mock 5 archived downloads that would be restored by since expansion
+    mock_archived_downloads = [
+        MOCK_ARCHIVED_DOWNLOAD_1,
+        MOCK_ARCHIVED_DOWNLOAD_2,
+    ]
+    mock_download_db.get_downloads_by_status.return_value = mock_archived_downloads
+    mock_download_db.requeue_downloads.return_value = 2  # Only 2 restored due to limit
+
+    log_params = {"feed_id": FEED_ID}
+    result = state_reconciler._handle_pruning_changes(
+        FEED_ID,
+        config_since=datetime(2024, 7, 1, tzinfo=UTC),  # Expand since further back
+        config_keep_last=12,  # Add keep_last allowing only 2 more (12-10=2)
+        db_feed=db_feed,
+        log_params=log_params,
+    )
+
+    assert result is True
+    mock_download_db.get_downloads_by_status.assert_called_once_with(
+        DownloadStatus.ARCHIVED,
+        feed_id=FEED_ID,
+        published_after=datetime(2024, 7, 1, tzinfo=UTC),  # Since filter applied
+        limit=2,  # Limited by keep_last: 12 - 10 = 2
+    )
+
+
+@pytest.mark.unit
+def test_handle_pruning_changes_no_archived_downloads(
+    state_reconciler: StateReconciler,
+    mock_download_db: MagicMock,
+) -> None:
+    """No restoration when no archived downloads are available."""
+    db_feed = deepcopy(MOCK_FEED)
+    db_feed.since = datetime(2024, 6, 1, tzinfo=UTC)
+    db_feed.keep_last = None
+    db_feed.total_downloads = 5
+
+    mock_download_db.get_downloads_by_status.return_value = []  # No archived downloads
+
+    log_params = {"feed_id": FEED_ID}
+    result = state_reconciler._handle_pruning_changes(
+        FEED_ID,
+        config_since=datetime(2024, 5, 1, tzinfo=UTC),  # Earlier than DB since
+        config_keep_last=None,
+        db_feed=db_feed,
+        log_params=log_params,
+    )
+
+    assert result is False
+    mock_download_db.requeue_downloads.assert_not_called()
+
+
+@pytest.mark.unit
+def test_handle_pruning_changes_database_error(
+    state_reconciler: StateReconciler,
+    mock_download_db: MagicMock,
+) -> None:
+    """Database error during pruning changes is wrapped."""
+    db_feed = deepcopy(MOCK_FEED)
+    db_feed.since = datetime(2024, 6, 1, tzinfo=UTC)
+    db_feed.keep_last = None
+    db_feed.total_downloads = 5
+
+    mock_download_db.get_downloads_by_status.side_effect = DatabaseOperationError(
+        "DB error"
+    )
+
+    log_params = {"feed_id": FEED_ID}
+    with pytest.raises(StateReconciliationError) as exc_info:
+        state_reconciler._handle_pruning_changes(
+            FEED_ID,
+            config_since=datetime(2024, 5, 1, tzinfo=UTC),
+            config_keep_last=None,
+            db_feed=db_feed,
+            log_params=log_params,
+        )
+
+    assert exc_info.value.feed_id == FEED_ID
 
 
 # --- Tests for StateReconciler.reconcile_startup_state ---

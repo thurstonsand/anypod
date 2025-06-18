@@ -545,6 +545,43 @@ class Enqueuer:
         self._upsert_download_in_db(download, log_params)
         return download.status == DownloadStatus.QUEUED
 
+    def _get_download_metadata_changes(
+        self, existing_download: Download, fetched_download: Download
+    ) -> dict[str, Any]:
+        """Get changed metadata fields between existing and fetched download versions.
+
+        Args:
+            existing_download: The existing Download from the database.
+            fetched_download: The newly fetched Download object.
+
+        Returns:
+            Dict of changed fields with new values, matching the parameters
+            of update_download_metadata method.
+        """
+        changes: dict[str, Any] = {}
+
+        # Compare each metadata field that can change
+        if existing_download.title != fetched_download.title:
+            changes["title"] = fetched_download.title
+        if existing_download.published != fetched_download.published:
+            changes["published"] = fetched_download.published
+        if existing_download.ext != fetched_download.ext:
+            changes["ext"] = fetched_download.ext
+        if existing_download.mime_type != fetched_download.mime_type:
+            changes["mime_type"] = fetched_download.mime_type
+        if existing_download.filesize != fetched_download.filesize:
+            changes["filesize"] = fetched_download.filesize
+        if existing_download.duration != fetched_download.duration:
+            changes["duration"] = fetched_download.duration
+        if existing_download.thumbnail != fetched_download.thumbnail:
+            changes["thumbnail"] = fetched_download.thumbnail
+        if existing_download.description != fetched_download.description:
+            changes["description"] = fetched_download.description
+        if existing_download.quality_info != fetched_download.quality_info:
+            changes["quality_info"] = fetched_download.quality_info
+
+        return changes
+
     def _handle_existing_fetched_download(
         self,
         existing_db_download: Download,
@@ -552,7 +589,7 @@ class Enqueuer:
         feed_id: str,
         log_params: dict[str, Any],
     ) -> bool:
-        """Handle an existing download based on status comparison.
+        """Handle an existing download based on status comparison and metadata changes.
 
         Args:
             existing_db_download: The existing Download from the database.
@@ -568,6 +605,30 @@ class Enqueuer:
             "existing_db_status": existing_db_download.status,
         }
 
+        # Always check for metadata changes first, regardless of status
+        metadata_changes = self._get_download_metadata_changes(
+            existing_db_download, fetched_download
+        )
+        if metadata_changes:
+            logger.info(
+                "Download metadata has changed. Updating metadata.",
+                extra={
+                    **current_log_params,
+                    "changed_fields": list(metadata_changes.keys()),
+                },
+            )
+            try:
+                self._download_db.update_download_metadata(
+                    feed_id, fetched_download.id, **metadata_changes
+                )
+            except (DownloadNotFoundError, DatabaseOperationError) as e:
+                raise EnqueueError(
+                    "Failed to update download metadata.",
+                    feed_id=feed_id,
+                    download_id=fetched_download.id,
+                ) from e
+
+        # Handle status changes separately
         match (existing_db_download.status, fetched_download.status):
             case (DownloadStatus.UPCOMING, DownloadStatus.QUEUED as fetched_status):
                 logger.info(
@@ -587,7 +648,7 @@ class Enqueuer:
                     ) from e
             case (DownloadStatus.DOWNLOADED, DownloadStatus.QUEUED):
                 logger.debug(
-                    "Existing DOWNLOADED item found in feed, ignoring.",
+                    "Existing DOWNLOADED item found in feed, ignoring status change.",
                     extra=current_log_params,
                 )
                 return False
@@ -617,7 +678,7 @@ class Enqueuer:
                 DownloadStatus.QUEUED as fetched_status,
             ):
                 logger.debug(
-                    f"Existing download status '{existing_status}' matches fetched '{fetched_status}'. No action needed.",
+                    f"Existing download status '{existing_status}' matches fetched '{fetched_status}'. No status change needed.",
                     extra=current_log_params,
                 )
                 return False

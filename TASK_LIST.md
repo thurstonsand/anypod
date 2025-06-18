@@ -307,10 +307,13 @@ This section details the components that manage the lifecycle of downloads, from
 - [x] **Documentation Updates**:
   - [x] Update method docstrings: document day-aligned window strategy clearly
   - [x] Update DESIGN_DOC.md: add section explaining yt-dlp day-level precision limitation
-- [ ] **State Reconciler Alignment**:
-  - [ ] Update `since` parameter handling: should only be a `date`, not a `datetime`
-  - [ ] When `since` changes, use day-aligned logic for requeuing archived downloads
-  - [ ] Ensure consistency between enqueue windows and retention policy windows
+- [x] **State Reconciler Alignment**:
+  - [x] Update `since` parameter handling: should only be a `date`, not a `datetime`
+  - [x] When `since` changes, use day-aligned logic for requeuing archived downloads
+  - [x] Ensure consistency between enqueue windows and retention policy windows
+- [ ] Tie Feed table `total_downloads` to the Download table with triggers
+- [ ] Add `total_active` to Feed, also tied with triggers (maybe not -- i think pruning should only count currently downloaded files, not upcoming/queued)
+  - potentially change @src/anypod/state_reconciler.py#L192-200
 
 ### 5.2 Init State Reconciliation
 

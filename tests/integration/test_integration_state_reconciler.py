@@ -410,7 +410,7 @@ def test_since_expansion_restores_downloads(
         source_type=SourceType.CHANNEL,
         source_url="https://example.com/since",
         last_successful_sync=BASE_TIME,
-        since=datetime(2024, 7, 1, tzinfo=UTC),  # Original since
+        since=datetime(2024, 8, 15, tzinfo=UTC),  # Original since
     )
     feed_db.upsert_feed(feed)
 

@@ -101,14 +101,24 @@ class StateReconciler:
                 feed_id=feed_id,
             ) from e
 
-    def _handle_since_changes(
-        self, feed_id: str, config: FeedConfig, log_params: dict[str, Any]
+    def _handle_pruning_changes(
+        self,
+        feed_id: str,
+        config_since: datetime | None,
+        config_keep_last: int | None,
+        db_feed: Feed,
+        log_params: dict[str, Any],
     ) -> bool:
-        """Handle changes to the 'since' retention policy.
+        """Handle changes to retention policies (since and keep_last) together.
+
+        This method considers both retention policies simultaneously to determine
+        the set of downloads to restore from archived status.
 
         Args:
             feed_id: The feed identifier.
-            config: The FeedConfig from YAML.
+            config_since: The 'since' value from config (or None).
+            config_keep_last: The 'keep_last' value from config (or None).
+            db_feed: The existing Feed from database.
             log_params: Logging parameters for context.
 
         Returns:
@@ -117,31 +127,153 @@ class StateReconciler:
         Raises:
             StateReconciliationError: If database operations fail.
         """
-        # TODO: this is bad behavior, we NEED to store the since value to detect changes (could have been previously defined)
-        if not config.since:
+        # Check if either retention policy has changed
+        since_changed = config_since != db_feed.since
+        keep_last_changed = config_keep_last != db_feed.keep_last
+
+        if not since_changed and not keep_last_changed:
             return False
 
-        # Find archived downloads that should be restored due to 'since' expansion
+        match (db_feed.since, config_since):
+            case (None, None):
+                should_restore = False
+                restore_filter_date = None
+            case (None, config_since):
+                # Adding 'since' filter - no restoration needed (making filter stricter)
+                # Pruner will handle this case automatically
+                logger.debug(
+                    f"'since' filter added ({config_since}), no restoration needed.",
+                    extra={
+                        **log_params,
+                        "old_since": None,
+                        "new_since": config_since,
+                    },
+                )
+                should_restore = False
+                restore_filter_date = None
+            case (db_since, None):
+                # Removing 'since' filter - potentially restore all archived downloads
+                logger.info(
+                    f"'since' filter removed (was {db_since}), considering all archived downloads for restoration.",
+                    extra={**log_params, "old_since": db_since, "new_since": None},
+                )
+                should_restore = True
+                restore_filter_date = None
+            case (db_since, config_since) if config_since < db_since:
+                # Expanding 'since' to earlier date - restore downloads between the dates
+                logger.info(
+                    f"'since' date expanded from {db_since} to {config_since}, considering downloads after {config_since} for restoration.",
+                    extra={
+                        **log_params,
+                        "old_since": db_since,
+                        "new_since": config_since,
+                    },
+                )
+                should_restore = True
+                restore_filter_date = config_since
+            case (db_since, config_since):
+                # Unchanged or `since` filter made stricter - no restoration needed
+                # Pruner will handle this case automatically
+                logger.debug(
+                    f"'since' date made stricter from {db_since} to {config_since}, no restoration needed.",
+                    extra={
+                        **log_params,
+                        "old_since": db_since,
+                        "new_since": config_since,
+                    },
+                )
+                should_restore = False
+                restore_filter_date = None
+
+        # Handle 'keep_last' changes and determine restoration limit
+        match db_feed.keep_last, config_keep_last, db_feed.total_downloads:
+            case (None, None, _):
+                # No keep_last constraint, no contribution to restoration limit
+                logger.debug(
+                    "No 'keep_last' constraint, no contribution to restoration limit.",
+                    extra=log_params,
+                )
+                restore_limit = -1
+            case (_, config_keep_last, total_downloads) if (
+                config_keep_last is not None and config_keep_last > total_downloads
+            ):
+                # Keep_last allows restoration - can restore up to the difference
+                available_slots = config_keep_last - total_downloads
+                logger.info(
+                    f"'keep_last' limit allows restoration, can restore up to {available_slots} archived downloads.",
+                    extra={
+                        **log_params,
+                        "old_keep_last": db_feed.keep_last,
+                        "new_keep_last": config_keep_last,
+                    },
+                )
+                should_restore = True
+                restore_limit = available_slots
+            case (db_keep_last, None, _):
+                # Removing 'keep_last' filter - potentially restore all archived downloads
+                logger.info(
+                    f"'keep_last' filter removed (was {db_keep_last}), considering all archived downloads for restoration.",
+                    extra={
+                        **log_params,
+                        "old_keep_last": db_keep_last,
+                        "new_keep_last": None,
+                    },
+                )
+                should_restore = True
+                restore_limit = -1
+            case (_, config_keep_last, _):
+                # Keep_last exists and is less than total downloads - constrains restoration
+                # This overrides any since expansion since we're at/above the limit
+                logger.debug(
+                    "'keep_last' limit constrains restoration.",
+                    extra={
+                        **log_params,
+                        "old_keep_last": db_feed.keep_last,
+                        "new_keep_last": config_keep_last,
+                    },
+                )
+                should_restore = False
+                restore_limit = -1
+
+        # Check if we should restore based on the combined policies
+        if not should_restore:
+            return False
+
+        # Find archived downloads that should be restored
         try:
             downloads_to_restore = self._download_db.get_downloads_by_status(
-                DownloadStatus.ARCHIVED, feed_id=feed_id, published_after=config.since
+                DownloadStatus.ARCHIVED,
+                feed_id=feed_id,
+                published_after=restore_filter_date,  # None means all downloads
+                limit=restore_limit,
             )
         except DatabaseOperationError as e:
             raise StateReconciliationError(
-                "Failed to fetch archived downloads for 'since' policy check.",
+                "Failed to fetch archived downloads for retention policy check.",
                 feed_id=feed_id,
             ) from e
 
         if not downloads_to_restore:
             logger.debug(
-                "No archived downloads to restore for 'since' expansion.",
+                "No archived downloads to restore for retention policy changes.",
                 extra=log_params,
             )
             return False
 
+        # Log the restoration details
+        restore_reason: list[str] = []
+        if since_changed:
+            restore_reason.append("'since' expansion")
+        if keep_last_changed and config_keep_last is not None:
+            restore_reason.append("'keep_last' increase")
+
         logger.info(
-            f"Restoring {len(downloads_to_restore)} archived downloads due to 'since' expansion.",
-            extra={**log_params, "since_date": config.since.isoformat()},
+            f"Restoring {len(downloads_to_restore)} archived downloads due to {' and '.join(restore_reason)}.",
+            extra={
+                **log_params,
+                "since_date": config_since.isoformat() if config_since else None,
+                "keep_last": config_keep_last,
+            },
         )
 
         # Restore downloads to QUEUED status in batch
@@ -161,105 +293,6 @@ class StateReconciler:
             ) from e
 
         return True
-
-    def _handle_keep_last_changes(
-        self,
-        feed_id: str,
-        config: FeedConfig,
-        db_feed: Feed,
-        log_params: dict[str, Any],
-    ) -> bool:
-        """Handle changes to the 'keep_last' retention policy.
-
-        Args:
-            feed_id: The feed identifier.
-            config: The FeedConfig from YAML.
-            db_feed: The existing Feed from database.
-            log_params: Logging parameters for context.
-
-        Returns:
-            True if changes were applied.
-
-        Raises:
-            StateReconciliationError: If database operations fail.
-        """
-        if not config.keep_last:
-            return False
-
-        # Count current non-archived downloads
-        current_downloaded_count = db_feed.total_downloads
-
-        try:
-            current_active_count = self._download_db.count_downloads_by_status(
-                [DownloadStatus.QUEUED, DownloadStatus.UPCOMING], feed_id=feed_id
-            )
-        except DatabaseOperationError as e:
-            raise StateReconciliationError(
-                "Failed to count current downloads for 'keep_last' policy check.",
-                feed_id=feed_id,
-            ) from e
-
-        current_total = current_downloaded_count + current_active_count
-
-        # If we're under the keep_last limit, try to restore archived downloads
-        if current_total < config.keep_last:
-            restore_count = config.keep_last - current_total
-
-            logger.info(
-                f"Current download count ({current_total}) is below keep_last ({config.keep_last}). "
-                f"Attempting to restore {restore_count} archived downloads.",
-                extra=log_params,
-            )
-
-            try:
-                # Get archived downloads, newest first
-                archived_downloads = self._download_db.get_downloads_by_status(
-                    DownloadStatus.ARCHIVED,
-                    feed_id=feed_id,
-                    limit=restore_count,
-                )
-            except DatabaseOperationError as e:
-                raise StateReconciliationError(
-                    "Failed to fetch archived downloads for 'keep_last' restoration.",
-                    feed_id=feed_id,
-                ) from e
-
-            if not archived_downloads:
-                logger.debug(
-                    "No archived downloads to restore for 'keep_last' policy.",
-                    extra=log_params,
-                )
-                return False
-
-            logger.info(
-                f"Restoring {len(archived_downloads)} archived downloads due to 'keep_last' increase.",
-                extra={**log_params, "keep_last": config.keep_last},
-            )
-
-            # Restore downloads to QUEUED status in batch
-            download_ids = [dl.id for dl in archived_downloads]
-            try:
-                count_restored = self._download_db.requeue_downloads(
-                    feed_id, download_ids, from_status=DownloadStatus.ARCHIVED
-                )
-                logger.info(
-                    f"Successfully restored {count_restored} archived downloads to QUEUED.",
-                    extra={**log_params, "count_restored": count_restored},
-                )
-            except DatabaseOperationError as e:
-                raise StateReconciliationError(
-                    "Failed to restore archived downloads.",
-                    feed_id=feed_id,
-                ) from e
-
-            return True
-
-        else:
-            logger.debug(
-                f"Current download count ({current_total}) meets or exceeds keep_last ({config.keep_last}). No restoration needed.",
-                extra=log_params,
-            )
-            return False
 
     def _handle_existing_feed(
         self, feed_id: str, feed_config: FeedConfig, db_feed: Feed
@@ -346,13 +379,15 @@ class StateReconciler:
             if metadata.explicit != db_feed.explicit:
                 updated_feed.explicit = metadata.explicit
 
+        # Update retention policies
         if feed_config.since != db_feed.since:
             updated_feed.since = feed_config.since
-            self._handle_since_changes(feed_id, feed_config, log_params)
-
         if feed_config.keep_last != db_feed.keep_last:
             updated_feed.keep_last = feed_config.keep_last
-            self._handle_keep_last_changes(feed_id, feed_config, db_feed, log_params)
+
+        self._handle_pruning_changes(
+            feed_id, feed_config.since, feed_config.keep_last, db_feed, log_params
+        )
 
         if updated_feed != db_feed:
             logger.info("Feed configuration changes applied.", extra=log_params)
