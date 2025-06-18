@@ -2,6 +2,7 @@
 
 """Tests for the Enqueuer service and its download queue management."""
 
+from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, call
 
@@ -565,10 +566,9 @@ def test_fetch_and_process_new_feed_downloads_existing_upcoming_now_vod(
 
     assert count == 1
     mock_download_db.get_download_by_id.assert_called_once_with(FEED_ID, "video_live1")
-    mock_download_db.mark_as_queued_from_upcoming.assert_called_once_with(
-        FEED_ID, "video_live1"
-    )
-    mock_download_db.upsert_download.assert_not_called()
+    mock_download_db.upsert_download.assert_called_once()
+    upserted_download = mock_download_db.upsert_download.call_args[0][0]
+    assert upserted_download == fetched_as_vod
 
 
 @pytest.mark.unit
@@ -618,8 +618,9 @@ def test_fetch_and_process_new_feed_downloads_existing_error_requeued(
 
     assert count == 1  # Because it was re-queued
     mock_download_db.get_download_by_id.assert_called_once_with(FEED_ID, "video_err")
-    mock_download_db.requeue_downloads.assert_called_once_with(FEED_ID, "video_err")
-    mock_download_db.upsert_download.assert_not_called()
+    mock_download_db.upsert_download.assert_called_once()
+    upserted_download = mock_download_db.upsert_download.call_args[0][0]
+    assert upserted_download == fetched_as_queued
 
 
 # --- Tests for Enqueuer.enqueue_new_downloads ---
@@ -709,24 +710,44 @@ def test_enqueue_new_downloads_full_flow_mixed_scenarios(
         ]
     )
 
-    # Assert download_db.update_status calls
-    # Called for upcoming1_db (True) and for existing_up3_db (True)
-    # Reset side_effect for update_status for clarity in this specific test's assertions
+    # Assert download_db calls
+    # - mark_as_queued_from_upcoming called for upcoming1_db (from _handle_existing_upcoming_downloads)
+    # - upsert_download called for new_vod_feed, existing_up3_db (with updated status), and new_upcoming_feed
     mock_download_db.mark_as_queued_from_upcoming.assert_has_calls(
         [
             call(FEED_ID, upcoming1_db.id),
-            call(FEED_ID, existing_up3_db.id),
         ]
     )
-    assert mock_download_db.mark_as_queued_from_upcoming.call_count == 2
+    assert mock_download_db.mark_as_queued_from_upcoming.call_count == 1
 
-    mock_download_db.upsert_download.assert_has_calls(
-        [
-            call(new_vod_feed),
-            call(new_upcoming_feed),
-        ]
+    # Should include: new_vod_feed, updated existing_up3_db (with QUEUED status), new_upcoming_feed
+    expected_upsert_calls = [
+        call(new_vod_feed),
+        call(new_upcoming_feed),
+    ]
+    # For existing_up3_db, we expect an upsert with updated status to QUEUED
+    # We need to check that upsert was called with a download that has the right id and QUEUED status
+    upsert_calls = mock_download_db.upsert_download.call_args_list
+    # new_vod_feed, existing_up3_db (updated), new_upcoming_feed
+    assert len(upsert_calls) == 3
+
+    # Check that the calls include the expected new downloads
+    for expected_call in expected_upsert_calls:
+        assert expected_call in upsert_calls
+
+    # Check that one of the upsert calls is for existing_up3_db with QUEUED status
+    found_up3_update = False
+    for call_args in upsert_calls:
+        download = call_args[0][0]  # First positional argument is the Download
+        if (
+            download.id == existing_up3_db.id
+            and download.status == DownloadStatus.QUEUED
+        ):
+            found_up3_update = True
+            break
+    assert found_up3_update, (
+        "Expected upsert call for existing_up3_db with QUEUED status"
     )
-    assert mock_download_db.upsert_download.call_count == 2
 
 
 @pytest.mark.unit
@@ -835,11 +856,7 @@ def test_enqueue_deduplication_with_same_day_overlapping_windows(
         call_count["value"] += 1
         if download_id == "test_video_same_day" and call_count["value"] > 1:
             # Second call: return the existing download (simulates deduplication)
-            existing = create_download(
-                id="test_video_same_day",
-                status=DownloadStatus.QUEUED,
-                published_offset_days=-1,
-            )
+            existing = deepcopy(test_download)
             existing.updated_at = datetime(
                 2025, 6, 17, 10, 0, 0, tzinfo=UTC
             )  # Fixed timestamp

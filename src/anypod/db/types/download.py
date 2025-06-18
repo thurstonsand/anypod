@@ -122,3 +122,31 @@ class Download:
     def __hash__(self) -> int:
         # Hash is based solely on the composite primary key
         return hash((self.feed, self.id))
+
+    def content_equals(self, other: "Download") -> bool:
+        """Compare downloads excluding timestamp fields.
+
+        Compares all fields except discovered_at and updated_at, which are
+        automatically managed by the database.
+
+        Args:
+            other: The other Download to compare against.
+
+        Returns:
+            True if all content fields are equal.
+        """
+        return (
+            self.feed == other.feed
+            and self.id == other.id
+            and self.source_url == other.source_url
+            and self.title == other.title
+            and self.published == other.published
+            and self.ext == other.ext
+            and self.mime_type == other.mime_type
+            and self.filesize == other.filesize
+            and self.duration == other.duration
+            and self.status == other.status
+            and self.thumbnail == other.thumbnail
+            and self.description == other.description
+            and self.quality_info == other.quality_info
+        )

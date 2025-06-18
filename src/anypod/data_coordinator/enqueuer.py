@@ -5,6 +5,7 @@ feed metadata, identifying new downloads, and managing their status in the
 database for subsequent processing by the Downloader.
 """
 
+from copy import deepcopy
 from datetime import datetime
 import logging
 from typing import Any
@@ -96,28 +97,6 @@ class Enqueuer:
                     extra=log_params_base,
                 )
         return transitioned_to_error_state
-
-    # TODO: if this fails, download is lost forever
-    def _upsert_download_in_db(
-        self, download: Download, log_params_base: dict[str, Any]
-    ) -> None:
-        """Upsert a download in the database.
-
-        Args:
-            download: The Download object to upsert.
-            log_params_base: Relevant logging parameters.
-        """
-        try:
-            self._download_db.upsert_download(download)
-            logger.debug(
-                "Successfully upserted download.", extra=log_params_base
-            )  # Changed to debug for less noise on normal ops
-        except DatabaseOperationError as e:
-            logger.error(
-                "Database error upserting download.",
-                extra=log_params_base,
-                exc_info=e,
-            )
 
     # --- Helpers for _handle_existing_upcoming_downloads ---
 
@@ -526,6 +505,7 @@ class Enqueuer:
                 feed_id=feed_id,
             ) from e
 
+    # TODO: if this fails, download is potentially lost forever
     def _handle_newly_fetched_download(
         self, download: Download, log_params: dict[str, Any]
     ) -> bool:
@@ -542,45 +522,16 @@ class Enqueuer:
             "New download found. Inserting.",
             extra=log_params,
         )
-        self._upsert_download_in_db(download, log_params)
-        return download.status == DownloadStatus.QUEUED
-
-    def _get_download_metadata_changes(
-        self, existing_download: Download, fetched_download: Download
-    ) -> dict[str, Any]:
-        """Get changed metadata fields between existing and fetched download versions.
-
-        Args:
-            existing_download: The existing Download from the database.
-            fetched_download: The newly fetched Download object.
-
-        Returns:
-            Dict of changed fields with new values, matching the parameters
-            of update_download_metadata method.
-        """
-        changes: dict[str, Any] = {}
-
-        # Compare each metadata field that can change
-        if existing_download.title != fetched_download.title:
-            changes["title"] = fetched_download.title
-        if existing_download.published != fetched_download.published:
-            changes["published"] = fetched_download.published
-        if existing_download.ext != fetched_download.ext:
-            changes["ext"] = fetched_download.ext
-        if existing_download.mime_type != fetched_download.mime_type:
-            changes["mime_type"] = fetched_download.mime_type
-        if existing_download.filesize != fetched_download.filesize:
-            changes["filesize"] = fetched_download.filesize
-        if existing_download.duration != fetched_download.duration:
-            changes["duration"] = fetched_download.duration
-        if existing_download.thumbnail != fetched_download.thumbnail:
-            changes["thumbnail"] = fetched_download.thumbnail
-        if existing_download.description != fetched_download.description:
-            changes["description"] = fetched_download.description
-        if existing_download.quality_info != fetched_download.quality_info:
-            changes["quality_info"] = fetched_download.quality_info
-
-        return changes
+        try:
+            self._download_db.upsert_download(download)
+        except DatabaseOperationError as e:
+            raise EnqueueError(
+                "Failed to insert new download.",
+                download_id=download.id,
+            ) from e
+        else:
+            logger.debug("Successfully upserted download.", extra=log_params)
+            return download.status == DownloadStatus.QUEUED
 
     def _handle_existing_fetched_download(
         self,
@@ -605,71 +556,54 @@ class Enqueuer:
             "existing_db_status": existing_db_download.status,
         }
 
-        # Always check for metadata changes first, regardless of status
-        metadata_changes = self._get_download_metadata_changes(
-            existing_db_download, fetched_download
-        )
-        if metadata_changes:
-            logger.info(
-                "Download metadata has changed. Updating metadata.",
-                extra={
-                    **current_log_params,
-                    "changed_fields": list(metadata_changes.keys()),
-                },
-            )
-            try:
-                self._download_db.update_download_metadata(
-                    feed_id, fetched_download.id, **metadata_changes
-                )
-            except (DownloadNotFoundError, DatabaseOperationError) as e:
-                raise EnqueueError(
-                    "Failed to update download metadata.",
-                    feed_id=feed_id,
-                    download_id=fetched_download.id,
-                ) from e
+        # Create a copy of existing download to track changes
+        updated_download = deepcopy(existing_db_download)
 
-        # Handle status changes separately
+        # Apply metadata changes directly to the copy
+        if existing_db_download.source_url != fetched_download.source_url:
+            updated_download.source_url = fetched_download.source_url
+        if existing_db_download.title != fetched_download.title:
+            updated_download.title = fetched_download.title
+        if existing_db_download.published != fetched_download.published:
+            updated_download.published = fetched_download.published
+        if existing_db_download.ext != fetched_download.ext:
+            updated_download.ext = fetched_download.ext
+        if existing_db_download.mime_type != fetched_download.mime_type:
+            updated_download.mime_type = fetched_download.mime_type
+        if existing_db_download.filesize != fetched_download.filesize:
+            updated_download.filesize = fetched_download.filesize
+        if existing_db_download.duration != fetched_download.duration:
+            updated_download.duration = fetched_download.duration
+        if existing_db_download.thumbnail != fetched_download.thumbnail:
+            updated_download.thumbnail = fetched_download.thumbnail
+        if existing_db_download.description != fetched_download.description:
+            updated_download.description = fetched_download.description
+        if existing_db_download.quality_info != fetched_download.quality_info:
+            updated_download.quality_info = fetched_download.quality_info
+
+        # Handle status changes and their side effects
         match (existing_db_download.status, fetched_download.status):
             case (DownloadStatus.UPCOMING, DownloadStatus.QUEUED as fetched_status):
                 logger.info(
                     f"Existing UPCOMING download has transitioned to VOD ({fetched_status}). Updating status.",
                     extra=current_log_params,
                 )
-                try:
-                    self._download_db.mark_as_queued_from_upcoming(
-                        feed_id, fetched_download.id
-                    )
-                    return True
-                except (DownloadNotFoundError, DatabaseOperationError) as e:
-                    raise EnqueueError(
-                        "Download became ready to download, but could not update status to QUEUED.",
-                        feed_id=feed_id,
-                        download_id=fetched_download.id,
-                    ) from e
-            case (DownloadStatus.DOWNLOADED, DownloadStatus.QUEUED):
-                logger.debug(
-                    "Existing DOWNLOADED item found in feed, ignoring status change.",
-                    extra=current_log_params,
-                )
-                return False
+                updated_download.status = DownloadStatus.QUEUED
             case (DownloadStatus.ERROR, DownloadStatus.QUEUED):
-                logger.debug(
+                logger.info(
                     "Existing ERROR download set to be requeued.",
                     extra=current_log_params,
                 )
-                try:
-                    self._download_db.requeue_downloads(feed_id, fetched_download.id)
-                    logger.info(
-                        "Successfully re-queued existing ERROR item.",
-                        extra=current_log_params,
-                    )
-                    return True
-                except (DownloadNotFoundError, DatabaseOperationError) as e:
-                    raise EnqueueError(
-                        "Download was set to be redownloaded, but could not update status to QUEUED.",
-                        feed_id=feed_id,
-                        download_id=fetched_download.id,
-                    ) from e
+                updated_download.status = DownloadStatus.QUEUED
+                # For ERROR->QUEUED transitions, reset retry state
+                updated_download.retries = 0
+                updated_download.last_error = None
+            case (DownloadStatus.DOWNLOADED, DownloadStatus.QUEUED):
+                logger.debug(
+                    "Existing DOWNLOADED item found in feed, skipping.",
+                    extra=current_log_params,
+                )
+                return False
             case (
                 DownloadStatus.UPCOMING as existing_status,
                 DownloadStatus.UPCOMING as fetched_status,
@@ -681,14 +615,34 @@ class Enqueuer:
                     f"Existing download status '{existing_status}' matches fetched '{fetched_status}'. No status change needed.",
                     extra=current_log_params,
                 )
-                return False
             case (existing_status, fetched_status):
                 logger.info(
-                    f"Existing download status '{existing_status}' differs from fetched '{fetched_status}'. Upserting for consistency.",
+                    f"Existing download status '{existing_status}' differs from fetched '{fetched_status}'. Updating status for consistency.",
                     extra=current_log_params,
                 )
-                self._upsert_download_in_db(fetched_download, current_log_params)
-                return fetched_download.status == DownloadStatus.QUEUED
+                updated_download.status = fetched_status
+
+        # Only upsert if there are actual changes
+        if not updated_download.content_equals(existing_db_download):
+            logger.debug(
+                "Changes detected, performing database update.",
+                extra=current_log_params,
+            )
+            try:
+                self._download_db.upsert_download(updated_download)
+            except DatabaseOperationError as e:
+                raise EnqueueError(
+                    "Failed to update download.",
+                    feed_id=feed_id,
+                    download_id=fetched_download.id,
+                ) from e
+            return updated_download.status == DownloadStatus.QUEUED
+        else:
+            logger.debug(
+                "No changes detected, skipping database update.",
+                extra=current_log_params,
+            )
+            return False
 
     def _process_single_download(
         self,
