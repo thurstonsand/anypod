@@ -41,9 +41,7 @@ def sample_feed() -> Feed:
         last_rss_generation=base_time + timedelta(hours=2),
         last_failed_sync=None,
         consecutive_failures=0,
-        last_error=None,
         total_downloads=5,
-        downloads_since_last_rss=2,
         title="Test Feed Title",
         subtitle="Test Feed Subtitle",
         description="Test feed description",
@@ -70,9 +68,7 @@ def sample_feed_row_data() -> dict[str, Any]:
         "last_rss_generation": (base_time - timedelta(hours=2)).isoformat(),
         "last_failed_sync": None,
         "consecutive_failures": 0,
-        "last_error": None,
         "total_downloads": 10,
-        "downloads_since_last_rss": 3,
         "title": "Test Playlist Feed",
         "subtitle": "Test Playlist Subtitle",
         "description": "Test playlist description from DB",
@@ -142,11 +138,7 @@ def test_feed_from_row_success(sample_feed_row_data: dict[str, Any]):
     assert str(converted_feed.category) == mock_row["category"]
     assert str(converted_feed.explicit) == mock_row["explicit"]
     assert converted_feed.total_downloads == mock_row["total_downloads"]
-    assert (
-        converted_feed.downloads_since_last_rss == mock_row["downloads_since_last_rss"]
-    )
     assert converted_feed.consecutive_failures == mock_row["consecutive_failures"]
-    assert converted_feed.last_error == mock_row["last_error"]
 
 
 @pytest.mark.unit
@@ -228,11 +220,7 @@ def test_upsert_and_get_feed(feed_db: FeedDatabase, sample_feed: Feed):
     assert str(retrieved_feed.category) == str(sample_feed.category)
     assert str(retrieved_feed.explicit) == str(sample_feed.explicit)
     assert retrieved_feed.total_downloads == sample_feed.total_downloads
-    assert (
-        retrieved_feed.downloads_since_last_rss == sample_feed.downloads_since_last_rss
-    )
     assert retrieved_feed.consecutive_failures == sample_feed.consecutive_failures
-    assert retrieved_feed.last_error == sample_feed.last_error
 
 
 @pytest.mark.unit
@@ -257,9 +245,7 @@ def test_upsert_feed_updates_existing(feed_db: FeedDatabase, sample_feed: Feed):
         category=PodcastCategories("Business"),  # Changed
         explicit=PodcastExplicit.YES,  # Changed
         total_downloads=15,  # Changed
-        downloads_since_last_rss=5,  # Changed
         consecutive_failures=2,  # Changed
-        last_error="Some error",  # Changed
     )
 
     # Perform upsert with the modified feed
@@ -281,12 +267,7 @@ def test_upsert_feed_updates_existing(feed_db: FeedDatabase, sample_feed: Feed):
     assert str(retrieved_feed.category) == str(modified_feed.category)
     assert str(retrieved_feed.explicit) == str(modified_feed.explicit)
     assert retrieved_feed.total_downloads == modified_feed.total_downloads
-    assert (
-        retrieved_feed.downloads_since_last_rss
-        == modified_feed.downloads_since_last_rss
-    )
     assert retrieved_feed.consecutive_failures == modified_feed.consecutive_failures
-    assert retrieved_feed.last_error == modified_feed.last_error
 
 
 @pytest.mark.unit
@@ -391,7 +372,6 @@ def test_mark_sync_success(feed_db: FeedDatabase, sample_feed: Feed):
     """Test marking a feed sync as successful."""
     # Set up feed with some failures
     sample_feed.consecutive_failures = 3
-    sample_feed.last_error = "Previous error"
     feed_db.upsert_feed(sample_feed)
 
     # Mark sync success
@@ -401,7 +381,6 @@ def test_mark_sync_success(feed_db: FeedDatabase, sample_feed: Feed):
     updated_feed = feed_db.get_feed_by_id(sample_feed.id)
     assert updated_feed.last_successful_sync is not None
     assert updated_feed.consecutive_failures == 0
-    assert updated_feed.last_error is None
 
     # Verify timestamp is recent
     current_time = datetime.now(UTC)
@@ -426,34 +405,29 @@ def test_mark_sync_failure(feed_db: FeedDatabase, sample_feed: Feed):
     """Test marking a feed sync as failed."""
     # Set up feed with no previous failures
     sample_feed.consecutive_failures = 0
-    sample_feed.last_error = None
     feed_db.upsert_feed(sample_feed)
 
     # Mark first failure
-    error_message = "First sync error"
-    feed_db.mark_sync_failure(sample_feed.id, error_message)
+    feed_db.mark_sync_failure(sample_feed.id)
 
     # Verify changes
     updated_feed = feed_db.get_feed_by_id(sample_feed.id)
     assert updated_feed.last_failed_sync is not None
     assert updated_feed.consecutive_failures == 1
-    assert updated_feed.last_error == error_message
 
     # Mark second failure
-    second_error = "Second sync error"
-    feed_db.mark_sync_failure(sample_feed.id, second_error)
+    feed_db.mark_sync_failure(sample_feed.id)
 
     # Verify consecutive failures incremented
     updated_feed2 = feed_db.get_feed_by_id(sample_feed.id)
     assert updated_feed2.consecutive_failures == 2
-    assert updated_feed2.last_error == second_error
 
 
 @pytest.mark.unit
 def test_mark_sync_failure_not_found(feed_db: FeedDatabase):
     """Test marking sync failure for non-existent feed."""
     with pytest.raises(FeedNotFoundError) as exc_info:
-        feed_db.mark_sync_failure("non_existent_feed", "error message")
+        feed_db.mark_sync_failure("non_existent_feed")
 
     assert exc_info.value.feed_id == "non_existent_feed"
 
@@ -466,19 +440,15 @@ def test_mark_rss_generated(feed_db: FeedDatabase, sample_feed: Feed):
     """Test marking RSS generation for a feed."""
     # Set up feed with initial values
     sample_feed.total_downloads = 10
-    sample_feed.downloads_since_last_rss = 0
     feed_db.upsert_feed(sample_feed)
 
-    # Mark RSS generated with 3 new downloads and total of 15 downloaded items
-    new_downloads = 3
-    total_downloads = 15
-    feed_db.mark_rss_generated(sample_feed.id, new_downloads, total_downloads)
+    # Mark RSS generated
+    feed_db.mark_rss_generated(sample_feed.id)
 
     # Verify changes
     updated_feed = feed_db.get_feed_by_id(sample_feed.id)
     assert updated_feed.last_rss_generation is not None
-    assert updated_feed.total_downloads == total_downloads
-    assert updated_feed.downloads_since_last_rss == new_downloads
+    assert updated_feed.total_downloads == sample_feed.total_downloads
 
     # Verify timestamp is recent
     current_time = datetime.now(UTC)
@@ -490,7 +460,7 @@ def test_mark_rss_generated(feed_db: FeedDatabase, sample_feed: Feed):
 def test_mark_rss_generated_not_found(feed_db: FeedDatabase):
     """Test marking RSS generated for non-existent feed."""
     with pytest.raises(FeedNotFoundError) as exc_info:
-        feed_db.mark_rss_generated("non_existent_feed", 5, 10)
+        feed_db.mark_rss_generated("non_existent_feed")
 
     assert exc_info.value.feed_id == "non_existent_feed"
 

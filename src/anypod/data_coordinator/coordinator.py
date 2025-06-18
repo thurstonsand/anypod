@@ -290,6 +290,7 @@ class DataCoordinator:
             # Get Feed object from database for RSS generation
             feed = self._feed_db.get_feed_by_id(feed_id)
             self._rss_generator.update_feed(feed_id, feed)
+            self._feed_db.mark_rss_generated(feed_id)
         except (RSSGenerationError, FeedNotFoundError, DatabaseOperationError) as e:
             duration = time.time() - phase_start
             logger.error(
@@ -322,7 +323,6 @@ class DataCoordinator:
         feed_id: str,
         success: bool,
         fetch_until_date: datetime,
-        error: Exception | None = None,
     ) -> bool:
         """Update the feed's sync status in the database.
 
@@ -330,7 +330,6 @@ class DataCoordinator:
             feed_id: The feed identifier.
             success: Whether the sync was successful.
             fetch_until_date: The upper bound date used during fetch. Used as new sync time if successful.
-            error: The error that occurred (if any).
 
         Returns:
             True if the database update was successful.
@@ -345,11 +344,10 @@ class DataCoordinator:
                     extra={**log_params, "sync_time": fetch_until_date.isoformat()},
                 )
             else:
-                error_message = str(error) if error else "Unknown error"
-                self._feed_db.mark_sync_failure(feed_id, error_message)
+                self._feed_db.mark_sync_failure(feed_id)
                 logger.info(
                     "Feed sync status updated to failure.",
-                    extra={**log_params, "error_message": error_message},
+                    extra=log_params,
                 )
         except (FeedNotFoundError, DatabaseOperationError) as e:
             logger.error(
@@ -446,13 +444,8 @@ class DataCoordinator:
             results.total_duration_seconds = (end_time - start_time).total_seconds()
 
             # Update feed sync status
-            sync_error = results.fatal_error or (
-                results.enqueue_result.errors[0]
-                if results.enqueue_result.errors
-                else None
-            )
             results.feed_sync_updated = self._update_feed_sync_status(
-                feed_id, results.overall_success, fetch_until_date, sync_error
+                feed_id, results.overall_success, fetch_until_date
             )
 
             # Log final results

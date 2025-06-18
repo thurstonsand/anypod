@@ -1,3 +1,9 @@
+---
+description: Rules for tests folder from tests/CLAUDE.md
+globs: tests/**/*
+alwaysApply: false
+---
+
 # CLAUDE.md
 
 ## Testing Guidelines

@@ -305,7 +305,6 @@ def test_handle_existing_feed_enable(
     disabled_feed.is_enabled = False
     disabled_feed.consecutive_failures = 3
     disabled_feed.last_failed_sync = datetime.now(UTC)
-    disabled_feed.last_error = "Previous error"
 
     config = deepcopy(base_feed_config)
     config.enabled = True
@@ -318,7 +317,6 @@ def test_handle_existing_feed_enable(
     assert updated_feed.is_enabled is True
     assert updated_feed.consecutive_failures == 0
     assert updated_feed.last_failed_sync is None
-    assert updated_feed.last_error is None
 
 
 @pytest.mark.unit
@@ -352,7 +350,6 @@ def test_handle_existing_feed_url_change(
     existing_feed = deepcopy(MOCK_FEED)
     existing_feed.source_url = "https://old.example.com/feed"
     existing_feed.consecutive_failures = 2
-    existing_feed.last_error = "Old error"
 
     config = deepcopy(base_feed_config)
     config.url = "https://new.example.com/feed"
@@ -364,7 +361,6 @@ def test_handle_existing_feed_url_change(
     updated_feed = mock_feed_db.upsert_feed.call_args[0][0]
     assert updated_feed.source_url == "https://new.example.com/feed"
     assert updated_feed.consecutive_failures == 0
-    assert updated_feed.last_error is None
 
 
 @pytest.mark.unit

@@ -1,3 +1,9 @@
+---
+description: Project-wide rules from top-level CLAUDE.md
+globs: *
+alwaysApply: true
+---
+
 # CLAUDE.md
 
 ## Project Overview

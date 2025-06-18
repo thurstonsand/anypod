@@ -34,15 +34,37 @@ class DownloadDatabase:
         _download_table_name: Name of the downloads table.
     """
 
-    def __init__(self, db_path: Path | None, memory_name: str | None = None):
+    def __init__(
+        self,
+        db_path: Path | None,
+        memory_name: str | None = None,
+        *,
+        include_triggers: bool = True,
+    ):
+        """Create a new DownloadDatabase instance.
+
+        Args:
+            db_path: Path to the SQLite database file. ``None`` for in-memory.
+            memory_name: Shared in-memory DB identifier.
+            include_triggers: When *False*, skips creation of triggers that
+                update ``feeds.total_downloads``. Useful for unit-testing this
+                class in isolation without creating the ``feeds`` table.
+        """
         self._db_path = db_path
         self._db = SqliteUtilsCore(db_path, memory_name)
         self._download_table_name = "downloads"
-        self._initialize_schema()
-        logger.debug("DownloadDatabase initialized.", extra={"db_path": str(db_path)})
+        self._initialize_schema(include_triggers)
+        logger.debug(
+            "DownloadDatabase initialized.",
+            extra={"db_path": str(db_path), "include_triggers": include_triggers},
+        )
 
-    def _initialize_schema(self) -> None:
-        """Initializes the database schema (tables and indices) if it doesn't exist."""
+    def _initialize_schema(self, include_triggers: bool = True) -> None:
+        """Initialize tables, indices, and optional triggers.
+
+        Args:
+            include_triggers: If True, create triggers that maintain `feeds.total_downloads`.
+        """
         self._db.create_table(
             self._download_table_name,
             {
@@ -114,6 +136,63 @@ class DownloadDatabase:
                 WHERE feed = NEW.feed AND id = NEW.id;
             """,
         )
+
+        # --- Triggers to maintain feeds.total_downloads ---
+        if include_triggers:
+            # After INSERT: increment total_downloads when a newly inserted download has status DOWNLOADED
+            self._db.create_trigger(
+                trigger_name=f"{self._download_table_name}_after_insert_total_downloads",
+                table_name=self._download_table_name,
+                trigger_event="AFTER INSERT",
+                when_clause=f"NEW.status = '{DownloadStatus.DOWNLOADED}'",
+                trigger_sql_body="""
+                    UPDATE feeds
+                    SET total_downloads = total_downloads + 1
+                    WHERE id = NEW.feed;
+                """,
+            )
+
+            # After DELETE: decrement total_downloads when a deleted download had status DOWNLOADED
+            self._db.create_trigger(
+                trigger_name=f"{self._download_table_name}_after_delete_total_downloads",
+                table_name=self._download_table_name,
+                trigger_event="AFTER DELETE",
+                when_clause=f"OLD.status = '{DownloadStatus.DOWNLOADED}'",
+                trigger_sql_body="""
+                    UPDATE feeds
+                    SET total_downloads = total_downloads - 1
+                    WHERE id = OLD.feed;
+                """,
+            )
+
+            # After UPDATE (status column):
+            # 1. Increment when status changes TO DOWNLOADED
+            self._db.create_trigger(
+                trigger_name=f"{self._download_table_name}_status_to_downloaded_total_downloads",
+                table_name=self._download_table_name,
+                trigger_event="AFTER UPDATE",
+                of_columns=["status"],
+                when_clause=f"NEW.status = '{DownloadStatus.DOWNLOADED}' AND OLD.status != '{DownloadStatus.DOWNLOADED}'",
+                trigger_sql_body="""
+                    UPDATE feeds
+                    SET total_downloads = total_downloads + 1
+                    WHERE id = NEW.feed;
+                """,
+            )
+
+            # 2. Decrement when status changes FROM DOWNLOADED to something else
+            self._db.create_trigger(
+                trigger_name=f"{self._download_table_name}_status_from_downloaded_total_downloads",
+                table_name=self._download_table_name,
+                trigger_event="AFTER UPDATE",
+                of_columns=["status"],
+                when_clause=f"OLD.status = '{DownloadStatus.DOWNLOADED}' AND NEW.status != '{DownloadStatus.DOWNLOADED}'",
+                trigger_sql_body="""
+                    UPDATE feeds
+                    SET total_downloads = total_downloads - 1
+                    WHERE id = NEW.feed;
+                """,
+            )
 
         self._db.create_index(
             self._download_table_name,

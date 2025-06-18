@@ -319,4 +319,70 @@ def test_download_media_to_file_success_simplified(
     assert mock_stat.call_count >= 1
 
 
+# --- Tests for date filtering behavior ---
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "reference_type,url,should_call_set_date_range",
+    [
+        (ReferenceType.SINGLE, "https://www.youtube.com/watch?v=test", False),
+        (ReferenceType.COLLECTION, "https://www.youtube.com/playlist?list=test", True),
+        (ReferenceType.CHANNEL, "https://www.youtube.com/@test/videos", True),
+    ],
+)
+@patch.object(YtdlpCore, "set_date_range")
+@patch.object(YtdlpCore, "extract_info")
+def test_date_filtering_behavior_by_reference_type(
+    mock_extract_info: MagicMock,
+    mock_set_date_range: MagicMock,
+    ytdlp_wrapper: YtdlpWrapper,
+    mock_youtube_handler: MagicMock,
+    reference_type: ReferenceType,
+    url: str,
+    should_call_set_date_range: bool,
+):
+    """Test that date filtering is applied correctly based on reference type.
+
+    Single videos should skip date filtering to avoid partial metadata,
+    while collections and channels should apply date filtering.
+    """
+    feed_id = "test_feed"
+
+    # Mock the source handler to return the specified reference type
+    mock_youtube_handler.determine_fetch_strategy.return_value = (
+        url,
+        reference_type,
+    )
+    mock_youtube_handler.get_source_specific_ydl_options.return_value = {}
+
+    # Mock the extract_info call to avoid actual yt-dlp calls
+    mock_ytdlp_info = MagicMock()
+    mock_extract_info.return_value = mock_ytdlp_info
+    mock_youtube_handler.extract_feed_metadata.return_value = MagicMock()
+    mock_youtube_handler.parse_metadata_to_downloads.return_value = []
+
+    # Call fetch_metadata with date filtering parameters
+    fetch_since_date = datetime(2023, 1, 1, tzinfo=UTC)
+    fetch_until_date = datetime.now(UTC)
+
+    ytdlp_wrapper.fetch_metadata(
+        feed_id=feed_id,
+        url=url,
+        user_yt_cli_args={},
+        fetch_since_date=fetch_since_date,
+        fetch_until_date=fetch_until_date,
+    )
+
+    # Verify set_date_range call behavior based on reference type
+    if should_call_set_date_range:
+        mock_set_date_range.assert_called_once()
+        args = mock_set_date_range.call_args[0]
+        # args[0] is the yt_cli_args dict, args[1] is start_date, args[2] is end_date
+        assert args[1] == "20230101"  # start_date
+        assert args[2] is not None  # end_date should be set
+    else:
+        mock_set_date_range.assert_not_called()
+
+
 # NOTE: More complex fetch_metadata and download_media_to_file scenarios are covered by integration tests

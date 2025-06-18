@@ -325,7 +325,6 @@ class StateReconciler:
                 updated_feed.is_enabled = feed_config.enabled
                 updated_feed.consecutive_failures = 0
                 updated_feed.last_failed_sync = None
-                updated_feed.last_error = None
                 updated_feed.last_successful_sync = datetime.now(UTC)
             # Feed has been disabled
             case (False, True):
@@ -351,7 +350,6 @@ class StateReconciler:
             updated_feed.source_url = feed_config.url
             updated_feed.consecutive_failures = 0
             updated_feed.last_failed_sync = None
-            updated_feed.last_error = None
 
         # Check metadata changes
         if metadata := feed_config.metadata:

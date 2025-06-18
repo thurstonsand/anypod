@@ -41,7 +41,8 @@ class FeedScheduler:
             self._scheduler.schedule_job(
                 job_id=FeedScheduler._feed_to_job_id(ready_feed_id),
                 cron_expression=feed_configs[ready_feed_id].schedule,
-                jitter=10,
+                # TODO: evaluate if we want jitter
+                jitter=0,
                 callback=FeedScheduler._process_feed_with_context,
                 data_coordinator=data_coordinator,
                 feed_id=ready_feed_id,

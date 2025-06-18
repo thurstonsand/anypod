@@ -28,11 +28,9 @@ class Feed:
         Error Tracking:
             last_failed_sync: Last time a sync failed (UTC).
             consecutive_failures: Number of consecutive sync failures.
-            last_error: Last error message if any.
 
         Download Tracking:
             total_downloads: Total number of downloads for this feed.
-            downloads_since_last_rss: Number of downloads since last RSS generation.
 
         Retention Policies:
             since: Only process downloads published after this date (UTC).
@@ -63,11 +61,9 @@ class Feed:
     # Error tracking
     last_failed_sync: datetime | None = None
     consecutive_failures: int = 0
-    last_error: str | None = None
 
     # Download tracking
     total_downloads: int = 0
-    downloads_since_last_rss: int = 0
 
     # Retention policies
     since: datetime | None = None
@@ -116,10 +112,8 @@ class Feed:
             # error tracking
             last_failed_sync=parse_datetime(row.get("last_failed_sync")),
             consecutive_failures=row.get("consecutive_failures", 0),
-            last_error=row.get("last_error"),
             # download tracking
             total_downloads=row.get("total_downloads", 0),
-            downloads_since_last_rss=row.get("downloads_since_last_rss", 0),
             # retention policies
             since=parse_datetime(row.get("since")),
             keep_last=row.get("keep_last"),

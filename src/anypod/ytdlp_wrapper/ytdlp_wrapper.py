@@ -152,7 +152,8 @@ class YtdlpWrapper:
         fetch_until_date are converted to YYYYMMDD format before being passed to yt-dlp.
         This means overlapping date windows that fall on the same day will use identical
         date ranges in yt-dlp, potentially returning duplicate results that are handled
-        by the deduplication logic in the Enqueuer.
+        by the deduplication logic in the Enqueuer. NOTE: This is only applied to playlists
+        and channels, not single videos.
 
         Args:
             feed_id: The identifier for the feed.
@@ -170,24 +171,11 @@ class YtdlpWrapper:
         Raises:
             YtdlpApiError: If no fetchable URL is determined or if no information is extracted.
         """
-        # Add date filtering to user-provided arguments if dates are provided
-        yt_cli_args = dict(user_yt_cli_args)  # Make a copy
         log_extra: dict[str, Any] = {
             "feed_id": feed_id,
             "url": url,
             "num_user_yt_cli_args": len(user_yt_cli_args),
         }
-
-        start_date = fetch_since_date.strftime("%Y%m%d") if fetch_since_date else None
-        end_date = fetch_until_date.strftime("%Y%m%d") if fetch_until_date else None
-        YtdlpCore.set_date_range(yt_cli_args, start_date, end_date)
-
-        if fetch_since_date:
-            log_extra["fetch_since_date"] = fetch_since_date.isoformat()
-            log_extra["fetch_since_date_day_aligned"] = start_date
-        if fetch_until_date:
-            log_extra["fetch_until_date"] = fetch_until_date.isoformat()
-            log_extra["fetch_until_date_day_aligned"] = end_date
 
         logger.info("Fetching metadata for feed.", extra=log_extra)
 
@@ -218,6 +206,30 @@ class YtdlpWrapper:
         fetch_url, ref_type = self._source_handler.determine_fetch_strategy(
             feed_id, url, discovery_caller
         )
+
+        yt_cli_args = dict(user_yt_cli_args)  # Make a copy
+        if ref_type == ReferenceType.SINGLE:
+            logger.debug(
+                "Skipping date filtering for single video as it is not needed.",
+                extra={
+                    "feed_id": feed_id,
+                    "url": url,
+                    "ref_type": ref_type,
+                },
+            )
+        else:
+            start_date = (
+                fetch_since_date.strftime("%Y%m%d") if fetch_since_date else None
+            )
+            end_date = fetch_until_date.strftime("%Y%m%d") if fetch_until_date else None
+            YtdlpCore.set_date_range(yt_cli_args, start_date, end_date)
+
+            if fetch_since_date:
+                log_extra["fetch_since_date"] = fetch_since_date.isoformat()
+                log_extra["fetch_since_date_day_aligned"] = start_date
+            if fetch_until_date:
+                log_extra["fetch_until_date"] = fetch_until_date.isoformat()
+                log_extra["fetch_until_date_day_aligned"] = end_date
         actual_fetch_url = fetch_url or url
         if ref_type == ReferenceType.UNKNOWN_DIRECT_FETCH and not fetch_url:
             logger.info(

@@ -43,7 +43,7 @@ managed = true
 minversion = "7.0"
 pythonpath = ["src"]
 testpaths = ["tests"]
-addopts = "-ra -q --tb=short --disable-warnings --strict-markers -n auto --cov=src --cov-report=html --cov-report=term-missing"
+addopts = "-ra -q --tb=short --disable-warnings --strict-markers -n 2 --cov=src --cov-report=html --cov-report=term-missing"
 filterwarnings = ["error"]
 markers = [
     "integration: mark slow integration tests",

@@ -60,7 +60,7 @@ def feed_db(temp_db_path: Path) -> Generator[FeedDatabase]:
 @pytest.fixture
 def download_db(temp_db_path: Path) -> Generator[DownloadDatabase]:
     """Provides a DownloadDatabase instance."""
-    db = DownloadDatabase(temp_db_path)
+    db = DownloadDatabase(temp_db_path, include_triggers=False)
     yield db
     db.close()
 
@@ -318,7 +318,6 @@ def test_feed_enable_disable_transitions(
         last_successful_sync=BASE_TIME,
         consecutive_failures=5,
         last_failed_sync=datetime.now(UTC),
-        last_error="Previous failure",
     )
     feed_db.upsert_feed(feed)
 
@@ -342,7 +341,6 @@ def test_feed_enable_disable_transitions(
     assert db_feed.is_enabled is True
     assert db_feed.consecutive_failures == 0
     assert db_feed.last_failed_sync is None
-    assert db_feed.last_error is None
 
     # Disable the feed again
     config_feeds["toggle_feed"].enabled = False
@@ -370,7 +368,6 @@ def test_url_change_resets_error_state(
         source_url="https://old.example.com/feed",
         last_successful_sync=BASE_TIME,
         consecutive_failures=3,
-        last_error="Old URL error",
     )
     feed_db.upsert_feed(feed)
 
@@ -392,7 +389,6 @@ def test_url_change_resets_error_state(
     db_feed = feed_db.get_feed_by_id("url_change")
     assert db_feed.source_url == "https://new.example.com/feed"
     assert db_feed.consecutive_failures == 0
-    assert db_feed.last_error is None
 
 
 @pytest.mark.integration

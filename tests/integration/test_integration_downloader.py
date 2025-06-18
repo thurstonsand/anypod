@@ -87,17 +87,25 @@ def shared_dirs(
 
 
 @pytest.fixture
-def feed_db() -> Generator[FeedDatabase]:
-    """Provides a FeedDatabase instance with a temporary database."""
-    feed_db = FeedDatabase(db_path=None, memory_name="integration_test")
+def shared_db_path(tmp_path_factory: pytest.TempPathFactory) -> Generator[Path]:
+    """Provides a shared temporary database file path."""
+    db_path = tmp_path_factory.mktemp("db") / "test.db"
+    yield db_path
+    # Cleanup is handled by tmp_path_factory
+
+
+@pytest.fixture
+def feed_db(shared_db_path: Path) -> Generator[FeedDatabase]:
+    """Provides a FeedDatabase instance with a shared temporary database."""
+    feed_db = FeedDatabase(db_path=shared_db_path)
     yield feed_db
     feed_db.close()
 
 
 @pytest.fixture
-def download_db() -> Generator[DownloadDatabase]:
-    """Provides a DownloadDatabase instance with a temporary database."""
-    download_db = DownloadDatabase(db_path=None, memory_name="integration_test")
+def download_db(shared_db_path: Path) -> Generator[DownloadDatabase]:
+    """Provides a DownloadDatabase instance with a shared temporary database."""
+    download_db = DownloadDatabase(db_path=shared_db_path)
     yield download_db
     download_db.close()
 
@@ -152,7 +160,7 @@ def create_test_feed(feed_db: FeedDatabase, feed_id: str, url: str) -> Feed:
         id=feed_id,
         is_enabled=True,
         source_type=SourceType.UNKNOWN,  # Will be determined by ytdlp
-        source_url="https://example.com/test",
+        source_url=url,
         last_successful_sync=datetime.min.replace(tzinfo=UTC),
         title=f"Test Feed {feed_id}",
     )
@@ -232,28 +240,22 @@ def test_download_queued_single_video_success(
     assert failure_count == 0, f"Expected 0 failures, got {failure_count}"
 
     # Verify database was updated
-    downloaded_items = download_db.get_downloads_by_status(
+    downloads = download_db.get_downloads_by_status(
         DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
-    assert len(downloaded_items) >= 1
+    assert len(downloads) >= 1
 
     # Verify the specific download was updated
-    downloaded_item = next(
-        (dl for dl in downloaded_items if dl.id == original_download.id), None
-    )
-    assert downloaded_item is not None
-    assert downloaded_item.status == DownloadStatus.DOWNLOADED
-    assert downloaded_item.ext  # Should have extension set
-    assert (
-        downloaded_item.filesize and downloaded_item.filesize > 0
-    )  # Should have filesize set
-    assert downloaded_item.retries == 0  # Should be reset
-    assert downloaded_item.last_error is None  # Should be cleared
+    download = next((dl for dl in downloads if dl.id == original_download.id), None)
+    assert download is not None
+    assert download.status == DownloadStatus.DOWNLOADED
+    assert download.ext  # Should have extension set
+    assert download.filesize and download.filesize > 0  # Should have filesize set
+    assert download.retries == 0  # Should be reset
+    assert download.last_error is None  # Should be cleared
 
     # Verify file was actually downloaded
-    assert file_manager.download_exists(
-        feed_id, downloaded_item.id, downloaded_item.ext
-    )
+    assert file_manager.download_exists(feed_id, download.id, download.ext)
 
     # Verify no more queued items for this feed
     remaining_queued = download_db.get_downloads_by_status(
@@ -322,8 +324,8 @@ def test_download_queued_with_limit(
     feed_config = CHANNEL_FEED_CONFIG
 
     # Use enqueuer to populate database
-    queued_count = enqueue_test_items(enqueuer, feed_db, feed_id, feed_config)
-    assert queued_count >= 1
+    enqueued_count = enqueue_test_items(enqueuer, feed_db, feed_id, feed_config)
+    assert enqueued_count >= 1
 
     # Test downloader with limit of 1
     success_count, failure_count = downloader.download_queued(
@@ -377,11 +379,15 @@ def test_download_queued_no_queued_items(
 @pytest.mark.integration
 def test_download_queued_handles_invalid_urls(
     downloader: Downloader,
+    feed_db: FeedDatabase,
     download_db: DownloadDatabase,
 ):
     """Tests that downloader properly handles downloads with invalid URLs."""
     feed_id = "test_invalid_urls"
     feed_config = INVALID_FEED_CONFIG
+
+    # Create the feed first
+    create_test_feed(feed_db, feed_id, feed_config.url)
 
     # Manually insert an invalid download to test error handling
     published_time = datetime.now(UTC)
@@ -428,6 +434,7 @@ def test_download_queued_handles_invalid_urls(
 @pytest.mark.integration
 def test_download_queued_retry_logic_max_errors(
     downloader: Downloader,
+    feed_db: FeedDatabase,
     download_db: DownloadDatabase,
 ):
     """Tests that downloads transition to ERROR status after max retries."""
@@ -440,6 +447,9 @@ def test_download_queued_retry_logic_max_errors(
         since=None,
         max_errors=1,  # Set to 1 for quick testing
     )
+
+    # Create the feed first
+    create_test_feed(feed_db, feed_id, feed_config.url)
 
     # Insert an invalid download
     published_time = datetime.now(UTC)
@@ -570,34 +580,30 @@ def test_download_queued_file_properties(
     assert success_count >= 1
 
     # Get the downloaded item
-    downloaded_items = download_db.get_downloads_by_status(
+    downloads = download_db.get_downloads_by_status(
         DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
-    downloaded_item = downloaded_items[0]
+    download = downloads[0]
 
     # File should exist
-    assert file_manager.download_exists(
-        feed_id, downloaded_item.id, downloaded_item.ext
-    )
+    assert file_manager.download_exists(feed_id, download.id, download.ext)
 
     # File should be readable
-    stream = file_manager.get_download_stream(
-        feed_id, downloaded_item.id, downloaded_item.ext
-    )
+    stream = file_manager.get_download_stream(feed_id, download.id, download.ext)
     assert stream.readable()
     stream.close()
 
     # Database should have correct metadata
-    assert downloaded_item.ext in ["mp4", "webm", "mkv"]  # Common video formats
-    assert downloaded_item.filesize is not None and downloaded_item.filesize > 0
-    assert downloaded_item.retries == 0
-    assert downloaded_item.last_error is None
+    assert download.ext in ["mp4", "webm", "mkv"]  # Common video formats
+    assert download.filesize is not None and download.filesize > 0
+    assert download.retries == 0
+    assert download.last_error is None
 
     # File size in database should match actual file size
     feed_data_dir = Path(file_manager._paths.base_data_dir) / feed_id
-    actual_file = feed_data_dir / f"{downloaded_item.id}.{downloaded_item.ext}"
+    actual_file = feed_data_dir / f"{download.id}.{download.ext}"
     actual_size = actual_file.stat().st_size
-    assert downloaded_item.filesize == actual_size
+    assert download.filesize == actual_size
 
 
 @pytest.mark.integration

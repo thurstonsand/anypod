@@ -62,10 +62,8 @@ class FeedDatabase:
                 # error tracking
                 "last_failed_sync": datetime,
                 "consecutive_failures": int,
-                "last_error": str,
                 # download tracking
                 "total_downloads": int,
-                "downloads_since_last_rss": int,
                 # retention policies
                 "since": datetime,
                 "keep_last": int,
@@ -90,14 +88,12 @@ class FeedDatabase:
                 "updated_at",
                 "consecutive_failures",
                 "total_downloads",
-                "downloads_since_last_rss",
             },
             defaults={
                 "created_at": "STRFTIME('%Y-%m-%dT%H:%M:%f+00:00','now')",
                 "updated_at": "STRFTIME('%Y-%m-%dT%H:%M:%f+00:00','now')",
                 "consecutive_failures": 0,
                 "total_downloads": 0,
-                "downloads_since_last_rss": 0,
             },
         )
 
@@ -167,7 +163,6 @@ class FeedDatabase:
                     "last_successful_sync",
                     "consecutive_failures",
                     "total_downloads",
-                    "downloads_since_last_rss",
                 },
             )
         except DatabaseOperationError as e:
@@ -237,7 +232,7 @@ class FeedDatabase:
     def mark_sync_success(
         self, feed_id: str, sync_time: datetime | None = None
     ) -> None:
-        """Set last_successful_sync to current timestamp, reset consecutive_failures to 0, clear last_error.
+        """Set last_successful_sync to current timestamp, reset consecutive_failures to 0.
 
         Args:
             feed_id: The feed identifier.
@@ -256,7 +251,6 @@ class FeedDatabase:
                 {
                     "last_successful_sync": sync_time or datetime.now(UTC),
                     "consecutive_failures": 0,
-                    "last_error": None,
                 },
             )
         except NotFoundError as e:
@@ -267,9 +261,9 @@ class FeedDatabase:
         logger.info("Feed sync success marked.", extra=log_params)
 
     def mark_sync_failure(
-        self, feed_id: str, error_message: str, sync_time: datetime | None = None
+        self, feed_id: str, sync_time: datetime | None = None
     ) -> None:
-        """Set last_failed_sync to current timestamp, increment consecutive_failures, set last_error.
+        """Set last_failed_sync to current timestamp, increment consecutive_failures.
 
         Args:
             feed_id: The feed identifier.
@@ -280,13 +274,12 @@ class FeedDatabase:
             FeedNotFoundError: If the feed is not found.
             DatabaseOperationError: If the database operation fails.
         """
-        log_params = {"feed_id": feed_id, "error_message": error_message}
+        log_params = {"feed_id": feed_id}
         logger.debug("Attempting to mark sync failure for feed.", extra=log_params)
 
         updates = {
             "last_failed_sync": sync_time or datetime.now(UTC),
             "consecutive_failures": 1,
-            "last_error": error_message,
         }
         conversions = {"consecutive_failures": "[consecutive_failures] + ?"}
 
@@ -304,25 +297,17 @@ class FeedDatabase:
             raise e
         logger.warning("Feed sync failure marked.", extra=log_params)
 
-    def mark_rss_generated(
-        self, feed_id: str, new_downloads_count: int, total_downloads_count: int
-    ) -> None:
-        """Set last_rss_generation to current timestamp, set total_downloads to actual count, set downloads_since_last_rss to new_downloads_count.
+    def mark_rss_generated(self, feed_id: str) -> None:
+        """Set last_rss_generation to the current timestamp.
 
         Args:
             feed_id: The feed identifier.
-            new_downloads_count: Number of new downloads since last RSS generation.
-            total_downloads_count: Actual total count of downloaded items for this feed.
 
         Raises:
             FeedNotFoundError: If the feed is not found.
             DatabaseOperationError: If the database operation fails.
         """
-        log_params = {
-            "feed_id": feed_id,
-            "new_downloads_count": new_downloads_count,
-            "total_downloads_count": total_downloads_count,
-        }
+        log_params = {"feed_id": feed_id}
         logger.debug("Attempting to mark RSS generated for feed.", extra=log_params)
 
         try:
@@ -331,8 +316,6 @@ class FeedDatabase:
                 feed_id,
                 {
                     "last_rss_generation": datetime.now(UTC),
-                    "total_downloads": total_downloads_count,
-                    "downloads_since_last_rss": new_downloads_count,
                 },
             )
         except NotFoundError as e:

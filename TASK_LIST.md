@@ -301,7 +301,7 @@ This section details the components that manage the lifecycle of downloads, from
   - [x] Verify `Enqueuer` properly handles duplicate video IDs across multiple day fetches
   - [x] if whatever is in the db is identical to what we retrieved, don't update (which will trigger `updated_at`)
     - it is possible that some metadata might have updated (e.g. uploader might have changed description); so check for that and update if needed
-  - [ ] Add deduplication tests: same video appearing in multiple day windows
+  - [x] Add deduplication tests: same video appearing in multiple day windows
   - [x] Verify no updates occurred (`updated_at` is unchanged)
   - [x] Verify deduplication works when same video appears in multiple day windows
 - [x] **Documentation Updates**:
@@ -311,9 +311,8 @@ This section details the components that manage the lifecycle of downloads, from
   - [x] Update `since` parameter handling: should only be a `date`, not a `datetime`
   - [x] When `since` changes, use day-aligned logic for requeuing archived downloads
   - [x] Ensure consistency between enqueue windows and retention policy windows
-- [ ] Tie Feed table `total_downloads` to the Download table with triggers
-- [ ] Add `total_active` to Feed, also tied with triggers (maybe not -- i think pruning should only count currently downloaded files, not upcoming/queued)
-  - potentially change @src/anypod/state_reconciler.py#L192-200
+- [x] Tie Feed table `total_downloads` to the Download table with triggers
+- [x] When downloading an individual file but it is out of range, I get an incomplete response back from yt-dlp, which causes internal errors
 
 ### 5.2 Init State Reconciliation
 
@@ -346,23 +345,17 @@ This section details the components that manage the lifecycle of downloads, from
   - [x] `keep_last` decrease: No immediate action - will apply naturally on next prune cycle
   - [x] `metadata` changes: Update feed table immediately (title, subtitle, description, language, author, image_url, categories, explicit), trigger RSS regeneration
 
-### 5.3 Initial Sync Strategy
-- [ ] After reconciliation, trigger immediate sync:
-  - [ ] Process all enabled feeds to populate RSS
-  - [ ] Ensure RSS feeds available before HTTP server starts
-  - [ ] Handle failures gracefully without blocking startup, unless config is wrong -- that should cause failure until fixed
-
-### 5.4 Dependencies and Testing
-- [ ] Unit tests for scheduler with mocked jobs
+### 5.3 Dependencies and Testing
+- [x] Unit tests for scheduler with mocked jobs
 - [x] Unit tests for state reconciler covering:
   - [x] New feed addition
   - [x] Feed removal
   - [x] Feed configuration changes
   - [x] Metadata override changes
 - [x] Integration tests for full startup sequence
-- [ ] Tests for graceful shutdown handling
+- [x] Tests for graceful shutdown handling
 
-### 5.5 Update CLI Default Mode (`src/anypod/cli/default.py`)
+### 5.4 Update CLI Default Mode (`src/anypod/cli/default.py`)
 - [ ] Main service orchestration:
   - [ ] Initialize all components (databases, services)
   - [ ] Run state reconciler on startup (see section 5.4)
@@ -370,6 +363,12 @@ This section details the components that manage the lifecycle of downloads, from
   - [ ] Perform initial sync for all feeds to populate RSS
   - [ ] Keep service running until shutdown signal
   - [ ] Implement graceful shutdown handling
+
+### 5.5 Initial Sync Strategy
+- [ ] After reconciliation, trigger immediate sync:
+  - [ ] Process all enabled feeds to populate RSS
+  - [ ] Ensure RSS feeds available before HTTP server starts
+  - [ ] Handle failures gracefully without blocking startup, unless config is wrong -- that should cause failure until fixed
 
 ## 6  HTTP Server
 
@@ -418,12 +417,17 @@ This section details the components that manage the lifecycle of downloads, from
   - [ ] `DELETE /api/feeds/{feed_id}/downloads/{download_id}`        - Archive download and delete file
 - [ ] `stats.py` - Statistics and monitoring endpoints
   - [ ] `GET    /api/feeds/{feed_id}/stats` - Detailed feed statistics
-  - [ ] `GET    /api/stats/summary` - System-wide statistics summary including storage
+  - [ ] `GET    /api/stats/summary`         - System-wide statistics summary including storage
 - [ ] `health.py` - Health check endpoints
   - [ ] `GET    /api/health` - Application health check
 - [ ] `static.py` - Content delivery endpoints
-  - [ ] `GET    /feeds/{feed_id}.xml` - RSS feed XML
-  - [ ] `GET    /media/{feed_id}/{filename}` - Media file download
+  - [ ] `GET    /feeds`                           - List all rss feeds in directory
+  - [ ] `GET    /feeds/{feed_id}.xml`             - RSS feed XML
+  - [ ] `GET    /media`                           - List all feeds in directory
+  - [ ] `GET    /media/{feed_id}`                 - List all files for a feed in directory
+  - [ ] `GET    /media/{feed_id}/{filename}`      - Media file download
+  - [ ] `GET    /thumbnails`                      - List all feeds in directory
+  - [ ] `GET    /thumbnails/{feed_id}`            - List all thumbnails for a feed in directory
   - [ ] `GET    /thumbnails/{feed_id}/{filename}` - Thumbnail images
 - [ ] Unit tests with `httpx` for all API endpoints
 - [ ] Integration tests with actual database operations

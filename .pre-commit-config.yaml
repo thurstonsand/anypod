@@ -28,5 +28,12 @@ repos:
         name: sync CLAUDE.md files to AGENTS.md
         entry: scripts/sync_agents_md.py
         language: script
-        files: '^(CLAUDE\.md|tests/CLAUDE\.md)$'
+        files: 'CLAUDE\.md$'
+        pass_filenames: false
+
+      - id: sync-cursor-rules
+        name: sync CLAUDE.md files to Cursor rules
+        entry: scripts/sync_cursor_rules.py
+        language: script
+        files: 'CLAUDE\.md$'
         pass_filenames: false

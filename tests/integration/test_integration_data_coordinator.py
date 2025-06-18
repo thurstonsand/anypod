@@ -37,6 +37,10 @@ BIG_BUCK_BUNNY_TITLE = (
 BIG_BUCK_BUNNY_PUBLISHED = datetime(2014, 11, 10, 14, 5, 55, tzinfo=UTC)
 
 COLETDJNZ_CHANNEL_VIDEOS = "https://www.youtube.com/@coletdjnz/videos"
+# Test playlist URL - small playlist with known content for date filtering tests
+TEST_PLAYLIST_URL = (
+    "https://youtube.com/playlist?list=PLt5yu3-wZAlQAaPZ5Z-rJoTdbT-45Q7c0"
+)
 
 # CLI args for minimal quality and limited playlist downloads as a string
 YT_DLP_MINIMAL_ARGS_STR = (
@@ -304,7 +308,6 @@ def test_process_feed_complete_success(
     updated_feed = feed_db.get_feed_by_id(feed_id)
     assert updated_feed.last_successful_sync is not None
     assert updated_feed.last_successful_sync > datetime(2024, 1, 1, tzinfo=UTC)
-    assert updated_feed.last_error is None
 
 
 @pytest.mark.integration
@@ -573,19 +576,52 @@ def test_process_feed_with_retention_pruning(
 
 @pytest.mark.integration
 @pytest.mark.parametrize(
-    "test_case, sync_timestamp, expected_enqueue_count, description",
+    "test_case, url, sync_timestamp, expected_enqueue_count, description",
     [
+        # Single video tests - should always ignore date filtering
         (
-            "excludes_out_of_range",
-            datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
-            0,
-            "Recent sync timestamp (2024) should exclude Big Buck Bunny (2014) due to date filtering",
+            "single_video_ignores_date_filter_out_of_range",
+            BIG_BUCK_BUNNY_SHORT_URL,
+            datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC),
+            1,
+            "Single video should be downloaded regardless of out-of-range date (ignores date filtering)",
         ),
         (
-            "includes_in_range",
+            "single_video_ignores_date_filter_in_range",
+            BIG_BUCK_BUNNY_SHORT_URL,
             datetime(2014, 11, 10, 12, 0, 0, tzinfo=UTC),
             1,
-            "Sync timestamp before video publish time should include Big Buck Bunny in date range",
+            "Single video should be downloaded when in date range (but still ignores date filtering)",
+        ),
+        # Channel tests - should respect date filtering (@coletdjnz has videos from 2024-07-10, 2024-03-08, 2022-07-29)
+        (
+            "channel_excludes_out_of_range",
+            COLETDJNZ_CHANNEL_VIDEOS,
+            datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC),
+            0,
+            "Channel should exclude all videos when sync date is after all uploads (2025 > 2024)",
+        ),
+        (
+            "channel_includes_recent_videos",
+            COLETDJNZ_CHANNEL_VIDEOS,
+            datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+            2,
+            "Channel should include 2024 videos (uploaded 2024-07-10 and 2024-03-08) when sync from 2024-01-01",
+        ),
+        # Playlist tests - should respect date filtering (playlist has 1 video from 2022-07-29)
+        (
+            "playlist_excludes_out_of_range",
+            TEST_PLAYLIST_URL,
+            datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC),
+            0,
+            "Playlist should exclude videos when sync date is after all uploads (2025 > 2022)",
+        ),
+        (
+            "playlist_includes_in_range",
+            TEST_PLAYLIST_URL,
+            datetime(2022, 1, 1, 12, 0, 0, tzinfo=UTC),
+            1,
+            "Playlist should include video uploaded 2022-07-29 when sync from 2022-01-01",
         ),
     ],
 )
@@ -593,21 +629,26 @@ def test_date_filtering_behavior(
     data_coordinator: DataCoordinator,
     feed_db: FeedDatabase,
     test_case: str,
+    url: str,
     sync_timestamp: datetime,
     expected_enqueue_count: int,
     description: str,
 ):
-    """Test that date filtering correctly includes/excludes videos based on sync timestamp.
+    """Test date filtering behavior across different URL types.
 
-    This test demonstrates that the same logic with different sync timestamps produces
-    different results: videos are either included or excluded based on the date range
-    calculated from the sync timestamp and cron schedule.
+    This comprehensive test demonstrates the complete date filtering behavior:
 
-    Big Buck Bunny was published on 2014-11-10 14:05:55 UTC.
-    With hourly cron schedule, sync timestamp creates a 2-hour window.
+    **Single videos:** Always ignore date filtering to prevent partial metadata issues.
+    Both in-range and out-of-range cases should download the video (count=1).
+
+    **Channels:** Respect date filtering and include/exclude videos based on upload dates.
+    @coletdjnz channel has videos from 2024-07-10, 2024-03-08, and 2022-07-29.
+
+    **Playlists:** Respect date filtering and include/exclude videos based on upload dates.
+    Test playlist contains 1 video from 2022-07-29.
     """
     feed_id = f"test_date_filtering_{test_case}"
-    feed_config = create_feed_config()
+    feed_config = create_feed_config(url=url)
 
     # Create feed
     create_test_feed(feed_db, feed_id)
@@ -615,14 +656,17 @@ def test_date_filtering_behavior(
     # Set sync timestamp - this determines the date filtering window
     feed_db.mark_sync_success(feed_id, sync_time=sync_timestamp)
 
-    # Process the feed - same logic, different date filtering result
+    # Process the feed
     results = data_coordinator.process_feed(feed_id, feed_config)
 
-    # Verify overall processing succeeded for both cases
+    # Verify overall success
     assert results.overall_success is True, f"Processing should succeed for {test_case}"
     assert results.fatal_error is None, f"No fatal errors for {test_case}"
 
-    # Other phases should work regardless of date filtering
+    # Verify all phases succeed
+    assert results.enqueue_result.success is True, (
+        f"Enqueue should succeed for {test_case}"
+    )
     assert results.download_result.success is True, (
         f"Download should succeed for {test_case}"
     )
@@ -631,9 +675,6 @@ def test_date_filtering_behavior(
         f"RSS generation should succeed for {test_case}"
     )
 
-    # The key assertion: date filtering determines enqueue count
-    assert results.enqueue_result.success is True, (
-        f"Enqueue phase should succeed for {test_case}"
-    )
+    # The key assertion: verify expected behavior based on URL type and date range
     assert results.enqueue_result.count == expected_enqueue_count, description
     assert results.download_result.count == expected_enqueue_count, description

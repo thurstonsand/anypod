@@ -9,8 +9,8 @@ from typing import Any
 
 import pytest
 
-from anypod.db import DownloadDatabase
-from anypod.db.types import Download, DownloadStatus
+from anypod.db import DownloadDatabase, FeedDatabase
+from anypod.db.types import Download, DownloadStatus, Feed, SourceType
 from anypod.exceptions import DatabaseOperationError, DownloadNotFoundError
 
 # --- Fixtures ---
@@ -20,7 +20,9 @@ from anypod.exceptions import DatabaseOperationError, DownloadNotFoundError
 def download_db() -> Iterator[DownloadDatabase]:
     """Provides a DownloadDatabase instance for testing with a temporary in-memory database."""
     # db_path = tmp_path / "test.db"
-    download_db = DownloadDatabase(db_path=None, memory_name="test_db")
+    download_db = DownloadDatabase(
+        db_path=None, memory_name="test_db", include_triggers=False
+    )
     yield download_db
     download_db.close()  # Ensure connection is closed after test
 
@@ -95,6 +97,33 @@ def sample_download_upcoming() -> Download:
         discovered_at=base_time,
         updated_at=base_time,
     )
+
+
+# --- Fixtures specific to total_downloads trigger tests ---
+
+
+@pytest.fixture
+def feed_and_download_dbs() -> Iterator[tuple[FeedDatabase, DownloadDatabase]]:
+    """Provides coupled FeedDatabase and DownloadDatabase sharing the same in-memory DB.
+
+    Triggers are enabled so changes in the downloads table automatically
+    update ``feeds.total_downloads``.
+    """
+    # Use a unique shared in-memory DB for each test run to avoid cross-test leakage
+    memory_name = "total_downloads_test"
+
+    feed_db = FeedDatabase(db_path=None, memory_name=memory_name)
+    download_db = DownloadDatabase(
+        db_path=None,
+        memory_name=memory_name,
+        include_triggers=True,
+    )
+
+    yield feed_db, download_db
+
+    # Close connections after test completes
+    feed_db.close()
+    download_db.close()
 
 
 # --- Tests ---
@@ -1891,3 +1920,106 @@ def test_bump_retries_downloaded_item_does_not_become_error(
     updated_download = download_db.get_download_by_id(feed_id, dl_id)
     assert updated_download.status == DownloadStatus.DOWNLOADED
     assert updated_download.retries == 3
+
+
+# --- Tests validating feeds.total_downloads triggers ---
+
+
+@pytest.mark.unit
+def test_total_downloads_increment_on_downloaded_insert(
+    feed_and_download_dbs: tuple[FeedDatabase, DownloadDatabase],
+):
+    """Verify that inserting a DOWNLOADED record increments ``feeds.total_downloads``."""
+    feed_db, download_db = feed_and_download_dbs
+
+    base_time = datetime(2023, 1, 1, 12, 0, 0, tzinfo=UTC)
+
+    feed = Feed(
+        id="feed_dl_insert",
+        is_enabled=True,
+        source_type=SourceType.CHANNEL,
+        source_url="http://example.com/channel",
+        last_successful_sync=base_time,
+    )
+    feed_db.upsert_feed(feed)
+
+    assert feed_db.get_feed_by_id(feed.id).total_downloads == 0, (
+        "total_downloads should start at 0"
+    )
+
+    download = Download(
+        feed=feed.id,
+        id="video1",
+        source_url="http://example.com/video1",
+        title="Video 1",
+        published=base_time,
+        ext="mp4",
+        mime_type="video/mp4",
+        filesize=1024,
+        duration=60,
+        status=DownloadStatus.DOWNLOADED,
+        discovered_at=base_time,
+        updated_at=base_time,
+    )
+    download_db.upsert_download(download)
+
+    updated_feed = feed_db.get_feed_by_id(feed.id)
+    assert updated_feed.total_downloads == 1, (
+        "total_downloads should increment to 1 after inserting a DOWNLOADED record"
+    )
+
+
+@pytest.mark.unit
+def test_total_downloads_status_transitions_increment_and_decrement(
+    feed_and_download_dbs: tuple[FeedDatabase, DownloadDatabase],
+):
+    """Ensure status transitions to and from DOWNLOADED update ``total_downloads`` appropriately."""
+    feed_db, download_db = feed_and_download_dbs
+
+    base_time = datetime(2023, 1, 2, 12, 0, 0, tzinfo=UTC)
+
+    # Arrange: feed with zero downloads
+    feed = Feed(
+        id="feed_status_transition",
+        is_enabled=True,
+        source_type=SourceType.CHANNEL,
+        source_url="http://example.com/channel2",
+        last_successful_sync=base_time,
+    )
+    feed_db.upsert_feed(feed)
+
+    # Insert a QUEUED download (should not affect total_downloads)
+    download_id = "queued_video"
+    queued_download = Download(
+        feed=feed.id,
+        id=download_id,
+        source_url="http://example.com/queued_video",
+        title="Queued Video",
+        published=base_time,
+        ext="mp4",
+        mime_type="video/mp4",
+        filesize=0,
+        duration=120,
+        status=DownloadStatus.QUEUED,
+        discovered_at=base_time,
+        updated_at=base_time,
+    )
+    download_db.upsert_download(queued_download)
+
+    assert feed_db.get_feed_by_id(feed.id).total_downloads == 0, (
+        "total_downloads should remain 0 after inserting a non-downloaded record"
+    )
+
+    # Act: transition to DOWNLOADED - should increment
+    download_db.mark_as_downloaded(feed.id, download_id, ext="mp4", filesize=2048)
+
+    assert feed_db.get_feed_by_id(feed.id).total_downloads == 1, (
+        "total_downloads should increment to 1 after status changes to DOWNLOADED"
+    )
+
+    # Act: transition away from DOWNLOADED (archive) - should decrement
+    download_db.archive_download(feed.id, download_id)
+
+    assert feed_db.get_feed_by_id(feed.id).total_downloads == 0, (
+        "total_downloads should decrement back to 0 after status changes from DOWNLOADED"
+    )
