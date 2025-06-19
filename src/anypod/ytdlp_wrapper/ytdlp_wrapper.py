@@ -142,6 +142,7 @@ class YtdlpWrapper:
         user_yt_cli_args: dict[str, Any],
         fetch_since_date: datetime | None = None,
         fetch_until_date: datetime | None = None,
+        keep_last: int | None = None,
     ) -> tuple[Feed, list[Download]]:
         """Fetches metadata for a given feed and URL using yt-dlp.
 
@@ -163,6 +164,8 @@ class YtdlpWrapper:
                 Converted to YYYYMMDD format for yt-dlp compatibility.
             fetch_until_date: The upper bound date for the fetch operation (exclusive).
                 Converted to YYYYMMDD format for yt-dlp compatibility.
+            keep_last: Maximum number of recent playlist items to fetch, or None for no limit.
+                Uses `playlist_items` to get the first N items
 
         Returns:
             A tuple of (feed, downloads) where feed is a Feed object with extracted
@@ -223,6 +226,7 @@ class YtdlpWrapper:
             )
             end_date = fetch_until_date.strftime("%Y%m%d") if fetch_until_date else None
             YtdlpCore.set_date_range(yt_cli_args, start_date, end_date)
+            YtdlpCore.set_playlist_limit(yt_cli_args, keep_last)
 
             if fetch_since_date:
                 log_extra["fetch_since_date"] = fetch_since_date.isoformat()
@@ -230,6 +234,8 @@ class YtdlpWrapper:
             if fetch_until_date:
                 log_extra["fetch_until_date"] = fetch_until_date.isoformat()
                 log_extra["fetch_until_date_day_aligned"] = end_date
+            if keep_last:
+                log_extra["keep_last"] = keep_last
         actual_fetch_url = fetch_url or url
         if ref_type == ReferenceType.UNKNOWN_DIRECT_FETCH and not fetch_url:
             logger.info(

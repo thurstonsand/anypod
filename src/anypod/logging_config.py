@@ -31,9 +31,6 @@ def custom_record_factory(*args: Any, **kwargs: Any) -> logging.LogRecord:
     """
     record = _original_log_record_factory(*args, **kwargs)
 
-    record.exc_custom_attrs = {}
-    record.semantic_trace = []
-
     if record.exc_info and record.exc_info[1]:
         exception_instance = record.exc_info[1]
 
@@ -50,8 +47,11 @@ def custom_record_factory(*args: Any, **kwargs: Any) -> logging.LogRecord:
 
             current_exc = current_exc.__cause__ or current_exc.__context__
 
-        record.exc_custom_attrs = collected_attrs
-        record.semantic_trace = semantic_chain_messages
+        # Only set if there are actual values
+        if collected_attrs:
+            record.exc_custom_attrs = collected_attrs
+        if semantic_chain_messages:
+            record.semantic_trace = semantic_chain_messages
 
     return record
 
@@ -88,7 +88,9 @@ class ContextIdFilter(logging.Filter):
         Returns:
             Always True to allow the record to be processed.
         """
-        record.context_id = _context_id_var.get()
+        context_id = _context_id_var.get()
+        if context_id is not None:
+            record.context_id = context_id
         return True
 
 

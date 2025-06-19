@@ -187,6 +187,8 @@ class AppSettings(BaseSettings):
         log_level: Logging level for the application.
         log_include_stacktrace: Include full stack traces in error logs.
         base_url: Base URL for RSS feeds and media files.
+        data_dir: Root directory for all application data.
+        tz: Timezone for date parsing in config files.
         config_file: Path to the YAML config file.
         feeds: Configuration for all podcast feeds.
     """
@@ -216,6 +218,11 @@ class AppSettings(BaseSettings):
         default="http://localhost:8024",
         validation_alias="BASE_URL",
         description="Base URL for RSS feeds and media files (e.g., 'https://podcasts.example.com').",
+    )
+    data_dir: Path = Field(
+        default=Path("/data"),
+        validation_alias="DATA_DIR",
+        description="Root directory for all application data (database, media files, temp files).",
     )
     tz: ZoneInfo | None = Field(
         default=None,

@@ -385,4 +385,66 @@ def test_date_filtering_behavior_by_reference_type(
         mock_set_date_range.assert_not_called()
 
 
+# --- Tests for keep_last filtering behavior ---
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "reference_type,url,should_call_set_playlist_limit",
+    [
+        (ReferenceType.SINGLE, "https://www.youtube.com/watch?v=test", False),
+        (ReferenceType.COLLECTION, "https://www.youtube.com/playlist?list=test", True),
+        (ReferenceType.CHANNEL, "https://www.youtube.com/@test/videos", True),
+    ],
+)
+@patch.object(YtdlpCore, "set_playlist_limit")
+@patch.object(YtdlpCore, "extract_info")
+def test_keep_last_filtering_behavior_by_reference_type(
+    mock_extract_info: MagicMock,
+    mock_set_playlist_limit: MagicMock,
+    ytdlp_wrapper: YtdlpWrapper,
+    mock_youtube_handler: MagicMock,
+    reference_type: ReferenceType,
+    url: str,
+    should_call_set_playlist_limit: bool,
+):
+    """Test that keep_last filtering is applied correctly based on reference type.
+
+    Single videos should skip playlist limiting since they're not playlists,
+    while collections and channels should apply playlist limiting.
+    """
+    feed_id = "test_feed"
+    keep_last = 5
+
+    # Mock the source handler to return the specified reference type
+    mock_youtube_handler.determine_fetch_strategy.return_value = (
+        url,
+        reference_type,
+    )
+    mock_youtube_handler.get_source_specific_ydl_options.return_value = {}
+
+    # Mock the extract_info call to avoid actual yt-dlp calls
+    mock_ytdlp_info = MagicMock()
+    mock_extract_info.return_value = mock_ytdlp_info
+    mock_youtube_handler.extract_feed_metadata.return_value = MagicMock()
+    mock_youtube_handler.parse_metadata_to_downloads.return_value = []
+
+    # Call fetch_metadata with keep_last parameter
+    ytdlp_wrapper.fetch_metadata(
+        feed_id=feed_id,
+        url=url,
+        user_yt_cli_args={},
+        keep_last=keep_last,
+    )
+
+    # Verify set_playlist_limit call behavior based on reference type
+    if should_call_set_playlist_limit:
+        mock_set_playlist_limit.assert_called_once()
+        args = mock_set_playlist_limit.call_args[0]
+        # args[0] is the yt_cli_args dict, args[1] is keep_last
+        assert args[1] == keep_last
+    else:
+        mock_set_playlist_limit.assert_not_called()
+
+
 # NOTE: More complex fetch_metadata and download_media_to_file scenarios are covered by integration tests

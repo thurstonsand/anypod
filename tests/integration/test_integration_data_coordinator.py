@@ -42,10 +42,8 @@ TEST_PLAYLIST_URL = (
     "https://youtube.com/playlist?list=PLt5yu3-wZAlQAaPZ5Z-rJoTdbT-45Q7c0"
 )
 
-# CLI args for minimal quality and limited playlist downloads as a string
-YT_DLP_MINIMAL_ARGS_STR = (
-    "--playlist-items 1 --format worst*[ext=mp4]/worst[ext=mp4]/best[ext=mp4]"
-)
+# CLI args for minimal quality downloads as a string
+YT_DLP_MINIMAL_ARGS_STR = "--format worst*[ext=mp4]/worst[ext=mp4]/best[ext=mp4]"
 
 # Test schedule and config
 TEST_CRON_SCHEDULE = "0 * * * *"
@@ -648,6 +646,7 @@ def test_date_filtering_behavior(
     Test playlist contains 1 video from 2022-07-29.
     """
     feed_id = f"test_date_filtering_{test_case}"
+
     feed_config = create_feed_config(url=url)
 
     # Create feed

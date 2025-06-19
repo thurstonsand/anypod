@@ -356,12 +356,12 @@ This section details the components that manage the lifecycle of downloads, from
 - [x] Tests for graceful shutdown handling
 
 ### 5.4 Update CLI Default Mode (`src/anypod/cli/default.py`)
-- [ ] Main service orchestration:
-  - [ ] Initialize all components (databases, services)
-  - [ ] Run state reconciler on startup (see section 5.4)
-  - [ ] Start scheduler with reconciled feeds
-  - [ ] Perform initial sync for all feeds to populate RSS
-  - [ ] Keep service running until shutdown signal
+- [x] Main service orchestration:
+  - [x] Initialize all components (databases, services)
+  - [x] Run state reconciler on startup
+  - [x] Start scheduler with reconciled feeds
+  - [x] Perform initial sync for all feeds to populate RSS
+  - [x] Keep service running until shutdown signal
   - [ ] Implement graceful shutdown handling
 
 ### 5.5 Initial Sync Strategy

@@ -493,6 +493,7 @@ def test_fetch_and_process_new_feed_downloads_no_new_downloads(
         sample_feed_config.yt_args,
         FETCH_SINCE_DATE,
         FETCH_UNTIL_DATE,
+        sample_feed_config.keep_last,
     )
     mock_download_db.get_download_by_id.assert_not_called()
     mock_download_db.upsert_download.assert_not_called()
@@ -706,6 +707,7 @@ def test_enqueue_new_downloads_full_flow_mixed_scenarios(
                 sample_feed_config.yt_args,
                 FETCH_SINCE_DATE,
                 FETCH_UNTIL_DATE,
+                sample_feed_config.keep_last,
             ),
         ]
     )
@@ -796,6 +798,7 @@ def test_enqueue_new_downloads_ytdlp_error_on_main_feed_fetch(
         sample_feed_config.yt_args,
         FETCH_SINCE_DATE,
         FETCH_UNTIL_DATE,
+        sample_feed_config.keep_last,
     )
 
 
@@ -824,6 +827,7 @@ def test_enqueue_new_downloads_no_upcoming_no_new(
         sample_feed_config.yt_args,
         FETCH_SINCE_DATE,
         FETCH_UNTIL_DATE,
+        sample_feed_config.keep_last,
     )
 
 

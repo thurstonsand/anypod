@@ -361,6 +361,7 @@ class Enqueuer:
                 user_yt_cli_args,
                 fetch_since_date,
                 fetch_until_date,
+                feed_config.keep_last,
             )
         except YtdlpApiError as e:
             raise EnqueueError(

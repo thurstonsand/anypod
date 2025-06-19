@@ -77,11 +77,9 @@ TEST_URLS_PARAMS = [
 # --- Tests for YtdlpWrapper integration ---
 INVALID_VIDEO_URL = "https://www.youtube.com/watch?v=thisvideodoesnotexistxyz"
 
-# CLI args for minimal quality and limited playlist downloads
+# CLI args for minimal quality downloads
 YT_DLP_MINIMAL_ARGS = YtdlpCore.parse_options(
     [
-        "--playlist-items",
-        "1",
         "--format",
         "worst*[ext=mp4]/worst[ext=mp4]/best[ext=mp4]",
     ]
@@ -139,12 +137,12 @@ def test_fetch_metadata_success(
 ):
     """Tests successful metadata fetching for various URL types.
 
-    Asserts that at least one download is returned (or exactly one due
-    to --playlist-items 1) and that basic metadata fields are populated.
+    Asserts that at least one download is returned and that basic metadata
+    fields are populated.
     """
     feed_id = f"test_{url_type}"
     feed, downloads = ytdlp_wrapper.fetch_metadata(
-        feed_id=feed_id, url=url, user_yt_cli_args=YT_DLP_MINIMAL_ARGS
+        feed_id=feed_id, url=url, user_yt_cli_args=YT_DLP_MINIMAL_ARGS, keep_last=1
     )
 
     assert len(downloads) == 1, (
@@ -200,7 +198,7 @@ def test_thumbnail_format_validation(
     """
     feed_id = f"test_thumbnail_{url_type}"
     _, downloads = ytdlp_wrapper.fetch_metadata(
-        feed_id=feed_id, url=url, user_yt_cli_args=YT_DLP_MINIMAL_ARGS
+        feed_id=feed_id, url=url, user_yt_cli_args=YT_DLP_MINIMAL_ARGS, keep_last=1
     )
 
     assert len(downloads) == 1, (
@@ -369,3 +367,104 @@ def test_download_media_to_file_impossible_filter(ytdlp_wrapper: YtdlpWrapper):
 
     # Expecting failure because no format matches the filter during download attempt
     assert "might have filtered" in str(excinfo.value).lower()
+
+
+@pytest.mark.integration
+def test_fetch_metadata_with_keep_last_limit(ytdlp_wrapper: YtdlpWrapper):
+    """Tests that keep_last parameter correctly limits the number of downloads returned.
+
+    Uses a channel URL with multiple videos and verifies that keep_last=2
+    returns exactly 2 downloads (the most recent ones).
+    """
+    feed_id = "test_keep_last"
+    # Use a channel with multiple videos
+    channel_url = "https://www.youtube.com/@coletdjnz/videos"
+    keep_last = 2
+
+    minimal_args = YtdlpCore.parse_options(
+        [
+            "--format",
+            "worst*[ext=mp4]/worst[ext=mp4]/best[ext=mp4]",
+        ]
+    )
+
+    feed, downloads = ytdlp_wrapper.fetch_metadata(
+        feed_id=feed_id,
+        url=channel_url,
+        user_yt_cli_args=minimal_args,
+        keep_last=keep_last,
+    )
+
+    # Should return exactly keep_last number of downloads
+    assert len(downloads) == keep_last, (
+        f"Expected {keep_last} downloads with keep_last={keep_last}, got {len(downloads)}"
+    )
+
+    # Verify feed metadata is still populated correctly
+    assert feed.id == feed_id
+    assert feed.is_enabled is True
+    assert feed.source_type == SourceType.PLAYLIST
+    assert feed.title and "cole-dlp-test-acc" in feed.title.lower()
+
+    # Verify all downloads have proper metadata
+    for i, download in enumerate(downloads):
+        assert download.id, f"Download {i} should have an ID"
+        assert download.title, f"Download {i} should have a title"
+        assert download.source_url, f"Download {i} should have a source URL"
+        assert download.published, f"Download {i} should have a published date"
+        assert download.status == DownloadStatus.QUEUED
+
+
+@pytest.mark.integration
+def test_fetch_metadata_with_keep_last_none_vs_limit(ytdlp_wrapper: YtdlpWrapper):
+    """Tests that keep_last=None returns more downloads than keep_last=1.
+
+    Compares the number of downloads returned with and without keep_last
+    to ensure the limiting is working correctly.
+    """
+    feed_id = "test_keep_last_comparison"
+    # Use a channel with multiple videos
+    channel_url = "https://www.youtube.com/@coletdjnz/videos"
+
+    minimal_args = YtdlpCore.parse_options(
+        [
+            "--format",
+            "worst*[ext=mp4]/worst[ext=mp4]/best[ext=mp4]",
+        ]
+    )
+
+    # First, fetch with keep_last=1
+    _, downloads_limited = ytdlp_wrapper.fetch_metadata(
+        feed_id=feed_id,
+        url=channel_url,
+        user_yt_cli_args=minimal_args,
+        keep_last=1,
+    )
+
+    # Then, fetch with keep_last=None (no limit, but we'll use a reasonable playlist limit to avoid too many)
+    args_with_reasonable_limit = YtdlpCore.parse_options(
+        [
+            "--format",
+            "worst*[ext=mp4]/worst[ext=mp4]/best[ext=mp4]",
+        ]
+    )
+    _, downloads_unlimited = ytdlp_wrapper.fetch_metadata(
+        feed_id=feed_id,
+        url=channel_url,
+        user_yt_cli_args=args_with_reasonable_limit,
+        keep_last=None,
+    )
+
+    # Limited should return exactly 1
+    assert len(downloads_limited) == 1, (
+        f"Expected 1 download with keep_last=1, got {len(downloads_limited)}"
+    )
+
+    assert len(downloads_unlimited) > 1, (
+        f"Expected more than 1 download with keep_last=None, got {len(downloads_unlimited)}"
+    )
+
+    # The first download should be the same in both cases (most recent)
+    assert downloads_limited[0].id == downloads_unlimited[0].id, (
+        "The most recent download should be the same in both limited and unlimited cases"
+    )

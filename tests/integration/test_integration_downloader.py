@@ -32,10 +32,8 @@ BIG_BUCK_BUNNY_DURATION = 635.0
 COLETDJNZ_CHANNEL_VIDEOS = "https://www.youtube.com/@coletdjnz/videos"
 INVALID_VIDEO_URL = "https://www.youtube.com/watch?v=thisvideodoesnotexistxyz"
 
-# CLI args for minimal quality and limited playlist downloads as a string
-YT_DLP_MINIMAL_ARGS_STR = (
-    "--playlist-items 1 --format worst*[ext=mp4]/worst[ext=mp4]/best[ext=mp4]"
-)
+# CLI args for minimal quality downloads as a string
+YT_DLP_MINIMAL_ARGS_STR = "--format worst*[ext=mp4]/worst[ext=mp4]/best[ext=mp4]"
 
 # --- Tests for Downloader.download_queued ---
 # Test schedule and config
@@ -56,7 +54,7 @@ CHANNEL_FEED_CONFIG = FeedConfig(
     url=COLETDJNZ_CHANNEL_VIDEOS,
     yt_args=YT_DLP_MINIMAL_ARGS_STR,  # type: ignore
     schedule=TEST_CRON_SCHEDULE,
-    keep_last=None,
+    keep_last=2,
     since=None,
     max_errors=MAX_ERRORS,
 )

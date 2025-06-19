@@ -328,6 +328,21 @@ class YtdlpCore:
             ydl_opts["daterange"] = DateRange(start=start_date, end=end_date)
 
     @staticmethod
+    def set_playlist_limit(
+        ydl_opts: dict[str, Any],
+        keep_last: int | None = None,
+    ) -> None:
+        """Set playlist item limit in yt-dlp options to fetch most recent N items.
+
+        Args:
+            ydl_opts: Dictionary of yt-dlp options to modify in place.
+            keep_last: Maximum number of recent playlist items to fetch, or None for no limit.
+                      Uses `playlist_items` "1:N" format to get the first N items (should be in most recent order).
+        """
+        if keep_last is not None:
+            ydl_opts["playlist_items"] = f"1:{keep_last}"
+
+    @staticmethod
     def download(ydl_opts: dict[str, Any], url: str) -> None:
         """Download media from a URL using yt-dlp.
 
