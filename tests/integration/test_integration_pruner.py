@@ -5,7 +5,6 @@
 from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-import shutil
 
 import pytest
 
@@ -197,18 +196,14 @@ def get_downloads_by_published_order(
 
 
 @pytest.fixture
-def shared_dirs(
+def path_manager(
     tmp_path_factory: pytest.TempPathFactory,
-) -> Generator[tuple[Path, Path]]:
-    """Provides shared temporary directories for tests."""
-    app_tmp_dir = tmp_path_factory.mktemp("tmp")
-    app_data_dir = tmp_path_factory.mktemp("data")
-
-    yield app_tmp_dir, app_data_dir
-
-    # Cleanup
-    shutil.rmtree(app_tmp_dir, ignore_errors=True)
-    shutil.rmtree(app_data_dir, ignore_errors=True)
+) -> Generator[PathManager]:
+    """Provides shared temporary data directory for tests."""
+    yield PathManager(
+        base_data_dir=tmp_path_factory.mktemp("data"),
+        base_url="http://localhost",
+    )
 
 
 @pytest.fixture
@@ -228,16 +223,9 @@ def download_db() -> Generator[DownloadDatabase]:
 
 
 @pytest.fixture
-def file_manager(shared_dirs: tuple[Path, Path]) -> Generator[FileManager]:
+def file_manager(path_manager: PathManager) -> Generator[FileManager]:
     """Provides a FileManager instance with shared data directory."""
-    _, app_data_dir = shared_dirs
-    app_tmp_dir = shared_dirs[0]
-    paths = PathManager(
-        base_data_dir=app_data_dir,
-        base_tmp_dir=app_tmp_dir,
-        base_url="http://localhost",
-    )
-    file_manager = FileManager(paths)
+    file_manager = FileManager(path_manager)
     yield file_manager
 
 
@@ -741,36 +729,29 @@ def test_prune_feed_downloads_large_dataset(
         if download.status == DownloadStatus.DOWNLOADED:
             create_dummy_file(file_manager, download)
 
-    try:
-        # Prune keeping only the 10 most recent
-        archived_count, files_deleted_count = pruner.prune_feed_downloads(
-            feed_id=feed_id,
-            keep_last=10,
-            prune_before_date=None,
-        )
+    # Prune keeping only the 10 most recent
+    archived_count, files_deleted_count = pruner.prune_feed_downloads(
+        feed_id=feed_id,
+        keep_last=10,
+        prune_before_date=None,
+    )
 
-        # Should archive 40 items (50 - 10 kept)
-        assert archived_count == 40
+    # Should archive 40 items (50 - 10 kept)
+    assert archived_count == 40
 
-        # Should delete 20 files (half were DOWNLOADED)
-        assert files_deleted_count == 20
+    # Should delete 20 files (half were DOWNLOADED)
+    assert files_deleted_count == 20
 
-        # Verify 10 most recent remain non-archived
-        remaining_downloaded = download_db.get_downloads_by_status(
-            DownloadStatus.DOWNLOADED, feed_id=feed_id
-        )
-        remaining_queued = download_db.get_downloads_by_status(
-            DownloadStatus.QUEUED, feed_id=feed_id
-        )
+    # Verify 10 most recent remain non-archived
+    remaining_downloaded = download_db.get_downloads_by_status(
+        DownloadStatus.DOWNLOADED, feed_id=feed_id
+    )
+    remaining_queued = download_db.get_downloads_by_status(
+        DownloadStatus.QUEUED, feed_id=feed_id
+    )
 
-        total_remaining = len(remaining_downloaded) + len(remaining_queued)
-        assert total_remaining == 10
-
-    finally:
-        # Cleanup: remove any remaining files
-        feed_dir = file_manager._paths.base_data_dir / feed_id
-        if feed_dir.exists():
-            shutil.rmtree(feed_dir)
+    total_remaining = len(remaining_downloaded) + len(remaining_queued)
+    assert total_remaining == 10
 
 
 @pytest.mark.integration

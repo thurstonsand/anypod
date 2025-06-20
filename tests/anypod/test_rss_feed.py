@@ -38,8 +38,7 @@ def mock_download_db() -> MagicMock:
 def path_manager(tmp_path: Path) -> PathManager:
     """Fixture to provide a PathManager instance."""
     data_dir = tmp_path / "data"
-    tmp_dir = tmp_path / "tmp"
-    paths = PathManager(data_dir, tmp_dir, TEST_BASE_URL)
+    paths = PathManager(data_dir, TEST_BASE_URL)
     return paths
 
 
@@ -410,7 +409,7 @@ def test_feed_config_without_metadata_fails():
         description=None,  # Missing required description
     )
 
-    paths = PathManager(Path("/tmp/data"), Path("/tmp/tmp"), TEST_BASE_URL)
+    paths = PathManager(Path("/tmp/data"), TEST_BASE_URL)
     with pytest.raises(ValueError) as exc_info:
         FeedgenCore(paths, TEST_FEED_ID, feed_without_metadata)
 

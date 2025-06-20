@@ -29,9 +29,8 @@ def ytdlp_wrapper(
     mock_youtube_handler: MagicMock, tmp_path_factory: pytest.TempPathFactory
 ) -> YtdlpWrapper:
     """Fixture to provide a YtdlpWrapper instance with a mocked YoutubeHandler and temp paths."""
-    app_tmp_dir = tmp_path_factory.mktemp("app_tmp")
     app_data_dir = tmp_path_factory.mktemp("app_data")
-    paths = PathManager(app_data_dir, app_tmp_dir, "http://localhost")
+    paths = PathManager(app_data_dir, "http://localhost")
     wrapper = YtdlpWrapper(paths)
     wrapper._source_handler = mock_youtube_handler
     return wrapper
@@ -305,6 +304,7 @@ def test_download_media_to_file_success_simplified(
         download_temp_dir=feed_temp_path,
         download_data_dir=feed_home_path,
         download_id=download_id,
+        cookies_path=None,
     )
     mock_ytdlcore_download.assert_called_once_with(
         mock_ydl_opts_for_core_download, dummy_download.source_url

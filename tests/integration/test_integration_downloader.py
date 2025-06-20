@@ -5,7 +5,6 @@
 from collections.abc import Generator
 from datetime import UTC, datetime
 from pathlib import Path
-import shutil
 
 import pytest
 
@@ -70,21 +69,6 @@ INVALID_FEED_CONFIG = FeedConfig(
 
 
 @pytest.fixture
-def shared_dirs(
-    tmp_path_factory: pytest.TempPathFactory,
-) -> Generator[tuple[Path, Path]]:
-    """Provides shared temporary directories for tests."""
-    app_tmp_dir = tmp_path_factory.mktemp("tmp")
-    app_data_dir = tmp_path_factory.mktemp("data")
-
-    yield app_tmp_dir, app_data_dir
-
-    # Cleanup
-    shutil.rmtree(app_tmp_dir, ignore_errors=True)
-    shutil.rmtree(app_data_dir, ignore_errors=True)
-
-
-@pytest.fixture
 def shared_db_path(tmp_path_factory: pytest.TempPathFactory) -> Generator[Path]:
     """Provides a shared temporary database file path."""
     db_path = tmp_path_factory.mktemp("db") / "test.db"
@@ -109,28 +93,24 @@ def download_db(shared_db_path: Path) -> Generator[DownloadDatabase]:
 
 
 @pytest.fixture
-def file_manager(shared_dirs: tuple[Path, Path]) -> Generator[FileManager]:
-    """Provides a FileManager instance with shared data directory."""
-    _, app_data_dir = shared_dirs
-    app_tmp_dir = shared_dirs[0]
-    paths = PathManager(
-        base_data_dir=app_data_dir,
-        base_tmp_dir=app_tmp_dir,
+def path_manager(tmp_path_factory: pytest.TempPathFactory) -> Generator[PathManager]:
+    """Provides a PathManager instance with a temporary data directory."""
+    yield PathManager(
+        base_data_dir=tmp_path_factory.mktemp("data"),
         base_url="http://localhost",
     )
+
+
+@pytest.fixture
+def file_manager(paths: PathManager) -> Generator[FileManager]:
+    """Provides a FileManager instance with shared data directory."""
     file_manager = FileManager(paths)
     yield file_manager
 
 
 @pytest.fixture
-def ytdlp_wrapper(shared_dirs: tuple[Path, Path]) -> Generator[YtdlpWrapper]:
+def ytdlp_wrapper(paths: PathManager) -> Generator[YtdlpWrapper]:
     """Provides a YtdlpWrapper instance with shared directories."""
-    app_tmp_dir, app_data_dir = shared_dirs
-    paths = PathManager(
-        base_data_dir=app_data_dir,
-        base_tmp_dir=app_tmp_dir,
-        base_url="http://localhost",
-    )
     yield YtdlpWrapper(paths)
 
 

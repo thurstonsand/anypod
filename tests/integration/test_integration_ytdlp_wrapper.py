@@ -113,7 +113,6 @@ def ytdlp_wrapper(tmp_path_factory: pytest.TempPathFactory) -> Generator[YtdlpWr
 
     paths = PathManager(
         base_data_dir=app_data_dir,
-        base_tmp_dir=app_tmp_dir,
         base_url="http://localhost",
     )
 

@@ -2,7 +2,6 @@
 
 from collections.abc import Generator
 from datetime import UTC, datetime
-import shutil
 
 import pytest
 
@@ -86,22 +85,19 @@ def download_db() -> Generator[DownloadDatabase]:
 
 
 @pytest.fixture
-def ytdlp_wrapper(tmp_path_factory: pytest.TempPathFactory) -> Generator[YtdlpWrapper]:
-    """Provides a YtdlpWrapper instance for the tests."""
-    app_tmp_dir = tmp_path_factory.mktemp("tmp")
+def path_manager(tmp_path_factory: pytest.TempPathFactory) -> Generator[PathManager]:
+    """Provides a PathManager instance with a temporary data directory."""
     app_data_dir = tmp_path_factory.mktemp("data")
-
-    paths = PathManager(
+    yield PathManager(
         base_data_dir=app_data_dir,
-        base_tmp_dir=app_tmp_dir,
         base_url="http://localhost",
     )
 
-    yield YtdlpWrapper(paths)
 
-    # Teardown: remove temporary directories
-    shutil.rmtree(app_tmp_dir)
-    shutil.rmtree(app_data_dir)
+@pytest.fixture
+def ytdlp_wrapper(path_manager: PathManager) -> Generator[YtdlpWrapper]:
+    """Provides a YtdlpWrapper instance for the tests."""
+    yield YtdlpWrapper(path_manager)
 
 
 @pytest.fixture

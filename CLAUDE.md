@@ -31,6 +31,14 @@ uv run pre-commit run --all-files               # All of the above, prefer to us
 uvx yt-dlp # can research/view real data from youtube videos for research. see @example_feeds.yaml for real links
 ```
 
+#### Serena MCP
+
+Serena is capable of searching and updating code by symbol, relying on lsp to accurately and comprehensively find all references. Use it in conjunction with your other tools to make changes to the codebase. particularly rely on Serena for:
+
+- Gather information about a file/class: `get_symbol_overview` in conjunction with `find_symbol` to quickly and efficiently gather information an overview.
+- Refactoring code: as it is able to efficiently find all references of a symbol (`find_referencing_symbols`) or modifying symbols (`replace_symbol_body`)
+- Any other symbol-level operation can benefit from utilizing Serena over other options like pattern/regex/sed/etc.
+
 ## Architecture
 
 ### Core Components
@@ -176,6 +184,7 @@ LOG_INCLUDE_STACKTRACE=true           # Include stack traces in logs (default: f
 BASE_URL=https://podcasts.example.com  # Base URL for feeds/media (default: http://localhost:8024)
 DATA_DIR=/path/to/data                # Root directory for all application data (default: /data)
 CONFIG_FILE=/path/to/feeds.yaml       # Config file path (default: /config/feeds.yaml)
+COOKIE_PATH=/path/to/cookies.txt      # Optional cookies.txt file for yt-dlp authentication
 ```
 
 ## Code Style Guidelines

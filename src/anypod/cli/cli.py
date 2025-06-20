@@ -72,7 +72,6 @@ async def main_cli():
 
             paths = PathManager(
                 base_data_dir=DEBUG_DOWNLOADS_DIR,
-                base_tmp_dir=DEBUG_DOWNLOADS_DIR / "tmp",
                 base_url=settings.base_url,
             )
 

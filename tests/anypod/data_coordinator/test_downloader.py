@@ -224,6 +224,7 @@ def test_check_and_update_metadata_detects_changes(
         sample_download.feed,
         sample_download.source_url,
         sample_feed_config.yt_args,
+        cookies_path=None,
     )
 
     mock_download_db.upsert_download.assert_called_once()
@@ -329,6 +330,7 @@ def test_process_single_download_success_flow(
     mock_ytdlp_wrapper.download_media_to_file.assert_called_once_with(
         sample_download,
         sample_feed_config.yt_args,
+        cookies_path=None,
     )
     mock_handle_success.assert_called_once_with(sample_download, downloaded_path)
 
@@ -378,12 +380,15 @@ def test_process_single_download_calls_check_metadata(
     downloader._process_single_download(sample_download, sample_feed_config)
 
     # Verify metadata check was called first
-    mock_check_metadata.assert_called_once_with(sample_download, sample_feed_config)
+    mock_check_metadata.assert_called_once_with(
+        sample_download, sample_feed_config, None
+    )
 
     # Verify download was called with the updated download
     mock_ytdlp_wrapper.download_media_to_file.assert_called_once_with(
         updated_download,
         sample_feed_config.yt_args,
+        cookies_path=None,
     )
     mock_handle_success.assert_called_once_with(updated_download, downloaded_path)
 
@@ -447,8 +452,8 @@ def test_download_queued_processes_items_and_counts_success(
     assert failure == 0
     mock_process_single.assert_has_calls(
         [
-            call(sample_download, sample_feed_config),
-            call(download2, sample_feed_config),
+            call(sample_download, sample_feed_config, None),
+            call(download2, sample_feed_config, None),
         ],
         any_order=False,
     )
@@ -477,8 +482,8 @@ def test_download_queued_processes_items_and_counts_failures(
     assert failure == 2
     mock_process_single.assert_has_calls(
         [
-            call(sample_download, sample_feed_config),
-            call(download2, sample_feed_config),
+            call(sample_download, sample_feed_config, None),
+            call(download2, sample_feed_config, None),
         ],
         any_order=False,
     )
@@ -513,9 +518,9 @@ def test_download_queued_mixed_success_and_failure(
     assert failure == 1
     mock_process_single.assert_has_calls(
         [
-            call(dl1, sample_feed_config),
-            call(dl2, sample_feed_config),
-            call(dl3, sample_feed_config),
+            call(dl1, sample_feed_config, None),
+            call(dl2, sample_feed_config, None),
+            call(dl3, sample_feed_config, None),
         ],
         any_order=False,
     )

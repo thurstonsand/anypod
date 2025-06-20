@@ -88,7 +88,9 @@ def _init(
 
     # Initialize data coordinator components
     enqueuer = Enqueuer(
-        ytdlp_wrapper=ytdlp_wrapper, download_db=download_db, feed_db=feed_db
+        ytdlp_wrapper=ytdlp_wrapper,
+        download_db=download_db,
+        feed_db=feed_db,
     )
     downloader = Downloader(
         ytdlp_wrapper=ytdlp_wrapper,
@@ -103,6 +105,7 @@ def _init(
         pruner=pruner,
         rss_generator=rss_generator,
         feed_db=feed_db,
+        cookie_path=settings.cookie_path,
     )
 
     # Run state reconciliation
@@ -152,9 +155,8 @@ async def default(settings: AppSettings) -> None:
 
     # Initialize components
     path_manager = PathManager(
-        base_data_dir=settings.data_dir / "media",
+        base_data_dir=settings.data_dir,
         base_url=settings.base_url,
-        base_tmp_dir=settings.data_dir / "tmp",
     )
 
     # Ensure data directory exists before database initialization
@@ -168,11 +170,13 @@ async def default(settings: AppSettings) -> None:
         )
         raise DatabaseOperationError("Failed to create data directory.") from e
 
-    db_path = settings.data_dir / "anypod.db"
-    logger.info("Initializing database components.", extra={"db_path": str(db_path)})
+    logger.info(
+        "Initializing database components.",
+        extra={"db_path": str(path_manager.db_file_path)},
+    )
 
-    feed_db = FeedDatabase(db_path=db_path)
-    download_db = DownloadDatabase(db_path=db_path)
+    feed_db = FeedDatabase(db_path=path_manager.db_file_path)
+    download_db = DownloadDatabase(db_path=path_manager.db_file_path)
 
     try:
         scheduler = _init(settings, feed_db, download_db, path_manager)

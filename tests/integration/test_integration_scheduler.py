@@ -10,8 +10,6 @@ with DataCoordinator for actual feed processing jobs.
 import asyncio
 from collections.abc import Awaitable, Callable, Generator
 from datetime import UTC, datetime
-from pathlib import Path
-import shutil
 import time
 from unittest.mock import MagicMock
 
@@ -90,18 +88,14 @@ async def wait_for_condition(
 
 
 @pytest.fixture
-def shared_dirs(
+def path_manager(
     tmp_path_factory: pytest.TempPathFactory,
-) -> Generator[tuple[Path, Path]]:
-    """Provides shared temporary directories for tests."""
-    app_tmp_dir = tmp_path_factory.mktemp("tmp")
-    app_data_dir = tmp_path_factory.mktemp("data")
-
-    yield app_tmp_dir, app_data_dir
-
-    # Cleanup
-    shutil.rmtree(app_tmp_dir, ignore_errors=True)
-    shutil.rmtree(app_data_dir, ignore_errors=True)
+) -> Generator[PathManager]:
+    """Provides shared temporary data directory for tests."""
+    yield PathManager(
+        base_data_dir=tmp_path_factory.mktemp("data"),
+        base_url="http://localhost",
+    )
 
 
 @pytest.fixture
@@ -123,28 +117,16 @@ def download_db() -> Generator[DownloadDatabase]:
 
 
 @pytest.fixture
-def file_manager(shared_dirs: tuple[Path, Path]) -> Generator[FileManager]:
+def file_manager(path_manager: PathManager) -> Generator[FileManager]:
     """Provides a FileManager instance with shared data directory."""
-    app_tmp_dir, app_data_dir = shared_dirs
-    paths = PathManager(
-        base_data_dir=app_data_dir,
-        base_tmp_dir=app_tmp_dir,
-        base_url=BASE_URL,
-    )
-    file_manager = FileManager(paths)
+    file_manager = FileManager(path_manager)
     yield file_manager
 
 
 @pytest.fixture
-def ytdlp_wrapper(shared_dirs: tuple[Path, Path]) -> Generator[YtdlpWrapper]:
+def ytdlp_wrapper(path_manager: PathManager) -> Generator[YtdlpWrapper]:
     """Provides a YtdlpWrapper instance with shared directories."""
-    app_tmp_dir, app_data_dir = shared_dirs
-    paths = PathManager(
-        base_data_dir=app_data_dir,
-        base_tmp_dir=app_tmp_dir,
-        base_url="http://localhost",
-    )
-    yield YtdlpWrapper(paths)
+    yield YtdlpWrapper(path_manager)
 
 
 @pytest.fixture
@@ -178,16 +160,10 @@ def pruner(
 @pytest.fixture
 def rss_generator(
     download_db: DownloadDatabase,
-    shared_dirs: tuple[Path, Path],
+    path_manager: PathManager,
 ) -> Generator[RSSFeedGenerator]:
     """Provides an RSSFeedGenerator instance for the coordinator."""
-    app_tmp_dir, app_data_dir = shared_dirs
-    paths = PathManager(
-        base_data_dir=app_data_dir,
-        base_tmp_dir=app_tmp_dir,
-        base_url="http://localhost",
-    )
-    yield RSSFeedGenerator(download_db, paths)
+    yield RSSFeedGenerator(download_db, path_manager)
 
 
 @pytest.fixture

@@ -5,6 +5,7 @@ to yt-dlp metadata and static methods for yt-dlp operations like option
 parsing, metadata extraction, and media downloading.
 """
 
+from pathlib import Path
 from types import UnionType
 from typing import Any, Union, get_origin
 
@@ -341,6 +342,20 @@ class YtdlpCore:
         """
         if keep_last is not None:
             ydl_opts["playlist_items"] = f"1:{keep_last}"
+
+    @staticmethod
+    def set_cookies(
+        ydl_opts: dict[str, Any],
+        cookies_path: Path | None = None,
+    ) -> None:
+        """Set cookies file path in yt-dlp options.
+
+        Args:
+            ydl_opts: Dictionary of yt-dlp options to modify in place.
+            cookies_path: Path to cookies.txt file, or None to not use cookies.
+        """
+        if cookies_path is not None:
+            ydl_opts["cookiefile"] = str(cookies_path)
 
     @staticmethod
     def download(ydl_opts: dict[str, Any], url: str) -> None:

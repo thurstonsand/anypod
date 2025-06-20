@@ -190,6 +190,7 @@ class AppSettings(BaseSettings):
         data_dir: Root directory for all application data.
         tz: Timezone for date parsing in config files.
         config_file: Path to the YAML config file.
+        cookie_path: Path to the cookies.txt file for yt-dlp authentication.
         feeds: Configuration for all podcast feeds.
     """
 
@@ -235,6 +236,11 @@ class AppSettings(BaseSettings):
         default=Path("/config/feeds.yaml"),
         validation_alias="CONFIG_FILE",
         description="Path to the YAML config file.",
+    )
+    cookie_path: Path | None = Field(
+        default=None,
+        validation_alias="COOKIE_PATH",
+        description="Optional path to the cookies.txt file for yt-dlp authentication.",
     )
 
     feeds: dict[str, FeedConfig] = Field(

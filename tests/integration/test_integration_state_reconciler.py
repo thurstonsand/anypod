@@ -9,7 +9,6 @@ feed state changes, and retention policy changes.
 from collections.abc import Generator
 from datetime import UTC, datetime
 from pathlib import Path
-import shutil
 import tempfile
 
 import pytest
@@ -30,14 +29,6 @@ from anypod.state_reconciler import StateReconciler
 # Test constants
 TEST_CRON_SCHEDULE = "0 * * * *"
 BASE_TIME = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
-
-
-@pytest.fixture
-def temp_media_dir() -> Generator[Path]:
-    """Provides a temporary directory for media files."""
-    temp_dir = tempfile.mkdtemp()
-    yield Path(temp_dir)
-    shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 @pytest.fixture
@@ -66,11 +57,10 @@ def download_db(temp_db_path: Path) -> Generator[DownloadDatabase]:
 
 
 @pytest.fixture
-def path_manager(temp_media_dir: Path) -> PathManager:
+def path_manager(tmp_path_factory: pytest.TempPathFactory) -> PathManager:
     """Provides a PathManager instance with test directories."""
     return PathManager(
-        base_data_dir=temp_media_dir,
-        base_tmp_dir=temp_media_dir / ".tmp",
+        base_data_dir=tmp_path_factory.mktemp("data"),
         base_url="https://example.com",
     )
 

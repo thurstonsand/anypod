@@ -7,6 +7,7 @@ RSS generation.
 
 from datetime import UTC, datetime
 import logging
+from pathlib import Path
 import time
 
 from ..config import FeedConfig
@@ -44,6 +45,7 @@ class DataCoordinator:
         _pruner: Service for pruning old downloads based on retention policies.
         _rss_generator: Service for generating RSS feed XML.
         _feed_db: Database manager for feed record operations.
+        _cookie_path: Path to cookies.txt file for yt-dlp authentication.
     """
 
     def __init__(
@@ -53,12 +55,14 @@ class DataCoordinator:
         pruner: Pruner,
         rss_generator: RSSFeedGenerator,
         feed_db: FeedDatabase,
+        cookie_path: Path | None = None,
     ):
         self._enqueuer = enqueuer
         self._downloader = downloader
         self._pruner = pruner
         self._rss_generator = rss_generator
         self._feed_db = feed_db
+        self._cookie_path = cookie_path
         logger.debug("DataCoordinator initialized.")
 
     def _calculate_fetch_since_date(self, feed_id: str) -> datetime:
@@ -127,7 +131,11 @@ class DataCoordinator:
 
         try:
             enqueued_count = self._enqueuer.enqueue_new_downloads(
-                feed_id, feed_config, fetch_since_date, fetch_until_date
+                feed_id,
+                feed_config,
+                fetch_since_date,
+                fetch_until_date,
+                self._cookie_path,
             )
         except EnqueueError as e:
             duration = time.time() - phase_start
@@ -179,7 +187,7 @@ class DataCoordinator:
 
         try:
             success_count, failure_count = self._downloader.download_queued(
-                feed_id, feed_config
+                feed_id, feed_config, self._cookie_path
             )
         except DownloadError as e:
             duration = time.time() - phase_start
