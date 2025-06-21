@@ -1,15 +1,12 @@
 """Integration tests for YtdlpWrapper with real YouTube URLs and yt-dlp operations."""
 
-from collections.abc import Generator
 from datetime import UTC, datetime
 from pathlib import Path
-import shutil
 
 import pytest
 
 from anypod.db.types import Download, DownloadStatus, SourceType
 from anypod.exceptions import YtdlpApiError
-from anypod.path_manager import PathManager
 from anypod.ytdlp_wrapper import YtdlpWrapper
 from anypod.ytdlp_wrapper.ytdlp_core import YtdlpCore
 
@@ -104,24 +101,6 @@ BIG_BUCK_BUNNY_DOWNLOAD = Download(
     retries=0,
     last_error=None,
 )
-
-
-@pytest.fixture
-def ytdlp_wrapper(tmp_path_factory: pytest.TempPathFactory) -> Generator[YtdlpWrapper]:
-    """Provides a YtdlpWrapper instance for the tests."""
-    app_tmp_dir = tmp_path_factory.mktemp("tmp")
-    app_data_dir = tmp_path_factory.mktemp("data")
-
-    paths = PathManager(
-        base_data_dir=app_data_dir,
-        base_url="http://localhost",
-    )
-
-    yield YtdlpWrapper(paths)
-
-    # Teardown: remove temporary directories
-    shutil.rmtree(app_tmp_dir)
-    shutil.rmtree(app_data_dir)
 
 
 @pytest.mark.integration

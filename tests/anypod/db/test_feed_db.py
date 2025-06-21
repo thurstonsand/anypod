@@ -4,6 +4,7 @@
 
 from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 import sqlite3
 import time
 from typing import Any
@@ -19,9 +20,15 @@ from anypod.exceptions import FeedNotFoundError
 
 
 @pytest.fixture
-def feed_db() -> Generator[FeedDatabase]:
+def db_path(tmp_path: Path) -> Path:
+    """Provides a temporary path for the database."""
+    return tmp_path / "test.db"
+
+
+@pytest.fixture
+def feed_db(db_path: Path) -> Generator[FeedDatabase]:
     """Provides a FeedDatabase instance for testing."""
-    db = FeedDatabase(db_path=None, memory_name="test_feed_db")
+    db = FeedDatabase(db_path)
     yield db
     db.close()
 

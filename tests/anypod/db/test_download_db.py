@@ -4,6 +4,7 @@
 
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 import sqlite3
 from typing import Any
 
@@ -17,12 +18,31 @@ from anypod.exceptions import DatabaseOperationError, DownloadNotFoundError
 
 
 @pytest.fixture
-def download_db() -> Iterator[DownloadDatabase]:
-    """Provides a DownloadDatabase instance for testing with a temporary in-memory database."""
-    # db_path = tmp_path / "test.db"
-    download_db = DownloadDatabase(
-        db_path=None, memory_name="test_db", include_triggers=False
-    )
+def db_path(tmp_path: Path) -> Path:
+    """Provides a temporary path for the database."""
+    return tmp_path / "test.db"
+
+
+@pytest.fixture
+def feed_db(db_path: Path) -> Iterator[FeedDatabase]:
+    """Provides a FeedDatabase instance for testing."""
+    feed_db = FeedDatabase(db_path)
+    yield feed_db
+    feed_db.close()
+
+
+@pytest.fixture
+def download_db(db_path: Path) -> Iterator[DownloadDatabase]:
+    """Provides a DownloadDatabase instance for testing."""
+    download_db = DownloadDatabase(db_path, include_triggers=False)
+    yield download_db
+    download_db.close()  # Ensure connection is closed after test
+
+
+@pytest.fixture
+def download_db_with_triggers(db_path: Path) -> Iterator[DownloadDatabase]:
+    """Provides a DownloadDatabase instance for testing with triggers."""
+    download_db = DownloadDatabase(db_path, include_triggers=True)
     yield download_db
     download_db.close()  # Ensure connection is closed after test
 
@@ -97,33 +117,6 @@ def sample_download_upcoming() -> Download:
         discovered_at=base_time,
         updated_at=base_time,
     )
-
-
-# --- Fixtures specific to total_downloads trigger tests ---
-
-
-@pytest.fixture
-def feed_and_download_dbs() -> Iterator[tuple[FeedDatabase, DownloadDatabase]]:
-    """Provides coupled FeedDatabase and DownloadDatabase sharing the same in-memory DB.
-
-    Triggers are enabled so changes in the downloads table automatically
-    update ``feeds.total_downloads``.
-    """
-    # Use a unique shared in-memory DB for each test run to avoid cross-test leakage
-    memory_name = "total_downloads_test"
-
-    feed_db = FeedDatabase(db_path=None, memory_name=memory_name)
-    download_db = DownloadDatabase(
-        db_path=None,
-        memory_name=memory_name,
-        include_triggers=True,
-    )
-
-    yield feed_db, download_db
-
-    # Close connections after test completes
-    feed_db.close()
-    download_db.close()
 
 
 # --- Tests ---
@@ -1927,11 +1920,10 @@ def test_bump_retries_downloaded_item_does_not_become_error(
 
 @pytest.mark.unit
 def test_total_downloads_increment_on_downloaded_insert(
-    feed_and_download_dbs: tuple[FeedDatabase, DownloadDatabase],
+    feed_db: FeedDatabase,
+    download_db_with_triggers: DownloadDatabase,
 ):
     """Verify that inserting a DOWNLOADED record increments ``feeds.total_downloads``."""
-    feed_db, download_db = feed_and_download_dbs
-
     base_time = datetime(2023, 1, 1, 12, 0, 0, tzinfo=UTC)
 
     feed = Feed(
@@ -1961,7 +1953,7 @@ def test_total_downloads_increment_on_downloaded_insert(
         discovered_at=base_time,
         updated_at=base_time,
     )
-    download_db.upsert_download(download)
+    download_db_with_triggers.upsert_download(download)
 
     updated_feed = feed_db.get_feed_by_id(feed.id)
     assert updated_feed.total_downloads == 1, (
@@ -1971,11 +1963,10 @@ def test_total_downloads_increment_on_downloaded_insert(
 
 @pytest.mark.unit
 def test_total_downloads_status_transitions_increment_and_decrement(
-    feed_and_download_dbs: tuple[FeedDatabase, DownloadDatabase],
+    feed_db: FeedDatabase,
+    download_db_with_triggers: DownloadDatabase,
 ):
     """Ensure status transitions to and from DOWNLOADED update ``total_downloads`` appropriately."""
-    feed_db, download_db = feed_and_download_dbs
-
     base_time = datetime(2023, 1, 2, 12, 0, 0, tzinfo=UTC)
 
     # Arrange: feed with zero downloads
@@ -2004,21 +1995,23 @@ def test_total_downloads_status_transitions_increment_and_decrement(
         discovered_at=base_time,
         updated_at=base_time,
     )
-    download_db.upsert_download(queued_download)
+    download_db_with_triggers.upsert_download(queued_download)
 
     assert feed_db.get_feed_by_id(feed.id).total_downloads == 0, (
         "total_downloads should remain 0 after inserting a non-downloaded record"
     )
 
     # Act: transition to DOWNLOADED - should increment
-    download_db.mark_as_downloaded(feed.id, download_id, ext="mp4", filesize=2048)
+    download_db_with_triggers.mark_as_downloaded(
+        feed.id, download_id, ext="mp4", filesize=2048
+    )
 
     assert feed_db.get_feed_by_id(feed.id).total_downloads == 1, (
         "total_downloads should increment to 1 after status changes to DOWNLOADED"
     )
 
     # Act: transition away from DOWNLOADED (archive) - should decrement
-    download_db.archive_download(feed.id, download_id)
+    download_db_with_triggers.archive_download(feed.id, download_id)
 
     assert feed_db.get_feed_by_id(feed.id).total_downloads == 0, (
         "total_downloads should decrement back to 0 after status changes from DOWNLOADED"

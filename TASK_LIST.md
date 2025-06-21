@@ -362,13 +362,15 @@ This section details the components that manage the lifecycle of downloads, from
   - [x] Start scheduler with reconciled feeds
   - [x] Perform initial sync for all feeds to populate RSS
   - [x] Keep service running until shutdown signal
-  - [ ] Implement graceful shutdown handling
-  - [ ] change path_manager to automatically assume tmp and media dirs -- should only need base dir
+  - [ ] Implement graceful shutdown handling - it hard crashes pn ctrl-c right now
+  - [x] change path_manager to automatically assume tmp and media dirs -- should only need base dir
     - also, we should divide into data dir and config files (cookies.txt and config_path), so we can separate those out to be docker-friendly
     - also, it seems a little excessive to add PathManager to Enqueuer and Downloader JUST so they can retrieve the cookie
     - especially because theyve duplicated logic on retrieving the cookie -- this needs to be centralized somewhere else
     - ytdlp impl looks fine tho
-    - optimize discover/metadata/download loop to cut down on calls to yt-dlp
+  - [ ] optimize discover/metadata/download loop to cut down on calls to yt-dlp
+  - [ ] Cut down on excessive logs
+  - [x] use the shared conftest for more fixtures
 
 ### 5.5 Initial Sync Strategy
 - [ ] After reconciliation, trigger immediate sync:

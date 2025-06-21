@@ -2,7 +2,6 @@
 
 """Integration tests for Downloader with real YouTube URLs and file operations."""
 
-from collections.abc import Generator
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -15,8 +14,6 @@ from anypod.db import DownloadDatabase
 from anypod.db.feed_db import FeedDatabase
 from anypod.db.types import Download, DownloadStatus, Feed, SourceType
 from anypod.file_manager import FileManager
-from anypod.path_manager import PathManager
-from anypod.ytdlp_wrapper import YtdlpWrapper
 
 # Test constants - same as other integration tests for consistency
 BIG_BUCK_BUNNY_VIDEO_ID = "aqz-KE-bpKQ"
@@ -66,70 +63,6 @@ INVALID_FEED_CONFIG = FeedConfig(
     since=None,
     max_errors=MAX_ERRORS,
 )
-
-
-@pytest.fixture
-def shared_db_path(tmp_path_factory: pytest.TempPathFactory) -> Generator[Path]:
-    """Provides a shared temporary database file path."""
-    db_path = tmp_path_factory.mktemp("db") / "test.db"
-    yield db_path
-    # Cleanup is handled by tmp_path_factory
-
-
-@pytest.fixture
-def feed_db(shared_db_path: Path) -> Generator[FeedDatabase]:
-    """Provides a FeedDatabase instance with a shared temporary database."""
-    feed_db = FeedDatabase(db_path=shared_db_path)
-    yield feed_db
-    feed_db.close()
-
-
-@pytest.fixture
-def download_db(shared_db_path: Path) -> Generator[DownloadDatabase]:
-    """Provides a DownloadDatabase instance with a shared temporary database."""
-    download_db = DownloadDatabase(db_path=shared_db_path)
-    yield download_db
-    download_db.close()
-
-
-@pytest.fixture
-def path_manager(tmp_path_factory: pytest.TempPathFactory) -> Generator[PathManager]:
-    """Provides a PathManager instance with a temporary data directory."""
-    yield PathManager(
-        base_data_dir=tmp_path_factory.mktemp("data"),
-        base_url="http://localhost",
-    )
-
-
-@pytest.fixture
-def file_manager(path_manager: PathManager) -> Generator[FileManager]:
-    """Provides a FileManager instance with shared data directory."""
-    file_manager = FileManager(path_manager)
-    yield file_manager
-
-
-@pytest.fixture
-def ytdlp_wrapper(path_manager: PathManager) -> Generator[YtdlpWrapper]:
-    """Provides a YtdlpWrapper instance with shared directories."""
-    yield YtdlpWrapper(path_manager)
-
-
-@pytest.fixture
-def enqueuer(
-    feed_db: FeedDatabase, download_db: DownloadDatabase, ytdlp_wrapper: YtdlpWrapper
-) -> Generator[Enqueuer]:
-    """Provides an Enqueuer instance for populating the database."""
-    yield Enqueuer(feed_db, download_db, ytdlp_wrapper)
-
-
-@pytest.fixture
-def downloader(
-    download_db: DownloadDatabase,
-    file_manager: FileManager,
-    ytdlp_wrapper: YtdlpWrapper,
-) -> Generator[Downloader]:
-    """Provides a Downloader instance for the tests."""
-    yield Downloader(download_db, file_manager, ytdlp_wrapper)
 
 
 def create_test_feed(feed_db: FeedDatabase, feed_id: str, url: str) -> Feed:

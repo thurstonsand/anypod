@@ -6,10 +6,7 @@ Tests focus on full end-to-end reconciliation including database operations,
 feed state changes, and retention policy changes.
 """
 
-from collections.abc import Generator
 from datetime import UTC, datetime
-from pathlib import Path
-import tempfile
 
 import pytest
 
@@ -22,63 +19,12 @@ from anypod.config.types import (
 from anypod.data_coordinator.pruner import Pruner
 from anypod.db import DownloadDatabase, FeedDatabase
 from anypod.db.types import Download, DownloadStatus, Feed, SourceType
-from anypod.file_manager import FileManager
 from anypod.path_manager import PathManager
 from anypod.state_reconciler import StateReconciler
 
 # Test constants
 TEST_CRON_SCHEDULE = "0 * * * *"
 BASE_TIME = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
-
-
-@pytest.fixture
-def temp_db_path() -> Generator[Path]:
-    """Provides a temporary database file path."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
-        db_path = Path(f.name)
-    yield db_path
-    db_path.unlink(missing_ok=True)
-
-
-@pytest.fixture
-def feed_db(temp_db_path: Path) -> Generator[FeedDatabase]:
-    """Provides a FeedDatabase instance."""
-    db = FeedDatabase(temp_db_path)
-    yield db
-    db.close()
-
-
-@pytest.fixture
-def download_db(temp_db_path: Path) -> Generator[DownloadDatabase]:
-    """Provides a DownloadDatabase instance."""
-    db = DownloadDatabase(temp_db_path, include_triggers=False)
-    yield db
-    db.close()
-
-
-@pytest.fixture
-def path_manager(tmp_path_factory: pytest.TempPathFactory) -> PathManager:
-    """Provides a PathManager instance with test directories."""
-    return PathManager(
-        base_data_dir=tmp_path_factory.mktemp("data"),
-        base_url="https://example.com",
-    )
-
-
-@pytest.fixture
-def file_manager(path_manager: PathManager) -> FileManager:
-    """Provides a FileManager instance."""
-    return FileManager(path_manager)
-
-
-@pytest.fixture
-def pruner(
-    feed_db: FeedDatabase,
-    download_db: DownloadDatabase,
-    file_manager: FileManager,
-) -> Pruner:
-    """Provides a Pruner instance."""
-    return Pruner(feed_db, download_db, file_manager)
 
 
 @pytest.fixture
@@ -230,7 +176,6 @@ def test_feed_removal_archives_downloads(
     state_reconciler: StateReconciler,
     feed_db: FeedDatabase,
     download_db: DownloadDatabase,
-    file_manager: FileManager,
     path_manager: PathManager,
 ) -> None:
     """Removed feed has all downloads archived and files deleted."""
@@ -465,14 +410,14 @@ def test_keep_last_increase_restores_downloads(
         source_url="https://example.com/keep",
         last_successful_sync=BASE_TIME,
         keep_last=2,
-        total_downloads=2,  # 2 currently downloaded
+        total_downloads=0,
     )
     feed_db.upsert_feed(feed)
 
     # Add 2 current downloads
     for i in range(2):
         dl = create_test_download(
-            "keep_last_test",
+            feed.id,
             f"downloaded_{i}",
             DownloadStatus.DOWNLOADED,
             datetime(2024, 10 - i, 1, tzinfo=UTC),
@@ -482,7 +427,7 @@ def test_keep_last_increase_restores_downloads(
     # Add 3 archived downloads (older)
     for i in range(3):
         dl = create_test_download(
-            "keep_last_test",
+            feed.id,
             f"archived_{i}",
             DownloadStatus.ARCHIVED,
             datetime(2024, 7 - i, 1, tzinfo=UTC),
@@ -491,8 +436,8 @@ def test_keep_last_increase_restores_downloads(
 
     # Increase keep_last from 2 to 4 (should restore 2 of the 3 archived downloads)
     config_feeds = {
-        "keep_last_test": FeedConfig(
-            url="https://example.com/keep",
+        feed.id: FeedConfig(
+            url=feed.source_url,
             schedule=TEST_CRON_SCHEDULE,  # type: ignore
             enabled=True,
             keep_last=4,
@@ -505,14 +450,14 @@ def test_keep_last_increase_restores_downloads(
 
     # Verify 2 downloads were restored (to reach keep_last=4 total)
     restored = download_db.get_downloads_by_status(
-        DownloadStatus.QUEUED, feed_id="keep_last_test"
+        DownloadStatus.QUEUED, feed_id=feed.id
     )
     assert len(restored) == 2
     assert all(dl.id.startswith("archived_") for dl in restored)
 
     # Verify 1 download remains archived (the oldest one)
     archived = download_db.get_downloads_by_status(
-        DownloadStatus.ARCHIVED, feed_id="keep_last_test"
+        DownloadStatus.ARCHIVED, feed_id=feed.id
     )
     assert len(archived) == 1
     assert archived[0].id == "archived_2"  # The oldest one stays archived

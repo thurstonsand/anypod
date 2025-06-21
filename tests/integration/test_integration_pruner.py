@@ -14,7 +14,6 @@ from anypod.db.feed_db import FeedDatabase
 from anypod.db.types import Download, DownloadStatus, Feed, SourceType
 from anypod.exceptions import PruneError
 from anypod.file_manager import FileManager
-from anypod.path_manager import PathManager
 
 # Test data constants
 TEST_FEED_ID = "test_feed"
@@ -193,48 +192,6 @@ def get_downloads_by_published_order(
     """Helper function to get downloads by status sorted by published date."""
     filtered = get_downloads_by_status(downloads, status)
     return sorted(filtered, key=lambda dl: dl.published, reverse=reverse)
-
-
-@pytest.fixture
-def path_manager(
-    tmp_path_factory: pytest.TempPathFactory,
-) -> Generator[PathManager]:
-    """Provides shared temporary data directory for tests."""
-    yield PathManager(
-        base_data_dir=tmp_path_factory.mktemp("data"),
-        base_url="http://localhost",
-    )
-
-
-@pytest.fixture
-def feed_db() -> Generator[FeedDatabase]:
-    """Provides a FeedDatabase instance with a temporary database."""
-    feed_db = FeedDatabase(db_path=None, memory_name="pruner_integration_test")
-    yield feed_db
-    feed_db.close()
-
-
-@pytest.fixture
-def download_db() -> Generator[DownloadDatabase]:
-    """Provides a DownloadDatabase instance with a temporary database."""
-    download_db = DownloadDatabase(db_path=None, memory_name="pruner_integration_test")
-    yield download_db
-    download_db.close()
-
-
-@pytest.fixture
-def file_manager(path_manager: PathManager) -> Generator[FileManager]:
-    """Provides a FileManager instance with shared data directory."""
-    file_manager = FileManager(path_manager)
-    yield file_manager
-
-
-@pytest.fixture
-def pruner(
-    feed_db: FeedDatabase, download_db: DownloadDatabase, file_manager: FileManager
-) -> Generator[Pruner]:
-    """Provides a Pruner instance for the tests."""
-    yield Pruner(feed_db, download_db, file_manager)
 
 
 def create_dummy_file(file_manager: FileManager, download: Download) -> Path:

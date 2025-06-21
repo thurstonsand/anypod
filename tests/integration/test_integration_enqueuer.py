@@ -1,6 +1,5 @@
 """Integration tests for Enqueuer with real YouTube URLs and database operations."""
 
-from collections.abc import Generator
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -17,8 +16,6 @@ from anypod.db import DownloadDatabase
 from anypod.db.feed_db import FeedDatabase
 from anypod.db.types import Download, DownloadStatus, Feed, SourceType
 from anypod.exceptions import EnqueueError
-from anypod.path_manager import PathManager
-from anypod.ytdlp_wrapper import YtdlpWrapper
 
 # Test constants
 BIG_BUCK_BUNNY_VIDEO_ID = "aqz-KE-bpKQ"
@@ -67,46 +64,6 @@ SAMPLE_FEED_CONFIG = FeedConfig(
     since=None,
     max_errors=MAX_ERRORS,
 )
-
-
-@pytest.fixture
-def feed_db() -> Generator[FeedDatabase]:
-    """Provides a FeedDatabase instance with a temporary database."""
-    feed_db = FeedDatabase(db_path=None, memory_name="integration_test")
-    yield feed_db
-    feed_db.close()
-
-
-@pytest.fixture
-def download_db() -> Generator[DownloadDatabase]:
-    """Provides a DownloadDatabase instance with a temporary database."""
-    download_db = DownloadDatabase(db_path=None, memory_name="integration_test")
-    yield download_db
-    download_db.close()
-
-
-@pytest.fixture
-def path_manager(tmp_path_factory: pytest.TempPathFactory) -> Generator[PathManager]:
-    """Provides a PathManager instance with a temporary data directory."""
-    app_data_dir = tmp_path_factory.mktemp("data")
-    yield PathManager(
-        base_data_dir=app_data_dir,
-        base_url="http://localhost",
-    )
-
-
-@pytest.fixture
-def ytdlp_wrapper(path_manager: PathManager) -> Generator[YtdlpWrapper]:
-    """Provides a YtdlpWrapper instance for the tests."""
-    yield YtdlpWrapper(path_manager)
-
-
-@pytest.fixture
-def enqueuer(
-    feed_db: FeedDatabase, download_db: DownloadDatabase, ytdlp_wrapper: YtdlpWrapper
-) -> Generator[Enqueuer]:
-    """Provides an Enqueuer instance for the tests."""
-    yield Enqueuer(feed_db, download_db, ytdlp_wrapper)
 
 
 def create_test_feed(feed_db: FeedDatabase, feed_id: str, url: str) -> Feed:
