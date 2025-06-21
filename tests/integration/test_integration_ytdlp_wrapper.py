@@ -2,6 +2,7 @@
 
 from collections.abc import Generator
 from datetime import UTC, datetime
+from pathlib import Path
 import shutil
 
 import pytest
@@ -133,6 +134,7 @@ def test_fetch_metadata_success(
     url: str,
     expected_source_type: SourceType,
     expected_title_contains: str,
+    cookies_path: Path | None,
 ):
     """Tests successful metadata fetching for various URL types.
 
@@ -141,7 +143,11 @@ def test_fetch_metadata_success(
     """
     feed_id = f"test_{url_type}"
     feed, downloads = ytdlp_wrapper.fetch_metadata(
-        feed_id=feed_id, url=url, user_yt_cli_args=YT_DLP_MINIMAL_ARGS, keep_last=1
+        feed_id=feed_id,
+        url=url,
+        user_yt_cli_args=YT_DLP_MINIMAL_ARGS,
+        keep_last=1,
+        cookies_path=cookies_path,
     )
 
     assert len(downloads) == 1, (
@@ -189,6 +195,7 @@ def test_thumbnail_format_validation(
     url: str,
     expected_source_type: SourceType,
     expected_title_contains: str,
+    cookies_path: Path | None,
 ):
     """Tests that thumbnail URLs returned are in valid PNG or JPG format.
 
@@ -197,7 +204,11 @@ def test_thumbnail_format_validation(
     """
     feed_id = f"test_thumbnail_{url_type}"
     _, downloads = ytdlp_wrapper.fetch_metadata(
-        feed_id=feed_id, url=url, user_yt_cli_args=YT_DLP_MINIMAL_ARGS, keep_last=1
+        feed_id=feed_id,
+        url=url,
+        user_yt_cli_args=YT_DLP_MINIMAL_ARGS,
+        keep_last=1,
+        cookies_path=cookies_path,
     )
 
     assert len(downloads) == 1, (
@@ -221,7 +232,10 @@ def test_thumbnail_format_validation(
 
 
 @pytest.mark.integration
-def test_fetch_metadata_non_existent_video(ytdlp_wrapper: YtdlpWrapper):
+def test_fetch_metadata_non_existent_video(
+    ytdlp_wrapper: YtdlpWrapper,
+    cookies_path: Path | None,
+):
     """Tests that fetching metadata for a non-existent video URL raises YtdlpApiError."""
     feed_id = "test_non_existent"
 
@@ -230,6 +244,7 @@ def test_fetch_metadata_non_existent_video(ytdlp_wrapper: YtdlpWrapper):
             feed_id=feed_id,
             url=INVALID_VIDEO_URL,
             user_yt_cli_args=YT_DLP_MINIMAL_ARGS,
+            cookies_path=cookies_path,
         )
 
 
@@ -244,6 +259,7 @@ def test_fetch_metadata_with_impossible_filter(
     url: str,
     expected_source_type: SourceType,
     expected_title_contains: str,
+    cookies_path: Path | None,
 ):
     """Tests that fetching metadata with a filter that matches no videos returns an empty list."""
     feed_id = f"test_impossible_filter_{url_type}"
@@ -258,7 +274,10 @@ def test_fetch_metadata_with_impossible_filter(
     )
 
     feed, downloads = ytdlp_wrapper.fetch_metadata(
-        feed_id=feed_id, url=url, user_yt_cli_args=impossible_filter_args
+        feed_id=feed_id,
+        url=url,
+        user_yt_cli_args=impossible_filter_args,
+        cookies_path=cookies_path,
     )
     assert len(downloads) == 0, (
         f"Expected 0 downloads for impossible filter, got {len(downloads)}"
@@ -276,7 +295,10 @@ def test_fetch_metadata_with_impossible_filter(
 
 
 @pytest.mark.integration
-def test_download_media_to_file_success(ytdlp_wrapper: YtdlpWrapper):
+def test_download_media_to_file_success(
+    ytdlp_wrapper: YtdlpWrapper,
+    cookies_path: Path | None,
+):
     """Tests successful media download for a specific video.
 
     Asserts that the file is downloaded to the correct location and
@@ -307,6 +329,7 @@ def test_download_media_to_file_success(ytdlp_wrapper: YtdlpWrapper):
     downloaded_file_path = ytdlp_wrapper.download_media_to_file(
         download=download,
         yt_cli_args=cli_args,
+        cookies_path=cookies_path,
     )
 
     assert downloaded_file_path.exists(), (
@@ -316,7 +339,10 @@ def test_download_media_to_file_success(ytdlp_wrapper: YtdlpWrapper):
 
 
 @pytest.mark.integration
-def test_download_media_to_file_non_existent(ytdlp_wrapper: YtdlpWrapper):
+def test_download_media_to_file_non_existent(
+    ytdlp_wrapper: YtdlpWrapper,
+    cookies_path: Path | None,
+):
     """Tests that download fails with YtdlpApiError for a non-existent video URL."""
     non_existent_download = Download(
         feed="non_existent_feed",
@@ -338,6 +364,7 @@ def test_download_media_to_file_non_existent(ytdlp_wrapper: YtdlpWrapper):
         ytdlp_wrapper.download_media_to_file(
             download=non_existent_download,
             yt_cli_args=cli_args,
+            cookies_path=cookies_path,
         )
 
     # Check for messages indicating download failure from yt-dlp
@@ -347,7 +374,10 @@ def test_download_media_to_file_non_existent(ytdlp_wrapper: YtdlpWrapper):
 
 
 @pytest.mark.integration
-def test_download_media_to_file_impossible_filter(ytdlp_wrapper: YtdlpWrapper):
+def test_download_media_to_file_impossible_filter(
+    ytdlp_wrapper: YtdlpWrapper,
+    cookies_path: Path | None,
+):
     """Tests that download fails with YtdlpApiError when an impossible filter is applied."""
     impossible_filter_args = YtdlpCore.parse_options(
         [
@@ -362,6 +392,7 @@ def test_download_media_to_file_impossible_filter(ytdlp_wrapper: YtdlpWrapper):
         ytdlp_wrapper.download_media_to_file(
             download=BIG_BUCK_BUNNY_DOWNLOAD,
             yt_cli_args=impossible_filter_args,
+            cookies_path=cookies_path,
         )
 
     # Expecting failure because no format matches the filter during download attempt
@@ -369,7 +400,10 @@ def test_download_media_to_file_impossible_filter(ytdlp_wrapper: YtdlpWrapper):
 
 
 @pytest.mark.integration
-def test_fetch_metadata_with_keep_last_limit(ytdlp_wrapper: YtdlpWrapper):
+def test_fetch_metadata_with_keep_last_limit(
+    ytdlp_wrapper: YtdlpWrapper,
+    cookies_path: Path | None,
+):
     """Tests that keep_last parameter correctly limits the number of downloads returned.
 
     Uses a channel URL with multiple videos and verifies that keep_last=2
@@ -392,6 +426,7 @@ def test_fetch_metadata_with_keep_last_limit(ytdlp_wrapper: YtdlpWrapper):
         url=channel_url,
         user_yt_cli_args=minimal_args,
         keep_last=keep_last,
+        cookies_path=cookies_path,
     )
 
     # Should return exactly keep_last number of downloads
@@ -415,7 +450,10 @@ def test_fetch_metadata_with_keep_last_limit(ytdlp_wrapper: YtdlpWrapper):
 
 
 @pytest.mark.integration
-def test_fetch_metadata_with_keep_last_none_vs_limit(ytdlp_wrapper: YtdlpWrapper):
+def test_fetch_metadata_with_keep_last_none_vs_limit(
+    ytdlp_wrapper: YtdlpWrapper,
+    cookies_path: Path | None,
+):
     """Tests that keep_last=None returns more downloads than keep_last=1.
 
     Compares the number of downloads returned with and without keep_last
@@ -438,6 +476,7 @@ def test_fetch_metadata_with_keep_last_none_vs_limit(ytdlp_wrapper: YtdlpWrapper
         url=channel_url,
         user_yt_cli_args=minimal_args,
         keep_last=1,
+        cookies_path=cookies_path,
     )
 
     # Then, fetch with keep_last=None (no limit, but we'll use a reasonable playlist limit to avoid too many)
@@ -452,6 +491,7 @@ def test_fetch_metadata_with_keep_last_none_vs_limit(ytdlp_wrapper: YtdlpWrapper
         url=channel_url,
         user_yt_cli_args=args_with_reasonable_limit,
         keep_last=None,
+        cookies_path=cookies_path,
     )
 
     # Limited should return exactly 1

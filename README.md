@@ -2,7 +2,8 @@
 
 ## Development
 
-run with `uv run anypod --config-file example_feeds.yaml`
+- run with `uv run anypod --config-file example_feeds.yaml`
+- if you want to run integration tests, you can put a `cookies.txt` file in `tests/integration`
 
 ## Gotchas
 

@@ -10,6 +10,7 @@ with DataCoordinator for actual feed processing jobs.
 import asyncio
 from collections.abc import Awaitable, Callable, Generator
 from datetime import UTC, datetime
+from pathlib import Path
 import time
 from unittest.mock import MagicMock
 
@@ -173,9 +174,12 @@ def data_coordinator(
     pruner: Pruner,
     rss_generator: RSSFeedGenerator,
     feed_db: FeedDatabase,
+    cookies_path: Path | None,
 ) -> Generator[DataCoordinator]:
     """Provides a DataCoordinator instance combining all services."""
-    yield DataCoordinator(enqueuer, downloader, pruner, rss_generator, feed_db)
+    yield DataCoordinator(
+        enqueuer, downloader, pruner, rss_generator, feed_db, cookies_path=cookies_path
+    )
 
 
 @pytest.fixture

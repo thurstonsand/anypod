@@ -37,6 +37,7 @@ Serena is capable of searching and updating code by symbol, relying on lsp to ac
 
 - Gather information about a file/class: `get_symbol_overview` in conjunction with `find_symbol` to quickly and efficiently gather information an overview.
 - Refactoring code: as it is able to efficiently find all references of a symbol (`find_referencing_symbols`) or modifying symbols (`replace_symbol_body`)
+  - When using `replace_symbol_body`, Serena will handle indentation/whitespace to the correct level for that symbol. That is, you do not need to prepend whitespace outside the context of what would be syntactically correct for the code you are inserting.
 - Any other symbol-level operation can benefit from utilizing Serena over other options like pattern/regex/sed/etc.
 
 ## Architecture

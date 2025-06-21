@@ -74,16 +74,16 @@ def download_db() -> Generator[DownloadDatabase]:
 
 
 @pytest.fixture
-def file_manager(paths: PathManager) -> Generator[FileManager]:
+def file_manager(path_manager: PathManager) -> Generator[FileManager]:
     """Provides a FileManager instance with shared data directory."""
-    file_manager = FileManager(paths)
+    file_manager = FileManager(path_manager)
     yield file_manager
 
 
 @pytest.fixture
-def ytdlp_wrapper(paths: PathManager) -> Generator[YtdlpWrapper]:
+def ytdlp_wrapper(path_manager: PathManager) -> Generator[YtdlpWrapper]:
     """Provides a YtdlpWrapper instance with shared directories."""
-    yield YtdlpWrapper(paths)
+    yield YtdlpWrapper(path_manager)
 
 
 @pytest.fixture
@@ -117,10 +117,10 @@ def pruner(
 @pytest.fixture
 def rss_generator(
     download_db: DownloadDatabase,
-    paths: PathManager,
+    path_manager: PathManager,
 ) -> Generator[RSSFeedGenerator]:
     """Provides an RSSFeedGenerator instance for the coordinator."""
-    yield RSSFeedGenerator(download_db, paths)
+    yield RSSFeedGenerator(download_db, path_manager)
 
 
 @pytest.fixture
@@ -130,9 +130,12 @@ def data_coordinator(
     pruner: Pruner,
     rss_generator: RSSFeedGenerator,
     feed_db: FeedDatabase,
+    cookies_path: Path | None,
 ) -> Generator[DataCoordinator]:
     """Provides a DataCoordinator instance combining all services."""
-    yield DataCoordinator(enqueuer, downloader, pruner, rss_generator, feed_db)
+    yield DataCoordinator(
+        enqueuer, downloader, pruner, rss_generator, feed_db, cookies_path=cookies_path
+    )
 
 
 def create_test_feed(feed_db: FeedDatabase, feed_id: str) -> Feed:

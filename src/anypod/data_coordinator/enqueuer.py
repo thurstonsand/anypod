@@ -244,7 +244,7 @@ class Enqueuer:
         feed_id: str,
         feed_config: FeedConfig,
         feed_log_params: dict[str, Any],
-        cookie_path: Path | None = None,
+        cookies_path: Path | None = None,
     ) -> bool:
         """Process a single upcoming download by re-fetching metadata.
 
@@ -256,7 +256,7 @@ class Enqueuer:
             feed_id: The feed identifier.
             feed_config: The feed configuration object.
             feed_log_params: Relevant logging parameters.
-            cookie_path: Path to cookies.txt file for yt-dlp authentication.
+            cookies_path: Path to cookies.txt file for yt-dlp authentication.
 
         Returns:
             True if the download was successfully transitioned to QUEUED.
@@ -276,7 +276,7 @@ class Enqueuer:
                 feed_id,
                 db_download.source_url,
                 feed_config.yt_args,
-                cookies_path=cookie_path,
+                cookies_path=cookies_path,
             )
         except YtdlpApiError as e:
             error_message = "Failed to re-fetch metadata for upcoming download."
@@ -330,7 +330,7 @@ class Enqueuer:
         fetch_since_date: datetime,
         fetch_until_date: datetime,
         log_params: dict[str, Any],
-        cookie_path: Path | None = None,
+        cookies_path: Path | None = None,
     ) -> tuple[Feed, list[Download]]:
         """Fetch all media metadata for the feed URL with date filtering.
 
@@ -340,7 +340,7 @@ class Enqueuer:
             fetch_since_date: Only fetch downloads published after this date.
             fetch_until_date: Only fetch downloads published before this date.
             log_params: Relevant logging parameters.
-            cookie_path: Path to cookies.txt file for yt-dlp authentication.
+            cookies_path: Path to cookies.txt file for yt-dlp authentication.
 
         Returns:
             Tuple of (Feed, list[Download]) containing extracted feed metadata
@@ -368,7 +368,7 @@ class Enqueuer:
                 fetch_since_date,
                 fetch_until_date,
                 feed_config.keep_last,
-                cookie_path,
+                cookies_path,
             )
         except YtdlpApiError as e:
             raise EnqueueError(
@@ -694,7 +694,7 @@ class Enqueuer:
             )
 
     def _handle_existing_upcoming_downloads(
-        self, feed_id: str, feed_config: FeedConfig, cookie_path: Path | None = None
+        self, feed_id: str, feed_config: FeedConfig, cookies_path: Path | None = None
     ) -> int:
         """Re-fetch metadata for existing DB entries with UPCOMING status.
 
@@ -705,7 +705,7 @@ class Enqueuer:
         Args:
             feed_id: The unique identifier for the feed.
             feed_config: The configuration object for the feed.
-            cookie_path: Path to cookies.txt file for yt-dlp authentication.
+            cookies_path: Path to cookies.txt file for yt-dlp authentication.
 
         Returns:
             The count of downloads successfully transitioned from 'upcoming' to 'queued'.
@@ -731,7 +731,7 @@ class Enqueuer:
         queued_count = 0
         for db_download in upcoming_db_downloads:
             if self._process_single_upcoming_download(
-                db_download, feed_id, feed_config, feed_log_params, cookie_path
+                db_download, feed_id, feed_config, feed_log_params, cookies_path
             ):
                 queued_count += 1
 
@@ -743,7 +743,7 @@ class Enqueuer:
         feed_config: FeedConfig,
         fetch_since_date: datetime,
         fetch_until_date: datetime,
-        cookie_path: Path | None = None,
+        cookies_path: Path | None = None,
     ) -> int:
         """Fetch all media metadata for the feed URL within the given date range.
 
@@ -755,7 +755,7 @@ class Enqueuer:
             feed_config: The configuration object for the feed.
             fetch_since_date: Fetches downloads published after this date.
             fetch_until_date: Fetches downloads published before this date.
-            cookie_path: Path to cookies.txt file for yt-dlp authentication.
+            cookies_path: Path to cookies.txt file for yt-dlp authentication.
 
         Returns:
             The count of downloads newly set to QUEUED status (either new VODs or
@@ -773,7 +773,7 @@ class Enqueuer:
             fetch_since_date,
             fetch_until_date,
             feed_log_params,
-            cookie_path,
+            cookies_path,
         )
 
         # Synchronize feed metadata with database
@@ -798,7 +798,7 @@ class Enqueuer:
         feed_config: FeedConfig,
         fetch_since_date: datetime,
         fetch_until_date: datetime,
-        cookie_path: Path | None = None,
+        cookies_path: Path | None = None,
     ) -> int:
         """Fetch media metadata for a feed and enqueue new downloads.
 
@@ -818,7 +818,7 @@ class Enqueuer:
             feed_config: The configuration object for the feed, containing URL and yt-dlp arguments.
             fetch_since_date: Fetching will only look for downloads published after this date.
             fetch_until_date: Fetching will only look for downloads published before this date.
-            cookie_path: Path to cookies.txt file for yt-dlp authentication.
+            cookies_path: Path to cookies.txt file for yt-dlp authentication.
 
         Returns:
             The total count of downloads that were newly set to QUEUED status
@@ -833,7 +833,7 @@ class Enqueuer:
 
         # Handle existing UPCOMING downloads
         queued_from_upcoming = self._handle_existing_upcoming_downloads(
-            feed_id, feed_config, cookie_path
+            feed_id, feed_config, cookies_path
         )
         logger.info(
             "Upcoming downloads transitioned to QUEUED.",
@@ -842,7 +842,7 @@ class Enqueuer:
 
         # Fetch and process all feed downloads
         queued_from_feed_fetch = self._fetch_and_process_new_feed_downloads(
-            feed_id, feed_config, fetch_since_date, fetch_until_date, cookie_path
+            feed_id, feed_config, fetch_since_date, fetch_until_date, cookies_path
         )
         logger.info(
             "New/updated downloads set to QUEUED.",

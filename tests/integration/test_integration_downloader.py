@@ -102,16 +102,16 @@ def path_manager(tmp_path_factory: pytest.TempPathFactory) -> Generator[PathMana
 
 
 @pytest.fixture
-def file_manager(paths: PathManager) -> Generator[FileManager]:
+def file_manager(path_manager: PathManager) -> Generator[FileManager]:
     """Provides a FileManager instance with shared data directory."""
-    file_manager = FileManager(paths)
+    file_manager = FileManager(path_manager)
     yield file_manager
 
 
 @pytest.fixture
-def ytdlp_wrapper(paths: PathManager) -> Generator[YtdlpWrapper]:
+def ytdlp_wrapper(path_manager: PathManager) -> Generator[YtdlpWrapper]:
     """Provides a YtdlpWrapper instance with shared directories."""
-    yield YtdlpWrapper(paths)
+    yield YtdlpWrapper(path_manager)
 
 
 @pytest.fixture
@@ -152,6 +152,7 @@ def enqueue_test_items(
     feed_id: str,
     feed_config: FeedConfig,
     fetch_since_date: datetime | None = None,
+    cookies_path: Path | None = None,
 ) -> int:
     """Helper function to enqueue test items for a feed.
 
@@ -161,6 +162,7 @@ def enqueue_test_items(
         feed_id: The feed identifier.
         feed_config: The feed configuration.
         fetch_since_date: Optional date filter, defaults to datetime.min.
+        cookies_path: Path to cookies.txt file for authentication, or None if not needed.
 
     Returns:
         Number of items queued.
@@ -177,6 +179,7 @@ def enqueue_test_items(
         feed_config=feed_config,
         fetch_since_date=fetch_since_date,
         fetch_until_date=fetch_until_date,
+        cookies_path=cookies_path,
     )
 
 
@@ -187,13 +190,16 @@ def test_download_queued_single_video_success(
     downloader: Downloader,
     download_db: DownloadDatabase,
     file_manager: FileManager,
+    cookies_path: Path | None,
 ):
     """Tests successful download of a single queued video."""
     feed_id = "test_single_video"
     feed_config = SAMPLE_FEED_CONFIG
 
     # First, use enqueuer to populate database with a real entry
-    queued_count = enqueue_test_items(enqueuer, feed_db, feed_id, feed_config)
+    queued_count = enqueue_test_items(
+        enqueuer, feed_db, feed_id, feed_config, cookies_path=cookies_path
+    )
     assert queued_count >= 1, "Expected at least 1 item to be queued by enqueuer"
 
     # Verify item is in QUEUED status
@@ -208,6 +214,7 @@ def test_download_queued_single_video_success(
     success_count, failure_count = downloader.download_queued(
         feed_id=feed_id,
         feed_config=feed_config,
+        cookies_path=cookies_path,
         limit=-1,
     )
 
@@ -249,13 +256,16 @@ def test_download_queued_multiple_videos_success(
     downloader: Downloader,
     download_db: DownloadDatabase,
     file_manager: FileManager,
+    cookies_path: Path | None,
 ):
     """Tests successful download of multiple queued videos from a channel."""
     feed_id = "test_multiple_videos"
     feed_config = CHANNEL_FEED_CONFIG
 
     # Use enqueuer to populate database with multiple entries
-    queued_count = enqueue_test_items(enqueuer, feed_db, feed_id, feed_config)
+    queued_count = enqueue_test_items(
+        enqueuer, feed_db, feed_id, feed_config, cookies_path=cookies_path
+    )
     assert queued_count >= 1, "Expected at least 1 item to be queued by enqueuer"
 
     # Get original queued items
@@ -269,6 +279,7 @@ def test_download_queued_multiple_videos_success(
     success_count, failure_count = downloader.download_queued(
         feed_id=feed_id,
         feed_config=feed_config,
+        cookies_path=cookies_path,
         limit=-1,
     )
 
@@ -296,19 +307,23 @@ def test_download_queued_with_limit(
     feed_db: FeedDatabase,
     downloader: Downloader,
     download_db: DownloadDatabase,
+    cookies_path: Path | None,
 ):
     """Tests that the limit parameter properly restricts the number of downloads processed."""
     feed_id = "test_limit"
     feed_config = CHANNEL_FEED_CONFIG
 
     # Use enqueuer to populate database
-    enqueued_count = enqueue_test_items(enqueuer, feed_db, feed_id, feed_config)
+    enqueued_count = enqueue_test_items(
+        enqueuer, feed_db, feed_id, feed_config, cookies_path=cookies_path
+    )
     assert enqueued_count >= 1
 
     # Test downloader with limit of 1
     success_count, failure_count = downloader.download_queued(
         feed_id=feed_id,
         feed_config=feed_config,
+        cookies_path=cookies_path,
         limit=1,
     )
 
@@ -330,6 +345,7 @@ def test_download_queued_with_limit(
 def test_download_queued_no_queued_items(
     downloader: Downloader,
     download_db: DownloadDatabase,
+    cookies_path: Path | None,
 ):
     """Tests that downloader handles feeds with no queued items gracefully."""
     feed_id = "test_no_queued"
@@ -340,6 +356,7 @@ def test_download_queued_no_queued_items(
     success_count, failure_count = downloader.download_queued(
         feed_id=feed_id,
         feed_config=feed_config,
+        cookies_path=cookies_path,
         limit=-1,
     )
 
@@ -359,6 +376,7 @@ def test_download_queued_handles_invalid_urls(
     downloader: Downloader,
     feed_db: FeedDatabase,
     download_db: DownloadDatabase,
+    cookies_path: Path | None,
 ):
     """Tests that downloader properly handles downloads with invalid URLs."""
     feed_id = "test_invalid_urls"
@@ -396,6 +414,7 @@ def test_download_queued_handles_invalid_urls(
     success_count, failure_count = downloader.download_queued(
         feed_id=feed_id,
         feed_config=feed_config,
+        cookies_path=cookies_path,
         limit=-1,
     )
 
@@ -414,6 +433,7 @@ def test_download_queued_retry_logic_max_errors(
     downloader: Downloader,
     feed_db: FeedDatabase,
     download_db: DownloadDatabase,
+    cookies_path: Path | None,
 ):
     """Tests that downloads transition to ERROR status after max retries."""
     feed_id = "test_max_errors"
@@ -452,6 +472,7 @@ def test_download_queued_retry_logic_max_errors(
     success_count, failure_count = downloader.download_queued(
         feed_id=feed_id,
         feed_config=feed_config,
+        cookies_path=cookies_path,
         limit=-1,
     )
     assert success_count == 0
@@ -471,13 +492,16 @@ def test_download_queued_mixed_success_and_failure(
     downloader: Downloader,
     download_db: DownloadDatabase,
     file_manager: FileManager,
+    cookies_path: Path | None,
 ):
     """Tests handling of mixed successful and failed downloads."""
     feed_id = "test_mixed_results"
     feed_config = SAMPLE_FEED_CONFIG
 
     # First, enqueue a valid download
-    queued_count = enqueue_test_items(enqueuer, feed_db, feed_id, feed_config)
+    queued_count = enqueue_test_items(
+        enqueuer, feed_db, feed_id, feed_config, cookies_path=cookies_path
+    )
     assert queued_count >= 1
 
     # Then manually add an invalid download to the same feed
@@ -509,6 +533,7 @@ def test_download_queued_mixed_success_and_failure(
     success_count, failure_count = downloader.download_queued(
         feed_id=feed_id,
         feed_config=feed_config,
+        cookies_path=cookies_path,
         limit=-1,
     )
 
@@ -541,17 +566,21 @@ def test_download_queued_file_properties(
     downloader: Downloader,
     download_db: DownloadDatabase,
     file_manager: FileManager,
+    cookies_path: Path | None,
 ):
     """Tests that downloaded files have correct properties and metadata."""
     feed_id = "test_file_properties"
     feed_config = SAMPLE_FEED_CONFIG
 
     # Enqueue and download
-    enqueue_test_items(enqueuer, feed_db, feed_id, feed_config)
+    enqueue_test_items(
+        enqueuer, feed_db, feed_id, feed_config, cookies_path=cookies_path
+    )
 
     success_count, _ = downloader.download_queued(
         feed_id=feed_id,
         feed_config=feed_config,
+        cookies_path=cookies_path,
         limit=1,  # Just test one to keep it fast
     )
 
@@ -591,6 +620,7 @@ def test_filesize_metadata_flow(
     downloader: Downloader,
     download_db: DownloadDatabase,
     file_manager: FileManager,
+    cookies_path: Path | None,
 ):
     """Tests that filesize metadata flows correctly from enqueue through download.
 
@@ -603,7 +633,9 @@ def test_filesize_metadata_flow(
     feed_config = SAMPLE_FEED_CONFIG
 
     # Enqueue items to get initial metadata
-    queued_count = enqueue_test_items(enqueuer, feed_db, feed_id, feed_config)
+    queued_count = enqueue_test_items(
+        enqueuer, feed_db, feed_id, feed_config, cookies_path=cookies_path
+    )
     assert queued_count >= 1, "Should have queued at least one item"
 
     # Get the queued item and check initial filesize
@@ -620,6 +652,7 @@ def test_filesize_metadata_flow(
     success_count, _ = downloader.download_queued(
         feed_id=feed_id,
         feed_config=feed_config,
+        cookies_path=cookies_path,
         limit=1,
     )
     assert success_count >= 1, "Should have downloaded at least one item"

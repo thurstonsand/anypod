@@ -105,7 +105,7 @@ def _init(
         pruner=pruner,
         rss_generator=rss_generator,
         feed_db=feed_db,
-        cookie_path=settings.cookie_path,
+        cookies_path=settings.cookies_path,
     )
 
     # Run state reconciliation

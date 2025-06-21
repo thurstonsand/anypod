@@ -83,7 +83,7 @@ def run_debug_downloader_mode(
             success_count, failure_count = downloader.download_queued(
                 feed_id=feed_id,
                 feed_config=feed_config,
-                cookie_path=settings.cookie_path,
+                cookies_path=settings.cookies_path,
                 limit=-1,  # Process all queued downloads
             )
             total_success_count += success_count
