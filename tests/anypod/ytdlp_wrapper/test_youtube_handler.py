@@ -10,7 +10,7 @@ import pytest
 
 from anypod.db.types import Download, DownloadStatus, SourceType
 from anypod.ytdlp_wrapper.base_handler import FetchPurpose
-from anypod.ytdlp_wrapper.core import YtdlpArgs
+from anypod.ytdlp_wrapper.core import YtdlpArgs, YtdlpCore
 from anypod.ytdlp_wrapper.youtube_handler import (
     ReferenceType,
     YoutubeEntry,
@@ -50,7 +50,7 @@ def valid_video_entry(valid_video_entry_data: dict[str, Any]) -> YoutubeEntry:
     return YoutubeEntry(YtdlpInfo(valid_video_entry_data.copy()), FEED_ID)
 
 
-# --- Tests for YoutubeHandler.set_source_specific_ydl_options ---
+# --- Tests for YoutubeHandler.set_source_specific_ytdlp_options ---
 
 
 @pytest.mark.unit
@@ -61,14 +61,14 @@ def valid_video_entry(valid_video_entry_data: dict[str, Any]) -> YoutubeEntry:
         FetchPurpose.METADATA_FETCH,
     ],
 )
-def test_set_source_specific_ydl_options_returns_unmodified_args(
+def test_set_source_specific_ytdlp_options_returns_unmodified_args(
     youtube_handler: YoutubeHandler, purpose: FetchPurpose
 ):
-    """Tests that set_source_specific_ydl_options currently doesn't add any YouTube-specific options."""
+    """Tests that set_source_specific_ytdlp_options currently doesn't add any YouTube-specific options."""
     input_args = YtdlpArgs(["--some-user-arg"])
     original_args_list = input_args.to_list()
 
-    result_args = youtube_handler.set_source_specific_ydl_options(input_args, purpose)
+    result_args = youtube_handler.set_source_specific_ytdlp_options(input_args, purpose)
 
     # Should return the same args object
     assert result_args is input_args, (
@@ -516,76 +516,81 @@ def test_parse_single_video_entry_error_invalid_duration(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_determine_fetch_strategy_single_video(youtube_handler: YoutubeHandler):
+@patch.object(YtdlpCore, 'extract_info', new_callable=AsyncMock)
+async def test_determine_fetch_strategy_single_video(
+    mock_extract_info: AsyncMock, youtube_handler: YoutubeHandler
+):
     """Tests strategy determination for a single YouTube video URL."""
     initial_url = "https://www.youtube.com/watch?v=video123"
-    mock_ydl_caller = AsyncMock(
-        return_value=YtdlpInfo(
-            {
-                "extractor": "youtube",
-                "webpage_url": initial_url,
-                "id": "video123",
-            }
-        )
+    mock_extract_info_return = YtdlpInfo(
+        {
+            "extractor": "youtube",
+            "webpage_url": initial_url,
+            "id": "video123",
+        }
     )
 
+    mock_extract_info.return_value = mock_extract_info_return
+    
     fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
-        FEED_ID, initial_url, mock_ydl_caller
+        FEED_ID, initial_url
     )
 
-    mock_ydl_caller.assert_called_once_with([], initial_url)
+    mock_extract_info.assert_called_once()
     assert fetch_url == initial_url
     assert ref_type == ReferenceType.SINGLE
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+@patch.object(YtdlpCore, "extract_info")
 async def test_determine_fetch_strategy_channel_main_page_finds_videos_tab(
+    mock_extract_info: AsyncMock,
     youtube_handler: YoutubeHandler,
 ):
     """Tests strategy for a main channel page, successfully finding the 'Videos' tab."""
     initial_url = "https://www.youtube.com/@channelhandle"
     videos_tab_url = "https://www.youtube.com/@channelhandle/videos"
-    mock_ydl_caller = AsyncMock(
-        return_value=YtdlpInfo(
-            {
-                "extractor": "youtube:tab",
-                "_type": "playlist",
-                "webpage_url": initial_url,  # or some resolved channel URL
-                "id": "channelhandle_id",  # Main ID for YoutubeEntry
-                "entries": [
-                    {
-                        "_type": "playlist",
-                        "id": "shorts_tab_id",
-                        "webpage_url": "https://www.youtube.com/@channelhandle/shorts",
-                    },
-                    {
-                        "_type": "playlist",
-                        "id": "videos_tab_id",
-                        "webpage_url": videos_tab_url,
-                    },
-                    {
-                        "_type": "playlist",
-                        "id": "playlists_tab_id",
-                        "webpage_url": "https://www.youtube.com/@channelhandle/playlists",
-                    },
-                ],
-            }
-        )
+    mock_extract_info.return_value = YtdlpInfo(
+        {
+            "extractor": "youtube:tab",
+            "_type": "playlist",
+            "webpage_url": initial_url,  # or some resolved channel URL
+            "id": "channelhandle_id",  # Main ID for YoutubeEntry
+            "entries": [
+                {
+                    "_type": "playlist",
+                    "id": "shorts_tab_id",
+                    "webpage_url": "https://www.youtube.com/@channelhandle/shorts",
+                },
+                {
+                    "_type": "playlist",
+                    "id": "videos_tab_id",
+                    "webpage_url": videos_tab_url,
+                },
+                {
+                    "_type": "playlist",
+                    "id": "playlists_tab_id",
+                    "webpage_url": "https://www.youtube.com/@channelhandle/playlists",
+                },
+            ],
+        }
     )
 
     fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
-        FEED_ID, initial_url, mock_ydl_caller
+        FEED_ID, initial_url
     )
 
-    mock_ydl_caller.assert_called_once()
+    mock_extract_info.assert_called_once()
     assert fetch_url == videos_tab_url
     assert ref_type == ReferenceType.CHANNEL
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+@patch.object(YtdlpCore, "extract_info")
 async def test_determine_fetch_strategy_channel_main_page_no_videos_tab(
+    mock_extract_info: AsyncMock,
     youtube_handler: YoutubeHandler,
 ):
     """Tests strategy for a main channel page where 'Videos' tab is not found, defaulting to the resolved URL."""
@@ -593,27 +598,25 @@ async def test_determine_fetch_strategy_channel_main_page_no_videos_tab(
     resolved_channel_url = (
         "https://www.youtube.com/channel/UCxxxx/resolved"  # Mock a resolved URL
     )
-    mock_ydl_caller = AsyncMock(
-        return_value=YtdlpInfo(
-            {
-                "extractor": "youtube:tab",
-                "_type": "playlist",
-                "webpage_url": resolved_channel_url,
-                "id": "UCxxxx_id",
-                "entries": [
-                    {
-                        "_type": "playlist",
-                        "id": "UCxxxx_shorts_id",
-                        "webpage_url": "https://www.youtube.com/channel/UCxxxx/shorts",
-                    },
-                    # No "/videos" tab
-                ],
-            }
-        )
+    mock_extract_info.return_value = YtdlpInfo(
+        {
+            "extractor": "youtube:tab",
+            "_type": "playlist",
+            "webpage_url": resolved_channel_url,
+            "id": "UCxxxx_id",
+            "entries": [
+                {
+                    "_type": "playlist",
+                    "id": "UCxxxx_shorts_id",
+                    "webpage_url": "https://www.youtube.com/channel/UCxxxx/shorts",
+                },
+                # No "/videos" tab
+            ],
+        }
     )
 
     fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
-        FEED_ID, initial_url, mock_ydl_caller
+        FEED_ID, initial_url
     )
 
     assert fetch_url == resolved_channel_url
@@ -622,25 +625,24 @@ async def test_determine_fetch_strategy_channel_main_page_no_videos_tab(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+@patch("anypod.ytdlp_wrapper.youtube_handler.YtdlpCore.extract_info")
 async def test_determine_fetch_strategy_channel_videos_tab_direct(
-    youtube_handler: YoutubeHandler,
+    mock_extract_info: AsyncMock, youtube_handler: YoutubeHandler,
 ):
     """Tests strategy for a direct URL to a channel's 'Videos' tab."""
     initial_url = "https://www.youtube.com/@channelhandle/videos"
-    mock_ydl_caller = AsyncMock(
-        return_value=YtdlpInfo(
-            {
-                "extractor": "youtube:tab",
-                "_type": "playlist",
-                "webpage_url": initial_url,
-                "id": "videos_page_id",
-                "entries": [{"id": "v1"}, {"id": "v2"}],
-            }
-        )
+    mock_extract_info.return_value = YtdlpInfo(
+        {
+            "extractor": "youtube:tab",
+            "_type": "playlist",
+            "webpage_url": initial_url,
+            "id": "videos_page_id",
+            "entries": [{"id": "v1"}, {"id": "v2"}],
+        }
     )
 
     fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
-        FEED_ID, initial_url, mock_ydl_caller
+        FEED_ID, initial_url
     )
     assert fetch_url == initial_url
     assert ref_type == ReferenceType.COLLECTION
@@ -649,59 +651,64 @@ async def test_determine_fetch_strategy_channel_videos_tab_direct(
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_determine_fetch_strategy_playlist_url(youtube_handler: YoutubeHandler):
-    """Tests strategy for a playlist URL."""
-    initial_url = "https://www.youtube.com/playlist?list=PLxxxx"
-    mock_ydl_caller = AsyncMock(
-        return_value=YtdlpInfo(
-            {
-                "extractor": "youtube:tab",
-                "_type": "playlist",
-                "webpage_url": initial_url,
-                "id": "PLxxxx_id",
-                "entries": [{"id": "v1"}, {"id": "v2"}],
-            }
+    """Tests strategy for a regular playlist URL."""
+    initial_url = "https://www.youtube.com/playlist?list=PLxxxxxxxxxxxxx"
+    mock_extract_info_return = YtdlpInfo(
+        {
+            "extractor": "youtube:tab",
+            "_type": "playlist",
+            "webpage_url": initial_url,
+            "id": "playlist_id",
+            "entries": [{"id": "v1"}, {"id": "v2"}, {"id": "v3"}],
+        }
+    )
+
+    with patch.object(YtdlpCore, 'extract_info', new_callable=AsyncMock) as mock_extract_info:
+        mock_extract_info.return_value = mock_extract_info_return
+        
+        fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
+            FEED_ID, initial_url
         )
-    )
-    fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
-        FEED_ID, initial_url, mock_ydl_caller
-    )
-    assert fetch_url == initial_url
-    assert ref_type == ReferenceType.COLLECTION
+
+        mock_extract_info.assert_called_once()
+        assert fetch_url == initial_url
+        assert ref_type == ReferenceType.COLLECTION
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+@patch("anypod.ytdlp_wrapper.youtube_handler.YtdlpCore.extract_info")
 async def test_determine_fetch_strategy_playlists_tab_error(
-    youtube_handler: YoutubeHandler,
+    mock_extract_info: AsyncMock, youtube_handler: YoutubeHandler,
 ):
     """Tests that a 'playlists' tab URL raises YtdlpYoutubeDataError."""
     initial_url = "https://www.youtube.com/@channelhandle/playlists"
-    mock_ydl_caller = AsyncMock(
-        return_value=YtdlpInfo(
-            {
-                "extractor": "youtube:tab",
-                "webpage_url": initial_url,
-                "id": "playlists_page_id",
-            }
-        )
+    mock_extract_info.return_value = YtdlpInfo(
+        {
+            "extractor": "youtube:tab",
+            "webpage_url": initial_url,
+            "id": "playlists_page_id",
+        }
     )
     with pytest.raises(YtdlpYoutubeDataError):
         await youtube_handler.determine_fetch_strategy(
-            FEED_ID, initial_url, mock_ydl_caller
+            FEED_ID, initial_url
         )
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+@patch.object(YtdlpCore, "extract_info")
 async def test_determine_fetch_strategy_discovery_fails(
+    mock_extract_info: AsyncMock,
     youtube_handler: YoutubeHandler,
 ):
     """Tests strategy when discovery (ydl_caller) returns None."""
     initial_url = "https://www.youtube.com/some_unresolvable_url"
-    mock_ydl_caller = AsyncMock(return_value=None)
+    mock_extract_info.return_value = None
 
     fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
-        FEED_ID, initial_url, mock_ydl_caller
+        FEED_ID, initial_url
     )
 
     assert fetch_url == initial_url
@@ -710,23 +717,24 @@ async def test_determine_fetch_strategy_discovery_fails(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+@patch.object(YtdlpCore, "extract_info")
 async def test_determine_fetch_strategy_unknown_extractor(
+    mock_extract_info: AsyncMock,
     youtube_handler: YoutubeHandler,
 ):
     """Tests strategy for an unhandled extractor type."""
     initial_url = "https://some.other.video.site/video1"
     resolved_url_from_yt_dlp = "https://resolved.other.site/video1"
-    mock_ydl_caller = AsyncMock(
-        return_value=YtdlpInfo(
-            {
-                "extractor": "someother:extractor",
-                "webpage_url": resolved_url_from_yt_dlp,
-                "id": "other_site_video_id",
-            }
-        )
+    mock_extract_info.return_value = YtdlpInfo(
+        {
+            "extractor": "someother:extractor",
+            "webpage_url": resolved_url_from_yt_dlp,
+            "id": "other_site_video_id",
+        }
     )
+    
     fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
-        FEED_ID, initial_url, mock_ydl_caller
+        FEED_ID, initial_url
     )
 
     assert fetch_url == resolved_url_from_yt_dlp
@@ -735,38 +743,38 @@ async def test_determine_fetch_strategy_unknown_extractor(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+@patch.object(YtdlpCore, "extract_info")
 async def test_determine_fetch_strategy_channel_with_no_videos_but_has_entries(
+    mock_extract_info: AsyncMock,
     youtube_handler: YoutubeHandler,
 ):
     """Tests channel identification when entries exist but Videos tab is not found."""
     initial_url = "https://www.youtube.com/@newchannel"
     resolved_channel_url = "https://www.youtube.com/@newchannel/featured"
-    mock_ydl_caller = AsyncMock(
-        return_value=YtdlpInfo(
-            {
-                "extractor": "youtube:tab",
-                "_type": "playlist",
-                "webpage_url": resolved_channel_url,
-                "id": "newchannel_id",
-                "entries": [
-                    {
-                        "_type": "playlist",
-                        "id": "shorts_tab_id",
-                        "webpage_url": "https://www.youtube.com/@newchannel/shorts",
-                    },
-                    {
-                        "_type": "playlist",
-                        "id": "community_tab_id",
-                        "webpage_url": "https://www.youtube.com/@newchannel/community",
-                    },
-                    # No videos tab
-                ],
-            }
-        )
+    mock_extract_info.return_value = YtdlpInfo(
+        {
+            "extractor": "youtube:tab",
+            "_type": "playlist",
+            "webpage_url": resolved_channel_url,
+            "id": "newchannel_id",
+            "entries": [
+                {
+                    "_type": "playlist",
+                    "id": "shorts_tab_id",
+                    "webpage_url": "https://www.youtube.com/@newchannel/shorts",
+                },
+                {
+                    "_type": "playlist",
+                    "id": "community_tab_id",
+                    "webpage_url": "https://www.youtube.com/@newchannel/community",
+                },
+                # No videos tab
+            ],
+        }
     )
 
     fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
-        FEED_ID, initial_url, mock_ydl_caller
+        FEED_ID, initial_url
     )
 
     # Should fallback to using the resolved URL as CHANNEL type
@@ -776,26 +784,26 @@ async def test_determine_fetch_strategy_channel_with_no_videos_but_has_entries(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+@patch.object(YtdlpCore, "extract_info")
 async def test_determine_fetch_strategy_channel_with_empty_entries(
+    mock_extract_info: AsyncMock,
     youtube_handler: YoutubeHandler,
 ):
     """Tests channel identification when channel has no entries (empty/new channel)."""
     initial_url = "https://www.youtube.com/@emptychannel"
     resolved_channel_url = "https://www.youtube.com/@emptychannel/featured"
-    mock_ydl_caller = AsyncMock(
-        return_value=YtdlpInfo(
-            {
-                "extractor": "youtube:tab",
-                "_type": "playlist",
-                "webpage_url": resolved_channel_url,
-                "id": "emptychannel_id",
-                "entries": [],  # Empty channel
-            }
-        )
+    mock_extract_info.return_value = YtdlpInfo(
+        {
+            "extractor": "youtube:tab",
+            "_type": "playlist",
+            "webpage_url": resolved_channel_url,
+            "id": "emptychannel_id",
+            "entries": [],  # Empty channel
+        }
     )
 
     fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
-        FEED_ID, initial_url, mock_ydl_caller
+        FEED_ID, initial_url
     )
 
     # Should identify as channel even with empty entries
@@ -805,25 +813,25 @@ async def test_determine_fetch_strategy_channel_with_empty_entries(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+@patch.object(YtdlpCore, "extract_info")
 async def test_determine_fetch_strategy_existing_channel_tab_not_main_page(
+    mock_extract_info: AsyncMock,
     youtube_handler: YoutubeHandler,
 ):
     """Tests that existing channel tabs are not treated as main channel pages."""
     initial_url = "https://www.youtube.com/@channel/shorts"
-    mock_ydl_caller = AsyncMock(
-        return_value=YtdlpInfo(
-            {
-                "extractor": "youtube:tab",
-                "_type": "playlist",
-                "webpage_url": initial_url,  # Already a specific tab
-                "id": "channel_shorts_id",
-                "entries": [{"id": "short1"}, {"id": "short2"}],
-            }
-        )
+    mock_extract_info.return_value = YtdlpInfo(
+        {
+            "extractor": "youtube:tab",
+            "_type": "playlist",
+            "webpage_url": initial_url,  # Already a specific tab
+            "id": "channel_shorts_id",
+            "entries": [{"id": "short1"}, {"id": "short2"}],
+        }
     )
 
     fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
-        FEED_ID, initial_url, mock_ydl_caller
+        FEED_ID, initial_url
     )
 
     # Should be treated as COLLECTION, not attempt channel tab resolution

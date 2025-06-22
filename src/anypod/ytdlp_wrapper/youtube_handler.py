@@ -10,6 +10,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 import logging
 import mimetypes
+from pathlib import Path
 
 from ..db.types import Download, DownloadStatus, Feed, SourceType
 from ..exceptions import (
@@ -17,8 +18,8 @@ from ..exceptions import (
     YtdlpFieldInvalidError,
     YtdlpFieldMissingError,
 )
-from .base_handler import FetchPurpose, ReferenceType, YdlApiCaller
-from .core import YtdlpArgs, YtdlpInfo
+from .base_handler import FetchPurpose, ReferenceType
+from .core import YtdlpArgs, YtdlpCore, YtdlpInfo
 
 logger = logging.getLogger(__name__)
 
@@ -430,7 +431,7 @@ class YoutubeHandler:
     parsing into Download objects.
     """
 
-    def set_source_specific_ydl_options(
+    def set_source_specific_ytdlp_options(
         self, args: YtdlpArgs, purpose: FetchPurpose
     ) -> YtdlpArgs:
         """Apply YouTube-specific CLI options to yt-dlp arguments.
@@ -617,7 +618,7 @@ class YoutubeHandler:
         self,
         feed_id: str,
         initial_url: str,
-        ydl_caller_for_discovery: YdlApiCaller,
+        cookies_path: Path | None = None,
     ) -> tuple[str | None, ReferenceType]:
         """Determine the fetch strategy for a YouTube URL.
 
@@ -627,7 +628,7 @@ class YoutubeHandler:
         Args:
             feed_id: The feed identifier.
             initial_url: The initial URL to analyze.
-            ydl_caller_for_discovery: Function to call yt-dlp for discovery.
+            cookies_path: Path to cookies.txt file for authentication, or None if not needed.
 
         Returns:
             Tuple of (final_url_to_fetch, reference_type).
@@ -638,12 +639,27 @@ class YoutubeHandler:
         logger.info(
             "Determining fetch strategy for URL.", extra={"initial_url": initial_url}
         )
-        discovery_opts: list[str] = []  # No additional handler-specific options needed
+        
+        # Build discovery args directly
+        discovery_args = YtdlpArgs([])
+        
+        # Apply source-specific discovery options
+        discovery_args = self.set_source_specific_ytdlp_options(
+            discovery_args, FetchPurpose.DISCOVERY
+        )
+        
+        # Apply standard discovery options
+        discovery_args.quiet().no_warnings().skip_download().flat_playlist().playlist_limit(5)
+        
+        # Add cookies if provided
+        if cookies_path is not None:
+            discovery_args.cookies(cookies_path)
+        
         logger.debug(
             "Performing discovery call.",
             extra={"initial_url": initial_url},
         )
-        discovery_info = await ydl_caller_for_discovery(discovery_opts, initial_url)
+        discovery_info = await YtdlpCore.extract_info(discovery_args, initial_url)
 
         if not discovery_info:
             logger.warning(

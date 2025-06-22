@@ -5,9 +5,9 @@ implementing source-specific strategies for yt-dlp operations, including
 fetch strategy determination and metadata parsing.
 """
 
-from collections.abc import Awaitable, Callable
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
 from typing import Protocol
 
 from ..db.types import Download, Feed
@@ -46,10 +46,6 @@ class FetchPurpose(Enum):
         return self.value
 
 
-# Type alias for the function YtdlpWrapper passes to handlers for discovery calls
-YdlApiCaller = Callable[[list[str], str], Awaitable[YtdlpInfo | None]]
-
-
 class SourceHandlerBase(Protocol):
     """Protocol defining the interface for source-specific strategy and parsing logic.
 
@@ -58,7 +54,7 @@ class SourceHandlerBase(Protocol):
     and metadata parsing into Download objects.
     """
 
-    def set_source_specific_ydl_options(
+    def set_source_specific_ytdlp_options(
         self, args: YtdlpArgs, purpose: FetchPurpose
     ) -> YtdlpArgs:
         """Apply source-specific CLI options to yt-dlp arguments.
@@ -76,14 +72,14 @@ class SourceHandlerBase(Protocol):
         self,
         feed_id: str,
         initial_url: str,
-        ydl_caller_for_discovery: YdlApiCaller,
+        cookies_path: Path | None = None,
     ) -> tuple[str | None, ReferenceType]:
         """Classify the initial URL and determine the final URL to fetch downloads from.
 
         Args:
             feed_id: The feed identifier.
             initial_url: The initial URL to classify.
-            ydl_caller_for_discovery: Function to call yt-dlp for discovery.
+            cookies_path: Path to cookies.txt file for authentication, or None if not needed.
 
         Returns:
             Tuple of (final_url, reference_type).

@@ -14,7 +14,7 @@ from ..db.types import Download, Feed
 from ..exceptions import YtdlpApiError
 from ..path_manager import PathManager
 from .base_handler import FetchPurpose, ReferenceType, SourceHandlerBase
-from .core import YtdlpArgs, YtdlpCore, YtdlpInfo
+from .core import YtdlpArgs, YtdlpCore
 from .youtube_handler import YoutubeHandler
 
 logger = logging.getLogger(__name__)
@@ -63,7 +63,7 @@ class YtdlpWrapper:
 
         return feed_temp_path, feed_data_path
 
-    def _prepare_ydl_options(
+    def _prepare_ytdlp_options(
         self,
         args: YtdlpArgs,
         purpose: FetchPurpose,
@@ -185,52 +185,20 @@ class YtdlpWrapper:
 
         logger.info("Fetching metadata for feed.", extra=log_extra)
 
-        async def discovery_caller(
-            handler_discovery_opts: list[str], url_to_discover: str
-        ) -> YtdlpInfo | None:
-            logger.debug(
-                "Discovery caller invoked by strategy handler.",
-                extra={
-                    "feed_id": feed_id,
-                    "original_url": url,
-                    "url_to_discover": url_to_discover,
-                    "num_handler_discovery_opts": len(handler_discovery_opts),
-                },
-            )
-            # Create args for discovery
-            discovery_args = YtdlpArgs([])  # Empty user args for discovery
-
-            # Apply source-specific options
-            discovery_args = self._source_handler.set_source_specific_ydl_options(
-                discovery_args, FetchPurpose.DISCOVERY
-            )
-
-            # Apply discovery-specific options
-            discovery_args = self._prepare_ydl_options(
-                args=discovery_args,
-                purpose=FetchPurpose.DISCOVERY,
-                cookies_path=cookies_path,
-            )
-
-            # Add handler-specific options
-            discovery_args.extend_args(handler_discovery_opts)
-
-            return await YtdlpCore.extract_info(discovery_args, url_to_discover)
-
         fetch_url, ref_type = await self._source_handler.determine_fetch_strategy(
-            feed_id, url, discovery_caller
+            feed_id, url, cookies_path
         )
 
         # Prepare CLI args with date filtering and source-specific options
         metadata_fetch_args = YtdlpArgs(user_yt_cli_args)
 
         # Apply source-specific options
-        metadata_fetch_args = self._source_handler.set_source_specific_ydl_options(
+        metadata_fetch_args = self._source_handler.set_source_specific_ytdlp_options(
             metadata_fetch_args, FetchPurpose.METADATA_FETCH
         )
 
         # Apply metadata fetch options
-        metadata_fetch_args = self._prepare_ydl_options(
+        metadata_fetch_args = self._prepare_ytdlp_options(
             args=metadata_fetch_args,
             purpose=FetchPurpose.METADATA_FETCH,
             ref_type=ref_type,
@@ -335,12 +303,12 @@ class YtdlpWrapper:
             download_opts = YtdlpArgs(user_yt_cli_args)
 
             # Apply source-specific options
-            download_opts = self._source_handler.set_source_specific_ydl_options(
+            download_opts = self._source_handler.set_source_specific_ytdlp_options(
                 download_opts, FetchPurpose.MEDIA_DOWNLOAD
             )
 
             # Apply download-specific options
-            download_opts = self._prepare_ydl_options(
+            download_opts = self._prepare_ytdlp_options(
                 args=download_opts,
                 purpose=FetchPurpose.MEDIA_DOWNLOAD,
                 download_temp_dir=download_temp_dir,

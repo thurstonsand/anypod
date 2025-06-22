@@ -2,9 +2,6 @@
 
 import asyncio
 import json
-from typing import Any
-
-import yt_dlp  # type: ignore
 
 from ...exceptions import YtdlpApiError
 from .args import YtdlpArgs
@@ -18,19 +15,6 @@ class YtdlpCore:
     parsing, metadata extraction, and media downloading with proper
     error handling and conversion to application-specific exceptions.
     """
-
-    @staticmethod
-    def parse_options(user_cli_args: list[str]) -> dict[str, Any]:
-        """Parse command-line arguments into yt-dlp options.
-
-        Args:
-            user_cli_args: List of command-line argument strings.
-
-        Returns:
-            Dictionary of parsed yt-dlp options.
-        """
-        _, _, _, parsed_user_opts = yt_dlp.parse_options(user_cli_args)  # type: ignore
-        return parsed_user_opts  # type: ignore
 
     @staticmethod
     async def extract_info(args: YtdlpArgs, url: str) -> YtdlpInfo | None:

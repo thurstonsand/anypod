@@ -46,7 +46,7 @@ def test_prepare_ydl_options_discovery_basic(
     args = YtdlpArgs()
     purpose = FetchPurpose.DISCOVERY
 
-    prepared_args = ytdlp_wrapper._prepare_ydl_options(args, purpose)
+    prepared_args = ytdlp_wrapper._prepare_ytdlp_options(args, purpose)
 
     # Convert to list to check options
     prepared_opts = prepared_args.to_list()
@@ -67,7 +67,7 @@ def test_prepare_ydl_options_metadata_fetch_basic(
     args = YtdlpArgs()
     purpose = FetchPurpose.METADATA_FETCH
 
-    prepared_args = ytdlp_wrapper._prepare_ydl_options(args, purpose)
+    prepared_args = ytdlp_wrapper._prepare_ytdlp_options(args, purpose)
 
     # Convert to list to check options
     prepared_opts = prepared_args.to_list()
@@ -90,7 +90,7 @@ def test_prepare_ydl_options_media_download(
     mock_data_path = Path("/tmp/downloads/feed_id/data")
     mock_download_id = "video_id"
 
-    prepared_args = ytdlp_wrapper._prepare_ydl_options(
+    prepared_args = ytdlp_wrapper._prepare_ytdlp_options(
         args,
         purpose,
         download_temp_dir=mock_temp_path,
@@ -121,7 +121,7 @@ def test_prepare_ydl_options_with_user_cli_args_and_source_opts(
     # Add some source-specific options to args using the builder pattern
     args.cookies(Path("cookies.txt")).extend_args(["--ignore-errors"])
 
-    prepared_args = ytdlp_wrapper._prepare_ydl_options(args, purpose)
+    prepared_args = ytdlp_wrapper._prepare_ytdlp_options(args, purpose)
 
     # Convert to list to check options
     prepared_opts = prepared_args.to_list()
@@ -181,7 +181,7 @@ async def test_fetch_metadata_returns_feed_and_downloads_tuple(
     )
 
     # Mock handler methods to return our expected objects
-    mock_youtube_handler.set_source_specific_ydl_options.side_effect = (
+    mock_youtube_handler.set_source_specific_ytdlp_options.side_effect = (
         lambda args, purpose: args  # type: ignore
     )
     mock_youtube_handler.determine_fetch_strategy = AsyncMock(
@@ -224,7 +224,7 @@ async def test_fetch_metadata_returns_feed_and_downloads_tuple(
 
 
 @pytest.mark.unit
-@patch.object(YtdlpWrapper, "_prepare_ydl_options")
+@patch.object(YtdlpWrapper, "_prepare_ytdlp_options")
 @patch.object(YtdlpCore, "download")
 @patch.object(Path, "is_file", return_value=True)
 @patch.object(Path, "stat")
@@ -276,7 +276,7 @@ async def test_download_media_to_file_success_simplified(
     ]
     mock_prepare_options.return_value = YtdlpArgs(mock_ydl_opts_for_core_download)
     mock_ytdlcore_download.return_value = None
-    mock_youtube_handler.set_source_specific_ydl_options.side_effect = (
+    mock_youtube_handler.set_source_specific_ytdlp_options.side_effect = (
         lambda args, purpose: args.extend_args(["--source-opt", "youtube_specific"])  # type: ignore
     )
 
@@ -297,7 +297,7 @@ async def test_download_media_to_file_success_simplified(
 
     mock_prep_dl_dir.assert_called_once_with(feed_id)
 
-    mock_youtube_handler.set_source_specific_ydl_options.assert_called_once()
+    mock_youtube_handler.set_source_specific_ytdlp_options.assert_called_once()
     # Check that mock_prepare_options was called correctly
     mock_prepare_options.assert_called_once()
     _, kwargs = mock_prepare_options.call_args
@@ -357,8 +357,8 @@ async def test_date_filtering_behavior_by_reference_type(
             reference_type,
         )
     )
-    # Mock the set_source_specific_ydl_options method to return the passed args unchanged
-    mock_youtube_handler.set_source_specific_ydl_options.side_effect = (
+    # Mock the set_source_specific_ytdlp_options method to return the passed args unchanged
+    mock_youtube_handler.set_source_specific_ytdlp_options.side_effect = (
         lambda args, purpose: args  # type: ignore
     )
 
@@ -435,8 +435,8 @@ async def test_keep_last_filtering_behavior_by_reference_type(
             reference_type,
         )
     )
-    # Mock the set_source_specific_ydl_options method to return the passed args unchanged
-    mock_youtube_handler.set_source_specific_ydl_options.side_effect = (
+    # Mock the set_source_specific_ytdlp_options method to return the passed args unchanged
+    mock_youtube_handler.set_source_specific_ytdlp_options.side_effect = (
         lambda args, purpose: args  # type: ignore
     )
 

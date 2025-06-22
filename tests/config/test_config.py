@@ -14,7 +14,6 @@ import yaml
 
 from anypod.config.config import AppSettings, FeedConfig, YamlFileFromFieldSource
 from anypod.exceptions import ConfigLoadError
-from anypod.ytdlp_wrapper.core import YtdlpCore
 
 # --- Tests for AppSettings configuration loading ---
 
@@ -38,7 +37,7 @@ SAMPLE_FEEDS_DATA = {
 }
 
 # Expected parsed yt_args for podcast2
-EXPECTED_PODCAST2_YT_ARGS = YtdlpCore.parse_options(["--format", "bestaudio"])
+EXPECTED_PODCAST2_YT_ARGS = ["--format", "bestaudio"]
 
 
 @pytest.fixture
@@ -292,9 +291,8 @@ def test_feed_config_yt_args_valid_string():
         schedule="* * * * *",
         yt_args="-f best --verbose --retries 5",
     )
-    expected_args = YtdlpCore.parse_options(
-        ["-f", "best", "--verbose", "--retries", "5"]
-    )
+    expected_args = ["-f", "best", "--verbose", "--retries", "5"]
+
     assert feed.yt_args == expected_args
 
 
@@ -313,26 +311,6 @@ def test_feed_config_yt_args_invalid_string_shlex_raises_validation_error():
             url="http://example.com",
             schedule="* * * * *",
             yt_args="--format 'incomplete quote",
-        )
-    assert len(exc_info.value.errors()) == 1
-    assert exc_info.value.errors()[0]["type"] == "value_error"
-    assert "invalid yt_args string" in exc_info.value.errors()[0]["msg"].lower()
-    assert "failed to parse" in exc_info.value.errors()[0]["msg"].lower()
-
-
-@pytest.mark.unit
-def test_feed_config_yt_args_unsupported_ytdlp_option_raises_validation_error():
-    """Tests that a yt_args string with an option not recognized by yt-dlp.
-
-    raises a ValidationError.
-
-    This assumes YtdlpCore.parse_options will fail.
-    """
-    with pytest.raises(ValidationError) as exc_info:
-        FeedConfig(  # type: ignore
-            url="http://example.com",
-            schedule="* * * * *",
-            yt_args="--this-is-definitely-not-a-real-yt-dlp-option",
         )
     assert len(exc_info.value.errors()) == 1
     assert exc_info.value.errors()[0]["type"] == "value_error"
