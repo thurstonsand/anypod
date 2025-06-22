@@ -18,6 +18,7 @@ from anypod.ytdlp_wrapper.youtube_handler import (
     YtdlpYoutubeDataError,
     YtdlpYoutubeVideoFilteredOutError,
 )
+from anypod.ytdlp_wrapper.ytdlp_core import YtdlpArgs
 
 # --- Fixtures ---
 
@@ -49,7 +50,7 @@ def valid_video_entry(valid_video_entry_data: dict[str, Any]) -> YoutubeEntry:
     return YoutubeEntry(YtdlpInfo(valid_video_entry_data.copy()), FEED_ID)
 
 
-# --- Tests for YoutubeHandler.get_source_specific_ydl_options ---
+# --- Tests for YoutubeHandler.set_source_specific_ydl_options ---
 
 
 @pytest.mark.unit
@@ -60,12 +61,24 @@ def valid_video_entry(valid_video_entry_data: dict[str, Any]) -> YoutubeEntry:
         FetchPurpose.METADATA_FETCH,
     ],
 )
-def test_get_source_specific_ydl_options_returns_empty_list(
+def test_set_source_specific_ydl_options_returns_unmodified_args(
     youtube_handler: YoutubeHandler, purpose: FetchPurpose
 ):
-    """Tests that get_source_specific_ydl_options currently returns an empty list for all purposes."""
-    options = youtube_handler.get_source_specific_ydl_options(purpose)
-    assert options == [], f"Expected empty list for purpose {purpose}, got {options}"
+    """Tests that set_source_specific_ydl_options currently doesn't add any YouTube-specific options."""
+    input_args = YtdlpArgs(["--some-user-arg"])
+    original_args_list = input_args.to_list()
+
+    result_args = youtube_handler.set_source_specific_ydl_options(input_args, purpose)
+
+    # Should return the same args object
+    assert result_args is input_args, (
+        f"Expected same YtdlpArgs object for purpose {purpose}"
+    )
+
+    # Should not add any additional arguments beyond the user-provided ones
+    assert result_args.to_list() == original_args_list, (
+        f"Expected no additional args for purpose {purpose}, got {result_args.to_list()}"
+    )
 
 
 FEED_ID = "test_feed"
@@ -658,7 +671,9 @@ async def test_determine_fetch_strategy_playlist_url(youtube_handler: YoutubeHan
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_determine_fetch_strategy_playlists_tab_error(youtube_handler: YoutubeHandler):
+async def test_determine_fetch_strategy_playlists_tab_error(
+    youtube_handler: YoutubeHandler,
+):
     """Tests that a 'playlists' tab URL raises YtdlpYoutubeDataError."""
     initial_url = "https://www.youtube.com/@channelhandle/playlists"
     mock_ydl_caller = AsyncMock(
@@ -671,12 +686,16 @@ async def test_determine_fetch_strategy_playlists_tab_error(youtube_handler: You
         )
     )
     with pytest.raises(YtdlpYoutubeDataError):
-        await youtube_handler.determine_fetch_strategy(FEED_ID, initial_url, mock_ydl_caller)
+        await youtube_handler.determine_fetch_strategy(
+            FEED_ID, initial_url, mock_ydl_caller
+        )
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_determine_fetch_strategy_discovery_fails(youtube_handler: YoutubeHandler):
+async def test_determine_fetch_strategy_discovery_fails(
+    youtube_handler: YoutubeHandler,
+):
     """Tests strategy when discovery (ydl_caller) returns None."""
     initial_url = "https://www.youtube.com/some_unresolvable_url"
     mock_ydl_caller = AsyncMock(return_value=None)
@@ -691,7 +710,9 @@ async def test_determine_fetch_strategy_discovery_fails(youtube_handler: Youtube
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_determine_fetch_strategy_unknown_extractor(youtube_handler: YoutubeHandler):
+async def test_determine_fetch_strategy_unknown_extractor(
+    youtube_handler: YoutubeHandler,
+):
     """Tests strategy for an unhandled extractor type."""
     initial_url = "https://some.other.video.site/video1"
     resolved_url_from_yt_dlp = "https://resolved.other.site/video1"

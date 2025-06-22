@@ -18,7 +18,7 @@ from ..exceptions import (
     YtdlpFieldMissingError,
 )
 from .base_handler import FetchPurpose, ReferenceType, YdlApiCaller
-from .ytdlp_core import YtdlpInfo
+from .ytdlp_core import YtdlpArgs, YtdlpInfo
 
 logger = logging.getLogger(__name__)
 
@@ -430,17 +430,20 @@ class YoutubeHandler:
     parsing into Download objects.
     """
 
-    def get_source_specific_ydl_options(self, purpose: FetchPurpose) -> list[str]:
-        """Get YouTube-specific CLI options for the given purpose.
+    def set_source_specific_ydl_options(
+        self, args: YtdlpArgs, purpose: FetchPurpose
+    ) -> YtdlpArgs:
+        """Apply YouTube-specific CLI options to yt-dlp arguments.
 
         Args:
+            args: YtdlpArgs object to modify with source-specific options.
             purpose: The purpose of the fetch operation.
 
         Returns:
-            List of YouTube-specific CLI arguments.
+            Modified YtdlpArgs object with source-specific options applied.
         """
-        # No filtering at discovery, metadata fetch, or media download needed from here
-        return []
+        # No YouTube-specific filtering at discovery, metadata fetch, or media download needed
+        return args
 
     def extract_feed_metadata(
         self,

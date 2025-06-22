@@ -82,7 +82,7 @@ async def main_cli():
                         "Initializing Anypod in 'ytdlp' debug mode.",
                         extra={"debug_config_file_path": str(settings.config_file)},
                     )
-                    run_debug_ytdlp_mode(
+                    await run_debug_ytdlp_mode(
                         settings.config_file,
                         paths,
                     )

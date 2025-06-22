@@ -11,7 +11,7 @@ from enum import Enum
 from typing import Protocol
 
 from ..db.types import Download, Feed
-from .ytdlp_core import YtdlpInfo
+from .ytdlp_core import YtdlpArgs, YtdlpInfo
 
 
 class ReferenceType(Enum):
@@ -58,14 +58,17 @@ class SourceHandlerBase(Protocol):
     and metadata parsing into Download objects.
     """
 
-    def get_source_specific_ydl_options(self, purpose: FetchPurpose) -> list[str]:
-        """Return source-specific CLI options for yt-dlp.
+    def set_source_specific_ydl_options(
+        self, args: YtdlpArgs, purpose: FetchPurpose
+    ) -> YtdlpArgs:
+        """Apply source-specific CLI options to yt-dlp arguments.
 
         Args:
+            args: YtdlpArgs object to modify with source-specific options.
             purpose: The purpose of the fetch operation.
 
         Returns:
-            List of CLI arguments specific to this source.
+            Modified YtdlpArgs object with source-specific options applied.
         """
         ...
 

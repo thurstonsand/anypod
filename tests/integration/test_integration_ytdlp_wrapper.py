@@ -307,7 +307,7 @@ async def test_download_media_to_file_success(
 
     downloaded_file_path = await ytdlp_wrapper.download_media_to_file(
         download=download,
-        yt_cli_args=cli_args,
+        user_yt_cli_args=cli_args,
         cookies_path=cookies_path,
     )
 
@@ -343,7 +343,7 @@ async def test_download_media_to_file_non_existent(
     with pytest.raises(YtdlpApiError) as excinfo:
         await ytdlp_wrapper.download_media_to_file(
             download=non_existent_download,
-            yt_cli_args=cli_args,
+            user_yt_cli_args=cli_args,
             cookies_path=cookies_path,
         )
 
@@ -370,7 +370,7 @@ async def test_download_media_to_file_impossible_filter(
     with pytest.raises(YtdlpApiError) as excinfo:
         await ytdlp_wrapper.download_media_to_file(
             download=BIG_BUCK_BUNNY_DOWNLOAD,
-            yt_cli_args=impossible_filter_args,
+            user_yt_cli_args=impossible_filter_args,
             cookies_path=cookies_path,
         )
 

@@ -385,7 +385,9 @@ This section details the components that manage the lifecycle of downloads, from
 - [x] **CLI Args Strategy**: Remove dict conversion in `feed_config.py` - keep `yt_args` as `list[str]` throughout pipeline
 - [x] **YtdlpCore Async**: Implement subprocess calls with `--dump-single-json --flat-playlist` for metadata, parse JSON to `YtdlpInfo`
 - [x] **Cancellation**: Proper subprocess cleanup (`proc.kill()` + `await proc.wait()` on `CancelledError`)
-- [ ] Isolate yt-dlp cli args into YtdlpCore
+- [x] Isolate yt-dlp cli args into YtdlpCore
+- [ ] Consistent naming on the ydl vs ytdlp fns
+  - also separate out the classes into different files
 - [ ] Remove unused YtdlpCore methods: parse_options(), set_date_range(), set_playlist_limit(), set_cookies()
 - [ ] **Conversion Order**: YtdlpCore → YtdlpWrapper → Enqueuer/Downloader/Pruner → DataCoordinator → StateReconciler
 - [ ] Convert Enqueuer class to async - update all ytdlp_wrapper calls and method signatures

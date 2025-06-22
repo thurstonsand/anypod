@@ -4,7 +4,6 @@
 
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -14,7 +13,7 @@ from anypod.path_manager import PathManager
 from anypod.ytdlp_wrapper import YtdlpWrapper
 from anypod.ytdlp_wrapper.base_handler import FetchPurpose, ReferenceType
 from anypod.ytdlp_wrapper.youtube_handler import YoutubeHandler
-from anypod.ytdlp_wrapper.ytdlp_core import YtdlpCore, YtdlpInfo
+from anypod.ytdlp_wrapper.ytdlp_core import YtdlpArgs, YtdlpCore, YtdlpInfo
 
 
 @pytest.fixture
@@ -44,20 +43,20 @@ def test_prepare_ydl_options_discovery_basic(
     ytdlp_wrapper: YtdlpWrapper,
 ):
     """Tests basic option preparation for DISCOVERY purpose with no user CLI args and no source-specific options."""
-    user_cli_args: list[str] = []
+    args = YtdlpArgs()
     purpose = FetchPurpose.DISCOVERY
-    source_specific_opts: list[str] = []
 
-    prepared_opts = ytdlp_wrapper._prepare_ydl_options(
-        user_cli_args, purpose, source_specific_opts=source_specific_opts
-    )
+    prepared_args = ytdlp_wrapper._prepare_ydl_options(args, purpose)
+
+    # Convert to list to check options
+    prepared_opts = prepared_args.to_list()
 
     assert "--skip-download" in prepared_opts
     assert "--quiet" in prepared_opts
     assert "--no-warnings" in prepared_opts
     assert "--flat-playlist" in prepared_opts
     assert "--playlist-items" in prepared_opts
-    assert "1-5" in prepared_opts
+    assert ":5" in prepared_opts
 
 
 @pytest.mark.unit
@@ -65,20 +64,19 @@ def test_prepare_ydl_options_metadata_fetch_basic(
     ytdlp_wrapper: YtdlpWrapper,
 ):
     """Tests basic option preparation for METADATA_FETCH purpose with no user CLI args and no source-specific options."""
-    user_cli_args: list[str] = []
+    args = YtdlpArgs()
     purpose = FetchPurpose.METADATA_FETCH
-    source_specific_opts: list[str] = []
 
-    prepared_opts = ytdlp_wrapper._prepare_ydl_options(
-        user_cli_args, purpose, source_specific_opts=source_specific_opts
-    )
+    prepared_args = ytdlp_wrapper._prepare_ydl_options(args, purpose)
+
+    # Convert to list to check options
+    prepared_opts = prepared_args.to_list()
 
     assert "--skip-download" in prepared_opts
     assert "--quiet" in prepared_opts
     assert "--no-warnings" in prepared_opts
     # Key difference for METADATA_FETCH - no flat-playlist
     assert "--flat-playlist" not in prepared_opts
-    assert "--playlist-items" not in prepared_opts
 
 
 @pytest.mark.unit
@@ -86,21 +84,22 @@ def test_prepare_ydl_options_media_download(
     ytdlp_wrapper: YtdlpWrapper,
 ):
     """Tests option preparation for MEDIA_DOWNLOAD purpose."""
-    user_cli_args: list[str] = []
+    args = YtdlpArgs()
     purpose = FetchPurpose.MEDIA_DOWNLOAD
-    source_specific_opts: list[str] = []
     mock_temp_path = Path("/tmp/downloads/feed_id/temp")
     mock_data_path = Path("/tmp/downloads/feed_id/data")
     mock_download_id = "video_id"
 
-    prepared_opts = ytdlp_wrapper._prepare_ydl_options(
-        user_cli_args,
+    prepared_args = ytdlp_wrapper._prepare_ydl_options(
+        args,
         purpose,
-        source_specific_opts=source_specific_opts,
         download_temp_dir=mock_temp_path,
         download_data_dir=mock_data_path,
         download_id=mock_download_id,
     )
+
+    # Convert to list to check options
+    prepared_opts = prepared_args.to_list()
 
     # Should not contain --skip-download (that's the default, omitted means download)
     assert "--skip-download" not in prepared_opts
@@ -116,16 +115,16 @@ def test_prepare_ydl_options_with_user_cli_args_and_source_opts(
     ytdlp_wrapper: YtdlpWrapper,
 ):
     """Tests option preparation with user CLI args and source-specific options, ensuring they are merged correctly."""
-    user_cli_args: list[str] = ["--format", "bestvideo"]
+    args = YtdlpArgs(["--format", "bestvideo"])
     purpose = FetchPurpose.METADATA_FETCH
-    source_specific_opts = [
-        "--cookies", "cookies.txt",
-        "--ignore-errors",
-    ]
 
-    prepared_opts = ytdlp_wrapper._prepare_ydl_options(
-        user_cli_args, purpose, source_specific_opts=source_specific_opts
-    )
+    # Add some source-specific options to args using the builder pattern
+    args.cookies(Path("cookies.txt")).extend_args(["--ignore-errors"])
+
+    prepared_args = ytdlp_wrapper._prepare_ydl_options(args, purpose)
+
+    # Convert to list to check options
+    prepared_opts = prepared_args.to_list()
 
     assert "--skip-download" in prepared_opts
     assert "--quiet" in prepared_opts
@@ -182,11 +181,15 @@ async def test_fetch_metadata_returns_feed_and_downloads_tuple(
     )
 
     # Mock handler methods to return our expected objects
-    mock_youtube_handler.get_source_specific_ydl_options.return_value = []
-    mock_youtube_handler.determine_fetch_strategy = AsyncMock(return_value=(
-        url,
-        ReferenceType.SINGLE,
-    ))
+    mock_youtube_handler.set_source_specific_ydl_options.side_effect = (
+        lambda args, purpose: args  # type: ignore
+    )
+    mock_youtube_handler.determine_fetch_strategy = AsyncMock(
+        return_value=(
+            url,
+            ReferenceType.SINGLE,
+        )
+    )
     mock_youtube_handler.extract_feed_metadata.return_value = expected_feed
     mock_youtube_handler.parse_metadata_to_downloads.return_value = [expected_download]
 
@@ -262,16 +265,20 @@ async def test_download_media_to_file_success_simplified(
     expected_final_file = feed_home_path / f"{download_id}.{dummy_download.ext}"
 
     mock_ydl_opts_for_core_download = [
-        "--output", f"{download_id}.%(ext)s",
-        "--paths", f"temp:{feed_temp_path}",
-        "--paths", f"home:{feed_home_path}",
-        "--format", "bestvideo+bestaudio/best",
+        "--output",
+        f"{download_id}.%(ext)s",
+        "--paths",
+        f"temp:{feed_temp_path}",
+        "--paths",
+        f"home:{feed_home_path}",
+        "--format",
+        "bestvideo+bestaudio/best",
     ]
-    mock_prepare_options.return_value = mock_ydl_opts_for_core_download
+    mock_prepare_options.return_value = YtdlpArgs(mock_ydl_opts_for_core_download)
     mock_ytdlcore_download.return_value = None
-    mock_youtube_handler.get_source_specific_ydl_options.return_value = [
-        "--source-opt", "youtube_specific"
-    ]
+    mock_youtube_handler.set_source_specific_ydl_options.side_effect = (
+        lambda args, purpose: args.extend_args(["--source-opt", "youtube_specific"])  # type: ignore
+    )
 
     expected_final_file.parent.mkdir(parents=True, exist_ok=True)
     expected_final_file.touch()
@@ -282,27 +289,28 @@ async def test_download_media_to_file_success_simplified(
     mock_prep_dl_dir.return_value = (feed_temp_path, feed_home_path)
     mock_path_glob.return_value = [expected_final_file]
 
-    returned_path = await ytdlp_wrapper.download_media_to_file(dummy_download, yt_cli_args)
+    returned_path = await ytdlp_wrapper.download_media_to_file(
+        dummy_download, yt_cli_args
+    )
 
     assert returned_path == expected_final_file
 
     mock_prep_dl_dir.assert_called_once_with(feed_id)
 
-    mock_youtube_handler.get_source_specific_ydl_options.assert_called_once_with(
-        FetchPurpose.MEDIA_DOWNLOAD
-    )
-    mock_prepare_options.assert_called_once_with(
-        user_cli_args=yt_cli_args,
-        purpose=FetchPurpose.MEDIA_DOWNLOAD,
-        source_specific_opts=["--source-opt", "youtube_specific"],
-        download_temp_dir=feed_temp_path,
-        download_data_dir=feed_home_path,
-        download_id=download_id,
-        cookies_path=None,
-    )
-    mock_ytdlcore_download.assert_called_once_with(
-        mock_ydl_opts_for_core_download, dummy_download.source_url
-    )
+    mock_youtube_handler.set_source_specific_ydl_options.assert_called_once()
+    # Check that mock_prepare_options was called correctly
+    mock_prepare_options.assert_called_once()
+    _, kwargs = mock_prepare_options.call_args
+    assert kwargs["purpose"] == FetchPurpose.MEDIA_DOWNLOAD
+    assert kwargs["download_temp_dir"] == feed_temp_path
+    assert kwargs["download_data_dir"] == feed_home_path
+    assert kwargs["download_id"] == download_id
+    assert kwargs["cookies_path"] is None
+    # Check the download call
+    mock_ytdlcore_download.assert_called_once()
+    download_args, _ = mock_ytdlcore_download.call_args
+    assert isinstance(download_args[0], YtdlpArgs)
+    assert download_args[1] == dummy_download.source_url
 
     mock_path_glob.assert_called_once_with(f"{download_id}.*")
 
@@ -343,11 +351,16 @@ async def test_date_filtering_behavior_by_reference_type(
     feed_id = "test_feed"
 
     # Mock the source handler to return the specified reference type
-    mock_youtube_handler.determine_fetch_strategy = AsyncMock(return_value=(
-        url,
-        reference_type,
-    ))
-    mock_youtube_handler.get_source_specific_ydl_options.return_value = []
+    mock_youtube_handler.determine_fetch_strategy = AsyncMock(
+        return_value=(
+            url,
+            reference_type,
+        )
+    )
+    # Mock the set_source_specific_ydl_options method to return the passed args unchanged
+    mock_youtube_handler.set_source_specific_ydl_options.side_effect = (
+        lambda args, purpose: args  # type: ignore
+    )
 
     # Mock the extract_info call to avoid actual yt-dlp calls
     mock_ytdlp_info = MagicMock()
@@ -371,14 +384,16 @@ async def test_date_filtering_behavior_by_reference_type(
     if should_call_set_date_range:
         # Check that extract_info was called with CLI args containing date filters
         call_args = mock_extract_info.call_args[0]
-        cli_args = call_args[0]
+        ytdlp_args = call_args[0]
+        cli_args = ytdlp_args.to_list()
         assert "--dateafter" in cli_args
         assert "20230101" in cli_args
         assert "--datebefore" in cli_args
     else:
         # For single videos, date filtering should not be applied
         call_args = mock_extract_info.call_args[0]
-        cli_args = call_args[0]
+        ytdlp_args = call_args[0]
+        cli_args = ytdlp_args.to_list()
         assert "--dateafter" not in cli_args
         assert "--datebefore" not in cli_args
 
@@ -414,11 +429,16 @@ async def test_keep_last_filtering_behavior_by_reference_type(
     keep_last = 5
 
     # Mock the source handler to return the specified reference type
-    mock_youtube_handler.determine_fetch_strategy = AsyncMock(return_value=(
-        url,
-        reference_type,
-    ))
-    mock_youtube_handler.get_source_specific_ydl_options.return_value = []
+    mock_youtube_handler.determine_fetch_strategy = AsyncMock(
+        return_value=(
+            url,
+            reference_type,
+        )
+    )
+    # Mock the set_source_specific_ydl_options method to return the passed args unchanged
+    mock_youtube_handler.set_source_specific_ydl_options.side_effect = (
+        lambda args, purpose: args  # type: ignore
+    )
 
     # Mock the extract_info call to avoid actual yt-dlp calls
     mock_ytdlp_info = MagicMock()
@@ -438,14 +458,16 @@ async def test_keep_last_filtering_behavior_by_reference_type(
     if should_call_set_playlist_limit:
         # Check that extract_info was called with CLI args containing playlist limit
         call_args = mock_extract_info.call_args[0]
-        cli_args = call_args[0]
-        assert "--playlist-end" in cli_args
-        assert str(keep_last) in cli_args
+        ytdlp_args = call_args[0]
+        cli_args = ytdlp_args.to_list()
+        assert "--playlist-items" in cli_args
+        assert f":{keep_last}" in cli_args
     else:
         # For single videos, playlist limiting should not be applied
         call_args = mock_extract_info.call_args[0]
-        cli_args = call_args[0]
-        assert "--playlist-end" not in cli_args
+        ytdlp_args = call_args[0]
+        cli_args = ytdlp_args.to_list()
+        assert "--playlist-items" not in cli_args
 
 
 # NOTE: More complex fetch_metadata and download_media_to_file scenarios are covered by integration tests
