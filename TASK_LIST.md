@@ -362,7 +362,6 @@ This section details the components that manage the lifecycle of downloads, from
   - [x] Start scheduler with reconciled feeds
   - [x] Perform initial sync for all feeds to populate RSS
   - [x] Keep service running until shutdown signal
-  - [ ] Implement graceful shutdown handling - it hard crashes pn ctrl-c right now
   - [x] change path_manager to automatically assume tmp and media dirs -- should only need base dir
     - also, we should divide into data dir and config files (cookies.txt and config_path), so we can separate those out to be docker-friendly
     - also, it seems a little excessive to add PathManager to Enqueuer and Downloader JUST so they can retrieve the cookie
@@ -371,6 +370,13 @@ This section details the components that manage the lifecycle of downloads, from
   - [ ] optimize discover/metadata/download loop to cut down on calls to yt-dlp
   - [ ] Cut down on excessive logs
   - [x] use the shared conftest for more fixtures
+  - [ ] make the db a folder instead of a file -- it creates `.db-wal` type in the same folder.
+
+### 5.4.1 Convert to async model
+- [ ] Wrap yt-dlp calls in `asyncio.create_subprocess_exec` so that they can be cancelled
+- [ ] Switch over from sqlite-utils to SQLAlchemy 2.0 AsyncIO + SQLModel
+- [ ] Implement graceful shutdown handling - it hard crashes on ctrl-c right now
+  - this includes during init when we're not in APScheduler yet (maybe we should be?)
 
 ### 5.5 Initial Sync Strategy
 - [ ] After reconciliation, trigger immediate sync:

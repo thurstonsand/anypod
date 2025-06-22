@@ -6,7 +6,7 @@ runs state reconciliation, starts the scheduler, and manages the application lif
 
 import asyncio
 import logging
-import time
+import signal
 
 from ..config import AppSettings
 from ..data_coordinator import DataCoordinator, Downloader, Enqueuer, Pruner
@@ -16,7 +16,6 @@ from ..exceptions import (
     StateReconciliationError,
 )
 from ..file_manager import FileManager
-from ..logging_config import set_context_id
 from ..path_manager import PathManager
 from ..rss import RSSFeedGenerator
 from ..schedule import FeedScheduler
@@ -26,54 +25,20 @@ from ..ytdlp_wrapper import YtdlpWrapper
 logger = logging.getLogger(__name__)
 
 
-def _perform_initial_sync(
-    data_coordinator: DataCoordinator,
-    ready_feeds: list[str],
-    settings: AppSettings,
-) -> None:
-    """Perform initial sync for all enabled feeds to populate RSS.
+def setup_graceful_shutdown() -> asyncio.Event:
+    """Set up signal handlers for graceful shutdown.
 
-    Args:
-        data_coordinator: The data coordinator instance.
-        ready_feeds: List of feed IDs ready for processing.
-        settings: Application settings.
+    Returns:
+        Event that will be set when a shutdown signal is received.
     """
-    logger.info(
-        "Starting initial sync for all enabled feeds.",
-        extra={"feed_count": len(ready_feeds)},
-    )
+    shutdown_event = asyncio.Event()
+    loop = asyncio.get_running_loop()
 
-    success_count = 0
-    error_count = 0
+    # Register signal handlers for graceful shutdown using asyncio
+    loop.add_signal_handler(signal.SIGINT, shutdown_event.set)
+    loop.add_signal_handler(signal.SIGTERM, shutdown_event.set)
 
-    for feed_id in ready_feeds:
-        feed_config = settings.feeds[feed_id]
-
-        # Set context ID for initial sync logging correlation
-        timestamp = int(time.time())
-        context_id = f"initial-{feed_id}-{timestamp}"
-        set_context_id(context_id)
-
-        logger.info("Performing initial sync for feed.", extra={"feed_id": feed_id})
-
-        result = data_coordinator.process_feed(feed_id, feed_config)
-        if result.overall_success:
-            success_count += 1
-        else:
-            error_count += 1
-            logger.warning(
-                "Initial sync completed with errors.",
-                extra={"feed_id": feed_id, **result.summary_dict()},
-            )
-
-    logger.info(
-        "Initial sync completed for all feeds.",
-        extra={
-            "total_feeds": len(ready_feeds),
-            "successful": success_count,
-            "failed": error_count,
-        },
-    )
+    return shutdown_event
 
 
 def _init(
@@ -127,9 +92,6 @@ def _init(
         )
         raise RuntimeError("No enabled feeds found in config")
 
-    # Perform initial sync for all feeds
-    _perform_initial_sync(data_coordinator, ready_feeds, settings)
-
     # Initialize and start scheduler
     logger.info("Initializing feed scheduler.", extra={"ready_feeds": len(ready_feeds)})
     return FeedScheduler(
@@ -178,6 +140,7 @@ async def default(settings: AppSettings) -> None:
     feed_db = FeedDatabase(db_path=path_manager.db_file_path)
     download_db = DownloadDatabase(db_path=path_manager.db_file_path)
 
+    scheduler = None
     try:
         scheduler = _init(settings, feed_db, download_db, path_manager)
 
@@ -190,12 +153,25 @@ async def default(settings: AppSettings) -> None:
             },
         )
 
-        # Keep running forever until interrupted
-        await asyncio.Event().wait()
+        # Setup graceful shutdown and wait for signal
+        shutdown_event = setup_graceful_shutdown()
+        await shutdown_event.wait()
+        logger.info("Shutdown signal received.")
+
     finally:
-        # Cleanup database connections
+        # Cleanup scheduler and database connections
+        try:
+            if scheduler:
+                await scheduler.stop(wait_for_jobs=True)
+                logger.info("Scheduler shutdown completed.")
+        except Exception as e:
+            logger.error("Error shutting down scheduler.", exc_info=e)
+
         try:
             feed_db.close()
             download_db.close()
+            logger.info("Database connections closed.")
         except DatabaseOperationError as e:
             logger.error("Error closing database connections.", exc_info=e)
+
+        logger.info("Anypod shutdown completed.")

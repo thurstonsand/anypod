@@ -179,6 +179,7 @@ class APSchedulerCore:
         cron_expression: CronExpression,
         jitter: int,
         callback: Callable[P, R],
+        run_immediately: bool = False,
         *args: P.args,
         **kwargs: P.kwargs,
     ) -> None:
@@ -189,6 +190,7 @@ class APSchedulerCore:
             cron_expression: The CronExpression to schedule the job.
             jitter: The jitter to apply to the cron trigger.
             callback: The callback function to call when the job is executed.
+            run_immediately: If True, the job's first run will be triggered immediately.
             args: The arguments to pass to the callback function.
             kwargs: The keyword arguments to pass to the callback function.
 
@@ -196,7 +198,7 @@ class APSchedulerCore:
             SchedulerError: If the cron expression is invalid.
         """
         trigger = self._trigger_from_cron_expression(cron_expression, jitter=jitter)  # type: ignore
-        self._scheduler.add_job(  # type: ignore
+        job = self._scheduler.add_job(  # type: ignore
             callback,
             args=args,
             kwargs=kwargs,
@@ -207,6 +209,9 @@ class APSchedulerCore:
             misfire_grace_time=300,
             replace_existing=True,
         )
+
+        if run_immediately:
+            job.modify(next_run_time=datetime.now(UTC))  # type: ignore
 
     async def run_job_now[**P, R](
         self,
