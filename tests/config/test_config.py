@@ -14,7 +14,7 @@ import yaml
 
 from anypod.config.config import AppSettings, FeedConfig, YamlFileFromFieldSource
 from anypod.exceptions import ConfigLoadError
-from anypod.ytdlp_wrapper.ytdlp_core import YtdlpCore
+from anypod.ytdlp_wrapper.core import YtdlpCore
 
 # --- Tests for AppSettings configuration loading ---
 

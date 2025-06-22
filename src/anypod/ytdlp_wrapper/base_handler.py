@@ -11,7 +11,7 @@ from enum import Enum
 from typing import Protocol
 
 from ..db.types import Download, Feed
-from .ytdlp_core import YtdlpArgs, YtdlpInfo
+from .core import YtdlpArgs, YtdlpInfo
 
 
 class ReferenceType(Enum):

@@ -18,7 +18,7 @@ from ..exceptions import (
     YtdlpFieldMissingError,
 )
 from .base_handler import FetchPurpose, ReferenceType, YdlApiCaller
-from .ytdlp_core import YtdlpArgs, YtdlpInfo
+from .core import YtdlpArgs, YtdlpInfo
 
 logger = logging.getLogger(__name__)
 

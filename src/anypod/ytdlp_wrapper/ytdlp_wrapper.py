@@ -14,8 +14,8 @@ from ..db.types import Download, Feed
 from ..exceptions import YtdlpApiError
 from ..path_manager import PathManager
 from .base_handler import FetchPurpose, ReferenceType, SourceHandlerBase
+from .core import YtdlpArgs, YtdlpCore, YtdlpInfo
 from .youtube_handler import YoutubeHandler
-from .ytdlp_core import YtdlpArgs, YtdlpCore, YtdlpInfo
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +118,9 @@ class YtdlpWrapper:
                         message="download_temp_dir, download_data_dir, and download_id are required for MEDIA_DOWNLOAD purpose",
                         download_id=download_id,
                     )
-                args.output(f"{download_id}.%(ext)s").paths_temp(download_temp_dir).paths_home(download_data_dir)
+                args.output(f"{download_id}.%(ext)s").paths_temp(
+                    download_temp_dir
+                ).paths_home(download_data_dir)
 
         # Add cookies if provided
         if cookies_path is not None:
@@ -197,25 +199,23 @@ class YtdlpWrapper:
             )
             # Create args for discovery
             discovery_args = YtdlpArgs([])  # Empty user args for discovery
-            
+
             # Apply source-specific options
             discovery_args = self._source_handler.set_source_specific_ydl_options(
                 discovery_args, FetchPurpose.DISCOVERY
             )
-            
+
             # Apply discovery-specific options
             discovery_args = self._prepare_ydl_options(
                 args=discovery_args,
                 purpose=FetchPurpose.DISCOVERY,
                 cookies_path=cookies_path,
             )
-            
+
             # Add handler-specific options
             discovery_args.extend_args(handler_discovery_opts)
-            
-            return await YtdlpCore.extract_info(
-                discovery_args, url_to_discover
-            )
+
+            return await YtdlpCore.extract_info(discovery_args, url_to_discover)
 
         fetch_url, ref_type = await self._source_handler.determine_fetch_strategy(
             feed_id, url, discovery_caller
@@ -223,12 +223,12 @@ class YtdlpWrapper:
 
         # Prepare CLI args with date filtering and source-specific options
         metadata_fetch_args = YtdlpArgs(user_yt_cli_args)
-        
+
         # Apply source-specific options
         metadata_fetch_args = self._source_handler.set_source_specific_ydl_options(
             metadata_fetch_args, FetchPurpose.METADATA_FETCH
         )
-        
+
         # Apply metadata fetch options
         metadata_fetch_args = self._prepare_ydl_options(
             args=metadata_fetch_args,
@@ -333,12 +333,12 @@ class YtdlpWrapper:
         try:
             # Create download args
             download_opts = YtdlpArgs(user_yt_cli_args)
-            
+
             # Apply source-specific options
             download_opts = self._source_handler.set_source_specific_ydl_options(
                 download_opts, FetchPurpose.MEDIA_DOWNLOAD
             )
-            
+
             # Apply download-specific options
             download_opts = self._prepare_ydl_options(
                 args=download_opts,

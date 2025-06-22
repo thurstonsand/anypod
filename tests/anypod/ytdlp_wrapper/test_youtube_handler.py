@@ -10,6 +10,7 @@ import pytest
 
 from anypod.db.types import Download, DownloadStatus, SourceType
 from anypod.ytdlp_wrapper.base_handler import FetchPurpose
+from anypod.ytdlp_wrapper.core import YtdlpArgs
 from anypod.ytdlp_wrapper.youtube_handler import (
     ReferenceType,
     YoutubeEntry,
@@ -18,7 +19,6 @@ from anypod.ytdlp_wrapper.youtube_handler import (
     YtdlpYoutubeDataError,
     YtdlpYoutubeVideoFilteredOutError,
 )
-from anypod.ytdlp_wrapper.ytdlp_core import YtdlpArgs
 
 # --- Fixtures ---
 

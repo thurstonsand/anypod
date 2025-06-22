@@ -12,8 +12,8 @@ from anypod.db.types import Download, DownloadStatus, Feed, SourceType
 from anypod.path_manager import PathManager
 from anypod.ytdlp_wrapper import YtdlpWrapper
 from anypod.ytdlp_wrapper.base_handler import FetchPurpose, ReferenceType
+from anypod.ytdlp_wrapper.core import YtdlpArgs, YtdlpCore, YtdlpInfo
 from anypod.ytdlp_wrapper.youtube_handler import YoutubeHandler
-from anypod.ytdlp_wrapper.ytdlp_core import YtdlpArgs, YtdlpCore, YtdlpInfo
 
 
 @pytest.fixture

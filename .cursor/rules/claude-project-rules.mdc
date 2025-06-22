@@ -209,6 +209,7 @@ COOKIE_PATH=/path/to/cookies.txt      # Optional cookies.txt file for yt-dlp aut
 - Catch specific exceptions rather than broad `Exception` catches
 - When adding new code/features, don't reference them with "new logic", "new field", etc. It is going to live in the code base for a long time past "new"
 - Order functions so each is defined before being referenced within the same file
+- Imports should always be at the top of the file, unless you are specifically trying to lazy load
 
 ### Docstring Guidelines
 - All functions, methods, classes, and tops of files require Google-style docstrings:

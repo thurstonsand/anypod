@@ -3,7 +3,7 @@
 import pytest
 
 from anypod.exceptions import YtdlpFieldInvalidError
-from anypod.ytdlp_wrapper.ytdlp_core import YtdlpInfo
+from anypod.ytdlp_wrapper.core import YtdlpInfo
 
 # --- Tests for YtdlpInfo.entries ---
 
