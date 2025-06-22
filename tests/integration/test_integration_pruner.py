@@ -5,7 +5,6 @@
 from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-import shutil
 
 import pytest
 
@@ -15,7 +14,6 @@ from anypod.db.feed_db import FeedDatabase
 from anypod.db.types import Download, DownloadStatus, Feed, SourceType
 from anypod.exceptions import PruneError
 from anypod.file_manager import FileManager
-from anypod.path_manager import PathManager
 
 # Test data constants
 TEST_FEED_ID = "test_feed"
@@ -194,59 +192,6 @@ def get_downloads_by_published_order(
     """Helper function to get downloads by status sorted by published date."""
     filtered = get_downloads_by_status(downloads, status)
     return sorted(filtered, key=lambda dl: dl.published, reverse=reverse)
-
-
-@pytest.fixture
-def shared_dirs(
-    tmp_path_factory: pytest.TempPathFactory,
-) -> Generator[tuple[Path, Path]]:
-    """Provides shared temporary directories for tests."""
-    app_tmp_dir = tmp_path_factory.mktemp("tmp")
-    app_data_dir = tmp_path_factory.mktemp("data")
-
-    yield app_tmp_dir, app_data_dir
-
-    # Cleanup
-    shutil.rmtree(app_tmp_dir, ignore_errors=True)
-    shutil.rmtree(app_data_dir, ignore_errors=True)
-
-
-@pytest.fixture
-def feed_db() -> Generator[FeedDatabase]:
-    """Provides a FeedDatabase instance with a temporary database."""
-    feed_db = FeedDatabase(db_path=None, memory_name="pruner_integration_test")
-    yield feed_db
-    feed_db.close()
-
-
-@pytest.fixture
-def download_db() -> Generator[DownloadDatabase]:
-    """Provides a DownloadDatabase instance with a temporary database."""
-    download_db = DownloadDatabase(db_path=None, memory_name="pruner_integration_test")
-    yield download_db
-    download_db.close()
-
-
-@pytest.fixture
-def file_manager(shared_dirs: tuple[Path, Path]) -> Generator[FileManager]:
-    """Provides a FileManager instance with shared data directory."""
-    _, app_data_dir = shared_dirs
-    app_tmp_dir = shared_dirs[0]
-    paths = PathManager(
-        base_data_dir=app_data_dir,
-        base_tmp_dir=app_tmp_dir,
-        base_url="http://localhost",
-    )
-    file_manager = FileManager(paths)
-    yield file_manager
-
-
-@pytest.fixture
-def pruner(
-    feed_db: FeedDatabase, download_db: DownloadDatabase, file_manager: FileManager
-) -> Generator[Pruner]:
-    """Provides a Pruner instance for the tests."""
-    yield Pruner(feed_db, download_db, file_manager)
 
 
 def create_dummy_file(file_manager: FileManager, download: Download) -> Path:
@@ -741,36 +686,29 @@ def test_prune_feed_downloads_large_dataset(
         if download.status == DownloadStatus.DOWNLOADED:
             create_dummy_file(file_manager, download)
 
-    try:
-        # Prune keeping only the 10 most recent
-        archived_count, files_deleted_count = pruner.prune_feed_downloads(
-            feed_id=feed_id,
-            keep_last=10,
-            prune_before_date=None,
-        )
+    # Prune keeping only the 10 most recent
+    archived_count, files_deleted_count = pruner.prune_feed_downloads(
+        feed_id=feed_id,
+        keep_last=10,
+        prune_before_date=None,
+    )
 
-        # Should archive 40 items (50 - 10 kept)
-        assert archived_count == 40
+    # Should archive 40 items (50 - 10 kept)
+    assert archived_count == 40
 
-        # Should delete 20 files (half were DOWNLOADED)
-        assert files_deleted_count == 20
+    # Should delete 20 files (half were DOWNLOADED)
+    assert files_deleted_count == 20
 
-        # Verify 10 most recent remain non-archived
-        remaining_downloaded = download_db.get_downloads_by_status(
-            DownloadStatus.DOWNLOADED, feed_id=feed_id
-        )
-        remaining_queued = download_db.get_downloads_by_status(
-            DownloadStatus.QUEUED, feed_id=feed_id
-        )
+    # Verify 10 most recent remain non-archived
+    remaining_downloaded = download_db.get_downloads_by_status(
+        DownloadStatus.DOWNLOADED, feed_id=feed_id
+    )
+    remaining_queued = download_db.get_downloads_by_status(
+        DownloadStatus.QUEUED, feed_id=feed_id
+    )
 
-        total_remaining = len(remaining_downloaded) + len(remaining_queued)
-        assert total_remaining == 10
-
-    finally:
-        # Cleanup: remove any remaining files
-        feed_dir = file_manager._paths.base_data_dir / feed_id
-        if feed_dir.exists():
-            shutil.rmtree(feed_dir)
+    total_remaining = len(remaining_downloaded) + len(remaining_queued)
+    assert total_remaining == 10
 
 
 @pytest.mark.integration

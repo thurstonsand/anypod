@@ -9,9 +9,8 @@ from collections.abc import Callable, Generator
 from contextlib import contextmanager
 import logging
 from pathlib import Path
-
-# from sqlite_utils.utils import sqlite3  # type: ignore
 import sqlite3
+import threading
 from typing import Any
 
 from sqlite_utils import Database
@@ -46,24 +45,44 @@ class SqliteUtilsCore:
         db: The underlying sqlite-utils Database instance.
     """
 
-    def __init__(self, db_path: Path | None, memory_name: str | None = None):
+    def __init__(self, db_path: Path) -> None:
+        self._db_path = db_path
+        self._local = threading.local()
+
         def my_tracer(sql: str, params: Any) -> None:
             logger.debug(
                 "SQL_TRACE",
                 extra={
                     "db_path": db_path,
-                    "memory_name": memory_name,
                     "sql": sql,
                     "params": params,
                 },
             )
 
-        try:
-            self.db = Database(
-                db_path, memory_name=memory_name, strict=False, tracer=my_tracer
-            )
-        except sqlite3.Error as e:
-            raise DatabaseOperationError("Failed to initialize database.") from e
+        self._tracer = my_tracer
+
+    @property
+    def db(self) -> Database:
+        """Get thread-local database connection.
+
+        Creates a new connection for each thread automatically.
+
+        Returns:
+            Database instance for the current thread.
+        """
+        if not hasattr(self._local, "db"):
+            try:
+                # File-based database - each thread gets its own connection
+                conn = sqlite3.connect(str(self._db_path), timeout=60)
+                conn.execute("PRAGMA journal_mode = WAL;")
+                conn.execute("PRAGMA synchronous = NORMAL;")
+                self._local.db = Database(conn, strict=False, tracer=self._tracer)
+            except sqlite3.Error as e:
+                raise DatabaseOperationError(
+                    "Failed to create thread-local database connection."
+                ) from e
+
+        return self._local.db
 
     def quote(self, *identifiers: str) -> str:
         """Apply SQLite string quoting to one or more identifiers.

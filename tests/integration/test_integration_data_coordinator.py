@@ -6,10 +6,8 @@ Tests focus on happy path scenarios and verify the complete end-to-end
 feed processing pipeline including enqueue, download, prune, and RSS generation.
 """
 
-from collections.abc import Generator
 from datetime import UTC, datetime
 from pathlib import Path
-import shutil
 
 import pytest
 
@@ -18,14 +16,11 @@ from anypod.data_coordinator import DataCoordinator
 from anypod.data_coordinator.downloader import Downloader
 from anypod.data_coordinator.enqueuer import Enqueuer
 from anypod.data_coordinator.pruner import Pruner
-from anypod.data_coordinator.types import ProcessingResults
 from anypod.db import DownloadDatabase
 from anypod.db.feed_db import FeedDatabase
 from anypod.db.types import Download, DownloadStatus, Feed, SourceType
 from anypod.file_manager import FileManager
-from anypod.path_manager import PathManager
 from anypod.rss import RSSFeedGenerator
-from anypod.ytdlp_wrapper import YtdlpWrapper
 
 # Test constants - same as other integration tests for consistency
 BIG_BUCK_BUNNY_VIDEO_ID = "aqz-KE-bpKQ"
@@ -42,114 +37,12 @@ TEST_PLAYLIST_URL = (
     "https://youtube.com/playlist?list=PLt5yu3-wZAlQAaPZ5Z-rJoTdbT-45Q7c0"
 )
 
-# CLI args for minimal quality and limited playlist downloads as a string
-YT_DLP_MINIMAL_ARGS_STR = (
-    "--playlist-items 1 --format worst*[ext=mp4]/worst[ext=mp4]/best[ext=mp4]"
-)
+# CLI args for minimal quality downloads as a string
+YT_DLP_MINIMAL_ARGS_STR = "--format worst*[ext=mp4]/worst[ext=mp4]/best[ext=mp4]"
 
 # Test schedule and config
 TEST_CRON_SCHEDULE = "0 * * * *"
 MAX_ERRORS = 3
-
-
-@pytest.fixture
-def shared_dirs(
-    tmp_path_factory: pytest.TempPathFactory,
-) -> Generator[tuple[Path, Path]]:
-    """Provides shared temporary directories for tests."""
-    app_tmp_dir = tmp_path_factory.mktemp("tmp")
-    app_data_dir = tmp_path_factory.mktemp("data")
-
-    yield app_tmp_dir, app_data_dir
-
-    # Cleanup
-    shutil.rmtree(app_tmp_dir, ignore_errors=True)
-    shutil.rmtree(app_data_dir, ignore_errors=True)
-
-
-@pytest.fixture
-def feed_db() -> Generator[FeedDatabase]:
-    """Provides a FeedDatabase instance with a temporary database."""
-    feed_db = FeedDatabase(db_path=None, memory_name="integration_test")
-    yield feed_db
-    feed_db.close()
-
-
-@pytest.fixture
-def download_db() -> Generator[DownloadDatabase]:
-    """Provides a DownloadDatabase instance with a temporary database."""
-    download_db = DownloadDatabase(db_path=None, memory_name="integration_test")
-    yield download_db
-    download_db.close()
-
-
-@pytest.fixture
-def file_manager(shared_dirs: tuple[Path, Path]) -> Generator[FileManager]:
-    """Provides a FileManager instance with shared data directory."""
-    _, app_data_dir = shared_dirs
-    app_tmp_dir = shared_dirs[0]
-    paths = PathManager(
-        base_data_dir=app_data_dir,
-        base_tmp_dir=app_tmp_dir,
-        base_url="http://localhost",
-    )
-    file_manager = FileManager(paths)
-    yield file_manager
-
-
-@pytest.fixture
-def ytdlp_wrapper(shared_dirs: tuple[Path, Path]) -> Generator[YtdlpWrapper]:
-    """Provides a YtdlpWrapper instance with shared directories."""
-    app_tmp_dir, app_data_dir = shared_dirs
-    paths = PathManager(
-        base_data_dir=app_data_dir,
-        base_tmp_dir=app_tmp_dir,
-        base_url="http://localhost",
-    )
-    yield YtdlpWrapper(paths)
-
-
-@pytest.fixture
-def enqueuer(
-    feed_db: FeedDatabase, download_db: DownloadDatabase, ytdlp_wrapper: YtdlpWrapper
-) -> Generator[Enqueuer]:
-    """Provides an Enqueuer instance for the coordinator."""
-    yield Enqueuer(feed_db, download_db, ytdlp_wrapper)
-
-
-@pytest.fixture
-def downloader(
-    download_db: DownloadDatabase,
-    file_manager: FileManager,
-    ytdlp_wrapper: YtdlpWrapper,
-) -> Generator[Downloader]:
-    """Provides a Downloader instance for the coordinator."""
-    yield Downloader(download_db, file_manager, ytdlp_wrapper)
-
-
-@pytest.fixture
-def pruner(
-    feed_db: FeedDatabase,
-    download_db: DownloadDatabase,
-    file_manager: FileManager,
-) -> Generator[Pruner]:
-    """Provides a Pruner instance for the coordinator."""
-    yield Pruner(feed_db, download_db, file_manager)
-
-
-@pytest.fixture
-def rss_generator(
-    download_db: DownloadDatabase,
-    shared_dirs: tuple[Path, Path],
-) -> Generator[RSSFeedGenerator]:
-    """Provides an RSSFeedGenerator instance for the coordinator."""
-    app_tmp_dir, app_data_dir = shared_dirs
-    paths = PathManager(
-        base_data_dir=app_data_dir,
-        base_tmp_dir=app_tmp_dir,
-        base_url="http://localhost",
-    )
-    yield RSSFeedGenerator(download_db, paths)
 
 
 @pytest.fixture
@@ -159,9 +52,12 @@ def data_coordinator(
     pruner: Pruner,
     rss_generator: RSSFeedGenerator,
     feed_db: FeedDatabase,
-) -> Generator[DataCoordinator]:
+    cookies_path: Path | None,
+) -> DataCoordinator:
     """Provides a DataCoordinator instance combining all services."""
-    yield DataCoordinator(enqueuer, downloader, pruner, rss_generator, feed_db)
+    return DataCoordinator(
+        enqueuer, downloader, pruner, rss_generator, feed_db, cookies_path=cookies_path
+    )
 
 
 def create_test_feed(feed_db: FeedDatabase, feed_id: str) -> Feed:
@@ -245,7 +141,6 @@ def test_process_feed_complete_success(
     results = data_coordinator.process_feed(feed_id, feed_config)
 
     # Verify ProcessingResults structure
-    assert isinstance(results, ProcessingResults)
     assert results.feed_id == feed_id
     assert results.overall_success is True
     assert results.total_duration_seconds > 0
@@ -648,6 +543,7 @@ def test_date_filtering_behavior(
     Test playlist contains 1 video from 2022-07-29.
     """
     feed_id = f"test_date_filtering_{test_case}"
+
     feed_config = create_feed_config(url=url)
 
     # Create feed

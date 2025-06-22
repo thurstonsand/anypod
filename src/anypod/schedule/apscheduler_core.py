@@ -5,8 +5,9 @@ handling job scheduling, event listening, and lifecycle management
 while isolating the rest of the codebase from direct APScheduler dependencies.
 """
 
+import asyncio
 from collections.abc import Callable
-from datetime import datetime
+from datetime import UTC, datetime
 import logging
 from typing import Any
 
@@ -20,6 +21,7 @@ from apscheduler.executors.asyncio import AsyncIOExecutor  # type: ignore
 from apscheduler.jobstores.memory import MemoryJobStore  # type: ignore
 from apscheduler.schedulers.asyncio import AsyncIOScheduler  # type: ignore
 from apscheduler.triggers.cron import CronTrigger  # type: ignore
+from apscheduler.triggers.date import DateTrigger  # type: ignore
 
 from ..config.types import CronExpression
 
@@ -177,6 +179,7 @@ class APSchedulerCore:
         cron_expression: CronExpression,
         jitter: int,
         callback: Callable[P, R],
+        run_immediately: bool = False,
         *args: P.args,
         **kwargs: P.kwargs,
     ) -> None:
@@ -187,6 +190,7 @@ class APSchedulerCore:
             cron_expression: The CronExpression to schedule the job.
             jitter: The jitter to apply to the cron trigger.
             callback: The callback function to call when the job is executed.
+            run_immediately: If True, the job's first run will be triggered immediately.
             args: The arguments to pass to the callback function.
             kwargs: The keyword arguments to pass to the callback function.
 
@@ -194,7 +198,7 @@ class APSchedulerCore:
             SchedulerError: If the cron expression is invalid.
         """
         trigger = self._trigger_from_cron_expression(cron_expression, jitter=jitter)  # type: ignore
-        self._scheduler.add_job(  # type: ignore
+        job = self._scheduler.add_job(  # type: ignore
             callback,
             args=args,
             kwargs=kwargs,
@@ -205,6 +209,69 @@ class APSchedulerCore:
             misfire_grace_time=300,
             replace_existing=True,
         )
+
+        if run_immediately:
+            job.modify(next_run_time=datetime.now(UTC))  # type: ignore
+
+    async def run_job_now[**P, R](
+        self,
+        callback: Callable[P, R],
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> tuple[str, asyncio.Future[R]]:
+        """Run a job immediately and return a future for its completion.
+
+        Args:
+            callback: The callback function to call.
+            args: The arguments to pass to the callback function.
+            kwargs: The keyword arguments to pass to the callback function.
+
+        Returns:
+            A tuple of (job_id, future) where the future will resolve with the job's return value.
+        """
+        future: asyncio.Future[R] = asyncio.get_running_loop().create_future()
+        job_id: str | None = None  # This will be set once the job is created
+
+        # Define the listeners first - they need to be defined so they can refer to each other for cleanup.
+        def success_listener(event: JobExecutionEvent) -> None:  # type: ignore
+            # We only care about the event for the specific job we just launched
+            if event.job_id == job_id:  # type: ignore
+                if not future.done():
+                    future.set_result(event.retval)  # type: ignore
+
+                # CLEANUP: The job is done, so we no longer need these listeners.
+                self._scheduler.remove_listener(success_listener, EVENT_JOB_EXECUTED)  # type: ignore
+                self._scheduler.remove_listener(error_listener, EVENT_JOB_ERROR)  # type: ignore
+
+        def error_listener(event: JobExecutionEvent) -> None:  # type: ignore
+            # We only care about the event for the specific job we just launched
+            if event.job_id == job_id and not future.done():  # type: ignore
+                if not future.done():
+                    future.set_exception(event.exception)  # type: ignore
+
+                # CLEANUP: The job is done (it failed), so we still clean up.
+                self._scheduler.remove_listener(success_listener, EVENT_JOB_EXECUTED)  # type: ignore
+                self._scheduler.remove_listener(error_listener, EVENT_JOB_ERROR)  # type: ignore
+
+        # Add the listeners to the scheduler
+        self._scheduler.add_listener(success_listener, EVENT_JOB_EXECUTED)  # type: ignore
+        self._scheduler.add_listener(error_listener, EVENT_JOB_ERROR)  # type: ignore
+
+        try:
+            # Schedule the job and get its ID
+            job = self._scheduler.add_job(  # type: ignore
+                callback,
+                trigger=DateTrigger(run_date=datetime.now(UTC)),  # type: ignore
+                args=args,
+                kwargs=kwargs,
+            )
+            job_id = job.id  # type: ignore # Now the listeners know which job ID to look for
+            return job_id, future  # type: ignore
+        except Exception:
+            # If scheduling itself fails, we must clean up immediately.
+            self._scheduler.remove_listener(success_listener, EVENT_JOB_EXECUTED)  # type: ignore
+            self._scheduler.remove_listener(error_listener, EVENT_JOB_ERROR)  # type: ignore
+            raise
 
     def start(self) -> None:
         """Start the scheduler."""

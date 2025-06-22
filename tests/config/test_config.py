@@ -30,16 +30,15 @@ SAMPLE_FEEDS_DATA = {
         "podcast2": {
             "url": "https://example.com/feed2.xml",
             "schedule": "0 12 * * *",
-            "yt_args": "--format bestaudio --playlist-items 1-3",
+            "yt_args": "--format bestaudio",
+            "keep_last": 3,
             # max_errors will use default (3) for this one
         },
     }
 }
 
 # Expected parsed yt_args for podcast2
-EXPECTED_PODCAST2_YT_ARGS = YtdlpCore.parse_options(
-    ["--format", "bestaudio", "--playlist-items", "1-3"]
-)
+EXPECTED_PODCAST2_YT_ARGS = YtdlpCore.parse_options(["--format", "bestaudio"])
 
 
 @pytest.fixture
@@ -94,11 +93,16 @@ def test_load_from_default_location(mock_get_yaml_path: Mock, tmp_path: Path):
     assert settings.feeds["podcast2"].max_errors == 3, (  # Asserting default value
         "'max_errors' for 'podcast2' should be the default value (3)"
     )
+    assert (
+        settings.feeds["podcast2"].keep_last
+        == SAMPLE_FEEDS_DATA["feeds"]["podcast2"]["keep_last"]
+    )
 
     dumped_settings = settings.model_dump()
     assert "config_file" in dumped_settings, (
         "'config_file' should be present in model_dump even tho it is not used anywhere"
     )
+    assert "data_dir" in dumped_settings, "'data_dir' should be present in model_dump"
     assert "feeds" in dumped_settings
 
 
@@ -171,6 +175,10 @@ def test_override_location_with_init_arg(sample_config_file: Path):
     )
     assert settings.feeds["podcast2"].max_errors == 3, (  # Asserting default value
         "'max_errors' for 'podcast2' should be the default value (3) when overridden by init arg"
+    )
+    assert (
+        settings.feeds["podcast2"].keep_last
+        == SAMPLE_FEEDS_DATA["feeds"]["podcast2"]["keep_last"]
     )
 
 

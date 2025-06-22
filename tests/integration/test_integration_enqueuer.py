@@ -1,8 +1,7 @@
 """Integration tests for Enqueuer with real YouTube URLs and database operations."""
 
-from collections.abc import Generator
 from datetime import UTC, datetime
-import shutil
+from pathlib import Path
 
 import pytest
 
@@ -17,8 +16,6 @@ from anypod.db import DownloadDatabase
 from anypod.db.feed_db import FeedDatabase
 from anypod.db.types import Download, DownloadStatus, Feed, SourceType
 from anypod.exceptions import EnqueueError
-from anypod.path_manager import PathManager
-from anypod.ytdlp_wrapper import YtdlpWrapper
 
 # Test constants
 BIG_BUCK_BUNNY_VIDEO_ID = "aqz-KE-bpKQ"
@@ -32,10 +29,8 @@ COLETDJNZ_CHANNEL_VIDEOS = "https://www.youtube.com/@coletdjnz/videos"
 
 INVALID_VIDEO_URL = "https://www.youtube.com/watch?v=thisvideodoesnotexistxyz"
 
-# CLI args for minimal quality and limited playlist downloads as a string
-YT_DLP_MINIMAL_ARGS_STR = (
-    "--playlist-items 1 --format worst*[ext=mp4]/worst[ext=mp4]/best[ext=mp4]"
-)
+# CLI args for minimal quality downloads as a string
+YT_DLP_MINIMAL_ARGS_STR = "--format worst*[ext=mp4]/worst[ext=mp4]/best[ext=mp4]"
 
 # --- Tests for Enqueuer.enqueue_new_downloads ---
 # Test schedule
@@ -71,49 +66,6 @@ SAMPLE_FEED_CONFIG = FeedConfig(
 )
 
 
-@pytest.fixture
-def feed_db() -> Generator[FeedDatabase]:
-    """Provides a FeedDatabase instance with a temporary database."""
-    feed_db = FeedDatabase(db_path=None, memory_name="integration_test")
-    yield feed_db
-    feed_db.close()
-
-
-@pytest.fixture
-def download_db() -> Generator[DownloadDatabase]:
-    """Provides a DownloadDatabase instance with a temporary database."""
-    download_db = DownloadDatabase(db_path=None, memory_name="integration_test")
-    yield download_db
-    download_db.close()
-
-
-@pytest.fixture
-def ytdlp_wrapper(tmp_path_factory: pytest.TempPathFactory) -> Generator[YtdlpWrapper]:
-    """Provides a YtdlpWrapper instance for the tests."""
-    app_tmp_dir = tmp_path_factory.mktemp("tmp")
-    app_data_dir = tmp_path_factory.mktemp("data")
-
-    paths = PathManager(
-        base_data_dir=app_data_dir,
-        base_tmp_dir=app_tmp_dir,
-        base_url="http://localhost",
-    )
-
-    yield YtdlpWrapper(paths)
-
-    # Teardown: remove temporary directories
-    shutil.rmtree(app_tmp_dir)
-    shutil.rmtree(app_data_dir)
-
-
-@pytest.fixture
-def enqueuer(
-    feed_db: FeedDatabase, download_db: DownloadDatabase, ytdlp_wrapper: YtdlpWrapper
-) -> Generator[Enqueuer]:
-    """Provides an Enqueuer instance for the tests."""
-    yield Enqueuer(feed_db, download_db, ytdlp_wrapper)
-
-
 def create_test_feed(feed_db: FeedDatabase, feed_id: str, url: str) -> Feed:
     """Create a test feed in the database."""
     feed = Feed(
@@ -136,6 +88,7 @@ def test_enqueue_new_downloads_success(
     download_db: DownloadDatabase,
     url_type: str,
     url: str,
+    cookies_path: Path | None,
 ):
     """Tests successful enqueueing of new downloads for various URL types.
 
@@ -151,7 +104,7 @@ def test_enqueue_new_downloads_success(
         url=url,
         yt_args=YT_DLP_MINIMAL_ARGS_STR,  # type: ignore
         schedule=TEST_CRON_SCHEDULE,
-        keep_last=None,
+        keep_last=1,
         since=None,
         max_errors=MAX_ERRORS,
     )
@@ -164,6 +117,7 @@ def test_enqueue_new_downloads_success(
         feed_config=feed_config,
         fetch_since_date=fetch_since_date,
         fetch_until_date=fetch_until_date,
+        cookies_path=cookies_path,
     )
 
     # Verify that downloads were queued
@@ -241,7 +195,9 @@ def test_enqueue_new_downloads_success(
 
 
 @pytest.mark.integration
-def test_enqueue_new_downloads_invalid_url(enqueuer: Enqueuer, feed_db: FeedDatabase):
+def test_enqueue_new_downloads_invalid_url(
+    enqueuer: Enqueuer, feed_db: FeedDatabase, cookies_path: Path | None
+):
     """Tests that enqueueing fails gracefully for invalid URLs."""
     feed_id = "test_invalid_feed"
 
@@ -265,6 +221,7 @@ def test_enqueue_new_downloads_invalid_url(enqueuer: Enqueuer, feed_db: FeedData
             feed_config=feed_config,
             fetch_since_date=fetch_since_date,
             fetch_until_date=fetch_until_date,
+            cookies_path=cookies_path,
         )
 
     assert "Could not fetch main feed metadata" in str(excinfo.value)
@@ -274,7 +231,10 @@ def test_enqueue_new_downloads_invalid_url(enqueuer: Enqueuer, feed_db: FeedData
 
 @pytest.mark.integration
 def test_enqueue_new_downloads_with_date_filter(
-    enqueuer: Enqueuer, feed_db: FeedDatabase, download_db: DownloadDatabase
+    enqueuer: Enqueuer,
+    feed_db: FeedDatabase,
+    download_db: DownloadDatabase,
+    cookies_path: Path | None,
 ):
     """Tests enqueueing with a date filter that should limit results."""
     feed_id = "test_date_filter"
@@ -286,7 +246,7 @@ def test_enqueue_new_downloads_with_date_filter(
         url=COLETDJNZ_CHANNEL_VIDEOS,
         yt_args=YT_DLP_MINIMAL_ARGS_STR,  # type: ignore
         schedule=TEST_CRON_SCHEDULE,  # type: ignore
-        keep_last=None,
+        keep_last=2,
         since=None,
         max_errors=MAX_ERRORS,
     )
@@ -299,6 +259,7 @@ def test_enqueue_new_downloads_with_date_filter(
         feed_config=feed_config,
         fetch_since_date=fetch_since_date,
         fetch_until_date=fetch_until_date,
+        cookies_path=cookies_path,
     )
 
     # Should still work, even if no results due to date filtering
@@ -313,7 +274,10 @@ def test_enqueue_new_downloads_with_date_filter(
 
 @pytest.mark.integration
 def test_enqueue_handles_existing_upcoming_downloads(
-    enqueuer: Enqueuer, feed_db: FeedDatabase, download_db: DownloadDatabase
+    enqueuer: Enqueuer,
+    feed_db: FeedDatabase,
+    download_db: DownloadDatabase,
+    cookies_path: Path | None,
 ):
     """Tests that existing UPCOMING downloads are properly handled and potentially transitioned to QUEUED."""
     feed_id = "test_upcoming_feed"
@@ -355,6 +319,7 @@ def test_enqueue_handles_existing_upcoming_downloads(
         feed_config=feed_config,
         fetch_since_date=datetime.min.replace(tzinfo=UTC),
         fetch_until_date=fetch_until_date,
+        cookies_path=cookies_path,
     )
 
     # Should have at least 1 queued (the transitioned one)
@@ -382,7 +347,10 @@ def test_enqueue_handles_existing_upcoming_downloads(
 
 @pytest.mark.integration
 def test_enqueue_handles_existing_downloaded_items(
-    enqueuer: Enqueuer, feed_db: FeedDatabase, download_db: DownloadDatabase
+    enqueuer: Enqueuer,
+    feed_db: FeedDatabase,
+    download_db: DownloadDatabase,
+    cookies_path: Path | None,
 ):
     """Tests that existing DOWNLOADED items are ignored during enqueue process."""
     feed_id = "test_downloaded_ignored_feed"
@@ -417,6 +385,7 @@ def test_enqueue_handles_existing_downloaded_items(
         feed_config=feed_config,
         fetch_since_date=datetime.min.replace(tzinfo=UTC),
         fetch_until_date=fetch_until_date,
+        cookies_path=cookies_path,
     )
 
     # Should NOT have queued the item since it's already DOWNLOADED
@@ -439,7 +408,10 @@ def test_enqueue_handles_existing_downloaded_items(
 
 @pytest.mark.integration
 def test_enqueue_multiple_runs_idempotent(
-    enqueuer: Enqueuer, feed_db: FeedDatabase, download_db: DownloadDatabase
+    enqueuer: Enqueuer,
+    feed_db: FeedDatabase,
+    download_db: DownloadDatabase,
+    cookies_path: Path | None,
 ):
     """Tests that running enqueue multiple times on the same feed is idempotent."""
     feed_id = "test_idempotent_feed"
@@ -457,6 +429,7 @@ def test_enqueue_multiple_runs_idempotent(
         feed_config=feed_config,
         fetch_since_date=fetch_since_date,
         fetch_until_date=fetch_until_date,
+        cookies_path=cookies_path,
     )
     assert first_queued_count >= 1
 
@@ -472,6 +445,7 @@ def test_enqueue_multiple_runs_idempotent(
         feed_config=feed_config,
         fetch_since_date=fetch_since_date,
         fetch_until_date=fetch_until_date,
+        cookies_path=cookies_path,
     )
 
     # Second run should queue 0 new items since they already exist
@@ -486,7 +460,10 @@ def test_enqueue_multiple_runs_idempotent(
 
 @pytest.mark.integration
 def test_enqueue_with_impossible_filter(
-    enqueuer: Enqueuer, feed_db: FeedDatabase, download_db: DownloadDatabase
+    enqueuer: Enqueuer,
+    feed_db: FeedDatabase,
+    download_db: DownloadDatabase,
+    cookies_path: Path | None,
 ):
     """Tests enqueueing with filters that match no videos still creates downloads but with filter applied."""
     feed_id = "test_impossible_filter"
@@ -496,7 +473,7 @@ def test_enqueue_with_impossible_filter(
 
     feed_config = FeedConfig(
         url=BIG_BUCK_BUNNY_SHORT_URL,
-        yt_args='--playlist-items 1 --format worst*[ext=mp4]/worst[ext=mp4]/best[ext=mp4] --match-filters "duration > 10000000"',  # type: ignore
+        yt_args='--format worst*[ext=mp4]/worst[ext=mp4]/best[ext=mp4] --match-filters "duration > 10000000"',  # type: ignore
         schedule=TEST_CRON_SCHEDULE,  # type: ignore
         keep_last=None,
         since=None,
@@ -511,6 +488,7 @@ def test_enqueue_with_impossible_filter(
         feed_config=feed_config,
         fetch_since_date=fetch_since_date,
         fetch_until_date=fetch_until_date,
+        cookies_path=cookies_path,
     )
 
     # Metadata fetching still works, downloads are created
@@ -525,7 +503,10 @@ def test_enqueue_with_impossible_filter(
 
 @pytest.mark.integration
 def test_enqueue_feed_metadata_synchronization_with_overrides(
-    enqueuer: Enqueuer, feed_db: FeedDatabase, download_db: DownloadDatabase
+    enqueuer: Enqueuer,
+    feed_db: FeedDatabase,
+    download_db: DownloadDatabase,
+    cookies_path: Path | None,
 ):
     """Tests that feed metadata synchronization works correctly with config overrides."""
     feed_id = "test_metadata_sync"
@@ -562,6 +543,7 @@ def test_enqueue_feed_metadata_synchronization_with_overrides(
         feed_config=feed_config,
         fetch_since_date=fetch_since_date,
         fetch_until_date=fetch_until_date,
+        cookies_path=cookies_path,
     )
 
     # Verify downloads were processed
@@ -587,7 +569,10 @@ def test_enqueue_feed_metadata_synchronization_with_overrides(
 
 @pytest.mark.integration
 def test_enqueue_feed_metadata_partial_overrides(
-    enqueuer: Enqueuer, feed_db: FeedDatabase, download_db: DownloadDatabase
+    enqueuer: Enqueuer,
+    feed_db: FeedDatabase,
+    download_db: DownloadDatabase,
+    cookies_path: Path | None,
 ):
     """Tests that partial metadata overrides work correctly, using extracted values for non-overridden fields."""
     feed_id = "test_partial_metadata_sync"
@@ -620,6 +605,7 @@ def test_enqueue_feed_metadata_partial_overrides(
         feed_config=feed_config,
         fetch_since_date=fetch_since_date,
         fetch_until_date=fetch_until_date,
+        cookies_path=cookies_path,
     )
 
     # Verify downloads were processed

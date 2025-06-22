@@ -14,18 +14,15 @@ from anypod.path_manager import PathManager
 
 
 @pytest.fixture
-def tmp_dirs(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path]:
-    """Creates temporary data and tmp directories for tests."""
-    data_dir = tmp_path_factory.mktemp("test_data")
-    tmp_dir = tmp_path_factory.mktemp("test_tmp")
-    return data_dir, tmp_dir
+def data_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Creates temporary data directory for tests."""
+    return tmp_path_factory.mktemp("test_data")
 
 
 @pytest.fixture
-def path_manager(tmp_dirs: tuple[Path, Path]) -> PathManager:
+def path_manager(data_dir: Path) -> PathManager:
     """Provides a PathManager instance with temporary directories."""
-    data_dir, tmp_dir = tmp_dirs
-    return PathManager(data_dir, tmp_dir, "http://localhost:8024")
+    return PathManager(data_dir, "http://localhost:8024")
 
 
 # --- Tests for initialization and properties ---
@@ -35,26 +32,21 @@ def path_manager(tmp_dirs: tuple[Path, Path]) -> PathManager:
 def test_init_normalizes_paths(tmp_path_factory: pytest.TempPathFactory):
     """Tests that PathManager normalizes and resolves provided paths."""
     data_dir = tmp_path_factory.mktemp("data")
-    tmp_dir = tmp_path_factory.mktemp("tmp")
     base_url = "http://example.com/"
 
     # Test with relative paths and trailing slash in URL
-    path_manager = PathManager(data_dir / "..", tmp_dir / "subdir" / "..", base_url)
+    path_manager = PathManager(data_dir / "..", base_url)
 
-    assert path_manager.base_data_dir == data_dir.parent.resolve()
-    assert path_manager.base_tmp_dir == tmp_dir.resolve()
+    assert path_manager.base_data_dir == data_dir.parent.resolve() / "media"
+    assert path_manager.base_tmp_dir == data_dir.parent.resolve() / "tmp"
     assert path_manager.base_url == "http://example.com"
 
 
 @pytest.mark.unit
-def test_properties_return_correct_values(
-    path_manager: PathManager, tmp_dirs: tuple[Path, Path]
-):
+def test_properties_return_correct_values(path_manager: PathManager, data_dir: Path):
     """Tests that properties return the initialized values."""
-    data_dir, tmp_dir = tmp_dirs
-
-    assert path_manager.base_data_dir == data_dir.resolve()
-    assert path_manager.base_tmp_dir == tmp_dir.resolve()
+    assert path_manager.base_data_dir == data_dir.resolve() / "media"
+    assert path_manager.base_tmp_dir == data_dir.resolve() / "tmp"
     assert path_manager.base_url == "http://localhost:8024"
 
 
@@ -372,11 +364,10 @@ def test_whitespace_only_download_id_raises_error(path_manager: PathManager):
 def test_url_base_without_trailing_slash():
     """Tests that base_url normalization removes trailing slashes."""
     data_dir = Path("/tmp/data")
-    tmp_dir = Path("/tmp/tmp")
 
     # Test various trailing slash scenarios
-    pm1 = PathManager(data_dir, tmp_dir, "http://example.com/")
-    pm2 = PathManager(data_dir, tmp_dir, "http://example.com")
+    pm1 = PathManager(data_dir, "http://example.com/")
+    pm2 = PathManager(data_dir, "http://example.com")
 
     assert pm1.base_url == "http://example.com"
     assert pm2.base_url == "http://example.com"

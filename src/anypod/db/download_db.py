@@ -36,22 +36,20 @@ class DownloadDatabase:
 
     def __init__(
         self,
-        db_path: Path | None,
-        memory_name: str | None = None,
+        db_path: Path,
         *,
         include_triggers: bool = True,
     ):
         """Create a new DownloadDatabase instance.
 
         Args:
-            db_path: Path to the SQLite database file. ``None`` for in-memory.
-            memory_name: Shared in-memory DB identifier.
+            db_path: Path to the SQLite database file.
             include_triggers: When *False*, skips creation of triggers that
                 update ``feeds.total_downloads``. Useful for unit-testing this
                 class in isolation without creating the ``feeds`` table.
         """
         self._db_path = db_path
-        self._db = SqliteUtilsCore(db_path, memory_name)
+        self._db = SqliteUtilsCore(db_path)
         self._download_table_name = "downloads"
         self._initialize_schema(include_triggers)
         logger.debug(

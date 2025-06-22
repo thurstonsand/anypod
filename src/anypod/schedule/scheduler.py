@@ -44,6 +44,7 @@ class FeedScheduler:
                 # TODO: evaluate if we want jitter
                 jitter=0,
                 callback=FeedScheduler._process_feed_with_context,
+                run_immediately=True,
                 data_coordinator=data_coordinator,
                 feed_id=ready_feed_id,
                 feed_config=feed_configs[ready_feed_id],

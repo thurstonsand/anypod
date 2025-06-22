@@ -71,8 +71,10 @@ class StateReconciler:
         category = metadata.categories if metadata and metadata.categories else None
         explicit = metadata.explicit if metadata and metadata.explicit else None
 
-        # Set initial sync timestamp to 'since' if provided, otherwise now
-        initial_sync = feed_config.since if feed_config.since else datetime.now(UTC)
+        # Set initial sync timestamp to 'since' if provided, otherwise datetime.min
+        initial_sync = (
+            feed_config.since if feed_config.since else datetime.min.replace(tzinfo=UTC)
+        )
 
         new_feed = Feed(
             id=feed_id,
@@ -325,7 +327,7 @@ class StateReconciler:
                 updated_feed.is_enabled = feed_config.enabled
                 updated_feed.consecutive_failures = 0
                 updated_feed.last_failed_sync = None
-                updated_feed.last_successful_sync = datetime.now(UTC)
+                updated_feed.last_successful_sync = datetime.min.replace(tzinfo=UTC)
             # Feed has been disabled
             case (False, True):
                 logger.info(

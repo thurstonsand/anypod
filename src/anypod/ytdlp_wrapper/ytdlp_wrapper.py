@@ -71,6 +71,7 @@ class YtdlpWrapper:
         download_temp_dir: Path | None = None,
         download_data_dir: Path | None = None,
         download_id: str | None = None,
+        cookies_path: Path | None = None,
     ) -> dict[str, Any]:
         log_params: dict[str, Any] = {
             "purpose": purpose,
@@ -126,11 +127,15 @@ class YtdlpWrapper:
                     "extract_flat": False,
                 }
 
+        # Apply cookies if provided
+        YtdlpCore.set_cookies(final_opts, cookies_path)
+
         logger.debug(
             f"Prepared {purpose!s} options.",
             extra={
                 **log_params,
                 "final_opts_keys": list(final_opts.keys()),
+                "cookies_provided": cookies_path is not None,
             },
         )
         return final_opts
@@ -142,6 +147,8 @@ class YtdlpWrapper:
         user_yt_cli_args: dict[str, Any],
         fetch_since_date: datetime | None = None,
         fetch_until_date: datetime | None = None,
+        keep_last: int | None = None,
+        cookies_path: Path | None = None,
     ) -> tuple[Feed, list[Download]]:
         """Fetches metadata for a given feed and URL using yt-dlp.
 
@@ -163,6 +170,9 @@ class YtdlpWrapper:
                 Converted to YYYYMMDD format for yt-dlp compatibility.
             fetch_until_date: The upper bound date for the fetch operation (exclusive).
                 Converted to YYYYMMDD format for yt-dlp compatibility.
+            keep_last: Maximum number of recent playlist items to fetch, or None for no limit.
+                Uses `playlist_items` to get the first N items
+            cookies_path: Path to cookies.txt file for authentication, or None if not needed.
 
         Returns:
             A tuple of (feed, downloads) where feed is a Feed object with extracted
@@ -199,6 +209,7 @@ class YtdlpWrapper:
                 user_cli_args={},  # Pass empty because this is just for discovery
                 purpose=FetchPurpose.DISCOVERY,
                 source_specific_opts=source_specific_discovery_opts,
+                cookies_path=cookies_path,
             )
             effective_discovery_opts.update(handler_discovery_opts)
             return YtdlpCore.extract_info(effective_discovery_opts, url_to_discover)
@@ -223,6 +234,7 @@ class YtdlpWrapper:
             )
             end_date = fetch_until_date.strftime("%Y%m%d") if fetch_until_date else None
             YtdlpCore.set_date_range(yt_cli_args, start_date, end_date)
+            YtdlpCore.set_playlist_limit(yt_cli_args, keep_last)
 
             if fetch_since_date:
                 log_extra["fetch_since_date"] = fetch_since_date.isoformat()
@@ -230,6 +242,8 @@ class YtdlpWrapper:
             if fetch_until_date:
                 log_extra["fetch_until_date"] = fetch_until_date.isoformat()
                 log_extra["fetch_until_date_day_aligned"] = end_date
+            if keep_last:
+                log_extra["keep_last"] = keep_last
         actual_fetch_url = fetch_url or url
         if ref_type == ReferenceType.UNKNOWN_DIRECT_FETCH and not fetch_url:
             logger.info(
@@ -259,7 +273,10 @@ class YtdlpWrapper:
             )
         )
         main_fetch_opts = self._prepare_ydl_options(
-            yt_cli_args, FetchPurpose.METADATA_FETCH, source_specific_metadata_opts
+            yt_cli_args,
+            FetchPurpose.METADATA_FETCH,
+            source_specific_metadata_opts,
+            cookies_path=cookies_path,
         )
 
         ytdlp_info = YtdlpCore.extract_info(main_fetch_opts, actual_fetch_url)
@@ -300,6 +317,7 @@ class YtdlpWrapper:
         self,
         download: Download,
         yt_cli_args: dict[str, Any],
+        cookies_path: Path | None = None,
     ) -> Path:
         """Download the media for a given Download to a target directory.
 
@@ -309,6 +327,7 @@ class YtdlpWrapper:
         Args:
             download: The Download object containing metadata.
             yt_cli_args: User-provided yt-dlp CLI arguments for this feed.
+            cookies_path: Path to cookies.txt file for authentication, or None if not needed.
 
         Returns:
             The absolute path to the successfully downloaded media file.
@@ -341,6 +360,7 @@ class YtdlpWrapper:
                 download_temp_dir=download_temp_dir,
                 download_data_dir=download_data_dir,
                 download_id=download.id,
+                cookies_path=cookies_path,
             )
         except YtdlpApiError as e:
             e.feed_id = download.feed

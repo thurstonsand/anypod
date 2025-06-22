@@ -343,7 +343,7 @@ def test_handle_existing_upcoming_download_transitions_to_queued(
 
     assert count == 1
     mock_ytdlp_wrapper.fetch_metadata.assert_called_once_with(
-        FEED_ID, upcoming_dl.source_url, sample_feed_config.yt_args
+        FEED_ID, upcoming_dl.source_url, sample_feed_config.yt_args, cookies_path=None
     )
     mock_download_db.mark_as_queued_from_upcoming.assert_called_once_with(
         FEED_ID, "video1"
@@ -372,7 +372,7 @@ def test_handle_existing_upcoming_download_remains_upcoming(
 
     assert count == 0
     mock_ytdlp_wrapper.fetch_metadata.assert_called_once_with(
-        FEED_ID, upcoming_dl.source_url, sample_feed_config.yt_args
+        FEED_ID, upcoming_dl.source_url, sample_feed_config.yt_args, cookies_path=None
     )
     mock_download_db.mark_as_queued_from_upcoming.assert_not_called()
     mock_download_db.requeue_downloads.assert_not_called()
@@ -493,6 +493,8 @@ def test_fetch_and_process_new_feed_downloads_no_new_downloads(
         sample_feed_config.yt_args,
         FETCH_SINCE_DATE,
         FETCH_UNTIL_DATE,
+        sample_feed_config.keep_last,
+        None,
     )
     mock_download_db.get_download_by_id.assert_not_called()
     mock_download_db.upsert_download.assert_not_called()
@@ -698,14 +700,26 @@ def test_enqueue_new_downloads_full_flow_mixed_scenarios(
     assert mock_ytdlp_wrapper.fetch_metadata.call_count == 3
     mock_ytdlp_wrapper.fetch_metadata.assert_has_calls(
         [
-            call(FEED_ID, upcoming1_db.source_url, sample_feed_config.yt_args),
-            call(FEED_ID, upcoming2_db.source_url, sample_feed_config.yt_args),
+            call(
+                FEED_ID,
+                upcoming1_db.source_url,
+                sample_feed_config.yt_args,
+                cookies_path=None,
+            ),
+            call(
+                FEED_ID,
+                upcoming2_db.source_url,
+                sample_feed_config.yt_args,
+                cookies_path=None,
+            ),
             call(
                 FEED_ID,
                 sample_feed_config.url,
                 sample_feed_config.yt_args,
                 FETCH_SINCE_DATE,
                 FETCH_UNTIL_DATE,
+                sample_feed_config.keep_last,
+                None,
             ),
         ]
     )
@@ -796,6 +810,8 @@ def test_enqueue_new_downloads_ytdlp_error_on_main_feed_fetch(
         sample_feed_config.yt_args,
         FETCH_SINCE_DATE,
         FETCH_UNTIL_DATE,
+        sample_feed_config.keep_last,
+        None,
     )
 
 
@@ -824,6 +840,8 @@ def test_enqueue_new_downloads_no_upcoming_no_new(
         sample_feed_config.yt_args,
         FETCH_SINCE_DATE,
         FETCH_UNTIL_DATE,
+        sample_feed_config.keep_last,
+        None,
     )
 
 

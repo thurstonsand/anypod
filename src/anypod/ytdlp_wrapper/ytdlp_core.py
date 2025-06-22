@@ -5,6 +5,7 @@ to yt-dlp metadata and static methods for yt-dlp operations like option
 parsing, metadata extraction, and media downloading.
 """
 
+from pathlib import Path
 from types import UnionType
 from typing import Any, Union, get_origin
 
@@ -326,6 +327,35 @@ class YtdlpCore:
         """
         if start_date is not None or end_date is not None:
             ydl_opts["daterange"] = DateRange(start=start_date, end=end_date)
+
+    @staticmethod
+    def set_playlist_limit(
+        ydl_opts: dict[str, Any],
+        keep_last: int | None = None,
+    ) -> None:
+        """Set playlist item limit in yt-dlp options to fetch most recent N items.
+
+        Args:
+            ydl_opts: Dictionary of yt-dlp options to modify in place.
+            keep_last: Maximum number of recent playlist items to fetch, or None for no limit.
+                      Uses `playlist_items` "1:N" format to get the first N items (should be in most recent order).
+        """
+        if keep_last is not None:
+            ydl_opts["playlist_items"] = f"1:{keep_last}"
+
+    @staticmethod
+    def set_cookies(
+        ydl_opts: dict[str, Any],
+        cookies_path: Path | None = None,
+    ) -> None:
+        """Set cookies file path in yt-dlp options.
+
+        Args:
+            ydl_opts: Dictionary of yt-dlp options to modify in place.
+            cookies_path: Path to cookies.txt file, or None to not use cookies.
+        """
+        if cookies_path is not None:
+            ydl_opts["cookiefile"] = str(cookies_path)
 
     @staticmethod
     def download(ydl_opts: dict[str, Any], url: str) -> None:

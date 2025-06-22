@@ -80,6 +80,7 @@ def run_debug_enqueuer_mode(
                 feed_config=feed_config,
                 fetch_since_date=fetch_since_date,
                 fetch_until_date=fetch_until_date,
+                cookies_path=settings.cookies_path,
             )
             total_newly_queued_count += newly_queued_count
             processed_feeds_count += 1

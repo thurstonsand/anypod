@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
+from anypod.exceptions import FileOperationError
 from anypod.file_manager import FileManager
 from anypod.path_manager import PathManager
 
@@ -20,12 +21,9 @@ def temp_base_download_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 @pytest.fixture
-def file_manager(
-    tmp_path_factory: pytest.TempPathFactory, temp_base_download_path: Path
-) -> FileManager:
+def file_manager(temp_base_download_path: Path) -> FileManager:
     """Provides a FileManager instance initialized with a temporary base download path."""
-    tmp_dir = tmp_path_factory.mktemp("tmp")
-    paths = PathManager(temp_base_download_path, tmp_dir, "http://localhost")
+    paths = PathManager(temp_base_download_path, "http://localhost")
     fm = FileManager(paths)
     return fm
 
@@ -169,19 +167,15 @@ def test_get_download_stream_path_is_directory(
 
 
 @pytest.mark.unit
-def test_get_download_stream_file_operation_error(
-    file_manager: FileManager, temp_base_download_path: Path
-):
+def test_get_download_stream_file_operation_error(file_manager: FileManager):
     """Tests get_download_stream raises FileOperationError for a file operation error."""
     feed_id = "stream_feed_error"
     download_id = "error_file"
     ext = "mp3"
     file_name = f"{download_id}.{ext}"
 
-    # Setup a dummy downloaded file
-    feed_dir = temp_base_download_path / feed_id
-    feed_dir.mkdir(parents=True, exist_ok=True)
-    file_path = feed_dir / file_name
+    # Setup a dummy downloaded file in the correct location (media subdirectory)
+    file_path = file_manager._paths.media_file_path(feed_id, download_id, ext)
     with Path.open(file_path, "wb") as f:
         f.write(b"dummy content")
 
@@ -189,9 +183,13 @@ def test_get_download_stream_file_operation_error(
     simulated_error = OSError("Simulated disk full error")
     with (
         patch.object(Path, "open", side_effect=simulated_error),
-        pytest.raises(OSError) as exc_info,
+        pytest.raises(FileOperationError) as exc_info,
     ):
         file_manager.get_download_stream(feed_id, download_id, ext)
 
-    # Verify the FileOperationError includes correct file_name and cause
-    assert exc_info.value is simulated_error
+    # Verify the FileOperationError includes correct attributes and cause
+    error = exc_info.value
+    assert error.feed_id == feed_id
+    assert error.download_id == download_id
+    assert error.file_name == file_name
+    assert error.__cause__ is simulated_error

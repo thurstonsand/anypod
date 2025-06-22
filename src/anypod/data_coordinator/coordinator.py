@@ -7,6 +7,7 @@ RSS generation.
 
 from datetime import UTC, datetime
 import logging
+from pathlib import Path
 import time
 
 from ..config import FeedConfig
@@ -44,6 +45,7 @@ class DataCoordinator:
         _pruner: Service for pruning old downloads based on retention policies.
         _rss_generator: Service for generating RSS feed XML.
         _feed_db: Database manager for feed record operations.
+        _cookies_path: Path to cookies.txt file for yt-dlp authentication.
     """
 
     def __init__(
@@ -53,12 +55,14 @@ class DataCoordinator:
         pruner: Pruner,
         rss_generator: RSSFeedGenerator,
         feed_db: FeedDatabase,
+        cookies_path: Path | None = None,
     ):
         self._enqueuer = enqueuer
         self._downloader = downloader
         self._pruner = pruner
         self._rss_generator = rss_generator
         self._feed_db = feed_db
+        self._cookies_path = cookies_path
         logger.debug("DataCoordinator initialized.")
 
     def _calculate_fetch_since_date(self, feed_id: str) -> datetime:
@@ -127,7 +131,11 @@ class DataCoordinator:
 
         try:
             enqueued_count = self._enqueuer.enqueue_new_downloads(
-                feed_id, feed_config, fetch_since_date, fetch_until_date
+                feed_id,
+                feed_config,
+                fetch_since_date,
+                fetch_until_date,
+                self._cookies_path,
             )
         except EnqueueError as e:
             duration = time.time() - phase_start
@@ -179,7 +187,7 @@ class DataCoordinator:
 
         try:
             success_count, failure_count = self._downloader.download_queued(
-                feed_id, feed_config
+                feed_id, feed_config, self._cookies_path
             )
         except DownloadError as e:
             duration = time.time() - phase_start
@@ -269,14 +277,11 @@ class DataCoordinator:
                 duration_seconds=duration,
             )
 
-    def _execute_rss_generation_phase(
-        self, feed_id: str, feed_config: FeedConfig
-    ) -> PhaseResult:
+    def _execute_rss_generation_phase(self, feed_id: str) -> PhaseResult:
         """Execute the RSS generation phase of feed processing.
 
         Args:
             feed_id: The feed identifier.
-            feed_config: The feed configuration.
 
         Returns:
             PhaseResult with RSS generation phase results.
@@ -410,9 +415,7 @@ class DataCoordinator:
             results.prune_result = self._execute_prune_phase(feed_id, feed_config)
 
             # Phase 4: Generate RSS feed (always attempt)
-            results.rss_generation_result = self._execute_rss_generation_phase(
-                feed_id, feed_config
-            )
+            results.rss_generation_result = self._execute_rss_generation_phase(feed_id)
 
             # Determine overall success
             # Consider successful if at least RSS generation succeeded

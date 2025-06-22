@@ -9,18 +9,19 @@ import logging
 from pathlib import Path
 
 from ..config import AppSettings, DebugMode
+from ..exceptions import DatabaseOperationError
 from ..logging_config import setup_logging
 from ..path_manager import PathManager
 from .debug_downloader import run_debug_downloader_mode
 from .debug_enqueuer import run_debug_enqueuer_mode
 from .debug_ytdlp import run_debug_ytdlp_mode
-from .default import default as run_default_mode
+from .default import default
 
 DEBUG_DB_FILE = Path.cwd() / "debug.db"
 DEBUG_DOWNLOADS_DIR = Path.cwd() / "debug_downloads"
 
 
-def main_cli():
+async def main_cli():
     """Initialize and run the Anypod application based on configuration.
 
     Sets up logging, loads application settings, and routes execution
@@ -53,44 +54,61 @@ def main_cli():
         },
     )
 
-    paths = PathManager(
-        base_data_dir=DEBUG_DOWNLOADS_DIR,
-        base_tmp_dir=DEBUG_DOWNLOADS_DIR / "tmp",
-        base_url=settings.base_url,
-    )
-
+    # Set up directories and paths based on mode
     match settings.debug_mode:
-        case DebugMode.YTDLP:
-            logger.info(
-                "Initializing Anypod in 'ytdlp' debug mode.",
-                extra={"debug_config_file_path": str(settings.config_file)},
+        case DebugMode.YTDLP | DebugMode.ENQUEUER | DebugMode.DOWNLOADER:
+            # Debug mode: use debug directories
+            try:
+                DEBUG_DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
+            except OSError as e:
+                logger.error(
+                    "Failed to create debug directories.",
+                    extra={"debug_downloads_dir": str(DEBUG_DOWNLOADS_DIR)},
+                    exc_info=e,
+                )
+                raise DatabaseOperationError(
+                    "Failed to create debug directories."
+                ) from e
+
+            paths = PathManager(
+                base_data_dir=DEBUG_DOWNLOADS_DIR,
+                base_url=settings.base_url,
             )
-            run_debug_ytdlp_mode(
-                settings.config_file,
-                paths,
-            )
-        case DebugMode.ENQUEUER:
-            logger.info(
-                "Initializing Anypod in 'enqueuer' debug mode.",
-                extra={"feeds_config_file_path": str(settings.config_file)},
-            )
-            run_debug_enqueuer_mode(
-                settings,
-                DEBUG_DB_FILE,
-                paths,
-            )
-        case DebugMode.DOWNLOADER:
-            logger.info(
-                "Initializing Anypod in 'downloader' debug mode.",
-                extra={"feeds_config_file_path": str(settings.config_file)},
-            )
-            run_debug_downloader_mode(
-                settings,
-                DEBUG_DB_FILE,
-                paths,
-            )
+
+            # Run debug mode
+            match settings.debug_mode:
+                case DebugMode.YTDLP:
+                    logger.info(
+                        "Initializing Anypod in 'ytdlp' debug mode.",
+                        extra={"debug_config_file_path": str(settings.config_file)},
+                    )
+                    run_debug_ytdlp_mode(
+                        settings.config_file,
+                        paths,
+                    )
+                case DebugMode.ENQUEUER:
+                    logger.info(
+                        "Initializing Anypod in 'enqueuer' debug mode.",
+                        extra={"feeds_config_file_path": str(settings.config_file)},
+                    )
+                    run_debug_enqueuer_mode(
+                        settings,
+                        DEBUG_DB_FILE,
+                        paths,
+                    )
+                case DebugMode.DOWNLOADER:
+                    logger.info(
+                        "Initializing Anypod in 'downloader' debug mode.",
+                        extra={"feeds_config_file_path": str(settings.config_file)},
+                    )
+                    run_debug_downloader_mode(
+                        settings,
+                        DEBUG_DB_FILE,
+                        paths,
+                    )
+
         case None:
             logger.info("Initializing Anypod in default mode.")
-            run_default_mode(settings)
+            await default(settings)
 
     logger.debug("main_cli execution finished.")

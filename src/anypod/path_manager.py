@@ -13,31 +13,40 @@ class PathManager:
     construction for feeds and their media files. Ensures consistent 1:1 mapping
     between network paths and file paths based on feed_id and download_id.
 
+    Automatically manages media and tmp subdirectories within the base data directory.
+
     Attributes:
-        _base_data_dir: Root directory for permanent download storage.
-        _base_tmp_dir: Root directory for temporary download operations.
+        _base_data_dir: Root directory for all application data.
         _base_url: Base URL for constructing feed and media URLs.
     """
 
-    def __init__(self, base_data_dir: Path, base_tmp_dir: Path, base_url: str):
+    def __init__(self, base_data_dir: Path, base_url: str):
         self._base_data_dir = Path(base_data_dir).resolve()
-        self._base_tmp_dir = Path(base_tmp_dir).resolve()
         self._base_url = base_url.rstrip("/")
 
     @property
     def base_data_dir(self) -> Path:
         """Return the directory used for permanent downloads."""
-        return self._base_data_dir
+        return self._base_data_dir / "media"
 
     @property
     def base_tmp_dir(self) -> Path:
         """Return the directory used for temporary downloads."""
-        return self._base_tmp_dir
+        return self._base_data_dir / "tmp"
 
     @property
     def base_url(self) -> str:
         """Return the base URL for feed and media links."""
         return self._base_url
+
+    @property
+    def db_file_path(self) -> Path:
+        """Return the path to the database file.
+
+        Returns:
+            Path to the database file.
+        """
+        return self._base_data_dir / "anypod.db"
 
     def feed_data_dir(self, feed_id: str) -> Path:
         """Return the directory for a feed's downloaded files.
@@ -57,7 +66,7 @@ class PathManager:
         if not feed_id or not feed_id.strip():
             raise ValueError("feed_id cannot be empty or whitespace-only")
 
-        path = self._base_data_dir / feed_id
+        path = self.base_data_dir / feed_id
         try:
             path.mkdir(parents=True, exist_ok=True)
         except OSError as e:
@@ -85,7 +94,7 @@ class PathManager:
         if not feed_id or not feed_id.strip():
             raise ValueError("feed_id cannot be empty or whitespace-only")
 
-        path = self._base_tmp_dir / feed_id
+        path = self.base_tmp_dir / feed_id
         try:
             path.mkdir(parents=True, exist_ok=True)
         except OSError as e:

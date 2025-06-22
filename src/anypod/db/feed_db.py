@@ -37,9 +37,9 @@ class FeedDatabase:
         _feed_table_name: Name of the feeds table.
     """
 
-    def __init__(self, db_path: Path | None, memory_name: str | None = None):
+    def __init__(self, db_path: Path):
         self._db_path = db_path
-        self._db = SqliteUtilsCore(db_path, memory_name)
+        self._db = SqliteUtilsCore(db_path)
         self._feed_table_name = "feeds"
         self._initialize_schema()
         logger.debug("FeedDatabase initialized.", extra={"db_path": str(db_path)})

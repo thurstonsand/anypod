@@ -13,7 +13,10 @@
       "Bash(ls:*)",
       "Bash(mkdir:*)",
       "Bash(gh pr view:*)",
-      "Bash(touch:*)"
+      "Bash(touch:*)",
+      "mcp__serena__find_symbol",
+      "mcp__serena__get_symbols_overview",
+      "mcp__ide__getDiagnostics"
     ],
     "deny": []
   }

@@ -187,7 +187,10 @@ class AppSettings(BaseSettings):
         log_level: Logging level for the application.
         log_include_stacktrace: Include full stack traces in error logs.
         base_url: Base URL for RSS feeds and media files.
+        data_dir: Root directory for all application data.
+        tz: Timezone for date parsing in config files.
         config_file: Path to the YAML config file.
+        cookies_path: Path to the cookies.txt file for yt-dlp authentication.
         feeds: Configuration for all podcast feeds.
     """
 
@@ -217,6 +220,11 @@ class AppSettings(BaseSettings):
         validation_alias="BASE_URL",
         description="Base URL for RSS feeds and media files (e.g., 'https://podcasts.example.com').",
     )
+    data_dir: Path = Field(
+        default=Path("/data"),
+        validation_alias="DATA_DIR",
+        description="Root directory for all application data (database, media files, temp files).",
+    )
     tz: ZoneInfo | None = Field(
         default=None,
         validation_alias="TZ",
@@ -228,6 +236,11 @@ class AppSettings(BaseSettings):
         default=Path("/config/feeds.yaml"),
         validation_alias="CONFIG_FILE",
         description="Path to the YAML config file.",
+    )
+    cookies_path: Path | None = Field(
+        default=None,
+        validation_alias="COOKIES_PATH",
+        description="Optional path to the cookies.txt file for yt-dlp authentication.",
     )
 
     feeds: dict[str, FeedConfig] = Field(

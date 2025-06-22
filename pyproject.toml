@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "anypod"
 version = "0.1.0"
-description = "Thin yt‑dlp → podcast solution"
+description = "Thin yt-dlp -> podcast solution"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -34,7 +34,7 @@ dev = [
 ]
 
 [project.scripts]
-anypod = "anypod.cli:main_cli"
+anypod = "anypod.__main__:main"
 
 [tool.uv]
 managed = true
@@ -43,7 +43,7 @@ managed = true
 minversion = "7.0"
 pythonpath = ["src"]
 testpaths = ["tests"]
-addopts = "-ra -q --tb=short --disable-warnings --strict-markers -n 2 --cov=src --cov-report=html --cov-report=term-missing"
+addopts = "-ra -q --tb=short --disable-warnings --strict-markers -n 4 --cov=src --cov-report=html --cov-report=term-missing"
 filterwarnings = ["error"]
 markers = [
     "integration: mark slow integration tests",

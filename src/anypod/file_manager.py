@@ -145,4 +145,12 @@ class FileManager:
                 f"Download file not found or is not a file: {file_path}"
             )
         logger.debug("File confirmed, opening for binary read.", extra=log_params)
-        return file_path.open("rb")
+        try:
+            return file_path.open("rb")
+        except OSError as e:
+            raise FileOperationError(
+                "Failed to open download file for reading.",
+                feed_id=feed,
+                download_id=download_id,
+                file_name=f"{download_id}.{ext}",
+            ) from e

@@ -122,7 +122,10 @@ class Downloader:
             )
 
     def _check_and_update_metadata(
-        self, download: Download, feed_config: FeedConfig
+        self,
+        download: Download,
+        feed_config: FeedConfig,
+        cookies_path: Path | None = None,
     ) -> Download:
         """Re-fetch metadata and update if values have changed.
 
@@ -135,6 +138,7 @@ class Downloader:
         Args:
             download: The Download object to check.
             feed_config: The configuration for the feed.
+            cookies_path: Path to cookies.txt file for yt-dlp authentication.
 
         Returns:
             Updated Download object with latest metadata.
@@ -154,6 +158,7 @@ class Downloader:
                 download.feed,
                 download.source_url,
                 feed_config.yt_args,
+                cookies_path=cookies_path,
             )
         except YtdlpApiError as e:
             logger.warning(
@@ -229,7 +234,10 @@ class Downloader:
         return download
 
     def _process_single_download(
-        self, download_to_process: Download, feed_config: FeedConfig
+        self,
+        download_to_process: Download,
+        feed_config: FeedConfig,
+        cookies_path: Path | None = None,
     ) -> None:
         """Manage the download lifecycle for a single Download object.
 
@@ -239,6 +247,7 @@ class Downloader:
         Args:
             download_to_process: The Download object to process.
             feed_config: The configuration for the feed.
+            cookies_path: Path to cookies.txt file for yt-dlp authentication.
 
         Raises:
             DownloadError: If a step in the download process fails critically
@@ -253,12 +262,13 @@ class Downloader:
         try:
             # Check for metadata updates before downloading
             download_to_process = self._check_and_update_metadata(
-                download_to_process, feed_config
+                download_to_process, feed_config, cookies_path
             )
 
             downloaded_file_path = self.ytdlp_wrapper.download_media_to_file(
                 download_to_process,
                 feed_config.yt_args,
+                cookies_path=cookies_path,
             )
             self._handle_download_success(download_to_process, downloaded_file_path)
         except YtdlpApiError as e:
@@ -273,6 +283,7 @@ class Downloader:
         self,
         feed_id: str,
         feed_config: FeedConfig,
+        cookies_path: Path | None = None,
         limit: int = -1,
     ) -> tuple[int, int]:
         """Process and download media items in 'queued' status for a feed.
@@ -290,6 +301,7 @@ class Downloader:
             feed_id: The unique identifier for the feed whose queued items are to be processed.
             feed_config: The configuration object for the feed, containing yt-dlp arguments
                          and max error count.
+            cookies_path: Path to cookies.txt file for yt-dlp authentication.
             limit: The maximum number of queued items to process. If -1 (default),
                    processes all queued items for the feed.
 
@@ -333,7 +345,7 @@ class Downloader:
 
         for download in queued_downloads:
             try:
-                self._process_single_download(download, feed_config)
+                self._process_single_download(download, feed_config, cookies_path)
                 success_count += 1
             except DownloadError as e:
                 self._handle_download_failure(download, feed_config, e)

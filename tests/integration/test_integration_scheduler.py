@@ -8,10 +8,9 @@ with DataCoordinator for actual feed processing jobs.
 """
 
 import asyncio
-from collections.abc import Awaitable, Callable, Generator
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
-import shutil
 import time
 from unittest.mock import MagicMock
 
@@ -23,10 +22,8 @@ from anypod.data_coordinator.types import PhaseResult, ProcessingResults
 from anypod.db import DownloadDatabase, FeedDatabase
 from anypod.db.types import DownloadStatus, Feed, SourceType
 from anypod.file_manager import FileManager
-from anypod.path_manager import PathManager
 from anypod.rss import RSSFeedGenerator
 from anypod.schedule import FeedScheduler
-from anypod.ytdlp_wrapper import YtdlpWrapper
 
 # Test constants
 CRON_EVERY_SECOND = "* * * * * *"  # Every second for fast testing
@@ -90,116 +87,18 @@ async def wait_for_condition(
 
 
 @pytest.fixture
-def shared_dirs(
-    tmp_path_factory: pytest.TempPathFactory,
-) -> Generator[tuple[Path, Path]]:
-    """Provides shared temporary directories for tests."""
-    app_tmp_dir = tmp_path_factory.mktemp("tmp")
-    app_data_dir = tmp_path_factory.mktemp("data")
-
-    yield app_tmp_dir, app_data_dir
-
-    # Cleanup
-    shutil.rmtree(app_tmp_dir, ignore_errors=True)
-    shutil.rmtree(app_data_dir, ignore_errors=True)
-
-
-@pytest.fixture
-def feed_db() -> Generator[FeedDatabase]:
-    """Provides a FeedDatabase instance with a temporary database."""
-    feed_db = FeedDatabase(db_path=None, memory_name="scheduler_integration_test")
-    yield feed_db
-    feed_db.close()
-
-
-@pytest.fixture
-def download_db() -> Generator[DownloadDatabase]:
-    """Provides a DownloadDatabase instance with a temporary database."""
-    download_db = DownloadDatabase(
-        db_path=None, memory_name="scheduler_integration_test"
-    )
-    yield download_db
-    download_db.close()
-
-
-@pytest.fixture
-def file_manager(shared_dirs: tuple[Path, Path]) -> Generator[FileManager]:
-    """Provides a FileManager instance with shared data directory."""
-    app_tmp_dir, app_data_dir = shared_dirs
-    paths = PathManager(
-        base_data_dir=app_data_dir,
-        base_tmp_dir=app_tmp_dir,
-        base_url=BASE_URL,
-    )
-    file_manager = FileManager(paths)
-    yield file_manager
-
-
-@pytest.fixture
-def ytdlp_wrapper(shared_dirs: tuple[Path, Path]) -> Generator[YtdlpWrapper]:
-    """Provides a YtdlpWrapper instance with shared directories."""
-    app_tmp_dir, app_data_dir = shared_dirs
-    paths = PathManager(
-        base_data_dir=app_data_dir,
-        base_tmp_dir=app_tmp_dir,
-        base_url="http://localhost",
-    )
-    yield YtdlpWrapper(paths)
-
-
-@pytest.fixture
-def enqueuer(
-    feed_db: FeedDatabase, download_db: DownloadDatabase, ytdlp_wrapper: YtdlpWrapper
-) -> Generator[Enqueuer]:
-    """Provides an Enqueuer instance for the coordinator."""
-    yield Enqueuer(feed_db, download_db, ytdlp_wrapper)
-
-
-@pytest.fixture
-def downloader(
-    download_db: DownloadDatabase,
-    file_manager: FileManager,
-    ytdlp_wrapper: YtdlpWrapper,
-) -> Generator[Downloader]:
-    """Provides a Downloader instance for the coordinator."""
-    yield Downloader(download_db, file_manager, ytdlp_wrapper)
-
-
-@pytest.fixture
-def pruner(
-    feed_db: FeedDatabase,
-    download_db: DownloadDatabase,
-    file_manager: FileManager,
-) -> Generator[Pruner]:
-    """Provides a Pruner instance for the coordinator."""
-    yield Pruner(feed_db, download_db, file_manager)
-
-
-@pytest.fixture
-def rss_generator(
-    download_db: DownloadDatabase,
-    shared_dirs: tuple[Path, Path],
-) -> Generator[RSSFeedGenerator]:
-    """Provides an RSSFeedGenerator instance for the coordinator."""
-    app_tmp_dir, app_data_dir = shared_dirs
-    paths = PathManager(
-        base_data_dir=app_data_dir,
-        base_tmp_dir=app_tmp_dir,
-        base_url="http://localhost",
-    )
-    yield RSSFeedGenerator(download_db, paths)
-
-
-@pytest.fixture
 def data_coordinator(
     enqueuer: Enqueuer,
     downloader: Downloader,
     pruner: Pruner,
     rss_generator: RSSFeedGenerator,
     feed_db: FeedDatabase,
-) -> Generator[DataCoordinator]:
+    cookies_path: Path | None,
+) -> DataCoordinator:
     """Provides a DataCoordinator instance combining all services."""
-    yield DataCoordinator(enqueuer, downloader, pruner, rss_generator, feed_db)
+    return DataCoordinator(
+        enqueuer, downloader, pruner, rss_generator, feed_db, cookies_path
+    )
 
 
 @pytest.fixture
