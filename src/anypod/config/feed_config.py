@@ -21,7 +21,7 @@ class FeedConfig(BaseModel):
 
     Attributes:
         url: Feed source URL (e.g., YouTube channel, playlist).
-        yt_args: Parsed arguments for yt-dlp from user-provided string.
+        yt_args: Command-line arguments for yt-dlp from user-provided string.
         schedule: Cron schedule expression for feed processing.
         keep_last: Number of latest downloads to keep (prune policy).
         since: Only download newer downloads since this ISO8601 timestamp (prune policy).
@@ -36,9 +36,9 @@ class FeedConfig(BaseModel):
         description="Whether the feed is enabled. If disabled, the feed will not be processed.",
     )
     url: str = Field(..., min_length=1, description="Feed source URL")
-    yt_args: dict[str, Any] = Field(
-        default_factory=dict[str, Any],
-        description="Parsed arguments for yt-dlp, from user-provided string in config.",
+    yt_args: list[str] = Field(
+        default_factory=list[str],
+        description="Command-line arguments for yt-dlp, parsed from user-provided string in config.",
     )
     schedule: CronExpression = Field(
         ..., description="Cron schedule expression (supports seconds)"
@@ -61,38 +61,30 @@ class FeedConfig(BaseModel):
 
     @field_validator("yt_args", mode="before")
     @classmethod
-    def parse_yt_args_string(cls, v: Any) -> dict[str, Any]:
-        """Parse yt_args string into a dictionary of yt-dlp options.
+    def parse_yt_args_string(cls, v: Any) -> list[str]:
+        """Parse yt_args string into a list of command-line arguments.
 
         Args:
-            v: Value to parse, can be string or None.
+            v: Value to parse, can be string, list of strings, or None.
 
         Returns:
-            Dictionary of parsed yt-dlp options.
+            List of command-line arguments for yt-dlp.
 
         Raises:
             ValueError: If the string cannot be parsed.
-            TypeError: If the value is not a string or None.
+            TypeError: If the value is not a string or list of strings.
         """
         match v:
             case None:
-                return {}
-            case str() if not v.strip():  # Handle empty string
-                return {}
-            case str():
-                try:
-                    # lazy import to prevent circular import
-                    from ..ytdlp_wrapper.ytdlp_core import YtdlpCore
-
-                    args_list = shlex.split(v)
-                    parsed_opts = YtdlpCore.parse_options(args_list)
-                    return parsed_opts
-                except Exception as e:
-                    raise ValueError(
-                        f"Invalid yt_args string '{v}'. Failed to parse."
-                    ) from e
-            case _:
-                raise TypeError(f"yt_args must be a string, got {type(v).__name__}")
+                return []
+            case str() as s:
+                return shlex.split(s.strip())
+            case list() as l if all(isinstance(arg, str) for arg in l):  # type: ignore
+                return l  # type: ignore # confirmed that it is a list of strings
+            case other:
+                raise TypeError(
+                    f"yt_args must be a string or list of strings, got {type(other).__name__}"
+                )
 
     @field_validator("schedule", mode="before")
     @classmethod

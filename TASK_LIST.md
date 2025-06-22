@@ -368,13 +368,40 @@ This section details the components that manage the lifecycle of downloads, from
     - especially because theyve duplicated logic on retrieving the cookie -- this needs to be centralized somewhere else
     - ytdlp impl looks fine tho
   - [ ] optimize discover/metadata/download loop to cut down on calls to yt-dlp
+    - it looks like we are able to retrieve full video detail when querying a playlist without `--flat-playlist` option
+    - jury's still out on channels, but maybe?
+    - maybe we can pre-emptively classify these when they are added, store the type in the db, and pick the optimal way to retrieve based on that classification
+    - **Future Optimization**: Could fetch detailed metadata in one call (86 fields vs 21) but 10x slower - out of scope
+
   - [ ] Cut down on excessive logs
   - [x] use the shared conftest for more fixtures
   - [ ] make the db a folder instead of a file -- it creates `.db-wal` type in the same folder.
 
 ### 5.4.1 Convert to async model
-- [ ] Wrap yt-dlp calls in `asyncio.create_subprocess_exec` so that they can be cancelled
+
+**Context/Goals**: Convert anypod from sync to async to enable cancellable long-running operations (especially yt-dlp calls). Currently yt-dlp operations block and can't be interrupted. The async conversion will wrap yt-dlp in subprocess calls that can be properly cancelled, and ripple async throughout the codebase. Key insight: keep CLI args as `list[str]` instead of converting to dict, eliminating complex dict→CLI conversion.
+
+**Implementation Tasks**:
+- [x] **CLI Args Strategy**: Remove dict conversion in `feed_config.py` - keep `yt_args` as `list[str]` throughout pipeline
+- [x] **YtdlpCore Async**: Implement subprocess calls with `--dump-single-json --flat-playlist` for metadata, parse JSON to `YtdlpInfo`
+- [x] **Cancellation**: Proper subprocess cleanup (`proc.kill()` + `await proc.wait()` on `CancelledError`)
+- [ ] Isolate yt-dlp cli args into YtdlpCore
+- [ ] Remove unused YtdlpCore methods: parse_options(), set_date_range(), set_playlist_limit(), set_cookies()
+- [ ] **Conversion Order**: YtdlpCore → YtdlpWrapper → Enqueuer/Downloader/Pruner → DataCoordinator → StateReconciler
+- [ ] Convert Enqueuer class to async - update all ytdlp_wrapper calls and method signatures
+- [ ] Convert Downloader class to async - update all ytdlp_wrapper calls and method signatures
+- [ ] Convert DataCoordinator.process_feed() to async and update all service calls
+- [ ] Update FeedScheduler to handle async DataCoordinator.process_feed() calls
+- [ ] Update default.py CLI mode to properly handle async operations and graceful shutdown
+- [ ] Convert Pruner class to async - mainly for file operations using aiofiles
+- [ ] Convert StateReconciler to async for any file operations
+- [ ] Update all tests to use pytest-asyncio and mock async methods appropriately
+- [ ] Update debug CLI modes (debug_enqueuer.py, debug_downloader.py, debug_ytdlp.py) to use async
+- [ ] Consider if RSSFeedGenerator needs async updates (probably minimal since it's mostly CPU-bound)
 - [ ] Switch over from sqlite-utils to SQLAlchemy 2.0 AsyncIO + SQLModel
+- [ ] Add aiofiles dependency and convert FileManager to use async file operations
+  - [ ] **Dependencies**: Add `aiofiles` for async file operations
+  - [ ] **File Operations**: Use `aiofiles.os` for same-filesystem moves, `asyncio.to_thread(shutil.move)` for cross-filesystem (don't think there are any cross-filesystem)
 - [ ] Implement graceful shutdown handling - it hard crashes on ctrl-c right now
   - this includes during init when we're not in APScheduler yet (maybe we should be?)
 

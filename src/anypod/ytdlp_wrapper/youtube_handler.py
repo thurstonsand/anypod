@@ -10,7 +10,6 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 import logging
 import mimetypes
-from typing import Any
 
 from ..db.types import Download, DownloadStatus, Feed, SourceType
 from ..exceptions import (
@@ -431,17 +430,17 @@ class YoutubeHandler:
     parsing into Download objects.
     """
 
-    def get_source_specific_ydl_options(self, purpose: FetchPurpose) -> dict[str, Any]:
-        """Get YouTube-specific yt-dlp options for the given purpose.
+    def get_source_specific_ydl_options(self, purpose: FetchPurpose) -> list[str]:
+        """Get YouTube-specific CLI options for the given purpose.
 
         Args:
             purpose: The purpose of the fetch operation.
 
         Returns:
-            Dictionary of YouTube-specific yt-dlp options.
+            List of YouTube-specific CLI arguments.
         """
         # No filtering at discovery, metadata fetch, or media download needed from here
-        return {}
+        return []
 
     def extract_feed_metadata(
         self,
@@ -611,7 +610,7 @@ class YoutubeHandler:
         )
         return parsed_download
 
-    def determine_fetch_strategy(
+    async def determine_fetch_strategy(
         self,
         feed_id: str,
         initial_url: str,
@@ -636,13 +635,12 @@ class YoutubeHandler:
         logger.info(
             "Determining fetch strategy for URL.", extra={"initial_url": initial_url}
         )
-        # `extract_flat` will be set to "in_playlist" by _prepare_ydl_options for DISCOVERY purpose
-        discovery_opts = {"playlist_items": "1-5"}  # Small number for speed
+        discovery_opts: list[str] = []  # No additional handler-specific options needed
         logger.debug(
             "Performing discovery call.",
-            extra={"initial_url": initial_url, "discovery_opts": discovery_opts},
+            extra={"initial_url": initial_url},
         )
-        discovery_info = ydl_caller_for_discovery(discovery_opts, initial_url)
+        discovery_info = await ydl_caller_for_discovery(discovery_opts, initial_url)
 
         if not discovery_info:
             logger.warning(

@@ -5,12 +5,12 @@ to yt-dlp metadata and static methods for yt-dlp operations like option
 parsing, metadata extraction, and media downloading.
 """
 
-from pathlib import Path
+import asyncio
+import json
 from types import UnionType
 from typing import Any, Union, get_origin
 
 import yt_dlp  # type: ignore
-from yt_dlp.utils import DateRange, ExtractorError, UserNotLive  # type: ignore
 
 from ..exceptions import YtdlpApiError, YtdlpFieldInvalidError, YtdlpFieldMissingError
 
@@ -284,11 +284,13 @@ class YtdlpCore:
         return parsed_user_opts  # type: ignore
 
     @staticmethod
-    def extract_info(ydl_opts: dict[str, Any], url: str) -> YtdlpInfo | None:
-        """Extract metadata information from a URL using yt-dlp.
+    async def extract_info(cli_args: list[str], url: str) -> YtdlpInfo | None:
+        """Extract metadata information from a URL using yt-dlp subprocess.
+
+        Must have yt-dlp binary installed and in PATH.
 
         Args:
-            ydl_opts: Dictionary of yt-dlp options.
+            cli_args: List of command-line arguments for yt-dlp.
             url: URL to extract information from.
 
         Returns:
@@ -297,93 +299,85 @@ class YtdlpCore:
         Raises:
             YtdlpApiError: If extraction fails or an unexpected error occurs.
         """
+        # Build subprocess command
+        cmd = ["yt-dlp", *cli_args, "--dump-single-json", "--no-download", url]
+
         try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:  # type: ignore
-                extracted_info = ydl.extract_info(url, download=False)  # type: ignore
-                return YtdlpInfo(extracted_info) if extracted_info else None  # type: ignore
-        except (ExtractorError, UserNotLive) as e:  # type: ignore
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        except FileNotFoundError as e:
             raise YtdlpApiError(
-                message="Failed to extract metadata.",
-                url=url,
-            ) from e
-        except Exception as e:
-            raise YtdlpApiError(
-                message="Unexpected error occurred while extracting metadata.",
+                message="yt-dlp executable not found. Please ensure yt-dlp is installed and in PATH.",
                 url=url,
             ) from e
 
-    @staticmethod
-    def set_date_range(
-        ydl_opts: dict[str, Any],
-        start_date: str | None = None,
-        end_date: str | None = None,
-    ) -> None:
-        """Set date range filter in yt-dlp options using DateRange object.
+        try:
+            stdout, stderr = await proc.communicate()
+        except asyncio.CancelledError:
+            # Ensure subprocess cleanup on cancellation
+            proc.kill()
+            await proc.wait()
+            raise
 
-        Args:
-            ydl_opts: Dictionary of yt-dlp options to modify in place.
-            start_date: Start date in YYYYMMDD format, or None for no start limit.
-            end_date: End date in YYYYMMDD format, or None for no end limit.
-        """
-        if start_date is not None or end_date is not None:
-            ydl_opts["daterange"] = DateRange(start=start_date, end=end_date)
+        if proc.returncode != 0:
+            raise YtdlpApiError(
+                message=f"yt-dlp failed with exit code {proc.returncode}: {stderr.decode('utf-8', errors='replace')}",
+                url=url,
+            )
 
-    @staticmethod
-    def set_playlist_limit(
-        ydl_opts: dict[str, Any],
-        keep_last: int | None = None,
-    ) -> None:
-        """Set playlist item limit in yt-dlp options to fetch most recent N items.
+        # Parse JSON output
+        if not stdout:
+            return None
 
-        Args:
-            ydl_opts: Dictionary of yt-dlp options to modify in place.
-            keep_last: Maximum number of recent playlist items to fetch, or None for no limit.
-                      Uses `playlist_items` "1:N" format to get the first N items (should be in most recent order).
-        """
-        if keep_last is not None:
-            ydl_opts["playlist_items"] = f"1:{keep_last}"
+        try:
+            extracted_info = json.loads(stdout.decode("utf-8"))
+        except json.JSONDecodeError as e:
+            raise YtdlpApiError(
+                message="Failed to parse yt-dlp JSON output",
+                url=url,
+            ) from e
+
+        return YtdlpInfo(extracted_info)  # type: ignore
 
     @staticmethod
-    def set_cookies(
-        ydl_opts: dict[str, Any],
-        cookies_path: Path | None = None,
-    ) -> None:
-        """Set cookies file path in yt-dlp options.
+    async def download(cli_args: list[str], url: str) -> None:
+        """Download media from a URL using yt-dlp subprocess.
 
         Args:
-            ydl_opts: Dictionary of yt-dlp options to modify in place.
-            cookies_path: Path to cookies.txt file, or None to not use cookies.
-        """
-        if cookies_path is not None:
-            ydl_opts["cookiefile"] = str(cookies_path)
-
-    @staticmethod
-    def download(ydl_opts: dict[str, Any], url: str) -> None:
-        """Download media from a URL using yt-dlp.
-
-        Args:
-            ydl_opts: Dictionary of yt-dlp options.
+            cli_args: List of command-line arguments for yt-dlp.
             url: URL to download media from.
 
         Raises:
             YtdlpApiError: If download fails or returns a non-zero exit code.
         """
+        # Build subprocess command: yt-dlp + args + url
+        cmd = ["yt-dlp", *cli_args, url]
+
         try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:  # type: ignore
-                ret_code: int = ydl.download([url])  # type: ignore
-        except (ExtractorError, UserNotLive) as e:  # type: ignore
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        except FileNotFoundError as e:
             raise YtdlpApiError(
-                message="Failed to download media.",
+                message="yt-dlp executable not found. Please ensure yt-dlp is installed and in PATH.",
                 url=url,
             ) from e
-        except Exception as e:
+
+        try:
+            _, stderr = await proc.communicate()
+        except asyncio.CancelledError:
+            # Ensure subprocess cleanup on cancellation
+            proc.kill()
+            await proc.wait()
+            raise
+
+        if proc.returncode != 0:
             raise YtdlpApiError(
-                message="Unexpected error occurred while downloading media.",
+                message=f"Download failed with exit code {proc.returncode}: {stderr.decode('utf-8', errors='replace')}",
                 url=url,
-            ) from e
-        else:
-            if ret_code != 0:
-                raise YtdlpApiError(
-                    message=f"Download failed with non-zero exit code: {ret_code}, may not exist",
-                    url=url,
-                )
+            )

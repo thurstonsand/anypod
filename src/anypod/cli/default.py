@@ -35,8 +35,8 @@ def setup_graceful_shutdown() -> asyncio.Event:
     loop = asyncio.get_running_loop()
 
     # Register signal handlers for graceful shutdown using asyncio
-    loop.add_signal_handler(signal.SIGINT, shutdown_event.set)
-    loop.add_signal_handler(signal.SIGTERM, shutdown_event.set)
+    loop.add_signal_handler(signal.SIGINT, shutdown_event.set)  # type: ignore # this is in fact defined
+    loop.add_signal_handler(signal.SIGTERM, shutdown_event.set)  # type: ignore # this is in fact defined
 
     return shutdown_event
 

@@ -5,10 +5,10 @@ implementing source-specific strategies for yt-dlp operations, including
 fetch strategy determination and metadata parsing.
 """
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from enum import Enum
-from typing import Any, Protocol
+from typing import Protocol
 
 from ..db.types import Download, Feed
 from .ytdlp_core import YtdlpInfo
@@ -47,7 +47,7 @@ class FetchPurpose(Enum):
 
 
 # Type alias for the function YtdlpWrapper passes to handlers for discovery calls
-YdlApiCaller = Callable[[dict[str, Any], str], YtdlpInfo | None]
+YdlApiCaller = Callable[[list[str], str], Awaitable[YtdlpInfo | None]]
 
 
 class SourceHandlerBase(Protocol):
@@ -58,18 +58,18 @@ class SourceHandlerBase(Protocol):
     and metadata parsing into Download objects.
     """
 
-    def get_source_specific_ydl_options(self, purpose: FetchPurpose) -> dict[str, Any]:
-        """Return source-specific options to be merged into yt-dlp opts.
+    def get_source_specific_ydl_options(self, purpose: FetchPurpose) -> list[str]:
+        """Return source-specific CLI options for yt-dlp.
 
         Args:
             purpose: The purpose of the fetch operation.
 
         Returns:
-            Dictionary of yt-dlp options specific to this source.
+            List of CLI arguments specific to this source.
         """
         ...
 
-    def determine_fetch_strategy(
+    async def determine_fetch_strategy(
         self,
         feed_id: str,
         initial_url: str,
