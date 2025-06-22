@@ -19,7 +19,7 @@ from ..ytdlp_wrapper import YtdlpWrapper
 logger = logging.getLogger(__name__)
 
 
-def run_debug_enqueuer_mode(
+async def run_debug_enqueuer_mode(
     settings: AppSettings,
     debug_db_path: Path,
     paths: PathManager,
@@ -75,7 +75,7 @@ def run_debug_enqueuer_mode(
             # Use current time as fetch_until_date for day-aligned yt-dlp precision
             fetch_until_date = datetime.now(UTC)
 
-            newly_queued_count = enqueuer.enqueue_new_downloads(
+            newly_queued_count = await enqueuer.enqueue_new_downloads(
                 feed_id=feed_id,
                 feed_config=feed_config,
                 fetch_since_date=fetch_since_date,

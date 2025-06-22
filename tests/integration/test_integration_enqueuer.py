@@ -81,8 +81,9 @@ def create_test_feed(feed_db: FeedDatabase, feed_id: str, url: str) -> Feed:
 
 
 @pytest.mark.integration
+@pytest.mark.asyncio
 @pytest.mark.parametrize("url_type, url", TEST_URLS_PARAMS)
-def test_enqueue_new_downloads_success(
+async def test_enqueue_new_downloads_success(
     enqueuer: Enqueuer,
     feed_db: FeedDatabase,
     download_db: DownloadDatabase,
@@ -112,7 +113,7 @@ def test_enqueue_new_downloads_success(
 
     # Enqueue new downloads
     fetch_until_date = datetime.now(UTC)
-    queued_count = enqueuer.enqueue_new_downloads(
+    queued_count = await enqueuer.enqueue_new_downloads(
         feed_id=feed_id,
         feed_config=feed_config,
         fetch_since_date=fetch_since_date,
@@ -195,7 +196,8 @@ def test_enqueue_new_downloads_success(
 
 
 @pytest.mark.integration
-def test_enqueue_new_downloads_invalid_url(
+@pytest.mark.asyncio
+async def test_enqueue_new_downloads_invalid_url(
     enqueuer: Enqueuer, feed_db: FeedDatabase, cookies_path: Path | None
 ):
     """Tests that enqueueing fails gracefully for invalid URLs."""
@@ -216,7 +218,7 @@ def test_enqueue_new_downloads_invalid_url(
 
     with pytest.raises(EnqueueError) as excinfo:
         fetch_until_date = datetime.now(UTC)
-        enqueuer.enqueue_new_downloads(
+        await enqueuer.enqueue_new_downloads(
             feed_id=feed_id,
             feed_config=feed_config,
             fetch_since_date=fetch_since_date,
@@ -230,7 +232,8 @@ def test_enqueue_new_downloads_invalid_url(
 
 
 @pytest.mark.integration
-def test_enqueue_new_downloads_with_date_filter(
+@pytest.mark.asyncio
+async def test_enqueue_new_downloads_with_date_filter(
     enqueuer: Enqueuer,
     feed_db: FeedDatabase,
     download_db: DownloadDatabase,
@@ -254,7 +257,7 @@ def test_enqueue_new_downloads_with_date_filter(
     fetch_since_date = datetime(2025, 1, 1, tzinfo=UTC)
 
     fetch_until_date = datetime.now(UTC)
-    queued_count = enqueuer.enqueue_new_downloads(
+    queued_count = await enqueuer.enqueue_new_downloads(
         feed_id=feed_id,
         feed_config=feed_config,
         fetch_since_date=fetch_since_date,
@@ -273,7 +276,8 @@ def test_enqueue_new_downloads_with_date_filter(
 
 
 @pytest.mark.integration
-def test_enqueue_handles_existing_upcoming_downloads(
+@pytest.mark.asyncio
+async def test_enqueue_handles_existing_upcoming_downloads(
     enqueuer: Enqueuer,
     feed_db: FeedDatabase,
     download_db: DownloadDatabase,
@@ -314,7 +318,7 @@ def test_enqueue_handles_existing_upcoming_downloads(
 
     # Run enqueuer - should transition UPCOMING to QUEUED since Big Buck Bunny is a VOD
     fetch_until_date = datetime.now(UTC)
-    queued_count = enqueuer.enqueue_new_downloads(
+    queued_count = await enqueuer.enqueue_new_downloads(
         feed_id=feed_id,
         feed_config=feed_config,
         fetch_since_date=datetime.min.replace(tzinfo=UTC),
@@ -346,7 +350,8 @@ def test_enqueue_handles_existing_upcoming_downloads(
 
 
 @pytest.mark.integration
-def test_enqueue_handles_existing_downloaded_items(
+@pytest.mark.asyncio
+async def test_enqueue_handles_existing_downloaded_items(
     enqueuer: Enqueuer,
     feed_db: FeedDatabase,
     download_db: DownloadDatabase,
@@ -380,7 +385,7 @@ def test_enqueue_handles_existing_downloaded_items(
 
     # Run enqueuer
     fetch_until_date = datetime.now(UTC)
-    queued_count = enqueuer.enqueue_new_downloads(
+    queued_count = await enqueuer.enqueue_new_downloads(
         feed_id=feed_id,
         feed_config=feed_config,
         fetch_since_date=datetime.min.replace(tzinfo=UTC),
@@ -407,7 +412,8 @@ def test_enqueue_handles_existing_downloaded_items(
 
 
 @pytest.mark.integration
-def test_enqueue_multiple_runs_idempotent(
+@pytest.mark.asyncio
+async def test_enqueue_multiple_runs_idempotent(
     enqueuer: Enqueuer,
     feed_db: FeedDatabase,
     download_db: DownloadDatabase,
@@ -424,7 +430,7 @@ def test_enqueue_multiple_runs_idempotent(
 
     # First run
     fetch_until_date = datetime.now(UTC)
-    first_queued_count = enqueuer.enqueue_new_downloads(
+    first_queued_count = await enqueuer.enqueue_new_downloads(
         feed_id=feed_id,
         feed_config=feed_config,
         fetch_since_date=fetch_since_date,
@@ -440,7 +446,7 @@ def test_enqueue_multiple_runs_idempotent(
 
     # Second run - should not queue new items (they already exist)
     fetch_until_date = datetime.now(UTC)
-    second_queued_count = enqueuer.enqueue_new_downloads(
+    second_queued_count = await enqueuer.enqueue_new_downloads(
         feed_id=feed_id,
         feed_config=feed_config,
         fetch_since_date=fetch_since_date,
@@ -459,7 +465,8 @@ def test_enqueue_multiple_runs_idempotent(
 
 
 @pytest.mark.integration
-def test_enqueue_with_impossible_filter(
+@pytest.mark.asyncio
+async def test_enqueue_with_impossible_filter(
     enqueuer: Enqueuer,
     feed_db: FeedDatabase,
     download_db: DownloadDatabase,
@@ -483,7 +490,7 @@ def test_enqueue_with_impossible_filter(
 
     # The filter applies to download, not metadata fetch, so downloads are still created
     fetch_until_date = datetime.now(UTC)
-    queued_count = enqueuer.enqueue_new_downloads(
+    queued_count = await enqueuer.enqueue_new_downloads(
         feed_id=feed_id,
         feed_config=feed_config,
         fetch_since_date=fetch_since_date,
@@ -502,7 +509,8 @@ def test_enqueue_with_impossible_filter(
 
 
 @pytest.mark.integration
-def test_enqueue_feed_metadata_synchronization_with_overrides(
+@pytest.mark.asyncio
+async def test_enqueue_feed_metadata_synchronization_with_overrides(
     enqueuer: Enqueuer,
     feed_db: FeedDatabase,
     download_db: DownloadDatabase,
@@ -538,7 +546,7 @@ def test_enqueue_feed_metadata_synchronization_with_overrides(
 
     # Enqueue new downloads
     fetch_until_date = datetime.now(UTC)
-    queued_count = enqueuer.enqueue_new_downloads(
+    queued_count = await enqueuer.enqueue_new_downloads(
         feed_id=feed_id,
         feed_config=feed_config,
         fetch_since_date=fetch_since_date,
@@ -568,7 +576,8 @@ def test_enqueue_feed_metadata_synchronization_with_overrides(
 
 
 @pytest.mark.integration
-def test_enqueue_feed_metadata_partial_overrides(
+@pytest.mark.asyncio
+async def test_enqueue_feed_metadata_partial_overrides(
     enqueuer: Enqueuer,
     feed_db: FeedDatabase,
     download_db: DownloadDatabase,
@@ -600,7 +609,7 @@ def test_enqueue_feed_metadata_partial_overrides(
 
     # Enqueue new downloads
     fetch_until_date = datetime.now(UTC)
-    queued_count = enqueuer.enqueue_new_downloads(
+    queued_count = await enqueuer.enqueue_new_downloads(
         feed_id=feed_id,
         feed_config=feed_config,
         fetch_since_date=fetch_since_date,

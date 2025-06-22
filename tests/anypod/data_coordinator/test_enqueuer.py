@@ -4,7 +4,7 @@
 
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
-from unittest.mock import MagicMock, call
+from unittest.mock import AsyncMock, MagicMock, call
 
 import pytest
 
@@ -60,7 +60,9 @@ def mock_download_db() -> MagicMock:
 @pytest.fixture
 def mock_ytdlp_wrapper() -> MagicMock:
     """Provides a MagicMock for YtdlpWrapper."""
-    return MagicMock(spec=YtdlpWrapper)
+    mock = MagicMock(spec=YtdlpWrapper)
+    mock.fetch_metadata = AsyncMock()
+    return mock
 
 
 @pytest.fixture
@@ -310,7 +312,8 @@ def test_synchronize_feed_metadata_handles_partial_override_removal(
 
 
 @pytest.mark.unit
-def test_handle_existing_upcoming_downloads_none_found(
+@pytest.mark.asyncio
+async def test_handle_existing_upcoming_downloads_none_found(
     enqueuer: Enqueuer,
     mock_download_db: MagicMock,
     sample_feed_config: FeedConfig,
@@ -318,7 +321,9 @@ def test_handle_existing_upcoming_downloads_none_found(
     """Test _handle_existing_upcoming_downloads when no upcoming downloads are in DB."""
     mock_download_db.get_downloads_by_status.return_value = []
 
-    count = enqueuer._handle_existing_upcoming_downloads(FEED_ID, sample_feed_config)
+    count = await enqueuer._handle_existing_upcoming_downloads(
+        FEED_ID, sample_feed_config
+    )
     assert count == 0
     mock_download_db.get_downloads_by_status.assert_called_once_with(
         DownloadStatus.UPCOMING, feed_id=FEED_ID
@@ -326,7 +331,8 @@ def test_handle_existing_upcoming_downloads_none_found(
 
 
 @pytest.mark.unit
-def test_handle_existing_upcoming_download_transitions_to_queued(
+@pytest.mark.asyncio
+async def test_handle_existing_upcoming_download_transitions_to_queued(
     enqueuer: Enqueuer,
     mock_download_db: MagicMock,
     mock_ytdlp_wrapper: MagicMock,
@@ -339,10 +345,12 @@ def test_handle_existing_upcoming_download_transitions_to_queued(
     mock_download_db.get_downloads_by_status.return_value = [upcoming_dl]
     mock_ytdlp_wrapper.fetch_metadata.return_value = (MOCK_FEED, [refetched_vod_dl])
 
-    count = enqueuer._handle_existing_upcoming_downloads(FEED_ID, sample_feed_config)
+    count = await enqueuer._handle_existing_upcoming_downloads(
+        FEED_ID, sample_feed_config
+    )
 
     assert count == 1
-    mock_ytdlp_wrapper.fetch_metadata.assert_called_once_with(
+    mock_ytdlp_wrapper.fetch_metadata.assert_awaited_once_with(
         FEED_ID, upcoming_dl.source_url, sample_feed_config.yt_args, cookies_path=None
     )
     mock_download_db.mark_as_queued_from_upcoming.assert_called_once_with(
@@ -351,7 +359,8 @@ def test_handle_existing_upcoming_download_transitions_to_queued(
 
 
 @pytest.mark.unit
-def test_handle_existing_upcoming_download_remains_upcoming(
+@pytest.mark.asyncio
+async def test_handle_existing_upcoming_download_remains_upcoming(
     enqueuer: Enqueuer,
     mock_download_db: MagicMock,
     mock_ytdlp_wrapper: MagicMock,
@@ -368,10 +377,12 @@ def test_handle_existing_upcoming_download_remains_upcoming(
         [refetched_upcoming_dl],
     )
 
-    count = enqueuer._handle_existing_upcoming_downloads(FEED_ID, sample_feed_config)
+    count = await enqueuer._handle_existing_upcoming_downloads(
+        FEED_ID, sample_feed_config
+    )
 
     assert count == 0
-    mock_ytdlp_wrapper.fetch_metadata.assert_called_once_with(
+    mock_ytdlp_wrapper.fetch_metadata.assert_awaited_once_with(
         FEED_ID, upcoming_dl.source_url, sample_feed_config.yt_args, cookies_path=None
     )
     mock_download_db.mark_as_queued_from_upcoming.assert_not_called()
@@ -379,7 +390,8 @@ def test_handle_existing_upcoming_download_remains_upcoming(
 
 
 @pytest.mark.unit
-def test_handle_existing_upcoming_download_refetch_fails_bumps_retries(
+@pytest.mark.asyncio
+async def test_handle_existing_upcoming_download_refetch_fails_bumps_retries(
     enqueuer: Enqueuer,
     mock_download_db: MagicMock,
     mock_ytdlp_wrapper: MagicMock,
@@ -394,7 +406,9 @@ def test_handle_existing_upcoming_download_refetch_fails_bumps_retries(
     # Simulate bump_retries not transitioning to ERROR
     mock_download_db.bump_retries.return_value = (1, DownloadStatus.UPCOMING, False)
 
-    count = enqueuer._handle_existing_upcoming_downloads(FEED_ID, sample_feed_config)
+    count = await enqueuer._handle_existing_upcoming_downloads(
+        FEED_ID, sample_feed_config
+    )
 
     assert count == 0
     mock_download_db.bump_retries.assert_called_once_with(
@@ -408,7 +422,8 @@ def test_handle_existing_upcoming_download_refetch_fails_bumps_retries(
 
 
 @pytest.mark.unit
-def test_handle_existing_upcoming_download_refetch_fails_transitions_to_error(
+@pytest.mark.asyncio
+async def test_handle_existing_upcoming_download_refetch_fails_transitions_to_error(
     enqueuer: Enqueuer,
     mock_download_db: MagicMock,
     mock_ytdlp_wrapper: MagicMock,
@@ -429,7 +444,9 @@ def test_handle_existing_upcoming_download_refetch_fails_transitions_to_error(
         True,
     )
 
-    count = enqueuer._handle_existing_upcoming_downloads(FEED_ID, sample_feed_config)
+    count = await enqueuer._handle_existing_upcoming_downloads(
+        FEED_ID, sample_feed_config
+    )
 
     assert count == 0
     mock_download_db.bump_retries.assert_called_once_with(
@@ -443,7 +460,8 @@ def test_handle_existing_upcoming_download_refetch_fails_transitions_to_error(
 
 
 @pytest.mark.unit
-def test_handle_existing_upcoming_download_refetch_returns_no_match(
+@pytest.mark.asyncio
+async def test_handle_existing_upcoming_download_refetch_returns_no_match(
     enqueuer: Enqueuer,
     mock_download_db: MagicMock,
     mock_ytdlp_wrapper: MagicMock,
@@ -459,7 +477,9 @@ def test_handle_existing_upcoming_download_refetch_returns_no_match(
     )
     mock_download_db.bump_retries.return_value = (1, DownloadStatus.UPCOMING, False)
 
-    count = enqueuer._handle_existing_upcoming_downloads(FEED_ID, sample_feed_config)
+    count = await enqueuer._handle_existing_upcoming_downloads(
+        FEED_ID, sample_feed_config
+    )
 
     assert count == 0
     mock_download_db.bump_retries.assert_called_once_with(
@@ -474,7 +494,8 @@ def test_handle_existing_upcoming_download_refetch_returns_no_match(
 
 
 @pytest.mark.unit
-def test_fetch_and_process_new_feed_downloads_no_new_downloads(
+@pytest.mark.asyncio
+async def test_fetch_and_process_new_feed_downloads_no_new_downloads(
     enqueuer: Enqueuer,
     mock_ytdlp_wrapper: MagicMock,
     mock_download_db: MagicMock,
@@ -483,11 +504,11 @@ def test_fetch_and_process_new_feed_downloads_no_new_downloads(
     """Test _fetch_and_process_new_feed_downloads when no new downloads are fetched."""
     mock_ytdlp_wrapper.fetch_metadata.return_value = (MOCK_FEED, [])
 
-    count = enqueuer._fetch_and_process_new_feed_downloads(
+    count = await enqueuer._fetch_and_process_new_feed_downloads(
         FEED_ID, sample_feed_config, FETCH_SINCE_DATE, FETCH_UNTIL_DATE
     )
     assert count == 0
-    mock_ytdlp_wrapper.fetch_metadata.assert_called_once_with(
+    mock_ytdlp_wrapper.fetch_metadata.assert_awaited_once_with(
         FEED_ID,
         sample_feed_config.url,
         sample_feed_config.yt_args,
@@ -501,7 +522,8 @@ def test_fetch_and_process_new_feed_downloads_no_new_downloads(
 
 
 @pytest.mark.unit
-def test_fetch_and_process_new_feed_downloads_new_vod_download(
+@pytest.mark.asyncio
+async def test_fetch_and_process_new_feed_downloads_new_vod_download(
     enqueuer: Enqueuer,
     mock_ytdlp_wrapper: MagicMock,
     mock_download_db: MagicMock,
@@ -514,7 +536,7 @@ def test_fetch_and_process_new_feed_downloads_new_vod_download(
         message="Not found", feed_id=FEED_ID, download_id="new_video1"
     )
 
-    count = enqueuer._fetch_and_process_new_feed_downloads(
+    count = await enqueuer._fetch_and_process_new_feed_downloads(
         FEED_ID, sample_feed_config, FETCH_SINCE_DATE, FETCH_UNTIL_DATE
     )
 
@@ -524,7 +546,8 @@ def test_fetch_and_process_new_feed_downloads_new_vod_download(
 
 
 @pytest.mark.unit
-def test_fetch_and_process_new_feed_downloads_new_upcoming_download(
+@pytest.mark.asyncio
+async def test_fetch_and_process_new_feed_downloads_new_upcoming_download(
     enqueuer: Enqueuer,
     mock_ytdlp_wrapper: MagicMock,
     mock_download_db: MagicMock,
@@ -537,7 +560,7 @@ def test_fetch_and_process_new_feed_downloads_new_upcoming_download(
         message="Not found", feed_id=FEED_ID, download_id="new_video_live"
     )
 
-    count = enqueuer._fetch_and_process_new_feed_downloads(
+    count = await enqueuer._fetch_and_process_new_feed_downloads(
         FEED_ID, sample_feed_config, FETCH_SINCE_DATE, FETCH_UNTIL_DATE
     )
 
@@ -549,7 +572,8 @@ def test_fetch_and_process_new_feed_downloads_new_upcoming_download(
 
 
 @pytest.mark.unit
-def test_fetch_and_process_new_feed_downloads_existing_upcoming_now_vod(
+@pytest.mark.asyncio
+async def test_fetch_and_process_new_feed_downloads_existing_upcoming_now_vod(
     enqueuer: Enqueuer,
     mock_ytdlp_wrapper: MagicMock,
     mock_download_db: MagicMock,
@@ -562,7 +586,7 @@ def test_fetch_and_process_new_feed_downloads_existing_upcoming_now_vod(
     mock_ytdlp_wrapper.fetch_metadata.return_value = (MOCK_FEED, [fetched_as_vod])
     mock_download_db.get_download_by_id.return_value = existing_upcoming_in_db
 
-    count = enqueuer._fetch_and_process_new_feed_downloads(
+    count = await enqueuer._fetch_and_process_new_feed_downloads(
         FEED_ID, sample_feed_config, FETCH_SINCE_DATE, FETCH_UNTIL_DATE
     )
 
@@ -574,7 +598,8 @@ def test_fetch_and_process_new_feed_downloads_existing_upcoming_now_vod(
 
 
 @pytest.mark.unit
-def test_fetch_and_process_new_feed_downloads_existing_downloaded_ignored(
+@pytest.mark.asyncio
+async def test_fetch_and_process_new_feed_downloads_existing_downloaded_ignored(
     enqueuer: Enqueuer,
     mock_ytdlp_wrapper: MagicMock,
     mock_download_db: MagicMock,
@@ -590,7 +615,7 @@ def test_fetch_and_process_new_feed_downloads_existing_downloaded_ignored(
     )
     mock_download_db.get_download_by_id.return_value = existing_downloaded_in_db
 
-    count = enqueuer._fetch_and_process_new_feed_downloads(
+    count = await enqueuer._fetch_and_process_new_feed_downloads(
         FEED_ID, sample_feed_config, FETCH_SINCE_DATE, FETCH_UNTIL_DATE
     )
 
@@ -601,7 +626,8 @@ def test_fetch_and_process_new_feed_downloads_existing_downloaded_ignored(
 
 
 @pytest.mark.unit
-def test_fetch_and_process_new_feed_downloads_existing_error_requeued(
+@pytest.mark.asyncio
+async def test_fetch_and_process_new_feed_downloads_existing_error_requeued(
     enqueuer: Enqueuer,
     mock_ytdlp_wrapper: MagicMock,
     mock_download_db: MagicMock,
@@ -614,7 +640,7 @@ def test_fetch_and_process_new_feed_downloads_existing_error_requeued(
     mock_ytdlp_wrapper.fetch_metadata.return_value = (MOCK_FEED, [fetched_as_queued])
     mock_download_db.get_download_by_id.return_value = existing_error_in_db
 
-    count = enqueuer._fetch_and_process_new_feed_downloads(
+    count = await enqueuer._fetch_and_process_new_feed_downloads(
         FEED_ID, sample_feed_config, FETCH_SINCE_DATE, FETCH_UNTIL_DATE
     )
 
@@ -629,7 +655,8 @@ def test_fetch_and_process_new_feed_downloads_existing_error_requeued(
 
 
 @pytest.mark.unit
-def test_enqueue_new_downloads_full_flow_mixed_scenarios(
+@pytest.mark.asyncio
+async def test_enqueue_new_downloads_full_flow_mixed_scenarios(
     enqueuer: Enqueuer,
     mock_download_db: MagicMock,
     mock_ytdlp_wrapper: MagicMock,
@@ -676,7 +703,7 @@ def test_enqueue_new_downloads_full_flow_mixed_scenarios(
     ]
 
     # --- Execute ---
-    total_queued = enqueuer.enqueue_new_downloads(
+    total_queued = await enqueuer.enqueue_new_downloads(
         FEED_ID, sample_feed_config, FETCH_SINCE_DATE, FETCH_UNTIL_DATE
     )
 
@@ -698,31 +725,30 @@ def test_enqueue_new_downloads_full_flow_mixed_scenarios(
     # Call 2 (upcoming2_db)
     # Call 3 (main feed fetch)
     assert mock_ytdlp_wrapper.fetch_metadata.call_count == 3
-    mock_ytdlp_wrapper.fetch_metadata.assert_has_calls(
-        [
-            call(
-                FEED_ID,
-                upcoming1_db.source_url,
-                sample_feed_config.yt_args,
-                cookies_path=None,
-            ),
-            call(
-                FEED_ID,
-                upcoming2_db.source_url,
-                sample_feed_config.yt_args,
-                cookies_path=None,
-            ),
-            call(
-                FEED_ID,
-                sample_feed_config.url,
-                sample_feed_config.yt_args,
-                FETCH_SINCE_DATE,
-                FETCH_UNTIL_DATE,
-                sample_feed_config.keep_last,
-                None,
-            ),
-        ]
-    )
+    expected_calls = [
+        call(
+            FEED_ID,
+            upcoming1_db.source_url,
+            sample_feed_config.yt_args,
+            cookies_path=None,
+        ),
+        call(
+            FEED_ID,
+            upcoming2_db.source_url,
+            sample_feed_config.yt_args,
+            cookies_path=None,
+        ),
+        call(
+            FEED_ID,
+            sample_feed_config.url,
+            sample_feed_config.yt_args,
+            FETCH_SINCE_DATE,
+            FETCH_UNTIL_DATE,
+            sample_feed_config.keep_last,
+            None,
+        ),
+    ]
+    mock_ytdlp_wrapper.fetch_metadata.assert_has_calls(expected_calls)
 
     # Assert download_db calls
     # - mark_as_queued_from_upcoming called for upcoming1_db (from _handle_existing_upcoming_downloads)
@@ -765,7 +791,8 @@ def test_enqueue_new_downloads_full_flow_mixed_scenarios(
 
 
 @pytest.mark.unit
-def test_enqueue_new_downloads_db_error_on_get_upcoming(
+@pytest.mark.asyncio
+async def test_enqueue_new_downloads_db_error_on_get_upcoming(
     enqueuer: Enqueuer,
     mock_download_db: MagicMock,
     sample_feed_config: FeedConfig,
@@ -775,7 +802,7 @@ def test_enqueue_new_downloads_db_error_on_get_upcoming(
         "DB error"
     )
     with pytest.raises(EnqueueError) as exc_info:
-        enqueuer.enqueue_new_downloads(
+        await enqueuer.enqueue_new_downloads(
             FEED_ID, sample_feed_config, FETCH_SINCE_DATE, FETCH_UNTIL_DATE
         )
     assert "Could not fetch upcoming downloads from DB" in str(exc_info.value)
@@ -783,7 +810,8 @@ def test_enqueue_new_downloads_db_error_on_get_upcoming(
 
 
 @pytest.mark.unit
-def test_enqueue_new_downloads_ytdlp_error_on_main_feed_fetch(
+@pytest.mark.asyncio
+async def test_enqueue_new_downloads_ytdlp_error_on_main_feed_fetch(
     enqueuer: Enqueuer,
     mock_download_db: MagicMock,
     mock_ytdlp_wrapper: MagicMock,
@@ -796,7 +824,7 @@ def test_enqueue_new_downloads_ytdlp_error_on_main_feed_fetch(
     )
 
     with pytest.raises(EnqueueError) as exc_info:
-        enqueuer.enqueue_new_downloads(
+        await enqueuer.enqueue_new_downloads(
             FEED_ID, sample_feed_config, FETCH_SINCE_DATE, FETCH_UNTIL_DATE
         )
 
@@ -804,7 +832,7 @@ def test_enqueue_new_downloads_ytdlp_error_on_main_feed_fetch(
     assert exc_info.value.feed_id == FEED_ID
     assert exc_info.value.feed_url == FEED_URL
     # Ensure ytdlp_wrapper.fetch_metadata was called for the main feed
-    mock_ytdlp_wrapper.fetch_metadata.assert_called_once_with(
+    mock_ytdlp_wrapper.fetch_metadata.assert_awaited_once_with(
         FEED_ID,
         sample_feed_config.url,
         sample_feed_config.yt_args,
@@ -816,7 +844,8 @@ def test_enqueue_new_downloads_ytdlp_error_on_main_feed_fetch(
 
 
 @pytest.mark.unit
-def test_enqueue_new_downloads_no_upcoming_no_new(
+@pytest.mark.asyncio
+async def test_enqueue_new_downloads_no_upcoming_no_new(
     enqueuer: Enqueuer,
     mock_download_db: MagicMock,
     mock_ytdlp_wrapper: MagicMock,
@@ -826,7 +855,7 @@ def test_enqueue_new_downloads_no_upcoming_no_new(
     mock_download_db.get_downloads_by_status.return_value = []  # No upcoming
     mock_ytdlp_wrapper.fetch_metadata.return_value = (MOCK_FEED, [])  # No new downloads
 
-    queued_count = enqueuer.enqueue_new_downloads(
+    queued_count = await enqueuer.enqueue_new_downloads(
         FEED_ID, sample_feed_config, FETCH_SINCE_DATE, FETCH_UNTIL_DATE
     )
 
@@ -834,7 +863,7 @@ def test_enqueue_new_downloads_no_upcoming_no_new(
     mock_download_db.get_downloads_by_status.assert_called_once_with(
         DownloadStatus.UPCOMING, feed_id=FEED_ID
     )
-    mock_ytdlp_wrapper.fetch_metadata.assert_called_once_with(
+    mock_ytdlp_wrapper.fetch_metadata.assert_awaited_once_with(
         FEED_ID,
         sample_feed_config.url,
         sample_feed_config.yt_args,
@@ -846,7 +875,8 @@ def test_enqueue_new_downloads_no_upcoming_no_new(
 
 
 @pytest.mark.unit
-def test_enqueue_deduplication_with_same_day_overlapping_windows(
+@pytest.mark.asyncio
+async def test_enqueue_deduplication_with_same_day_overlapping_windows(
     enqueuer: Enqueuer,
     mock_download_db: MagicMock,
     mock_ytdlp_wrapper: MagicMock,
@@ -892,7 +922,7 @@ def test_enqueue_deduplication_with_same_day_overlapping_windows(
     first_since = datetime(2025, 6, 17, 8, 0, 0, tzinfo=UTC)
     first_until = datetime(2025, 6, 17, 10, 0, 0, tzinfo=UTC)
 
-    first_count = enqueuer.enqueue_new_downloads(
+    first_count = await enqueuer.enqueue_new_downloads(
         FEED_ID, sample_feed_config, first_since, first_until
     )
 
@@ -901,7 +931,7 @@ def test_enqueue_deduplication_with_same_day_overlapping_windows(
     second_since = datetime(2025, 6, 17, 9, 0, 0, tzinfo=UTC)
     second_until = datetime(2025, 6, 17, 11, 0, 0, tzinfo=UTC)
 
-    second_count = enqueuer.enqueue_new_downloads(
+    second_count = await enqueuer.enqueue_new_downloads(
         FEED_ID, sample_feed_config, second_since, second_until
     )
 

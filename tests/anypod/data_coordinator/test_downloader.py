@@ -10,7 +10,7 @@ media fetching, FileManager for storage, and DownloadDatabase for status updates
 import dataclasses
 from datetime import UTC, datetime
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
@@ -60,7 +60,11 @@ def mock_file_manager() -> MagicMock:
 @pytest.fixture
 def mock_ytdlp_wrapper() -> MagicMock:
     """Provides a mock YtdlpWrapper."""
-    return MagicMock(spec=YtdlpWrapper)
+    mock = MagicMock(spec=YtdlpWrapper)
+    # Set async methods to AsyncMock
+    mock.fetch_metadata = AsyncMock()
+    mock.download_media_to_file = AsyncMock()
+    return mock
 
 
 @pytest.fixture
@@ -200,7 +204,8 @@ def test_handle_download_failure_db_error_logged(
 
 
 @pytest.mark.unit
-def test_check_and_update_metadata_detects_changes(
+@pytest.mark.asyncio
+async def test_check_and_update_metadata_detects_changes(
     downloader: Downloader,
     mock_download_db: MagicMock,
     mock_ytdlp_wrapper: MagicMock,
@@ -218,7 +223,9 @@ def test_check_and_update_metadata_detects_changes(
 
     mock_ytdlp_wrapper.fetch_metadata.return_value = (MOCK_FEED, [updated_download])
 
-    result = downloader._check_and_update_metadata(sample_download, sample_feed_config)
+    result = await downloader._check_and_update_metadata(
+        sample_download, sample_feed_config
+    )
 
     mock_ytdlp_wrapper.fetch_metadata.assert_called_once_with(
         sample_download.feed,
@@ -240,7 +247,8 @@ def test_check_and_update_metadata_detects_changes(
 
 
 @pytest.mark.unit
-def test_check_and_update_metadata_no_changes(
+@pytest.mark.asyncio
+async def test_check_and_update_metadata_no_changes(
     downloader: Downloader,
     mock_download_db: MagicMock,
     mock_ytdlp_wrapper: MagicMock,
@@ -251,7 +259,9 @@ def test_check_and_update_metadata_no_changes(
     # Mock the fetch to return the same download (no changes)
     mock_ytdlp_wrapper.fetch_metadata.return_value = (MOCK_FEED, [sample_download])
 
-    result = downloader._check_and_update_metadata(sample_download, sample_feed_config)
+    result = await downloader._check_and_update_metadata(
+        sample_download, sample_feed_config
+    )
 
     # Verify metadata was fetched
     mock_ytdlp_wrapper.fetch_metadata.assert_called_once()
@@ -264,7 +274,8 @@ def test_check_and_update_metadata_no_changes(
 
 
 @pytest.mark.unit
-def test_check_and_update_metadata_fetch_fails_returns_original(
+@pytest.mark.asyncio
+async def test_check_and_update_metadata_fetch_fails_returns_original(
     downloader: Downloader,
     mock_download_db: MagicMock,
     mock_ytdlp_wrapper: MagicMock,
@@ -275,7 +286,9 @@ def test_check_and_update_metadata_fetch_fails_returns_original(
     # Mock the fetch to fail
     mock_ytdlp_wrapper.fetch_metadata.side_effect = YtdlpApiError("Fetch failed")
 
-    result = downloader._check_and_update_metadata(sample_download, sample_feed_config)
+    result = await downloader._check_and_update_metadata(
+        sample_download, sample_feed_config
+    )
 
     # Verify the database was NOT updated
     mock_download_db.upsert_download.assert_not_called()
@@ -285,7 +298,8 @@ def test_check_and_update_metadata_fetch_fails_returns_original(
 
 
 @pytest.mark.unit
-def test_check_and_update_metadata_no_matching_download_returns_original(
+@pytest.mark.asyncio
+async def test_check_and_update_metadata_no_matching_download_returns_original(
     downloader: Downloader,
     mock_download_db: MagicMock,
     mock_ytdlp_wrapper: MagicMock,
@@ -297,7 +311,9 @@ def test_check_and_update_metadata_no_matching_download_returns_original(
     different_download = dataclasses.replace(sample_download, id="different_id")
     mock_ytdlp_wrapper.fetch_metadata.return_value = (MOCK_FEED, [different_download])
 
-    result = downloader._check_and_update_metadata(sample_download, sample_feed_config)
+    result = await downloader._check_and_update_metadata(
+        sample_download, sample_feed_config
+    )
 
     # Verify the database was NOT updated
     mock_download_db.upsert_download.assert_not_called()
@@ -310,10 +326,11 @@ def test_check_and_update_metadata_no_matching_download_returns_original(
 
 
 @pytest.mark.unit
+@pytest.mark.asyncio
 @patch.object(Downloader, "_handle_download_success")
-@patch.object(Downloader, "_check_and_update_metadata")
-def test_process_single_download_success_flow(
-    mock_check_metadata: MagicMock,
+@patch.object(Downloader, "_check_and_update_metadata", new_callable=AsyncMock)
+async def test_process_single_download_success_flow(
+    mock_check_metadata: AsyncMock,
     mock_handle_success: MagicMock,
     downloader: Downloader,
     mock_ytdlp_wrapper: MagicMock,
@@ -325,7 +342,11 @@ def test_process_single_download_success_flow(
     mock_ytdlp_wrapper.download_media_to_file.return_value = downloaded_path
     mock_check_metadata.return_value = sample_download  # Return unchanged
 
-    downloader._process_single_download(sample_download, sample_feed_config)
+    await downloader._process_single_download(sample_download, sample_feed_config)
+
+    mock_check_metadata.assert_called_once_with(
+        sample_download, sample_feed_config, None
+    )
 
     mock_ytdlp_wrapper.download_media_to_file.assert_called_once_with(
         sample_download,
@@ -336,9 +357,10 @@ def test_process_single_download_success_flow(
 
 
 @pytest.mark.unit
-@patch.object(Downloader, "_check_and_update_metadata")
-def test_process_single_download_ytdlp_failure_raises_downloader_error(
-    mock_check_metadata: MagicMock,
+@pytest.mark.asyncio
+@patch.object(Downloader, "_check_and_update_metadata", new_callable=AsyncMock)
+async def test_process_single_download_ytdlp_failure_raises_downloader_error(
+    mock_check_metadata: AsyncMock,
     downloader: Downloader,
     mock_ytdlp_wrapper: MagicMock,
     sample_download: Download,
@@ -352,7 +374,7 @@ def test_process_single_download_ytdlp_failure_raises_downloader_error(
     mock_check_metadata.return_value = sample_download  # Return unchanged
 
     with pytest.raises(DownloadError) as exc_info:
-        downloader._process_single_download(sample_download, sample_feed_config)
+        await downloader._process_single_download(sample_download, sample_feed_config)
 
     assert exc_info.value.feed_id == sample_download.feed
     assert exc_info.value.download_id == sample_download.id
@@ -360,11 +382,12 @@ def test_process_single_download_ytdlp_failure_raises_downloader_error(
 
 
 @pytest.mark.unit
-@patch.object(Downloader, "_check_and_update_metadata")
+@pytest.mark.asyncio
 @patch.object(Downloader, "_handle_download_success")
-def test_process_single_download_calls_check_metadata(
+@patch.object(Downloader, "_check_and_update_metadata", new_callable=AsyncMock)
+async def test_process_single_download_calls_check_metadata(
+    mock_check_metadata: AsyncMock,
     mock_handle_success: MagicMock,
-    mock_check_metadata: MagicMock,
     downloader: Downloader,
     mock_ytdlp_wrapper: MagicMock,
     sample_download: Download,
@@ -373,11 +396,11 @@ def test_process_single_download_calls_check_metadata(
     """Tests that _process_single_download calls _check_and_update_metadata before downloading."""
     # Setup mocks
     updated_download = dataclasses.replace(sample_download, title="Updated Title")
-    mock_check_metadata.return_value = updated_download
     downloaded_path = Path("/final/video.mp4")
     mock_ytdlp_wrapper.download_media_to_file.return_value = downloaded_path
+    mock_check_metadata.return_value = updated_download
 
-    downloader._process_single_download(sample_download, sample_feed_config)
+    await downloader._process_single_download(sample_download, sample_feed_config)
 
     # Verify metadata check was called first
     mock_check_metadata.assert_called_once_with(
@@ -397,13 +420,14 @@ def test_process_single_download_calls_check_metadata(
 
 
 @pytest.mark.unit
-def test_download_queued_no_items_returns_zero_counts(
+@pytest.mark.asyncio
+async def test_download_queued_no_items_returns_zero_counts(
     downloader: Downloader, mock_download_db: MagicMock, sample_feed_config: FeedConfig
 ):
     """Tests download_queued returns (0,0) if no items are fetched from DB."""
     mock_download_db.get_downloads_by_status.return_value = []
 
-    success, failure = downloader.download_queued(
+    success, failure = await downloader.download_queued(
         "test_feed", sample_feed_config, limit=5
     )
 
@@ -415,7 +439,8 @@ def test_download_queued_no_items_returns_zero_counts(
 
 
 @pytest.mark.unit
-def test_download_queued_db_fetch_error_raises_downloader_error(
+@pytest.mark.asyncio
+async def test_download_queued_db_fetch_error_raises_downloader_error(
     downloader: Downloader, mock_download_db: MagicMock, sample_feed_config: FeedConfig
 ):
     """Tests that DB error when fetching queued items raises DownloadError."""
@@ -423,16 +448,17 @@ def test_download_queued_db_fetch_error_raises_downloader_error(
     mock_download_db.get_downloads_by_status.side_effect = db_error
 
     with pytest.raises(DownloadError) as exc_info:
-        downloader.download_queued("test_feed", sample_feed_config)
+        await downloader.download_queued("test_feed", sample_feed_config)
 
     assert exc_info.value.feed_id == "test_feed"
     assert exc_info.value.__cause__ is db_error
 
 
 @pytest.mark.unit
-@patch.object(Downloader, "_process_single_download")
-def test_download_queued_processes_items_and_counts_success(
-    mock_process_single: MagicMock,
+@pytest.mark.asyncio
+@patch.object(Downloader, "_process_single_download", new_callable=AsyncMock)
+async def test_download_queued_processes_items_and_counts_success(
+    mock_process_single: AsyncMock,
     downloader: Downloader,
     mock_download_db: MagicMock,
     sample_feed_config: FeedConfig,
@@ -446,7 +472,7 @@ def test_download_queued_processes_items_and_counts_success(
     # _process_single_download does not raise for success
     mock_process_single.return_value = None
 
-    success, failure = downloader.download_queued("test_feed", sample_feed_config)
+    success, failure = await downloader.download_queued("test_feed", sample_feed_config)
 
     assert success == 2
     assert failure == 0
@@ -460,9 +486,10 @@ def test_download_queued_processes_items_and_counts_success(
 
 
 @pytest.mark.unit
-@patch.object(Downloader, "_process_single_download")
-def test_download_queued_processes_items_and_counts_failures(
-    mock_process_single: MagicMock,
+@pytest.mark.asyncio
+@patch.object(Downloader, "_process_single_download", new_callable=AsyncMock)
+async def test_download_queued_processes_items_and_counts_failures(
+    mock_process_single: AsyncMock,
     downloader: Downloader,
     mock_download_db: MagicMock,
     sample_feed_config: FeedConfig,
@@ -476,7 +503,7 @@ def test_download_queued_processes_items_and_counts_failures(
     # Simulate _process_single_download raising DownloadError for all items
     mock_process_single.side_effect = DownloadError("Processing failed")
 
-    success, failure = downloader.download_queued("test_feed", sample_feed_config)
+    success, failure = await downloader.download_queued("test_feed", sample_feed_config)
 
     assert success == 0
     assert failure == 2
@@ -490,9 +517,10 @@ def test_download_queued_processes_items_and_counts_failures(
 
 
 @pytest.mark.unit
-@patch.object(Downloader, "_process_single_download")
-def test_download_queued_mixed_success_and_failure(
-    mock_process_single: MagicMock,
+@pytest.mark.asyncio
+@patch.object(Downloader, "_process_single_download", new_callable=AsyncMock)
+async def test_download_queued_mixed_success_and_failure(
+    mock_process_single: AsyncMock,
     downloader: Downloader,
     mock_download_db: MagicMock,
     sample_feed_config: FeedConfig,
@@ -512,7 +540,7 @@ def test_download_queued_mixed_success_and_failure(
         None,  # dl3 success
     ]
 
-    success, failure = downloader.download_queued("test_feed", sample_feed_config)
+    success, failure = await downloader.download_queued("test_feed", sample_feed_config)
 
     assert success == 2
     assert failure == 1

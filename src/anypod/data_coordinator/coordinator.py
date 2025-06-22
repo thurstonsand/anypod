@@ -108,7 +108,7 @@ class DataCoordinator:
 
         return fetch_since_date
 
-    def _execute_enqueue_phase(
+    async def _execute_enqueue_phase(
         self,
         feed_id: str,
         feed_config: FeedConfig,
@@ -130,7 +130,7 @@ class DataCoordinator:
         log_params = {"feed_id": feed_id, "phase": "enqueue"}
 
         try:
-            enqueued_count = self._enqueuer.enqueue_new_downloads(
+            enqueued_count = await self._enqueuer.enqueue_new_downloads(
                 feed_id,
                 feed_config,
                 fetch_since_date,
@@ -168,7 +168,7 @@ class DataCoordinator:
                 duration_seconds=duration,
             )
 
-    def _execute_download_phase(
+    async def _execute_download_phase(
         self, feed_id: str, feed_config: FeedConfig
     ) -> PhaseResult:
         """Execute the download phase of feed processing.
@@ -186,7 +186,7 @@ class DataCoordinator:
         logger.info("Starting download phase.", extra=log_params)
 
         try:
-            success_count, failure_count = self._downloader.download_queued(
+            success_count, failure_count = await self._downloader.download_queued(
                 feed_id, feed_config, self._cookies_path
             )
         except DownloadError as e:
@@ -364,7 +364,9 @@ class DataCoordinator:
         else:
             return True
 
-    def process_feed(self, feed_id: str, feed_config: FeedConfig) -> ProcessingResults:
+    async def process_feed(
+        self, feed_id: str, feed_config: FeedConfig
+    ) -> ProcessingResults:
         """Process a feed through all phases of the pipeline.
 
         Executes the complete feed processing workflow:
@@ -404,12 +406,14 @@ class DataCoordinator:
             fetch_since_date = self._calculate_fetch_since_date(feed_id)
 
             # Phase 1: Enqueue new downloads
-            results.enqueue_result = self._execute_enqueue_phase(
+            results.enqueue_result = await self._execute_enqueue_phase(
                 feed_id, feed_config, fetch_since_date, fetch_until_date
             )
 
             # Phase 2: Download queued media (always attempt, even if enqueue failed)
-            results.download_result = self._execute_download_phase(feed_id, feed_config)
+            results.download_result = await self._execute_download_phase(
+                feed_id, feed_config
+            )
 
             # Phase 3: Prune old downloads (always attempt)
             results.prune_result = self._execute_prune_phase(feed_id, feed_config)

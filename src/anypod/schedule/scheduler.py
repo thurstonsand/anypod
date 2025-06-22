@@ -139,7 +139,7 @@ class FeedScheduler:
         return None
 
     @staticmethod
-    def _process_feed_with_context(
+    async def _process_feed_with_context(
         data_coordinator: DataCoordinator, feed_id: str, feed_config: FeedConfig
     ) -> ProcessingResults:
         """Process a feed with context ID set for logging.
@@ -167,7 +167,7 @@ class FeedScheduler:
         )
 
         # Execute the main feed processing logic
-        return data_coordinator.process_feed(feed_id, feed_config)
+        return await data_coordinator.process_feed(feed_id, feed_config)
 
     @staticmethod
     def _job_completed_callback(

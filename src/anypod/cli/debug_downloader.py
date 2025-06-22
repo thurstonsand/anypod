@@ -22,7 +22,7 @@ from ..ytdlp_wrapper import YtdlpWrapper
 logger = logging.getLogger(__name__)
 
 
-def run_debug_downloader_mode(
+async def run_debug_downloader_mode(
     settings: AppSettings,
     debug_db_path: Path,
     paths: PathManager,
@@ -80,7 +80,7 @@ def run_debug_downloader_mode(
         )
 
         try:
-            success_count, failure_count = downloader.download_queued(
+            success_count, failure_count = await downloader.download_queued(
                 feed_id=feed_id,
                 feed_config=feed_config,
                 cookies_path=settings.cookies_path,

@@ -238,7 +238,7 @@ class Enqueuer:
                 )
         return False
 
-    def _process_single_upcoming_download(
+    async def _process_single_upcoming_download(
         self,
         db_download: Download,
         feed_id: str,
@@ -272,7 +272,7 @@ class Enqueuer:
 
         fetched_downloads: list[Download] | None = None
         try:
-            _, fetched_downloads = self._ytdlp_wrapper.fetch_metadata(
+            _, fetched_downloads = await self._ytdlp_wrapper.fetch_metadata(
                 feed_id,
                 db_download.source_url,
                 feed_config.yt_args,
@@ -323,7 +323,7 @@ class Enqueuer:
 
     # --- Helpers for _fetch_and_process_feed_downloads ---
 
-    def _fetch_all_metadata_for_feed_url(
+    async def _fetch_all_metadata_for_feed_url(
         self,
         feed_id: str,
         feed_config: FeedConfig,
@@ -350,7 +350,7 @@ class Enqueuer:
             EnqueueError: If the main ytdlp fetch fails.
         """
         # Use user-configured yt_args directly (date filtering handled by wrapper)
-        user_yt_cli_args = dict(feed_config.yt_args)  # Make a copy
+        user_yt_cli_args = list(feed_config.yt_args)  # Make a copy
         logger.info(
             "Fetching feed downloads.",
             extra={
@@ -361,7 +361,10 @@ class Enqueuer:
         )
 
         try:
-            fetched_feed, all_fetched_downloads = self._ytdlp_wrapper.fetch_metadata(
+            (
+                fetched_feed,
+                all_fetched_downloads,
+            ) = await self._ytdlp_wrapper.fetch_metadata(
                 feed_id,
                 feed_config.url,
                 user_yt_cli_args,
@@ -693,7 +696,7 @@ class Enqueuer:
                 existing_db_download, fetched_dl, feed_id, log_params
             )
 
-    def _handle_existing_upcoming_downloads(
+    async def _handle_existing_upcoming_downloads(
         self, feed_id: str, feed_config: FeedConfig, cookies_path: Path | None = None
     ) -> int:
         """Re-fetch metadata for existing DB entries with UPCOMING status.
@@ -730,14 +733,14 @@ class Enqueuer:
 
         queued_count = 0
         for db_download in upcoming_db_downloads:
-            if self._process_single_upcoming_download(
+            if await self._process_single_upcoming_download(
                 db_download, feed_id, feed_config, feed_log_params, cookies_path
             ):
                 queued_count += 1
 
         return queued_count
 
-    def _fetch_and_process_new_feed_downloads(
+    async def _fetch_and_process_new_feed_downloads(
         self,
         feed_id: str,
         feed_config: FeedConfig,
@@ -767,7 +770,10 @@ class Enqueuer:
             extra=feed_log_params,
         )
 
-        fetched_feed, all_fetched_downloads = self._fetch_all_metadata_for_feed_url(
+        (
+            fetched_feed,
+            all_fetched_downloads,
+        ) = await self._fetch_all_metadata_for_feed_url(
             feed_id,
             feed_config,
             fetch_since_date,
@@ -792,7 +798,7 @@ class Enqueuer:
         )
         return queued_count
 
-    def enqueue_new_downloads(
+    async def enqueue_new_downloads(
         self,
         feed_id: str,
         feed_config: FeedConfig,
@@ -832,7 +838,7 @@ class Enqueuer:
         logger.info("Starting enqueue_new_downloads process.", extra=feed_log_params)
 
         # Handle existing UPCOMING downloads
-        queued_from_upcoming = self._handle_existing_upcoming_downloads(
+        queued_from_upcoming = await self._handle_existing_upcoming_downloads(
             feed_id, feed_config, cookies_path
         )
         logger.info(
@@ -841,7 +847,7 @@ class Enqueuer:
         )
 
         # Fetch and process all feed downloads
-        queued_from_feed_fetch = self._fetch_and_process_new_feed_downloads(
+        queued_from_feed_fetch = await self._fetch_and_process_new_feed_downloads(
             feed_id, feed_config, fetch_since_date, fetch_until_date, cookies_path
         )
         logger.info(

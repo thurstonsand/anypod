@@ -117,8 +117,9 @@ def setup_feed_with_channel_sync(feed_db: FeedDatabase, feed_id: str) -> Feed:
     return feed_db.get_feed_by_id(feed_id)
 
 
+@pytest.mark.asyncio
 @pytest.mark.integration
-def test_process_feed_complete_success(
+async def test_process_feed_complete_success(
     data_coordinator: DataCoordinator,
     feed_db: FeedDatabase,
     download_db: DownloadDatabase,
@@ -138,7 +139,7 @@ def test_process_feed_complete_success(
     setup_feed_with_initial_sync(feed_db, feed_id)
 
     # Process the feed
-    results = data_coordinator.process_feed(feed_id, feed_config)
+    results = await data_coordinator.process_feed(feed_id, feed_config)
 
     # Verify ProcessingResults structure
     assert results.feed_id == feed_id
@@ -205,8 +206,9 @@ def test_process_feed_complete_success(
     assert updated_feed.last_successful_sync > datetime(2024, 1, 1, tzinfo=UTC)
 
 
+@pytest.mark.asyncio
 @pytest.mark.integration
-def test_process_feed_incremental_processing(
+async def test_process_feed_incremental_processing(
     data_coordinator: DataCoordinator,
     feed_db: FeedDatabase,
     download_db: DownloadDatabase,
@@ -255,7 +257,7 @@ def test_process_feed_incremental_processing(
     initial_download_id = initial_downloaded[0].id
 
     # Process the feed
-    results = data_coordinator.process_feed(feed_id, feed_config)
+    results = await data_coordinator.process_feed(feed_id, feed_config)
 
     # Verify overall success
     assert results.overall_success is True
@@ -283,8 +285,9 @@ def test_process_feed_incremental_processing(
     assert results.rss_generation_result.success is True
 
 
+@pytest.mark.asyncio
 @pytest.mark.integration
-def test_process_feed_idempotency(
+async def test_process_feed_idempotency(
     data_coordinator: DataCoordinator,
     feed_db: FeedDatabase,
     download_db: DownloadDatabase,
@@ -302,7 +305,7 @@ def test_process_feed_idempotency(
     setup_feed_with_initial_sync(feed_db, feed_id)
 
     # First run - should process normally
-    first_results = data_coordinator.process_feed(feed_id, feed_config)
+    first_results = await data_coordinator.process_feed(feed_id, feed_config)
     assert first_results.overall_success is True
     assert first_results.total_enqueued >= 1
     assert first_results.total_downloaded >= 1
@@ -319,7 +322,7 @@ def test_process_feed_idempotency(
         assert file_manager.download_exists(feed_id, dl.id, dl.ext)
 
     # Second run - should be minimal processing
-    second_results = data_coordinator.process_feed(feed_id, feed_config)
+    second_results = await data_coordinator.process_feed(feed_id, feed_config)
 
     # Verify second run succeeds
     assert second_results.overall_success is True
@@ -357,8 +360,9 @@ def test_process_feed_idempotency(
         assert file_manager.download_exists(feed_id, dl.id, dl.ext)
 
 
+@pytest.mark.asyncio
 @pytest.mark.integration
-def test_process_feed_with_retention_pruning(
+async def test_process_feed_with_retention_pruning(
     data_coordinator: DataCoordinator,
     feed_db: FeedDatabase,
     download_db: DownloadDatabase,
@@ -414,7 +418,7 @@ def test_process_feed_with_retention_pruning(
     assert len(initial_downloaded) == 3
 
     # Process the feed
-    results = data_coordinator.process_feed(feed_id, feed_config)
+    results = await data_coordinator.process_feed(feed_id, feed_config)
 
     # Verify overall success
     assert results.overall_success is True
@@ -469,6 +473,7 @@ def test_process_feed_with_retention_pruning(
     assert len(archived_downloads) >= 2, "Should have archived old downloads"
 
 
+@pytest.mark.asyncio
 @pytest.mark.integration
 @pytest.mark.parametrize(
     "test_case, url, sync_timestamp, expected_enqueue_count, description",
@@ -520,7 +525,7 @@ def test_process_feed_with_retention_pruning(
         ),
     ],
 )
-def test_date_filtering_behavior(
+async def test_date_filtering_behavior(
     data_coordinator: DataCoordinator,
     feed_db: FeedDatabase,
     test_case: str,
@@ -553,7 +558,7 @@ def test_date_filtering_behavior(
     feed_db.mark_sync_success(feed_id, sync_time=sync_timestamp)
 
     # Process the feed
-    results = data_coordinator.process_feed(feed_id, feed_config)
+    results = await data_coordinator.process_feed(feed_id, feed_config)
 
     # Verify overall success
     assert results.overall_success is True, f"Processing should succeed for {test_case}"

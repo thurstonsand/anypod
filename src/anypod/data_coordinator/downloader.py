@@ -121,7 +121,7 @@ class Downloader:
                 extra={"feed_id": download.feed, "download_id": download.id},
             )
 
-    def _check_and_update_metadata(
+    async def _check_and_update_metadata(
         self,
         download: Download,
         feed_config: FeedConfig,
@@ -154,7 +154,7 @@ class Downloader:
 
         try:
             # Re-fetch metadata for this specific download
-            _, fetched_downloads = self.ytdlp_wrapper.fetch_metadata(
+            _, fetched_downloads = await self.ytdlp_wrapper.fetch_metadata(
                 download.feed,
                 download.source_url,
                 feed_config.yt_args,
@@ -233,7 +233,7 @@ class Downloader:
 
         return download
 
-    def _process_single_download(
+    async def _process_single_download(
         self,
         download_to_process: Download,
         feed_config: FeedConfig,
@@ -261,11 +261,11 @@ class Downloader:
 
         try:
             # Check for metadata updates before downloading
-            download_to_process = self._check_and_update_metadata(
+            download_to_process = await self._check_and_update_metadata(
                 download_to_process, feed_config, cookies_path
             )
 
-            downloaded_file_path = self.ytdlp_wrapper.download_media_to_file(
+            downloaded_file_path = await self.ytdlp_wrapper.download_media_to_file(
                 download_to_process,
                 feed_config.yt_args,
                 cookies_path=cookies_path,
@@ -279,7 +279,7 @@ class Downloader:
             ) from e
 
     # TODO: do i need to think about race conditions for retrieve/modify/update?
-    def download_queued(
+    async def download_queued(
         self,
         feed_id: str,
         feed_config: FeedConfig,
@@ -345,7 +345,7 @@ class Downloader:
 
         for download in queued_downloads:
             try:
-                self._process_single_download(download, feed_config, cookies_path)
+                await self._process_single_download(download, feed_config, cookies_path)
                 success_count += 1
             except DownloadError as e:
                 self._handle_download_failure(download, feed_config, e)

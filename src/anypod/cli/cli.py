@@ -91,7 +91,7 @@ async def main_cli():
                         "Initializing Anypod in 'enqueuer' debug mode.",
                         extra={"feeds_config_file_path": str(settings.config_file)},
                     )
-                    run_debug_enqueuer_mode(
+                    await run_debug_enqueuer_mode(
                         settings,
                         DEBUG_DB_FILE,
                         paths,
@@ -101,7 +101,7 @@ async def main_cli():
                         "Initializing Anypod in 'downloader' debug mode.",
                         extra={"feeds_config_file_path": str(settings.config_file)},
                     )
-                    run_debug_downloader_mode(
+                    await run_debug_downloader_mode(
                         settings,
                         DEBUG_DB_FILE,
                         paths,

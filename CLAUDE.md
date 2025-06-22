@@ -35,10 +35,8 @@ uvx yt-dlp # can research/view real data from youtube videos for research. see @
 
 Serena is capable of searching and updating code by symbol, relying on lsp to accurately and comprehensively find all references. Use it in conjunction with your other tools to make changes to the codebase. particularly rely on Serena for:
 
-- Gather information about a file/class: `get_symbol_overview` in conjunction with `find_symbol` to quickly and efficiently gather information an overview.
-- Refactoring code: as it is able to efficiently find all references of a symbol (`find_referencing_symbols`) or modifying symbols (`replace_symbol_body`)
-  - When using `replace_symbol_body`, Serena will handle indentation/whitespace to the correct level for that symbol. That is, you do not need to prepend whitespace outside the context of what would be syntactically correct for the code you are inserting.
-- Any other symbol-level operation can benefit from utilizing Serena over other options like pattern/regex/sed/etc.
+- Gather information about a file/class: `get_symbol_overview` in conjunction with `find_symbol`, `find_referencing_symbols` to quickly and efficiently gather information an overview.
+- Do not use it to modify code, just to search by symbol
 
 ## Architecture
 
