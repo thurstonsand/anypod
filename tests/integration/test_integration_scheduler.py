@@ -12,7 +12,7 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
 import time
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -105,16 +105,18 @@ def data_coordinator(
 def mock_data_coordinator() -> MagicMock:
     """Provides a mock DataCoordinator for faster tests."""
     mock = MagicMock()
-    mock.process_feed.return_value = ProcessingResults(
-        feed_id="test_feed",
-        start_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
-        total_duration_seconds=1.0,
-        overall_success=True,
-        enqueue_result=PhaseResult(success=True, count=1),
-        download_result=PhaseResult(success=True, count=1),
-        prune_result=PhaseResult(success=True, count=0),
-        rss_generation_result=PhaseResult(success=True, count=1),
-        feed_sync_updated=True,
+    mock.process_feed = AsyncMock(
+        return_value=ProcessingResults(
+            feed_id="test_feed",
+            start_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+            total_duration_seconds=1.0,
+            overall_success=True,
+            enqueue_result=PhaseResult(success=True, count=1),
+            download_result=PhaseResult(success=True, count=1),
+            prune_result=PhaseResult(success=True, count=0),
+            rss_generation_result=PhaseResult(success=True, count=1),
+            feed_sync_updated=True,
+        )
     )
     return mock
 
@@ -311,8 +313,8 @@ async def test_scheduler_shutdown_no_wait(
     """Test shutdown without waiting for jobs."""
 
     # Mock a slow-running job
-    def slow_process_feed(*args, **kwargs):  # type: ignore
-        time.sleep(3)  # Simulate longer work
+    async def slow_process_feed(*args, **kwargs):  # type: ignore
+        await asyncio.sleep(3)  # Simulate longer work
         return ProcessingResults(
             feed_id="slow_feed",
             start_time=datetime.now(UTC),
@@ -360,8 +362,12 @@ async def test_scheduler_job_failure_handling(
     mock_data_coordinator: MagicMock,
 ):
     """Test scheduler handles job failures gracefully."""
+
     # Mock a failing job
-    mock_data_coordinator.process_feed.side_effect = Exception("Process feed failed")
+    async def failing_process_feed(*args, **kwargs):  # type: ignore
+        raise Exception("Process feed failed")
+
+    mock_data_coordinator.process_feed.side_effect = failing_process_feed
 
     feed_configs = {
         "failing_feed": create_feed_config(schedule=CRON_EVERY_SECOND)  # Every second
@@ -446,7 +452,7 @@ async def test_scheduler_with_real_data_coordinator_and_file_download(
                     # Check if any files were actually written to disk
                     for download in downloads:
                         # Check if the downloaded file exists using FileManager
-                        file_path = file_manager._paths.media_file_path(
+                        file_path = await file_manager._paths.media_file_path(
                             feed_id, download.id, download.ext
                         )
                         if file_path.exists():

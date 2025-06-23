@@ -9,7 +9,7 @@ rules, including file deletion and database record archiving.
 
 import dataclasses
 import datetime
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -42,16 +42,16 @@ def mock_download_db() -> MagicMock:
 
 
 @pytest.fixture
-def mock_file_manager() -> MagicMock:
+def mock_file_manager() -> AsyncMock:
     """Provides a mock FileManager."""
-    return MagicMock(spec=FileManager)
+    return AsyncMock(spec=FileManager)
 
 
 @pytest.fixture
 def pruner(
     mock_download_db: MagicMock,
     mock_feed_db: MagicMock,
-    mock_file_manager: MagicMock,
+    mock_file_manager: AsyncMock,
 ) -> Pruner:
     """Provides a Pruner instance with mocked dependencies."""
     return Pruner(mock_feed_db, mock_download_db, mock_file_manager)
@@ -253,13 +253,14 @@ def test_identify_prune_candidates_keep_last_db_error_raises_prune_error(
 
 
 @pytest.mark.unit
-def test_handle_file_deletion_success(
+@pytest.mark.asyncio
+async def test_handle_file_deletion_success(
     pruner: Pruner,
-    mock_file_manager: MagicMock,
+    mock_file_manager: AsyncMock,
     sample_downloaded_item: Download,
 ):
     """Tests _handle_file_deletion successfully deletes file."""
-    pruner._handle_file_deletion(sample_downloaded_item, "test_feed")
+    await pruner._handle_file_deletion(sample_downloaded_item, "test_feed")
 
     mock_file_manager.delete_download_file.assert_called_once_with(
         "test_feed", "test_dl_id_1", "mp4"
@@ -267,9 +268,10 @@ def test_handle_file_deletion_success(
 
 
 @pytest.mark.unit
-def test_handle_file_deletion_file_operation_error_raises_prune_error(
+@pytest.mark.asyncio
+async def test_handle_file_deletion_file_operation_error_raises_prune_error(
     pruner: Pruner,
-    mock_file_manager: MagicMock,
+    mock_file_manager: AsyncMock,
     sample_downloaded_item: Download,
 ):
     """Tests _handle_file_deletion raises PruneError on FileOperationError."""
@@ -277,7 +279,7 @@ def test_handle_file_deletion_file_operation_error_raises_prune_error(
     mock_file_manager.delete_download_file.side_effect = file_error
 
     with pytest.raises(PruneError) as exc_info:
-        pruner._handle_file_deletion(sample_downloaded_item, "test_feed")
+        await pruner._handle_file_deletion(sample_downloaded_item, "test_feed")
 
     assert exc_info.value.feed_id == "test_feed"
     assert exc_info.value.download_id == sample_downloaded_item.id
@@ -341,14 +343,15 @@ def test_archive_download_not_found_error_raises_prune_error(
 
 
 @pytest.mark.unit
-def test_process_single_download_downloaded_file_deleted_successfully(
+@pytest.mark.asyncio
+async def test_process_single_download_downloaded_file_deleted_successfully(
     pruner: Pruner,
     mock_download_db: MagicMock,
-    mock_file_manager: MagicMock,
+    mock_file_manager: AsyncMock,
     sample_downloaded_item: Download,
 ):
     """Tests _process_single_download_for_pruning returns True when file is deleted."""
-    result = pruner._process_single_download_for_pruning(
+    result = await pruner._process_single_download_for_pruning(
         sample_downloaded_item, "test_feed"
     )
 
@@ -362,10 +365,11 @@ def test_process_single_download_downloaded_file_deleted_successfully(
 
 
 @pytest.mark.unit
-def test_process_single_download_downloaded_file_not_found_returns_false(
+@pytest.mark.asyncio
+async def test_process_single_download_downloaded_file_not_found_returns_false(
     pruner: Pruner,
     mock_download_db: MagicMock,
-    mock_file_manager: MagicMock,
+    mock_file_manager: AsyncMock,
     sample_downloaded_item: Download,
 ):
     """Tests _process_single_download_for_pruning returns False when file not found."""
@@ -373,7 +377,7 @@ def test_process_single_download_downloaded_file_not_found_returns_false(
         "File not found"
     )
 
-    result = pruner._process_single_download_for_pruning(
+    result = await pruner._process_single_download_for_pruning(
         sample_downloaded_item, "test_feed"
     )
 
@@ -387,14 +391,15 @@ def test_process_single_download_downloaded_file_not_found_returns_false(
 
 
 @pytest.mark.unit
-def test_process_single_download_non_downloaded_no_file_deletion(
+@pytest.mark.asyncio
+async def test_process_single_download_non_downloaded_no_file_deletion(
     pruner: Pruner,
     mock_download_db: MagicMock,
-    mock_file_manager: MagicMock,
+    mock_file_manager: AsyncMock,
     sample_queued_item: Download,
 ):
     """Tests _process_single_download_for_pruning skips file deletion for non-DOWNLOADED items."""
-    result = pruner._process_single_download_for_pruning(
+    result = await pruner._process_single_download_for_pruning(
         sample_queued_item, "test_feed"
     )
 
@@ -406,14 +411,15 @@ def test_process_single_download_non_downloaded_no_file_deletion(
 
 
 @pytest.mark.unit
-def test_process_single_download_upcoming_no_file_deletion(
+@pytest.mark.asyncio
+async def test_process_single_download_upcoming_no_file_deletion(
     pruner: Pruner,
     mock_download_db: MagicMock,
-    mock_file_manager: MagicMock,
+    mock_file_manager: AsyncMock,
     sample_upcoming_item: Download,
 ):
     """Tests _process_single_download_for_pruning skips file deletion for UPCOMING items but archives them."""
-    result = pruner._process_single_download_for_pruning(
+    result = await pruner._process_single_download_for_pruning(
         sample_upcoming_item, "test_feed"
     )
 
@@ -425,7 +431,8 @@ def test_process_single_download_upcoming_no_file_deletion(
 
 
 @pytest.mark.unit
-def test_process_single_download_archive_error_raises_prune_error(
+@pytest.mark.asyncio
+async def test_process_single_download_archive_error_raises_prune_error(
     pruner: Pruner,
     mock_download_db: MagicMock,
     sample_queued_item: Download,
@@ -435,7 +442,9 @@ def test_process_single_download_archive_error_raises_prune_error(
     mock_download_db.archive_download.side_effect = db_error
 
     with pytest.raises(PruneError) as exc_info:
-        pruner._process_single_download_for_pruning(sample_queued_item, "test_feed")
+        await pruner._process_single_download_for_pruning(
+            sample_queued_item, "test_feed"
+        )
 
     assert exc_info.value.__cause__ is db_error
 
@@ -512,7 +521,8 @@ def test_recalculate_total_downloads_update_error_logs_and_returns(
 
 
 @pytest.mark.unit
-def test_prune_feed_downloads_no_candidates_returns_zero_counts(
+@pytest.mark.asyncio
+async def test_prune_feed_downloads_no_candidates_returns_zero_counts(
     pruner: Pruner,
     mock_download_db: MagicMock,
 ):
@@ -520,7 +530,7 @@ def test_prune_feed_downloads_no_candidates_returns_zero_counts(
     mock_download_db.get_downloads_to_prune_by_keep_last.return_value = []
     mock_download_db.get_downloads_to_prune_by_since.return_value = []
 
-    archived_count, files_deleted_count = pruner.prune_feed_downloads(
+    archived_count, files_deleted_count = await pruner.prune_feed_downloads(
         "test_feed", keep_last=5, prune_before_date=None
     )
 
@@ -529,10 +539,11 @@ def test_prune_feed_downloads_no_candidates_returns_zero_counts(
 
 
 @pytest.mark.unit
-def test_prune_feed_downloads_processes_candidates_and_counts(
+@pytest.mark.asyncio
+async def test_prune_feed_downloads_processes_candidates_and_counts(
     pruner: Pruner,
     mock_download_db: MagicMock,
-    mock_file_manager: MagicMock,
+    mock_file_manager: AsyncMock,
     sample_downloaded_item: Download,
     sample_queued_item: Download,
 ):
@@ -540,7 +551,7 @@ def test_prune_feed_downloads_processes_candidates_and_counts(
     candidates = [sample_downloaded_item, sample_queued_item]
     mock_download_db.get_downloads_to_prune_by_keep_last.return_value = candidates
 
-    archived_count, files_deleted_count = pruner.prune_feed_downloads(
+    archived_count, files_deleted_count = await pruner.prune_feed_downloads(
         "test_feed", keep_last=1, prune_before_date=None
     )
 
@@ -551,7 +562,8 @@ def test_prune_feed_downloads_processes_candidates_and_counts(
 
 
 @pytest.mark.unit
-def test_prune_feed_downloads_candidate_identification_error_raises_prune_error(
+@pytest.mark.asyncio
+async def test_prune_feed_downloads_candidate_identification_error_raises_prune_error(
     pruner: Pruner,
     mock_download_db: MagicMock,
 ):
@@ -560,14 +572,17 @@ def test_prune_feed_downloads_candidate_identification_error_raises_prune_error(
     mock_download_db.get_downloads_to_prune_by_keep_last.side_effect = db_error
 
     with pytest.raises(PruneError) as exc_info:
-        pruner.prune_feed_downloads("test_feed", keep_last=5, prune_before_date=None)
+        await pruner.prune_feed_downloads(
+            "test_feed", keep_last=5, prune_before_date=None
+        )
 
     assert exc_info.value.feed_id == "test_feed"
     assert exc_info.value.__cause__ is db_error
 
 
 @pytest.mark.unit
-def test_prune_feed_downloads_individual_failure_continues_processing(
+@pytest.mark.asyncio
+async def test_prune_feed_downloads_individual_failure_continues_processing(
     pruner: Pruner,
     mock_download_db: MagicMock,
     sample_downloaded_item: Download,
@@ -588,7 +603,7 @@ def test_prune_feed_downloads_individual_failure_continues_processing(
 
     mock_download_db.archive_download.side_effect = archive_side_effect
 
-    archived_count, files_deleted_count = pruner.prune_feed_downloads(
+    archived_count, files_deleted_count = await pruner.prune_feed_downloads(
         "test_feed", keep_last=1, prune_before_date=None
     )
 
@@ -602,11 +617,12 @@ def test_prune_feed_downloads_individual_failure_continues_processing(
 
 
 @pytest.mark.unit
-def test_archive_feed_success_with_downloads(
+@pytest.mark.asyncio
+async def test_archive_feed_success_with_downloads(
     pruner: Pruner,
     mock_download_db: MagicMock,
     mock_feed_db: MagicMock,
-    mock_file_manager: MagicMock,
+    mock_file_manager: AsyncMock,
     sample_downloaded_item: Download,
     sample_queued_item: Download,
     sample_upcoming_item: Download,
@@ -628,7 +644,7 @@ def test_archive_feed_success_with_downloads(
 
     mock_download_db.count_downloads_by_status.return_value = 0
 
-    archived_count, files_deleted_count = pruner.archive_feed("test_feed")
+    archived_count, files_deleted_count = await pruner.archive_feed("test_feed")
 
     # Verify all 3 downloads were archived
     assert archived_count == 3
@@ -659,7 +675,8 @@ def test_archive_feed_success_with_downloads(
 
 
 @pytest.mark.unit
-def test_archive_feed_skips_archived_and_skipped_downloads(
+@pytest.mark.asyncio
+async def test_archive_feed_skips_archived_and_skipped_downloads(
     pruner: Pruner,
     mock_download_db: MagicMock,
     mock_feed_db: MagicMock,
@@ -690,7 +707,7 @@ def test_archive_feed_skips_archived_and_skipped_downloads(
 
     mock_download_db.count_downloads_by_status.return_value = 0
 
-    archived_count, files_deleted_count = pruner.archive_feed("test_feed")
+    archived_count, files_deleted_count = await pruner.archive_feed("test_feed")
 
     # Only the DOWNLOADED item should be archived
     assert archived_count == 1
@@ -715,7 +732,8 @@ def test_archive_feed_skips_archived_and_skipped_downloads(
 
 
 @pytest.mark.unit
-def test_archive_feed_empty_feed_only_disables(
+@pytest.mark.asyncio
+async def test_archive_feed_empty_feed_only_disables(
     pruner: Pruner,
     mock_download_db: MagicMock,
     mock_feed_db: MagicMock,
@@ -724,7 +742,7 @@ def test_archive_feed_empty_feed_only_disables(
     # All status queries return empty lists
     mock_download_db.get_downloads_by_status.return_value = []
 
-    archived_count, files_deleted_count = pruner.archive_feed("test_feed")
+    archived_count, files_deleted_count = await pruner.archive_feed("test_feed")
 
     assert archived_count == 0
     assert files_deleted_count == 0
@@ -741,7 +759,8 @@ def test_archive_feed_empty_feed_only_disables(
 
 
 @pytest.mark.unit
-def test_archive_feed_database_fetch_error_raises_prune_error(
+@pytest.mark.asyncio
+async def test_archive_feed_database_fetch_error_raises_prune_error(
     pruner: Pruner,
     mock_download_db: MagicMock,
 ):
@@ -750,18 +769,19 @@ def test_archive_feed_database_fetch_error_raises_prune_error(
     mock_download_db.get_downloads_by_status.side_effect = db_error
 
     with pytest.raises(PruneError) as exc_info:
-        pruner.archive_feed("test_feed")
+        await pruner.archive_feed("test_feed")
 
     assert exc_info.value.feed_id == "test_feed"
     assert exc_info.value.__cause__ is db_error
 
 
 @pytest.mark.unit
-def test_archive_feed_file_deletion_error_continues_archival(
+@pytest.mark.asyncio
+async def test_archive_feed_file_deletion_error_continues_archival(
     pruner: Pruner,
     mock_download_db: MagicMock,
     mock_feed_db: MagicMock,
-    mock_file_manager: MagicMock,
+    mock_file_manager: AsyncMock,
     sample_downloaded_item: Download,
 ):
     """Tests archive_feed continues when file deletion fails with FileNotFoundError."""
@@ -782,7 +802,7 @@ def test_archive_feed_file_deletion_error_continues_archival(
         "File already gone"
     )
 
-    archived_count, files_deleted_count = pruner.archive_feed("test_feed")
+    archived_count, files_deleted_count = await pruner.archive_feed("test_feed")
 
     # Archive should succeed even though file deletion failed
     assert archived_count == 1

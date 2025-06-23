@@ -53,8 +53,15 @@ def mock_download_db() -> MagicMock:
 
 @pytest.fixture
 def mock_file_manager() -> MagicMock:
-    """Provides a mock FileManager."""
-    return MagicMock(spec=FileManager)
+    """Provides a mock FileManager with specific async method mocks."""
+    mock = MagicMock(spec=FileManager)
+
+    # Only mock the specific async methods that FileManager actually has
+    mock.delete_download_file = AsyncMock()
+    mock.download_exists = AsyncMock()
+    mock.get_download_stream = AsyncMock()
+
+    return mock
 
 
 @pytest.fixture
@@ -116,9 +123,10 @@ def sample_feed_config() -> FeedConfig:
 
 
 @pytest.mark.unit
-@patch.object(Path, "stat", return_value=MagicMock(st_size=1024))
-def test_handle_download_success_updates_db(
-    _mock_stat: MagicMock,
+@pytest.mark.asyncio
+@patch("aiofiles.os.stat", new_callable=AsyncMock, return_value=MagicMock(st_size=1024))
+async def test_handle_download_success_updates_db(
+    _mock_stat: AsyncMock,
     downloader: Downloader,
     mock_download_db: MagicMock,
     sample_download: Download,
@@ -126,20 +134,21 @@ def test_handle_download_success_updates_db(
     """Tests that _handle_download_success calls mark_as_downloaded on DB manager."""
     downloaded_file = Path("/path/to/downloaded_video.mp4")
 
-    downloader._handle_download_success(sample_download, downloaded_file)
+    await downloader._handle_download_success(sample_download, downloaded_file)
 
     mock_download_db.mark_as_downloaded.assert_called_once_with(
         feed=sample_download.feed,
         id=sample_download.id,
         ext="mp4",
-        filesize=downloaded_file.stat().st_size,  # Relies on Path.stat not being mocked here or being part of test setup
+        filesize=1024,  # From our mocked stat result
     )
 
 
 @pytest.mark.unit
-@patch.object(Path, "stat", return_value=MagicMock(st_size=1024))
-def test_handle_download_success_db_update_fails_raises_downloader_error(
-    _mock_stat: MagicMock,
+@pytest.mark.asyncio
+@patch("aiofiles.os.stat", new_callable=AsyncMock, return_value=MagicMock(st_size=1024))
+async def test_handle_download_success_db_update_fails_raises_downloader_error(
+    _mock_stat: AsyncMock,
     downloader: Downloader,
     mock_download_db: MagicMock,
     sample_download: Download,
@@ -150,7 +159,7 @@ def test_handle_download_success_db_update_fails_raises_downloader_error(
     mock_download_db.mark_as_downloaded.side_effect = db_error
 
     with pytest.raises(DownloadError) as exc_info:
-        downloader._handle_download_success(sample_download, downloaded_file)
+        await downloader._handle_download_success(sample_download, downloaded_file)
 
     assert exc_info.value.__cause__ is db_error
     assert exc_info.value.feed_id == sample_download.feed
@@ -327,11 +336,11 @@ async def test_check_and_update_metadata_no_matching_download_returns_original(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-@patch.object(Downloader, "_handle_download_success")
+@patch.object(Downloader, "_handle_download_success", new_callable=AsyncMock)
 @patch.object(Downloader, "_check_and_update_metadata", new_callable=AsyncMock)
 async def test_process_single_download_success_flow(
     mock_check_metadata: AsyncMock,
-    mock_handle_success: MagicMock,
+    mock_handle_success: AsyncMock,
     downloader: Downloader,
     mock_ytdlp_wrapper: MagicMock,
     sample_download: Download,
@@ -383,11 +392,11 @@ async def test_process_single_download_ytdlp_failure_raises_downloader_error(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-@patch.object(Downloader, "_handle_download_success")
+@patch.object(Downloader, "_handle_download_success", new_callable=AsyncMock)
 @patch.object(Downloader, "_check_and_update_metadata", new_callable=AsyncMock)
 async def test_process_single_download_calls_check_metadata(
     mock_check_metadata: AsyncMock,
-    mock_handle_success: MagicMock,
+    mock_handle_success: AsyncMock,
     downloader: Downloader,
     mock_ytdlp_wrapper: MagicMock,
     sample_download: Download,

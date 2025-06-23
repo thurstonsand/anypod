@@ -2,11 +2,12 @@
 
 """Integration tests for Pruner with real database and file system operations."""
 
-from collections.abc import Generator
+from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+import pytest_asyncio
 
 from anypod.data_coordinator.pruner import Pruner
 from anypod.db import DownloadDatabase
@@ -194,7 +195,7 @@ def get_downloads_by_published_order(
     return sorted(filtered, key=lambda dl: dl.published, reverse=reverse)
 
 
-def create_dummy_file(file_manager: FileManager, download: Download) -> Path:
+async def create_dummy_file(file_manager: FileManager, download: Download) -> Path:
     """Create a dummy file for a download on the filesystem.
 
     Args:
@@ -204,8 +205,7 @@ def create_dummy_file(file_manager: FileManager, download: Download) -> Path:
     Returns:
         Path to the created file.
     """
-    feed_dir = file_manager._paths.base_data_dir / download.feed
-    feed_dir.mkdir(parents=True, exist_ok=True)
+    feed_dir = await file_manager._paths.feed_data_dir(download.feed)
 
     file_name = f"{download.id}.{download.ext}"
     file_path = feed_dir / file_name
@@ -224,10 +224,10 @@ def create_dummy_file(file_manager: FileManager, download: Download) -> Path:
     return file_path
 
 
-@pytest.fixture
-def populated_test_data(
+@pytest_asyncio.fixture
+async def populated_test_data(
     download_db: DownloadDatabase, feed_db: FeedDatabase, file_manager: FileManager
-) -> Generator[list[Download]]:
+) -> AsyncGenerator[list[Download]]:
     """Populate database with test downloads and create corresponding files for DOWNLOADED items."""
     # Create the feed record first (required for pruner's recalculate_total_downloads)
     test_feed = Feed(
@@ -249,7 +249,7 @@ def populated_test_data(
     created_files: list[Path] = []
     for download in SAMPLE_DOWNLOADS:
         if download.status == DownloadStatus.DOWNLOADED:
-            file_path: Path = create_dummy_file(file_manager, download)
+            file_path: Path = await create_dummy_file(file_manager, download)
             created_files.append(file_path)
 
     yield SAMPLE_DOWNLOADS
@@ -261,7 +261,8 @@ def populated_test_data(
 
 
 @pytest.mark.integration
-def test_prune_feed_downloads_keep_last_success(
+@pytest.mark.asyncio
+async def test_prune_feed_downloads_keep_last_success(
     pruner: Pruner,
     download_db: DownloadDatabase,
     file_manager: FileManager,
@@ -279,10 +280,12 @@ def test_prune_feed_downloads_keep_last_success(
 
     # Verify files exist for all DOWNLOADED items
     for download in initial_downloaded:
-        assert file_manager.download_exists(TEST_FEED_ID, download.id, download.ext)
+        assert await file_manager.download_exists(
+            TEST_FEED_ID, download.id, download.ext
+        )
 
     # Run pruner with keep_last=2
-    archived_count, files_deleted_count = pruner.prune_feed_downloads(
+    archived_count, files_deleted_count = await pruner.prune_feed_downloads(
         feed_id=TEST_FEED_ID,
         keep_last=keep_last,
         prune_before_date=None,
@@ -321,9 +324,11 @@ def test_prune_feed_downloads_keep_last_success(
     kept_downloaded_ids = {dl.id for dl in most_recent_downloaded}
     for download in initial_downloaded:
         if download.id in kept_downloaded_ids:
-            assert file_manager.download_exists(TEST_FEED_ID, download.id, download.ext)
+            assert await file_manager.download_exists(
+                TEST_FEED_ID, download.id, download.ext
+            )
         else:
-            assert not file_manager.download_exists(
+            assert not await file_manager.download_exists(
                 TEST_FEED_ID, download.id, download.ext
             )
 
@@ -343,7 +348,8 @@ def test_prune_feed_downloads_keep_last_success(
 
 
 @pytest.mark.integration
-def test_prune_feed_downloads_since_date_success(
+@pytest.mark.asyncio
+async def test_prune_feed_downloads_since_date_success(
     pruner: Pruner,
     download_db: DownloadDatabase,
     file_manager: FileManager,
@@ -354,7 +360,7 @@ def test_prune_feed_downloads_since_date_success(
     prune_before_date = BASE_PUBLISH_DATE - timedelta(days=4)
 
     # Run pruner with date filter
-    archived_count, files_deleted_count = pruner.prune_feed_downloads(
+    archived_count, files_deleted_count = await pruner.prune_feed_downloads(
         feed_id=TEST_FEED_ID,
         keep_last=None,
         prune_before_date=prune_before_date,
@@ -394,7 +400,9 @@ def test_prune_feed_downloads_since_date_success(
 
     # Verify files exist for remaining downloads
     for download in remaining_downloaded:
-        assert file_manager.download_exists(TEST_FEED_ID, download.id, download.ext)
+        assert await file_manager.download_exists(
+            TEST_FEED_ID, download.id, download.ext
+        )
 
     # Verify SKIPPED items were not affected (should still be SKIPPED)
     skipped_downloads = download_db.get_downloads_by_status(
@@ -404,7 +412,8 @@ def test_prune_feed_downloads_since_date_success(
 
 
 @pytest.mark.integration
-def test_prune_feed_downloads_combined_rules(
+@pytest.mark.asyncio
+async def test_prune_feed_downloads_combined_rules(
     pruner: Pruner,
     populated_test_data: list[Download],
 ):
@@ -413,7 +422,7 @@ def test_prune_feed_downloads_combined_rules(
     prune_before_date = BASE_PUBLISH_DATE - timedelta(days=6)
 
     # Run pruner with both rules
-    archived_count, files_deleted_count = pruner.prune_feed_downloads(
+    archived_count, files_deleted_count = await pruner.prune_feed_downloads(
         feed_id=TEST_FEED_ID,
         keep_last=keep_last,
         prune_before_date=prune_before_date,
@@ -456,7 +465,8 @@ def test_prune_feed_downloads_combined_rules(
 
 
 @pytest.mark.integration
-def test_prune_feed_downloads_no_candidates(
+@pytest.mark.asyncio
+async def test_prune_feed_downloads_no_candidates(
     pruner: Pruner,
     download_db: DownloadDatabase,
     populated_test_data: list[Download],
@@ -466,7 +476,7 @@ def test_prune_feed_downloads_no_candidates(
     keep_last = 100  # Keep more than we have
     prune_before_date = BASE_PUBLISH_DATE - timedelta(days=30)  # Very old date
 
-    archived_count, files_deleted_count = pruner.prune_feed_downloads(
+    archived_count, files_deleted_count = await pruner.prune_feed_downloads(
         feed_id=TEST_FEED_ID,
         keep_last=keep_last,
         prune_before_date=prune_before_date,
@@ -483,7 +493,8 @@ def test_prune_feed_downloads_no_candidates(
 
 
 @pytest.mark.integration
-def test_prune_feed_downloads_missing_files(
+@pytest.mark.asyncio
+async def test_prune_feed_downloads_missing_files(
     pruner: Pruner,
     download_db: DownloadDatabase,
     file_manager: FileManager,
@@ -496,17 +507,17 @@ def test_prune_feed_downloads_missing_files(
         for dl in populated_test_data
         if dl.status == DownloadStatus.DOWNLOADED and dl.id == "downloaded_old_1"
     )
-    file_manager.delete_download_file(
+    await file_manager.delete_download_file(
         TEST_FEED_ID, missing_download.id, missing_download.ext
     )
 
     # Verify file is gone
-    assert not file_manager.download_exists(
+    assert not await file_manager.download_exists(
         TEST_FEED_ID, missing_download.id, missing_download.ext
     )
 
     # Run pruner to remove old items
-    archived_count, files_deleted_count = pruner.prune_feed_downloads(
+    archived_count, files_deleted_count = await pruner.prune_feed_downloads(
         feed_id=TEST_FEED_ID,
         keep_last=2,
         prune_before_date=None,
@@ -529,7 +540,8 @@ def test_prune_feed_downloads_missing_files(
 
 
 @pytest.mark.integration
-def test_prune_feed_downloads_empty_feed(
+@pytest.mark.asyncio
+async def test_prune_feed_downloads_empty_feed(
     pruner: Pruner,
     feed_db: FeedDatabase,
 ):
@@ -548,7 +560,7 @@ def test_prune_feed_downloads_empty_feed(
     )
     feed_db.upsert_feed(test_feed)
 
-    archived_count, files_deleted_count = pruner.prune_feed_downloads(
+    archived_count, files_deleted_count = await pruner.prune_feed_downloads(
         feed_id=empty_feed_id,
         keep_last=5,
         prune_before_date=datetime.now(UTC),
@@ -559,7 +571,8 @@ def test_prune_feed_downloads_empty_feed(
 
 
 @pytest.mark.integration
-def test_prune_feed_downloads_only_excluded_statuses(
+@pytest.mark.asyncio
+async def test_prune_feed_downloads_only_excluded_statuses(
     pruner: Pruner,
     download_db: DownloadDatabase,
     feed_db: FeedDatabase,
@@ -616,7 +629,7 @@ def test_prune_feed_downloads_only_excluded_statuses(
     for download in excluded_downloads:
         download_db.upsert_download(download)
 
-    archived_count, files_deleted_count = pruner.prune_feed_downloads(
+    archived_count, files_deleted_count = await pruner.prune_feed_downloads(
         feed_id=feed_id,
         keep_last=1,
         prune_before_date=datetime.now(UTC),
@@ -639,7 +652,8 @@ def test_prune_feed_downloads_only_excluded_statuses(
 
 
 @pytest.mark.integration
-def test_prune_feed_downloads_large_dataset(
+@pytest.mark.asyncio
+async def test_prune_feed_downloads_large_dataset(
     pruner: Pruner,
     download_db: DownloadDatabase,
     feed_db: FeedDatabase,
@@ -684,10 +698,10 @@ def test_prune_feed_downloads_large_dataset(
 
         # Create files for DOWNLOADED items
         if download.status == DownloadStatus.DOWNLOADED:
-            create_dummy_file(file_manager, download)
+            await create_dummy_file(file_manager, download)
 
     # Prune keeping only the 10 most recent
-    archived_count, files_deleted_count = pruner.prune_feed_downloads(
+    archived_count, files_deleted_count = await pruner.prune_feed_downloads(
         feed_id=feed_id,
         keep_last=10,
         prune_before_date=None,
@@ -712,12 +726,13 @@ def test_prune_feed_downloads_large_dataset(
 
 
 @pytest.mark.integration
-def test_prune_feed_downloads_zero_keep_last(
+@pytest.mark.asyncio
+async def test_prune_feed_downloads_zero_keep_last(
     pruner: Pruner,
     populated_test_data: list[Download],
 ):
     """Tests pruning with keep_last=0 (should prune nothing)."""
-    archived_count, files_deleted_count = pruner.prune_feed_downloads(
+    archived_count, files_deleted_count = await pruner.prune_feed_downloads(
         feed_id=TEST_FEED_ID,
         keep_last=0,
         prune_before_date=None,
@@ -729,7 +744,8 @@ def test_prune_feed_downloads_zero_keep_last(
 
 
 @pytest.mark.integration
-def test_prune_feed_downloads_future_date(
+@pytest.mark.asyncio
+async def test_prune_feed_downloads_future_date(
     pruner: Pruner,
     download_db: DownloadDatabase,
     populated_test_data: list[Download],
@@ -737,7 +753,7 @@ def test_prune_feed_downloads_future_date(
     """Tests pruning with a future prune_before_date (should prune everything prunable)."""
     future_date = BASE_PUBLISH_DATE + timedelta(days=10)
 
-    archived_count, files_deleted_count = pruner.prune_feed_downloads(
+    archived_count, files_deleted_count = await pruner.prune_feed_downloads(
         feed_id=TEST_FEED_ID,
         keep_last=None,
         prune_before_date=future_date,
@@ -785,7 +801,8 @@ def test_prune_feed_downloads_future_date(
 
 
 @pytest.mark.integration
-def test_archive_feed_success(
+@pytest.mark.asyncio
+async def test_archive_feed_success(
     pruner: Pruner,
     download_db: DownloadDatabase,
     feed_db: FeedDatabase,
@@ -816,10 +833,12 @@ def test_archive_feed_success(
 
     # Verify files exist for downloaded items
     for download in initial_downloaded:
-        assert file_manager.download_exists(TEST_FEED_ID, download.id, download.ext)
+        assert await file_manager.download_exists(
+            TEST_FEED_ID, download.id, download.ext
+        )
 
     # Archive the feed
-    archived_count, files_deleted_count = pruner.archive_feed(TEST_FEED_ID)
+    archived_count, files_deleted_count = await pruner.archive_feed(TEST_FEED_ID)
 
     # Verify results
     assert archived_count == total_non_terminal
@@ -843,7 +862,9 @@ def test_archive_feed_success(
 
     # Verify files are deleted for previously downloaded items
     for download in initial_downloaded:
-        assert not file_manager.download_exists(TEST_FEED_ID, download.id, download.ext)
+        assert not await file_manager.download_exists(
+            TEST_FEED_ID, download.id, download.ext
+        )
 
     # Verify feed is disabled
     feed = feed_db.get_feed_by_id(TEST_FEED_ID)
@@ -854,7 +875,8 @@ def test_archive_feed_success(
 
 
 @pytest.mark.integration
-def test_archive_feed_transaction_rollback_on_failure(
+@pytest.mark.asyncio
+async def test_archive_feed_transaction_rollback_on_failure(
     pruner: Pruner,
     download_db: DownloadDatabase,
     feed_db: FeedDatabase,
@@ -913,7 +935,7 @@ def test_archive_feed_transaction_rollback_on_failure(
     for download in test_downloads:
         download_db.upsert_download(download)
         if download.status == DownloadStatus.DOWNLOADED:
-            create_dummy_file(file_manager, download)
+            await create_dummy_file(file_manager, download)
 
     # Verify initial state
     initial_downloaded = download_db.get_downloads_by_status(
@@ -940,7 +962,7 @@ def test_archive_feed_transaction_rollback_on_failure(
     try:
         # Archive should fail and rollback
         with pytest.raises(PruneError):
-            pruner.archive_feed(feed_id)
+            await pruner.archive_feed(feed_id)
 
         # Verify rollback occurred - downloads should still be in original states
         remaining_downloaded = download_db.get_downloads_by_status(
@@ -956,7 +978,9 @@ def test_archive_feed_transaction_rollback_on_failure(
 
         # Files should still exist for downloaded items
         for download in initial_downloaded:
-            assert file_manager.download_exists(feed_id, download.id, download.ext)
+            assert await file_manager.download_exists(
+                feed_id, download.id, download.ext
+            )
 
         # Feed should still be enabled (rollback)
         feed = feed_db.get_feed_by_id(feed_id)

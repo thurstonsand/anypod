@@ -389,21 +389,12 @@ This section details the components that manage the lifecycle of downloads, from
 - [x] Consistent naming on the ydl vs ytdlp fns
   - also separate out the classes into different files
 - [x] Remove unused YtdlpCore methods: parse_options(), set_date_range(), set_playlist_limit(), set_cookies()
-- [ ] **Conversion Order**: YtdlpCore → YtdlpWrapper → Enqueuer/Downloader/Pruner → DataCoordinator → StateReconciler
-- [ ] Convert Enqueuer class to async - update all ytdlp_wrapper calls and method signatures
-- [ ] Convert Downloader class to async - update all ytdlp_wrapper calls and method signatures
-- [ ] Convert DataCoordinator.process_feed() to async and update all service calls
-- [ ] Update FeedScheduler to handle async DataCoordinator.process_feed() calls
-- [ ] Update default.py CLI mode to properly handle async operations and graceful shutdown
-- [ ] Convert Pruner class to async - mainly for file operations using aiofiles
-- [ ] Convert StateReconciler to async for any file operations
-- [ ] Update all tests to use pytest-asyncio and mock async methods appropriately
-- [ ] Update debug CLI modes (debug_enqueuer.py, debug_downloader.py, debug_ytdlp.py) to use async
+- [x] **Conversion Order**: YtdlpCore → YtdlpWrapper → Enqueuer/Downloader/Pruner → DataCoordinator → StateReconciler
 - [ ] Consider if RSSFeedGenerator needs async updates (probably minimal since it's mostly CPU-bound)
 - [ ] Switch over from sqlite-utils to SQLAlchemy 2.0 AsyncIO + SQLModel
-- [ ] Add aiofiles dependency and convert FileManager to use async file operations
-  - [ ] **Dependencies**: Add `aiofiles` for async file operations
-  - [ ] **File Operations**: Use `aiofiles.os` for same-filesystem moves, `asyncio.to_thread(shutil.move)` for cross-filesystem (don't think there are any cross-filesystem)
+- [x] Add aiofiles dependency and convert FileManager to use async file operations
+  - [x] **Dependencies**: Add `aiofiles` for async file operations
+  - [x] **File Operations**: Use `aiofiles.os` to replace path operations
 - [ ] Implement graceful shutdown handling - it hard crashes on ctrl-c right now
   - this includes during init when we're not in APScheduler yet (maybe we should be?)
 

@@ -223,7 +223,7 @@ class DataCoordinator:
                 duration_seconds=duration,
             )
 
-    def _execute_prune_phase(
+    async def _execute_prune_phase(
         self, feed_id: str, feed_config: FeedConfig
     ) -> PhaseResult:
         """Execute the prune phase of feed processing.
@@ -242,7 +242,10 @@ class DataCoordinator:
 
         try:
             # Use feed_config.since as prune_before_date (different from fetch_since_date)
-            archived_count, files_deleted_count = self._pruner.prune_feed_downloads(
+            (
+                archived_count,
+                files_deleted_count,
+            ) = await self._pruner.prune_feed_downloads(
                 feed_id, feed_config.keep_last, feed_config.since
             )
         except PruneError as e:
@@ -416,7 +419,7 @@ class DataCoordinator:
             )
 
             # Phase 3: Prune old downloads (always attempt)
-            results.prune_result = self._execute_prune_phase(feed_id, feed_config)
+            results.prune_result = await self._execute_prune_phase(feed_id, feed_config)
 
             # Phase 4: Generate RSS feed (always attempt)
             results.rss_generation_result = self._execute_rss_generation_phase(feed_id)

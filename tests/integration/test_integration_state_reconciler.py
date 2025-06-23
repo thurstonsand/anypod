@@ -63,7 +63,7 @@ def create_test_download(
     )
 
 
-def write_test_media_file(
+async def write_test_media_file(
     feed_id: str,
     download_id: str,
     ext: str,
@@ -71,13 +71,14 @@ def write_test_media_file(
     path_manager: PathManager,
 ) -> None:
     """Write a test media file to the filesystem."""
-    media_path = path_manager.media_file_path(feed_id, download_id, ext)
+    media_path = await path_manager.media_file_path(feed_id, download_id, ext)
     media_path.parent.mkdir(parents=True, exist_ok=True)
     media_path.write_text(contents)
 
 
 @pytest.mark.integration
-def test_new_feed_addition(
+@pytest.mark.asyncio
+async def test_new_feed_addition(
     state_reconciler: StateReconciler,
     feed_db: FeedDatabase,
 ) -> None:
@@ -104,7 +105,7 @@ def test_new_feed_addition(
     }
 
     # Execute reconciliation
-    ready_feeds = state_reconciler.reconcile_startup_state(config_feeds)
+    ready_feeds = await state_reconciler.reconcile_startup_state(config_feeds)
 
     # Verify results
     feed_id = next(iter(config_feeds))
@@ -136,7 +137,8 @@ def test_new_feed_addition(
 
 
 @pytest.mark.integration
-def test_reconciliation_is_idempotent(
+@pytest.mark.asyncio
+async def test_reconciliation_is_idempotent(
     state_reconciler: StateReconciler,
     feed_db: FeedDatabase,
 ) -> None:
@@ -158,11 +160,11 @@ def test_reconciliation_is_idempotent(
     }
 
     # First reconciliation
-    ready_feeds1 = state_reconciler.reconcile_startup_state(config_feeds)
+    ready_feeds1 = await state_reconciler.reconcile_startup_state(config_feeds)
     db_feed1 = feed_db.get_feed_by_id("test_feed")
 
     # Second reconciliation with same config
-    ready_feeds2 = state_reconciler.reconcile_startup_state(config_feeds)
+    ready_feeds2 = await state_reconciler.reconcile_startup_state(config_feeds)
     db_feed2 = feed_db.get_feed_by_id("test_feed")
 
     # Results should be identical
@@ -172,7 +174,8 @@ def test_reconciliation_is_idempotent(
 
 
 @pytest.mark.integration
-def test_feed_removal_archives_downloads(
+@pytest.mark.asyncio
+async def test_feed_removal_archives_downloads(
     state_reconciler: StateReconciler,
     feed_db: FeedDatabase,
     download_db: DownloadDatabase,
@@ -203,14 +206,14 @@ def test_feed_removal_archives_downloads(
         download_db.upsert_download(dl)
 
     # Create file for downloaded item and mark as downloaded
-    write_test_media_file("to_remove", "dl1", "mp4", "test content", path_manager)
-    media_path = path_manager.media_file_path("to_remove", "dl1", "mp4")
+    await write_test_media_file("to_remove", "dl1", "mp4", "test content", path_manager)
+    media_path = await path_manager.media_file_path("to_remove", "dl1", "mp4")
 
     # Mark first download as downloaded
     download_db.mark_as_downloaded(feed.id, "dl1", "mp4", 12)
 
     # Execute reconciliation with empty config (feed removed)
-    ready_feeds = state_reconciler.reconcile_startup_state({})
+    ready_feeds = await state_reconciler.reconcile_startup_state({})
 
     # Verify results
     assert ready_feeds == []
@@ -238,7 +241,8 @@ def test_feed_removal_archives_downloads(
 
 
 @pytest.mark.integration
-def test_feed_enable_disable_transitions(
+@pytest.mark.asyncio
+async def test_feed_enable_disable_transitions(
     state_reconciler: StateReconciler,
     feed_db: FeedDatabase,
 ) -> None:
@@ -268,7 +272,7 @@ def test_feed_enable_disable_transitions(
             metadata=None,
         )
     }
-    ready_feeds = state_reconciler.reconcile_startup_state(config_feeds)
+    ready_feeds = await state_reconciler.reconcile_startup_state(config_feeds)
 
     # Verify enabled and errors cleared
     assert ready_feeds == ["toggle_feed"]
@@ -279,7 +283,7 @@ def test_feed_enable_disable_transitions(
 
     # Disable the feed again
     config_feeds["toggle_feed"].enabled = False
-    ready_feeds = state_reconciler.reconcile_startup_state(config_feeds)
+    ready_feeds = await state_reconciler.reconcile_startup_state(config_feeds)
 
     # Verify disabled but errors not modified
     assert ready_feeds == []
@@ -289,7 +293,8 @@ def test_feed_enable_disable_transitions(
 
 
 @pytest.mark.integration
-def test_url_change_resets_error_state(
+@pytest.mark.asyncio
+async def test_url_change_resets_error_state(
     state_reconciler: StateReconciler,
     feed_db: FeedDatabase,
 ) -> None:
@@ -318,7 +323,7 @@ def test_url_change_resets_error_state(
             metadata=None,
         )
     }
-    state_reconciler.reconcile_startup_state(config_feeds)
+    await state_reconciler.reconcile_startup_state(config_feeds)
 
     # Verify URL changed and errors cleared
     db_feed = feed_db.get_feed_by_id("url_change")
@@ -327,7 +332,8 @@ def test_url_change_resets_error_state(
 
 
 @pytest.mark.integration
-def test_since_expansion_restores_downloads(
+@pytest.mark.asyncio
+async def test_since_expansion_restores_downloads(
     state_reconciler: StateReconciler,
     feed_db: FeedDatabase,
     download_db: DownloadDatabase,
@@ -377,7 +383,7 @@ def test_since_expansion_restores_downloads(
             metadata=None,
         )
     }
-    state_reconciler.reconcile_startup_state(config_feeds)
+    await state_reconciler.reconcile_startup_state(config_feeds)
 
     # Verify only one download was restored (the one after new since date)
     restored = download_db.get_downloads_by_status(
@@ -395,7 +401,8 @@ def test_since_expansion_restores_downloads(
 
 
 @pytest.mark.integration
-def test_keep_last_increase_restores_downloads(
+@pytest.mark.asyncio
+async def test_keep_last_increase_restores_downloads(
     state_reconciler: StateReconciler,
     feed_db: FeedDatabase,
     download_db: DownloadDatabase,
@@ -446,7 +453,7 @@ def test_keep_last_increase_restores_downloads(
             metadata=None,
         )
     }
-    state_reconciler.reconcile_startup_state(config_feeds)
+    await state_reconciler.reconcile_startup_state(config_feeds)
 
     # Verify 2 downloads were restored (to reach keep_last=4 total)
     restored = download_db.get_downloads_by_status(
@@ -464,7 +471,8 @@ def test_keep_last_increase_restores_downloads(
 
 
 @pytest.mark.integration
-def test_metadata_updates(
+@pytest.mark.asyncio
+async def test_metadata_updates(
     state_reconciler: StateReconciler,
     feed_db: FeedDatabase,
 ) -> None:
@@ -504,7 +512,7 @@ def test_metadata_updates(
             ),
         )
     }
-    state_reconciler.reconcile_startup_state(config_feeds)
+    await state_reconciler.reconcile_startup_state(config_feeds)
 
     # Verify all metadata updated
     feed_config = config_feeds["meta_test"]
@@ -523,7 +531,8 @@ def test_metadata_updates(
 
 
 @pytest.mark.integration
-def test_multiple_feeds_parallel_changes(
+@pytest.mark.asyncio
+async def test_multiple_feeds_parallel_changes(
     state_reconciler: StateReconciler,
     feed_db: FeedDatabase,
 ) -> None:
@@ -592,7 +601,7 @@ def test_multiple_feeds_parallel_changes(
     }
 
     # Execute reconciliation
-    ready_feeds = state_reconciler.reconcile_startup_state(config_feeds)
+    ready_feeds = await state_reconciler.reconcile_startup_state(config_feeds)
 
     # Verify results
     assert set(ready_feeds) == {"feed1", "feed2", "feed4"}

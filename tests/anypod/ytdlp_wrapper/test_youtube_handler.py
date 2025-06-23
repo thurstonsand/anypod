@@ -516,7 +516,7 @@ def test_parse_single_video_entry_error_invalid_duration(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-@patch.object(YtdlpCore, 'extract_info', new_callable=AsyncMock)
+@patch.object(YtdlpCore, "extract_info", new_callable=AsyncMock)
 async def test_determine_fetch_strategy_single_video(
     mock_extract_info: AsyncMock, youtube_handler: YoutubeHandler
 ):
@@ -531,7 +531,7 @@ async def test_determine_fetch_strategy_single_video(
     )
 
     mock_extract_info.return_value = mock_extract_info_return
-    
+
     fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
         FEED_ID, initial_url
     )
@@ -627,7 +627,8 @@ async def test_determine_fetch_strategy_channel_main_page_no_videos_tab(
 @pytest.mark.asyncio
 @patch("anypod.ytdlp_wrapper.youtube_handler.YtdlpCore.extract_info")
 async def test_determine_fetch_strategy_channel_videos_tab_direct(
-    mock_extract_info: AsyncMock, youtube_handler: YoutubeHandler,
+    mock_extract_info: AsyncMock,
+    youtube_handler: YoutubeHandler,
 ):
     """Tests strategy for a direct URL to a channel's 'Videos' tab."""
     initial_url = "https://www.youtube.com/@channelhandle/videos"
@@ -663,9 +664,11 @@ async def test_determine_fetch_strategy_playlist_url(youtube_handler: YoutubeHan
         }
     )
 
-    with patch.object(YtdlpCore, 'extract_info', new_callable=AsyncMock) as mock_extract_info:
+    with patch.object(
+        YtdlpCore, "extract_info", new_callable=AsyncMock
+    ) as mock_extract_info:
         mock_extract_info.return_value = mock_extract_info_return
-        
+
         fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
             FEED_ID, initial_url
         )
@@ -679,7 +682,8 @@ async def test_determine_fetch_strategy_playlist_url(youtube_handler: YoutubeHan
 @pytest.mark.asyncio
 @patch("anypod.ytdlp_wrapper.youtube_handler.YtdlpCore.extract_info")
 async def test_determine_fetch_strategy_playlists_tab_error(
-    mock_extract_info: AsyncMock, youtube_handler: YoutubeHandler,
+    mock_extract_info: AsyncMock,
+    youtube_handler: YoutubeHandler,
 ):
     """Tests that a 'playlists' tab URL raises YtdlpYoutubeDataError."""
     initial_url = "https://www.youtube.com/@channelhandle/playlists"
@@ -691,9 +695,7 @@ async def test_determine_fetch_strategy_playlists_tab_error(
         }
     )
     with pytest.raises(YtdlpYoutubeDataError):
-        await youtube_handler.determine_fetch_strategy(
-            FEED_ID, initial_url
-        )
+        await youtube_handler.determine_fetch_strategy(FEED_ID, initial_url)
 
 
 @pytest.mark.unit
@@ -732,7 +734,7 @@ async def test_determine_fetch_strategy_unknown_extractor(
             "id": "other_site_video_id",
         }
     )
-    
+
     fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
         FEED_ID, initial_url
     )

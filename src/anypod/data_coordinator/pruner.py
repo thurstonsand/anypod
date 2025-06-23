@@ -117,7 +117,7 @@ class Pruner:
         )
         return candidate_downloads
 
-    def _handle_file_deletion(self, download: Download, feed_id: str) -> None:
+    async def _handle_file_deletion(self, download: Download, feed_id: str) -> None:
         """Handle file deletion for a DOWNLOADED item being pruned.
 
         Args:
@@ -140,7 +140,9 @@ class Pruner:
         )
 
         try:
-            self._file_manager.delete_download_file(feed_id, download.id, download.ext)
+            await self._file_manager.delete_download_file(
+                feed_id, download.id, download.ext
+            )
         except FileOperationError as e:
             raise PruneError(
                 message="Failed to delete file during pruning.",
@@ -175,7 +177,7 @@ class Pruner:
             ) from e
         logger.info("Download archived successfully.", extra=log_params)
 
-    def _process_single_download_for_pruning(
+    async def _process_single_download_for_pruning(
         self, download: Download, feed_id: str
     ) -> bool:
         """Process a single download for pruning.
@@ -204,7 +206,7 @@ class Pruner:
         # Delete file if the download is DOWNLOADED
         if download.status == DownloadStatus.DOWNLOADED:
             try:
-                self._handle_file_deletion(download, feed_id)
+                await self._handle_file_deletion(download, feed_id)
             except FileNotFoundError:
                 logger.warning(
                     "File not found during pruning, but DB record will still be archived.",
@@ -256,7 +258,7 @@ class Pruner:
                 extra={**log_params, "new_total_downloads": total_count},
             )
 
-    def prune_feed_downloads(
+    async def prune_feed_downloads(
         self,
         feed_id: str,
         keep_last: int | None,
@@ -312,7 +314,7 @@ class Pruner:
 
         for download in candidate_downloads:
             try:
-                file_deleted = self._process_single_download_for_pruning(
+                file_deleted = await self._process_single_download_for_pruning(
                     download, feed_id
                 )
                 archived_count += 1
@@ -342,7 +344,7 @@ class Pruner:
         )
         return archived_count, files_deleted_count
 
-    def archive_feed(self, feed_id: str) -> tuple[int, int]:
+    async def archive_feed(self, feed_id: str) -> tuple[int, int]:
         """Archive an entire feed by disabling it and archiving all downloads.
 
         This method disables a feed by setting is_enabled=False and archives
@@ -388,7 +390,7 @@ class Pruner:
             files_deleted_count = 0
 
             for download in all_downloads:
-                file_deleted = self._process_single_download_for_pruning(
+                file_deleted = await self._process_single_download_for_pruning(
                     download, feed_id
                 )
                 archived_count += 1

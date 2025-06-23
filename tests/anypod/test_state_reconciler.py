@@ -9,7 +9,7 @@ and when configuration changes are detected.
 
 from copy import deepcopy
 from datetime import UTC, datetime
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -121,7 +121,10 @@ def mock_download_db() -> MagicMock:
 @pytest.fixture
 def mock_pruner() -> MagicMock:
     """Provides a MagicMock for Pruner."""
-    return MagicMock(spec=Pruner)
+    pruner = MagicMock(spec=Pruner)
+    # Make archive_feed an async mock since it's now async
+    pruner.archive_feed = AsyncMock()
+    return pruner
 
 
 @pytest.fixture
@@ -252,24 +255,26 @@ def test_handle_new_feed_database_error(
 
 
 @pytest.mark.unit
-def test_handle_removed_feed(
+@pytest.mark.asyncio
+async def test_handle_removed_feed(
     state_reconciler: StateReconciler, mock_pruner: MagicMock
 ) -> None:
     """Removed feed is archived via pruner."""
-    state_reconciler._handle_removed_feed(REMOVED_FEED_ID)
+    await state_reconciler._handle_removed_feed(REMOVED_FEED_ID)
 
     mock_pruner.archive_feed.assert_called_once_with(REMOVED_FEED_ID)
 
 
 @pytest.mark.unit
-def test_handle_removed_feed_pruner_error(
+@pytest.mark.asyncio
+async def test_handle_removed_feed_pruner_error(
     state_reconciler: StateReconciler, mock_pruner: MagicMock
 ) -> None:
     """Pruner error during feed removal is wrapped."""
     mock_pruner.archive_feed.side_effect = PruneError("Prune failed")
 
     with pytest.raises(StateReconciliationError) as exc_info:
-        state_reconciler._handle_removed_feed(REMOVED_FEED_ID)
+        await state_reconciler._handle_removed_feed(REMOVED_FEED_ID)
 
     assert exc_info.value.feed_id == REMOVED_FEED_ID
 
@@ -740,7 +745,8 @@ def test_handle_pruning_changes_database_error(
 
 
 @pytest.mark.unit
-def test_reconcile_startup_state_all_scenarios(
+@pytest.mark.asyncio
+async def test_reconcile_startup_state_all_scenarios(
     state_reconciler: StateReconciler,
     mock_feed_db: MagicMock,
     mock_download_db: MagicMock,
@@ -770,7 +776,7 @@ def test_reconcile_startup_state_all_scenarios(
     mock_download_db.get_downloads_by_status.return_value = []
 
     # Execute
-    ready_feeds = state_reconciler.reconcile_startup_state(config_feeds)
+    ready_feeds = await state_reconciler.reconcile_startup_state(config_feeds)
 
     # Verify results
     assert set(ready_feeds) == {FEED_ID, NEW_FEED_ID}
@@ -791,7 +797,8 @@ def test_reconcile_startup_state_all_scenarios(
 
 
 @pytest.mark.unit
-def test_reconcile_startup_state_database_error(
+@pytest.mark.asyncio
+async def test_reconcile_startup_state_database_error(
     state_reconciler: StateReconciler,
     mock_feed_db: MagicMock,
 ) -> None:
@@ -799,11 +806,12 @@ def test_reconcile_startup_state_database_error(
     mock_feed_db.get_feeds.side_effect = DatabaseOperationError("DB error")
 
     with pytest.raises(StateReconciliationError):
-        state_reconciler.reconcile_startup_state({})
+        await state_reconciler.reconcile_startup_state({})
 
 
 @pytest.mark.unit
-def test_reconcile_startup_state_disabled_feeds_not_ready(
+@pytest.mark.asyncio
+async def test_reconcile_startup_state_disabled_feeds_not_ready(
     state_reconciler: StateReconciler,
     mock_feed_db: MagicMock,
     base_feed_config: FeedConfig,
@@ -816,13 +824,14 @@ def test_reconcile_startup_state_disabled_feeds_not_ready(
 
     config_feeds = {FEED_ID: disabled_config}
 
-    ready_feeds = state_reconciler.reconcile_startup_state(config_feeds)
+    ready_feeds = await state_reconciler.reconcile_startup_state(config_feeds)
 
     assert ready_feeds == []
 
 
 @pytest.mark.unit
-def test_reconcile_startup_state_continues_on_individual_errors(
+@pytest.mark.asyncio
+async def test_reconcile_startup_state_continues_on_individual_errors(
     state_reconciler: StateReconciler,
     mock_feed_db: MagicMock,
     base_feed_config: FeedConfig,
@@ -850,7 +859,7 @@ def test_reconcile_startup_state_continues_on_individual_errors(
         None,
     ]
 
-    ready_feeds = state_reconciler.reconcile_startup_state(config_feeds)
+    ready_feeds = await state_reconciler.reconcile_startup_state(config_feeds)
 
     # Only the successful feed should be ready
     assert ready_feeds == [NEW_FEED_ID]

@@ -41,7 +41,7 @@ def setup_graceful_shutdown() -> asyncio.Event:
     return shutdown_event
 
 
-def _init(
+async def _init(
     settings: AppSettings,
     feed_db: FeedDatabase,
     download_db: DownloadDatabase,
@@ -80,7 +80,7 @@ def _init(
     )
 
     try:
-        ready_feeds = state_reconciler.reconcile_startup_state(settings.feeds)
+        ready_feeds = await state_reconciler.reconcile_startup_state(settings.feeds)
     except StateReconciliationError as e:
         logger.error("State reconciliation failed, cannot continue.", exc_info=e)
         raise
@@ -142,7 +142,7 @@ async def default(settings: AppSettings) -> None:
 
     scheduler = None
     try:
-        scheduler = _init(settings, feed_db, download_db, path_manager)
+        scheduler = await _init(settings, feed_db, download_db, path_manager)
 
         await scheduler.start()
 

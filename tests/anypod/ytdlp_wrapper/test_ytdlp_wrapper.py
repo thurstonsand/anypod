@@ -226,16 +226,16 @@ async def test_fetch_metadata_returns_feed_and_downloads_tuple(
 @pytest.mark.unit
 @patch.object(YtdlpWrapper, "_prepare_ytdlp_options")
 @patch.object(YtdlpCore, "download")
-@patch.object(Path, "is_file", return_value=True)
-@patch.object(Path, "stat")
+@patch("aiofiles.os.path.isfile", return_value=True)
+@patch("aiofiles.os.stat")
 @patch.object(YtdlpWrapper, "_prepare_download_dir")
-@patch.object(Path, "glob", return_value=[])
+@patch("aiofiles.os.wrap")
 @pytest.mark.asyncio
 async def test_download_media_to_file_success_simplified(
-    mock_path_glob: MagicMock,
-    mock_prep_dl_dir: MagicMock,
-    mock_stat: MagicMock,
-    mock_is_file: MagicMock,
+    mock_aiofiles_wrap: MagicMock,
+    mock_prep_dl_dir: AsyncMock,
+    mock_stat: AsyncMock,
+    mock_is_file: AsyncMock,
     mock_ytdlcore_download: AsyncMock,
     mock_prepare_options: MagicMock,
     ytdlp_wrapper: YtdlpWrapper,
@@ -287,7 +287,8 @@ async def test_download_media_to_file_success_simplified(
     mock_stat_instance.st_size = 12345
 
     mock_prep_dl_dir.return_value = (feed_temp_path, feed_home_path)
-    mock_path_glob.return_value = [expected_final_file]
+    mock_glob = AsyncMock(return_value=[expected_final_file])
+    mock_aiofiles_wrap.return_value = mock_glob
 
     returned_path = await ytdlp_wrapper.download_media_to_file(
         dummy_download, yt_cli_args
@@ -312,10 +313,11 @@ async def test_download_media_to_file_success_simplified(
     assert isinstance(download_args[0], YtdlpArgs)
     assert download_args[1] == dummy_download.source_url
 
-    mock_path_glob.assert_called_once_with(f"{download_id}.*")
+    mock_aiofiles_wrap.assert_called_once()
+    mock_glob.assert_called_once_with(f"{download_id}.*")
 
-    mock_is_file.assert_called_with()
-    mock_stat.assert_called_with()
+    mock_is_file.assert_called_once_with(expected_final_file)
+    mock_stat.assert_called_once_with(expected_final_file)
 
     assert mock_is_file.call_count >= 1
     assert mock_stat.call_count >= 1

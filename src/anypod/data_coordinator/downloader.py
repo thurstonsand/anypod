@@ -10,6 +10,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
+import aiofiles.os
+
 from ..config import FeedConfig
 from ..db.download_db import DownloadDatabase
 from ..db.types import Download, DownloadStatus
@@ -50,7 +52,7 @@ class Downloader:
         self.ytdlp_wrapper = ytdlp_wrapper
         logger.debug("Downloader initialized.")
 
-    def _handle_download_success(
+    async def _handle_download_success(
         self, download: Download, downloaded_file_path: Path
     ) -> None:
         """Process a successfully downloaded file.
@@ -73,11 +75,12 @@ class Downloader:
         logger.info("Download successful, processing file.", extra=log_params)
 
         try:
+            file_stat = await aiofiles.os.stat(downloaded_file_path)
             self.download_db.mark_as_downloaded(
                 feed=download.feed,
                 id=download.id,
                 ext=downloaded_file_path.suffix.lstrip("."),
-                filesize=downloaded_file_path.stat().st_size,
+                filesize=file_stat.st_size,
             )
         except (DownloadNotFoundError, DatabaseOperationError) as e:
             raise DownloadError(
@@ -270,7 +273,9 @@ class Downloader:
                 feed_config.yt_args,
                 cookies_path=cookies_path,
             )
-            self._handle_download_success(download_to_process, downloaded_file_path)
+            await self._handle_download_success(
+                download_to_process, downloaded_file_path
+            )
         except YtdlpApiError as e:
             raise DownloadError(
                 message="Failed to download media to file.",

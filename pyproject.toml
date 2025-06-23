@@ -9,6 +9,7 @@ description = "Thin yt-dlp -> podcast solution"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "aiofiles>=24.1.0",
     "apscheduler>=3.11.0",
     "croniter>=6.0.0",
     "feedgen>=1.0.0",

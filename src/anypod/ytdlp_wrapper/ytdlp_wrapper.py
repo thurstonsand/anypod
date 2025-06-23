@@ -10,8 +10,10 @@ import logging
 from pathlib import Path
 from typing import Any
 
+import aiofiles.os
+
 from ..db.types import Download, Feed
-from ..exceptions import YtdlpApiError
+from ..exceptions import FileOperationError, YtdlpApiError
 from ..path_manager import PathManager
 from .base_handler import FetchPurpose, ReferenceType, SourceHandlerBase
 from .core import YtdlpArgs, YtdlpCore
@@ -46,16 +48,16 @@ class YtdlpWrapper:
             },
         )
 
-    def _prepare_download_dir(self, feed_id: str) -> tuple[Path, Path]:
+    async def _prepare_download_dir(self, feed_id: str) -> tuple[Path, Path]:
         try:
-            feed_temp_path = self._paths.feed_tmp_dir(feed_id)
-            feed_data_path = self._paths.feed_data_dir(feed_id)
+            feed_temp_path = await self._paths.feed_tmp_dir(feed_id)
+            feed_data_path = await self._paths.feed_data_dir(feed_id)
         except ValueError as e:
             raise YtdlpApiError(
                 message="Invalid feed identifier for yt-dlp paths.",
                 feed_id=feed_id,
             ) from e
-        except OSError as e:
+        except FileOperationError as e:
             raise YtdlpApiError(
                 message="Failed to create directories for yt-dlp paths.",
                 feed_id=feed_id,
@@ -286,7 +288,9 @@ class YtdlpWrapper:
         Raises:
             YtdlpApiError: If the download fails or the downloaded file is not found.
         """
-        download_temp_dir, download_data_dir = self._prepare_download_dir(download.feed)
+        download_temp_dir, download_data_dir = await self._prepare_download_dir(
+            download.feed
+        )
 
         logger.info(
             "Requesting media download via yt-dlp.",
@@ -355,7 +359,9 @@ class YtdlpWrapper:
                 url=url_to_download,
             ) from e
 
-        downloaded_files = list(download_data_dir.glob(f"{download.id}.*"))
+        downloaded_files = list(
+            await aiofiles.os.wrap(download_data_dir.glob)(f"{download.id}.*")
+        )
 
         if not downloaded_files:
             raise YtdlpApiError(
@@ -376,9 +382,19 @@ class YtdlpWrapper:
 
         downloaded_file = downloaded_files[0]
 
-        if not downloaded_file.is_file() or downloaded_file.stat().st_size == 0:
+        # Use aiofiles.os.stat for file size check
+        if not await aiofiles.os.path.isfile(downloaded_file):
             raise YtdlpApiError(
-                message="Downloaded file is invalid (not a file or empty).",
+                message="Downloaded file is invalid (not a file).",
+                feed_id=download.feed,
+                download_id=download.id,
+                url=url_to_download,
+            )
+
+        file_stat = await aiofiles.os.stat(downloaded_file)
+        if file_stat.st_size == 0:
+            raise YtdlpApiError(
+                message="Downloaded file is invalid (empty).",
                 feed_id=download.feed,
                 download_id=download.id,
                 url=url_to_download,

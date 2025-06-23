@@ -3,7 +3,7 @@
 """Tests for the PathManager class and its path/URL generation functionality."""
 
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -54,11 +54,12 @@ def test_properties_return_correct_values(path_manager: PathManager, data_dir: P
 
 
 @pytest.mark.unit
-def test_feed_data_dir_creates_directory(path_manager: PathManager):
+@pytest.mark.asyncio
+async def test_feed_data_dir_creates_directory(path_manager: PathManager):
     """Tests that feed_data_dir creates the directory if it doesn't exist."""
     feed_id = "test_feed"
 
-    feed_dir = path_manager.feed_data_dir(feed_id)
+    feed_dir = await path_manager.feed_data_dir(feed_id)
 
     assert feed_dir.exists()
     assert feed_dir.is_dir()
@@ -67,25 +68,33 @@ def test_feed_data_dir_creates_directory(path_manager: PathManager):
 
 
 @pytest.mark.unit
-def test_feed_data_dir_idempotent(path_manager: PathManager):
+@pytest.mark.asyncio
+async def test_feed_data_dir_idempotent(path_manager: PathManager):
     """Tests that calling feed_data_dir multiple times is safe."""
     feed_id = "idempotent_feed"
 
-    first_call = path_manager.feed_data_dir(feed_id)
-    second_call = path_manager.feed_data_dir(feed_id)
+    first_call = await path_manager.feed_data_dir(feed_id)
+    second_call = await path_manager.feed_data_dir(feed_id)
 
     assert first_call == second_call
     assert first_call.exists()
 
 
 @pytest.mark.unit
-@patch.object(Path, "mkdir", side_effect=OSError("Permission denied"))
-def test_feed_data_dir_handles_mkdir_error(mock_mkdir: Mock, path_manager: PathManager):
+@pytest.mark.asyncio
+@patch(
+    "aiofiles.os.makedirs",
+    new_callable=AsyncMock,
+    side_effect=OSError("Permission denied"),
+)
+async def test_feed_data_dir_handles_mkdir_error(
+    mock_makedirs: AsyncMock, path_manager: PathManager
+):
     """Tests that feed_data_dir handles directory creation errors properly."""
     feed_id = "error_feed"
 
     with pytest.raises(FileOperationError) as exc_info:
-        path_manager.feed_data_dir(feed_id)
+        await path_manager.feed_data_dir(feed_id)
 
     assert exc_info.value.file_name is not None
     assert feed_id in exc_info.value.file_name
@@ -95,11 +104,12 @@ def test_feed_data_dir_handles_mkdir_error(mock_mkdir: Mock, path_manager: PathM
 
 
 @pytest.mark.unit
-def test_feed_tmp_dir_creates_directory(path_manager: PathManager):
+@pytest.mark.asyncio
+async def test_feed_tmp_dir_creates_directory(path_manager: PathManager):
     """Tests that feed_tmp_dir creates the directory if it doesn't exist."""
     feed_id = "temp_feed"
 
-    tmp_dir = path_manager.feed_tmp_dir(feed_id)
+    tmp_dir = await path_manager.feed_tmp_dir(feed_id)
 
     assert tmp_dir.exists()
     assert tmp_dir.is_dir()
@@ -108,26 +118,29 @@ def test_feed_tmp_dir_creates_directory(path_manager: PathManager):
 
 
 @pytest.mark.unit
-def test_feed_tmp_dir_idempotent(path_manager: PathManager):
+@pytest.mark.asyncio
+async def test_feed_tmp_dir_idempotent(path_manager: PathManager):
     """Tests that calling feed_tmp_dir multiple times is safe."""
     feed_id = "idempotent_tmp"
 
-    first_call = path_manager.feed_tmp_dir(feed_id)
-    second_call = path_manager.feed_tmp_dir(feed_id)
+    first_call = await path_manager.feed_tmp_dir(feed_id)
+    second_call = await path_manager.feed_tmp_dir(feed_id)
 
     assert first_call == second_call
     assert first_call.exists()
 
 
 @pytest.mark.unit
-@patch.object(Path, "mkdir")
-def test_feed_tmp_dir_handles_mkdir_error(mock_mkdir: Mock, path_manager: PathManager):
+@pytest.mark.asyncio
+@patch("aiofiles.os.makedirs", new_callable=AsyncMock, side_effect=OSError("Disk full"))
+async def test_feed_tmp_dir_handles_mkdir_error(
+    mock_makedirs: AsyncMock, path_manager: PathManager
+):
     """Tests that feed_tmp_dir handles directory creation errors properly."""
     feed_id = "tmp_error_feed"
-    mock_mkdir.side_effect = OSError("Disk full")
 
     with pytest.raises(FileOperationError) as exc_info:
-        path_manager.feed_tmp_dir(feed_id)
+        await path_manager.feed_tmp_dir(feed_id)
 
     assert exc_info.value.file_name is not None
     assert feed_id in exc_info.value.file_name
@@ -198,26 +211,28 @@ def test_media_file_url_different_extensions(path_manager: PathManager):
 
 
 @pytest.mark.unit
-def test_media_file_path_generation(path_manager: PathManager):
+@pytest.mark.asyncio
+async def test_media_file_path_generation(path_manager: PathManager):
     """Tests that media_file_path generates correct file system paths."""
     feed_id = "path_test"
     download_id = "video_789"
     ext = "mp4"
 
-    file_path = path_manager.media_file_path(feed_id, download_id, ext)
+    file_path = await path_manager.media_file_path(feed_id, download_id, ext)
 
     expected_path = path_manager.base_data_dir / feed_id / f"{download_id}.{ext}"
     assert file_path == expected_path
 
 
 @pytest.mark.unit
-def test_media_file_path_creates_parent_dir(path_manager: PathManager):
+@pytest.mark.asyncio
+async def test_media_file_path_creates_parent_dir(path_manager: PathManager):
     """Tests that media_file_path creates the parent directory."""
     feed_id = "new_feed_dir"
     download_id = "first_video"
     ext = "webm"
 
-    file_path = path_manager.media_file_path(feed_id, download_id, ext)
+    file_path = await path_manager.media_file_path(feed_id, download_id, ext)
 
     # The parent directory should be created by the call to feed_data_dir
     assert file_path.parent.exists()
@@ -225,15 +240,16 @@ def test_media_file_path_creates_parent_dir(path_manager: PathManager):
 
 
 @pytest.mark.unit
-def test_media_file_path_different_extensions(path_manager: PathManager):
+@pytest.mark.asyncio
+async def test_media_file_path_different_extensions(path_manager: PathManager):
     """Tests media_file_path with various file extensions."""
     feed_id = "ext_test"
     download_id = "content_item"
 
     # Test different extensions
-    mp4_path = path_manager.media_file_path(feed_id, download_id, "mp4")
-    mkv_path = path_manager.media_file_path(feed_id, download_id, "mkv")
-    flv_path = path_manager.media_file_path(feed_id, download_id, "flv")
+    mp4_path = await path_manager.media_file_path(feed_id, download_id, "mp4")
+    mkv_path = await path_manager.media_file_path(feed_id, download_id, "mkv")
+    flv_path = await path_manager.media_file_path(feed_id, download_id, "flv")
 
     expected_base = path_manager.base_data_dir / feed_id
     assert mp4_path == expected_base / "content_item.mp4"
@@ -245,7 +261,8 @@ def test_media_file_path_different_extensions(path_manager: PathManager):
 
 
 @pytest.mark.unit
-def test_url_path_consistency(path_manager: PathManager):
+@pytest.mark.asyncio
+async def test_url_path_consistency(path_manager: PathManager):
     """Tests that URLs and file paths maintain consistent 1:1 mapping."""
     feed_id = "consistency_test"
     download_id = "test_video"
@@ -253,7 +270,7 @@ def test_url_path_consistency(path_manager: PathManager):
 
     # Get both URL and path
     file_url = path_manager.media_file_url(feed_id, download_id, ext)
-    file_path = path_manager.media_file_path(feed_id, download_id, ext)
+    file_path = await path_manager.media_file_path(feed_id, download_id, ext)
 
     # URL should encode the same information as the path
     assert feed_id in file_url
@@ -265,14 +282,15 @@ def test_url_path_consistency(path_manager: PathManager):
 
 
 @pytest.mark.unit
-def test_special_characters_in_identifiers(path_manager: PathManager):
+@pytest.mark.asyncio
+async def test_special_characters_in_identifiers(path_manager: PathManager):
     """Tests handling of special characters in feed_id and download_id."""
     feed_id = "feed-with_underscores"
     download_id = "video.with.dots"
     ext = "mp4"
 
     # Should handle special characters without issues
-    file_path = path_manager.media_file_path(feed_id, download_id, ext)
+    file_path = await path_manager.media_file_path(feed_id, download_id, ext)
     file_url = path_manager.media_file_url(feed_id, download_id, ext)
 
     assert file_path.parent.name == feed_id
@@ -285,16 +303,17 @@ def test_special_characters_in_identifiers(path_manager: PathManager):
 
 
 @pytest.mark.unit
-def test_empty_feed_id_raises_error(path_manager: PathManager):
+@pytest.mark.asyncio
+async def test_empty_feed_id_raises_error(path_manager: PathManager):
     """Tests that empty feed_id raises ValueError."""
     download_id = "video_123"
     ext = "mp4"
 
     with pytest.raises(ValueError):
-        path_manager.feed_data_dir("")
+        await path_manager.feed_data_dir("")
 
     with pytest.raises(ValueError):
-        path_manager.feed_tmp_dir("")
+        await path_manager.feed_tmp_dir("")
 
     with pytest.raises(ValueError):
         path_manager.feed_url("")
@@ -303,23 +322,24 @@ def test_empty_feed_id_raises_error(path_manager: PathManager):
         path_manager.feed_media_url("")
 
     with pytest.raises(ValueError):
-        path_manager.media_file_path("", download_id, ext)
+        await path_manager.media_file_path("", download_id, ext)
 
     with pytest.raises(ValueError):
         path_manager.media_file_url("", download_id, ext)
 
 
 @pytest.mark.unit
-def test_whitespace_only_feed_id_raises_error(path_manager: PathManager):
+@pytest.mark.asyncio
+async def test_whitespace_only_feed_id_raises_error(path_manager: PathManager):
     """Tests that whitespace-only feed_id raises ValueError."""
     download_id = "video_123"
     ext = "mp4"
 
     with pytest.raises(ValueError):
-        path_manager.feed_data_dir("   ")
+        await path_manager.feed_data_dir("   ")
 
     with pytest.raises(ValueError):
-        path_manager.feed_tmp_dir("\t\n")
+        await path_manager.feed_tmp_dir("\t\n")
 
     with pytest.raises(ValueError):
         path_manager.feed_url(" ")
@@ -328,33 +348,35 @@ def test_whitespace_only_feed_id_raises_error(path_manager: PathManager):
         path_manager.feed_media_url("\t")
 
     with pytest.raises(ValueError):
-        path_manager.media_file_path("  ", download_id, ext)
+        await path_manager.media_file_path("  ", download_id, ext)
 
     with pytest.raises(ValueError):
         path_manager.media_file_url("\n", download_id, ext)
 
 
 @pytest.mark.unit
-def test_empty_download_id_raises_error(path_manager: PathManager):
+@pytest.mark.asyncio
+async def test_empty_download_id_raises_error(path_manager: PathManager):
     """Tests that empty download_id raises ValueError."""
     feed_id = "valid_feed"
     ext = "mp4"
 
     with pytest.raises(ValueError):
-        path_manager.media_file_path(feed_id, "", ext)
+        await path_manager.media_file_path(feed_id, "", ext)
 
     with pytest.raises(ValueError):
         path_manager.media_file_url(feed_id, "", ext)
 
 
 @pytest.mark.unit
-def test_whitespace_only_download_id_raises_error(path_manager: PathManager):
+@pytest.mark.asyncio
+async def test_whitespace_only_download_id_raises_error(path_manager: PathManager):
     """Tests that whitespace-only download_id raises ValueError."""
     feed_id = "valid_feed"
     ext = "mp4"
 
     with pytest.raises(ValueError):
-        path_manager.media_file_path(feed_id, "   ", ext)
+        await path_manager.media_file_path(feed_id, "   ", ext)
 
     with pytest.raises(ValueError):
         path_manager.media_file_url(feed_id, "\t\n", ext)
@@ -375,14 +397,15 @@ def test_url_base_without_trailing_slash():
 
 
 @pytest.mark.unit
-def test_multiple_directory_levels(path_manager: PathManager):
+@pytest.mark.asyncio
+async def test_multiple_directory_levels(path_manager: PathManager):
     """Tests that deep directory structures work correctly."""
     # This tests that mkdir(parents=True) works as expected
     feed_id = "deeply/nested/feed/structure"
 
     # Should create all necessary parent directories
-    feed_dir = path_manager.feed_data_dir(feed_id)
-    tmp_dir = path_manager.feed_tmp_dir(feed_id)
+    feed_dir = await path_manager.feed_data_dir(feed_id)
+    tmp_dir = await path_manager.feed_tmp_dir(feed_id)
 
     assert feed_dir.exists()
     assert tmp_dir.exists()

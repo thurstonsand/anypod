@@ -403,7 +403,7 @@ class StateReconciler:
             logger.debug("No feed configuration changes detected.", extra=log_params)
             return False
 
-    def _handle_removed_feed(self, feed_id: str) -> None:
+    async def _handle_removed_feed(self, feed_id: str) -> None:
         """Handle a removed feed by marking it as disabled in the database.
 
         Args:
@@ -414,14 +414,16 @@ class StateReconciler:
             StateReconciliationError: If archive action fails.
         """
         try:
-            self._pruner.archive_feed(feed_id)
+            await self._pruner.archive_feed(feed_id)
         except PruneError as e:
             raise StateReconciliationError(
                 "Failed to archive feed.",
                 feed_id=feed_id,
             ) from e
 
-    def reconcile_startup_state(self, config_feeds: dict[str, FeedConfig]) -> list[str]:
+    async def reconcile_startup_state(
+        self, config_feeds: dict[str, FeedConfig]
+    ) -> list[str]:
         """Reconcile configuration feeds with database state on startup.
 
         Compares the current YAML configuration with database feeds and performs
@@ -499,7 +501,7 @@ class StateReconciler:
             if feed_id not in processed_feed_ids and db_feed.is_enabled:
                 # Feed is enabled in DB but not present in config - mark as removed
                 try:
-                    self._handle_removed_feed(feed_id)
+                    await self._handle_removed_feed(feed_id)
                 except StateReconciliationError as e:
                     logger.warning(
                         "Failed to disable removed feed, continuing with others.",

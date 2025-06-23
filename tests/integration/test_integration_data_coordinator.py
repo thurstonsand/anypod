@@ -181,7 +181,7 @@ async def test_process_feed_complete_success(
 
     # Verify downloaded files exist
     for downloaded_item in downloaded_items:
-        assert file_manager.download_exists(
+        assert await file_manager.download_exists(
             feed_id, downloaded_item.id, downloaded_item.ext
         ), f"Downloaded file should exist for {downloaded_item.id}"
         assert downloaded_item.filesize > 0, "Downloaded item should have filesize"
@@ -319,7 +319,7 @@ async def test_process_feed_idempotency(
 
     # Verify files exist
     for dl in first_downloaded:
-        assert file_manager.download_exists(feed_id, dl.id, dl.ext)
+        assert await file_manager.download_exists(feed_id, dl.id, dl.ext)
 
     # Second run - should be minimal processing
     second_results = await data_coordinator.process_feed(feed_id, feed_config)
@@ -357,7 +357,7 @@ async def test_process_feed_idempotency(
 
     # Verify all files still exist
     for dl in second_downloaded:
-        assert file_manager.download_exists(feed_id, dl.id, dl.ext)
+        assert await file_manager.download_exists(feed_id, dl.id, dl.ext)
 
 
 @pytest.mark.asyncio
@@ -454,16 +454,15 @@ async def test_process_feed_with_retention_pruning(
     )
 
     # Verify file exists for remaining download
-    assert file_manager.download_exists(
+    assert await file_manager.download_exists(
         feed_id, remaining_download.id, remaining_download.ext
     ), "File should exist for remaining download"
 
     # Verify some old files were deleted
-    old_files_remaining = sum(
-        1
-        for old_dl in old_downloads
-        if file_manager.download_exists(feed_id, old_dl.id, old_dl.ext)
-    )
+    old_files_remaining = 0
+    for old_dl in old_downloads:
+        if await file_manager.download_exists(feed_id, old_dl.id, old_dl.ext):
+            old_files_remaining += 1
     assert old_files_remaining < 3, "Some old files should have been deleted"
 
     # Verify archived items exist in database

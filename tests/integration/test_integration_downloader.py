@@ -174,7 +174,7 @@ async def test_download_queued_single_video_success(
     assert download.last_error is None  # Should be cleared
 
     # Verify file was actually downloaded
-    assert file_manager.download_exists(feed_id, download.id, download.ext)
+    assert await file_manager.download_exists(feed_id, download.id, download.ext)
 
     # Verify no more queued items for this feed
     remaining_queued = download_db.get_downloads_by_status(
@@ -230,7 +230,7 @@ async def test_download_queued_multiple_videos_success(
 
     # Verify files were downloaded
     for downloaded_item in downloaded_items:
-        assert file_manager.download_exists(
+        assert await file_manager.download_exists(
             feed_id, downloaded_item.id, downloaded_item.ext
         )
         assert downloaded_item.filesize is not None and downloaded_item.filesize > 0
@@ -489,7 +489,7 @@ async def test_download_queued_mixed_success_and_failure(
     assert len(downloaded_items) == success_count
 
     for downloaded_item in downloaded_items:
-        assert file_manager.download_exists(
+        assert await file_manager.download_exists(
             feed_id, downloaded_item.id, downloaded_item.ext
         )
 
@@ -534,12 +534,16 @@ async def test_download_queued_file_properties(
     download = downloads[0]
 
     # File should exist
-    assert file_manager.download_exists(feed_id, download.id, download.ext)
+    assert await file_manager.download_exists(feed_id, download.id, download.ext)
 
-    # File should be readable
-    stream = file_manager.get_download_stream(feed_id, download.id, download.ext)
-    assert stream.readable()
-    stream.close()
+    # File should be readable - get_download_stream returns an async iterator
+    stream_data = b""
+    async for chunk in file_manager.get_download_stream(
+        feed_id, download.id, download.ext
+    ):
+        stream_data += chunk
+        break  # Just check that we can read at least one chunk
+    assert len(stream_data) > 0
 
     # Database should have correct metadata
     assert download.ext in ["mp4", "webm", "mkv"]  # Common video formats

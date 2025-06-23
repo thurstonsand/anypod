@@ -639,22 +639,22 @@ class YoutubeHandler:
         logger.info(
             "Determining fetch strategy for URL.", extra={"initial_url": initial_url}
         )
-        
+
         # Build discovery args directly
         discovery_args = YtdlpArgs([])
-        
         # Apply source-specific discovery options
         discovery_args = self.set_source_specific_ytdlp_options(
             discovery_args, FetchPurpose.DISCOVERY
         )
-        
         # Apply standard discovery options
-        discovery_args.quiet().no_warnings().skip_download().flat_playlist().playlist_limit(5)
-        
+        discovery_args.quiet().no_warnings().skip_download().flat_playlist().playlist_limit(
+            5
+        )
+
         # Add cookies if provided
         if cookies_path is not None:
             discovery_args.cookies(cookies_path)
-        
+
         logger.debug(
             "Performing discovery call.",
             extra={"initial_url": initial_url},
