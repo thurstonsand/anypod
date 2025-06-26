@@ -54,7 +54,6 @@ MOCK_FEED = Feed(
     last_successful_sync=BASE_TIME,
     since=None,
     keep_last=None,
-    total_downloads=10,
 )
 
 MOCK_DISABLED_FEED = Feed(
@@ -73,7 +72,7 @@ MOCK_DISABLED_FEED = Feed(
 
 # Mock Downloads for testing
 MOCK_ARCHIVED_DOWNLOAD_1 = Download(
-    feed=FEED_ID,
+    feed_id=FEED_ID,
     id="archived_1",
     source_url="https://example.com/video1",
     title="Archived Video 1",
@@ -88,7 +87,7 @@ MOCK_ARCHIVED_DOWNLOAD_1 = Download(
 )
 
 MOCK_ARCHIVED_DOWNLOAD_2 = Download(
-    feed=FEED_ID,
+    feed_id=FEED_ID,
     id="archived_2",
     source_url="https://example.com/video2",
     title="Archived Video 2",
@@ -109,13 +108,22 @@ MOCK_ARCHIVED_DOWNLOAD_2 = Download(
 @pytest.fixture
 def mock_feed_db() -> MagicMock:
     """Provides a MagicMock for FeedDatabase."""
-    return MagicMock(spec=FeedDatabase)
+    mock = MagicMock(spec=FeedDatabase)
+    # Configure async methods with AsyncMock
+    mock.get_feeds = AsyncMock()
+    mock.upsert_feed = AsyncMock()
+    return mock
 
 
 @pytest.fixture
 def mock_download_db() -> MagicMock:
     """Provides a MagicMock for DownloadDatabase."""
-    return MagicMock(spec=DownloadDatabase)
+    mock = MagicMock(spec=DownloadDatabase)
+    # Configure async methods with AsyncMock
+    mock.get_downloads_by_status = AsyncMock()
+    mock.requeue_downloads = AsyncMock()
+    mock.count_downloads_by_status = AsyncMock()
+    return mock
 
 
 @pytest.fixture
@@ -176,13 +184,14 @@ def feed_config_with_metadata() -> FeedConfig:
 
 
 @pytest.mark.unit
-def test_handle_new_feed_basic(
+@pytest.mark.asyncio
+async def test_handle_new_feed_basic(
     state_reconciler: StateReconciler,
     mock_feed_db: MagicMock,
     base_feed_config: FeedConfig,
 ) -> None:
     """New feed is inserted with correct values."""
-    state_reconciler._handle_new_feed(NEW_FEED_ID, base_feed_config)
+    await state_reconciler._handle_new_feed(NEW_FEED_ID, base_feed_config)
 
     mock_feed_db.upsert_feed.assert_called_once()
     inserted_feed = mock_feed_db.upsert_feed.call_args[0][0]
@@ -194,13 +203,14 @@ def test_handle_new_feed_basic(
 
 
 @pytest.mark.unit
-def test_handle_new_feed_with_metadata(
+@pytest.mark.asyncio
+async def test_handle_new_feed_with_metadata(
     state_reconciler: StateReconciler,
     mock_feed_db: MagicMock,
     feed_config_with_metadata: FeedConfig,
 ) -> None:
     """New feed with metadata is inserted correctly."""
-    state_reconciler._handle_new_feed(NEW_FEED_ID, feed_config_with_metadata)
+    await state_reconciler._handle_new_feed(NEW_FEED_ID, feed_config_with_metadata)
 
     mock_feed_db.upsert_feed.assert_called_once()
     inserted_feed = mock_feed_db.upsert_feed.call_args[0][0]
@@ -220,7 +230,8 @@ def test_handle_new_feed_with_metadata(
 
 
 @pytest.mark.unit
-def test_handle_new_feed_with_since(
+@pytest.mark.asyncio
+async def test_handle_new_feed_with_since(
     state_reconciler: StateReconciler,
     mock_feed_db: MagicMock,
     base_feed_config: FeedConfig,
@@ -230,7 +241,7 @@ def test_handle_new_feed_with_since(
     config = deepcopy(base_feed_config)
     config.since = since_date
 
-    state_reconciler._handle_new_feed(NEW_FEED_ID, config)
+    await state_reconciler._handle_new_feed(NEW_FEED_ID, config)
 
     mock_feed_db.upsert_feed.assert_called_once()
     inserted_feed = mock_feed_db.upsert_feed.call_args[0][0]
@@ -239,7 +250,8 @@ def test_handle_new_feed_with_since(
 
 
 @pytest.mark.unit
-def test_handle_new_feed_database_error(
+@pytest.mark.asyncio
+async def test_handle_new_feed_database_error(
     state_reconciler: StateReconciler,
     mock_feed_db: MagicMock,
     base_feed_config: FeedConfig,
@@ -248,7 +260,7 @@ def test_handle_new_feed_database_error(
     mock_feed_db.upsert_feed.side_effect = DatabaseOperationError("DB error")
 
     with pytest.raises(StateReconciliationError):
-        state_reconciler._handle_new_feed(NEW_FEED_ID, base_feed_config)
+        await state_reconciler._handle_new_feed(NEW_FEED_ID, base_feed_config)
 
 
 # --- Tests for StateReconciler._handle_removed_feed ---
@@ -283,7 +295,8 @@ async def test_handle_removed_feed_pruner_error(
 
 
 @pytest.mark.unit
-def test_handle_existing_feed_no_changes(
+@pytest.mark.asyncio
+async def test_handle_existing_feed_no_changes(
     state_reconciler: StateReconciler,
     mock_feed_db: MagicMock,
     base_feed_config: FeedConfig,
@@ -291,7 +304,7 @@ def test_handle_existing_feed_no_changes(
     """No changes to existing feed results in no database update."""
     existing_feed = deepcopy(MOCK_FEED)
 
-    result = state_reconciler._handle_existing_feed(
+    result = await state_reconciler._handle_existing_feed(
         existing_feed.id, base_feed_config, existing_feed
     )
 
@@ -300,7 +313,8 @@ def test_handle_existing_feed_no_changes(
 
 
 @pytest.mark.unit
-def test_handle_existing_feed_enable(
+@pytest.mark.asyncio
+async def test_handle_existing_feed_enable(
     state_reconciler: StateReconciler,
     mock_feed_db: MagicMock,
     base_feed_config: FeedConfig,
@@ -314,7 +328,9 @@ def test_handle_existing_feed_enable(
     config = deepcopy(base_feed_config)
     config.enabled = True
 
-    result = state_reconciler._handle_existing_feed(FEED_ID, config, disabled_feed)
+    result = await state_reconciler._handle_existing_feed(
+        FEED_ID, config, disabled_feed
+    )
 
     assert result is True
     mock_feed_db.upsert_feed.assert_called_once()
@@ -325,7 +341,8 @@ def test_handle_existing_feed_enable(
 
 
 @pytest.mark.unit
-def test_handle_existing_feed_disable(
+@pytest.mark.asyncio
+async def test_handle_existing_feed_disable(
     state_reconciler: StateReconciler,
     mock_feed_db: MagicMock,
     base_feed_config: FeedConfig,
@@ -337,7 +354,7 @@ def test_handle_existing_feed_disable(
     config = deepcopy(base_feed_config)
     config.enabled = False
 
-    result = state_reconciler._handle_existing_feed(FEED_ID, config, enabled_feed)
+    result = await state_reconciler._handle_existing_feed(FEED_ID, config, enabled_feed)
 
     assert result is True
     mock_feed_db.upsert_feed.assert_called_once()
@@ -346,7 +363,8 @@ def test_handle_existing_feed_disable(
 
 
 @pytest.mark.unit
-def test_handle_existing_feed_url_change(
+@pytest.mark.asyncio
+async def test_handle_existing_feed_url_change(
     state_reconciler: StateReconciler,
     mock_feed_db: MagicMock,
     base_feed_config: FeedConfig,
@@ -359,7 +377,9 @@ def test_handle_existing_feed_url_change(
     config = deepcopy(base_feed_config)
     config.url = "https://new.example.com/feed"
 
-    result = state_reconciler._handle_existing_feed(FEED_ID, config, existing_feed)
+    result = await state_reconciler._handle_existing_feed(
+        FEED_ID, config, existing_feed
+    )
 
     assert result is True
     mock_feed_db.upsert_feed.assert_called_once()
@@ -369,7 +389,8 @@ def test_handle_existing_feed_url_change(
 
 
 @pytest.mark.unit
-def test_handle_existing_feed_metadata_changes(
+@pytest.mark.asyncio
+async def test_handle_existing_feed_metadata_changes(
     state_reconciler: StateReconciler,
     mock_feed_db: MagicMock,
     feed_config_with_metadata: FeedConfig,
@@ -379,7 +400,7 @@ def test_handle_existing_feed_metadata_changes(
     existing_feed.title = "Old Title"
     existing_feed.description = "Old Description"
 
-    result = state_reconciler._handle_existing_feed(
+    result = await state_reconciler._handle_existing_feed(
         FEED_ID, feed_config_with_metadata, existing_feed
     )
 
@@ -403,7 +424,8 @@ def test_handle_existing_feed_metadata_changes(
 
 
 @pytest.mark.unit
-def test_handle_pruning_changes_no_changes(
+@pytest.mark.asyncio
+async def test_handle_pruning_changes_no_changes(
     state_reconciler: StateReconciler,
     mock_download_db: MagicMock,
 ) -> None:
@@ -413,7 +435,7 @@ def test_handle_pruning_changes_no_changes(
     db_feed.keep_last = 10
 
     log_params = {"feed_id": FEED_ID}
-    result = state_reconciler._handle_pruning_changes(
+    result = await state_reconciler._handle_pruning_changes(
         FEED_ID,
         config_since=datetime(2024, 6, 1, tzinfo=UTC),  # Same as DB
         config_keep_last=10,  # Same as DB
@@ -426,7 +448,8 @@ def test_handle_pruning_changes_no_changes(
 
 
 @pytest.mark.unit
-def test_handle_pruning_changes_since_expansion_only(
+@pytest.mark.asyncio
+async def test_handle_pruning_changes_since_expansion_only(
     state_reconciler: StateReconciler,
     mock_download_db: MagicMock,
 ) -> None:
@@ -434,7 +457,6 @@ def test_handle_pruning_changes_since_expansion_only(
     db_feed = deepcopy(MOCK_FEED)
     db_feed.since = datetime(2024, 6, 1, tzinfo=UTC)
     db_feed.keep_last = None
-    db_feed.total_downloads = 5
 
     mock_download_db.get_downloads_by_status.return_value = [
         MOCK_ARCHIVED_DOWNLOAD_1,
@@ -443,7 +465,7 @@ def test_handle_pruning_changes_since_expansion_only(
     mock_download_db.requeue_downloads.return_value = 2
 
     log_params = {"feed_id": FEED_ID}
-    result = state_reconciler._handle_pruning_changes(
+    result = await state_reconciler._handle_pruning_changes(
         FEED_ID,
         config_since=datetime(2024, 5, 1, tzinfo=UTC),  # Earlier than DB since
         config_keep_last=None,
@@ -452,19 +474,20 @@ def test_handle_pruning_changes_since_expansion_only(
     )
 
     assert result is True
-    mock_download_db.get_downloads_by_status.assert_called_once_with(
+    mock_download_db.get_downloads_by_status.assert_awaited_once_with(
         DownloadStatus.ARCHIVED,
         feed_id=FEED_ID,
         published_after=datetime(2024, 5, 1, tzinfo=UTC),
         limit=-1,  # No keep_last limit
     )
-    mock_download_db.requeue_downloads.assert_called_once_with(
+    mock_download_db.requeue_downloads.assert_awaited_once_with(
         FEED_ID, ["archived_1", "archived_2"], from_status=DownloadStatus.ARCHIVED
     )
 
 
 @pytest.mark.unit
-def test_handle_pruning_changes_since_removal_only(
+@pytest.mark.asyncio
+async def test_handle_pruning_changes_since_removal_only(
     state_reconciler: StateReconciler,
     mock_download_db: MagicMock,
 ) -> None:
@@ -472,7 +495,6 @@ def test_handle_pruning_changes_since_removal_only(
     db_feed = deepcopy(MOCK_FEED)
     db_feed.since = datetime(2024, 6, 1, tzinfo=UTC)
     db_feed.keep_last = None
-    db_feed.total_downloads = 5
 
     mock_download_db.get_downloads_by_status.return_value = [
         MOCK_ARCHIVED_DOWNLOAD_1,
@@ -481,7 +503,7 @@ def test_handle_pruning_changes_since_removal_only(
     mock_download_db.requeue_downloads.return_value = 2
 
     log_params = {"feed_id": FEED_ID}
-    result = state_reconciler._handle_pruning_changes(
+    result = await state_reconciler._handle_pruning_changes(
         FEED_ID,
         config_since=None,  # Removing since filter
         config_keep_last=None,
@@ -490,7 +512,7 @@ def test_handle_pruning_changes_since_removal_only(
     )
 
     assert result is True
-    mock_download_db.get_downloads_by_status.assert_called_once_with(
+    mock_download_db.get_downloads_by_status.assert_awaited_once_with(
         DownloadStatus.ARCHIVED,
         feed_id=FEED_ID,
         published_after=None,  # No date filter
@@ -499,7 +521,8 @@ def test_handle_pruning_changes_since_removal_only(
 
 
 @pytest.mark.unit
-def test_handle_pruning_changes_since_stricter_no_restoration(
+@pytest.mark.asyncio
+async def test_handle_pruning_changes_since_stricter_no_restoration(
     state_reconciler: StateReconciler,
     mock_download_db: MagicMock,
 ) -> None:
@@ -507,10 +530,9 @@ def test_handle_pruning_changes_since_stricter_no_restoration(
     db_feed = deepcopy(MOCK_FEED)
     db_feed.since = datetime(2024, 5, 1, tzinfo=UTC)
     db_feed.keep_last = None
-    db_feed.total_downloads = 5
 
     log_params = {"feed_id": FEED_ID}
-    result = state_reconciler._handle_pruning_changes(
+    result = await state_reconciler._handle_pruning_changes(
         FEED_ID,
         config_since=datetime(2024, 7, 1, tzinfo=UTC),  # Later than DB since
         config_keep_last=None,
@@ -523,7 +545,8 @@ def test_handle_pruning_changes_since_stricter_no_restoration(
 
 
 @pytest.mark.unit
-def test_handle_pruning_changes_keep_last_increase_only(
+@pytest.mark.asyncio
+async def test_handle_pruning_changes_keep_last_increase_only(
     state_reconciler: StateReconciler,
     mock_download_db: MagicMock,
 ) -> None:
@@ -531,7 +554,8 @@ def test_handle_pruning_changes_keep_last_increase_only(
     db_feed = deepcopy(MOCK_FEED)
     db_feed.since = None
     db_feed.keep_last = 5
-    db_feed.total_downloads = 5
+    # Mock feed has 5 downloads currently
+    db_feed.total_downloads_internal = 5
 
     mock_download_db.get_downloads_by_status.return_value = [
         MOCK_ARCHIVED_DOWNLOAD_1,
@@ -540,7 +564,7 @@ def test_handle_pruning_changes_keep_last_increase_only(
     mock_download_db.requeue_downloads.return_value = 2
 
     log_params = {"feed_id": FEED_ID}
-    result = state_reconciler._handle_pruning_changes(
+    result = await state_reconciler._handle_pruning_changes(
         FEED_ID,
         config_since=None,
         config_keep_last=10,  # Increase from 5 to 10
@@ -549,7 +573,7 @@ def test_handle_pruning_changes_keep_last_increase_only(
     )
 
     assert result is True
-    mock_download_db.get_downloads_by_status.assert_called_once_with(
+    mock_download_db.get_downloads_by_status.assert_awaited_once_with(
         DownloadStatus.ARCHIVED,
         feed_id=FEED_ID,
         published_after=None,  # No since filter
@@ -558,7 +582,8 @@ def test_handle_pruning_changes_keep_last_increase_only(
 
 
 @pytest.mark.unit
-def test_handle_pruning_changes_since_removal_with_keep_last_limit(
+@pytest.mark.asyncio
+async def test_handle_pruning_changes_since_removal_with_keep_last_limit(
     state_reconciler: StateReconciler,
     mock_download_db: MagicMock,
 ) -> None:
@@ -566,7 +591,8 @@ def test_handle_pruning_changes_since_removal_with_keep_last_limit(
     db_feed = deepcopy(MOCK_FEED)
     db_feed.since = datetime(2024, 6, 1, tzinfo=UTC)
     db_feed.keep_last = 8
-    db_feed.total_downloads = 5
+    # Mock feed has 5 downloads currently
+    db_feed.total_downloads_internal = 5
 
     mock_download_db.get_downloads_by_status.return_value = [
         MOCK_ARCHIVED_DOWNLOAD_1,
@@ -575,7 +601,7 @@ def test_handle_pruning_changes_since_removal_with_keep_last_limit(
     mock_download_db.requeue_downloads.return_value = 2
 
     log_params = {"feed_id": FEED_ID}
-    result = state_reconciler._handle_pruning_changes(
+    result = await state_reconciler._handle_pruning_changes(
         FEED_ID,
         config_since=None,  # Remove since filter
         config_keep_last=8,  # But keep_last limits restoration
@@ -584,7 +610,7 @@ def test_handle_pruning_changes_since_removal_with_keep_last_limit(
     )
 
     assert result is True
-    mock_download_db.get_downloads_by_status.assert_called_once_with(
+    mock_download_db.get_downloads_by_status.assert_awaited_once_with(
         DownloadStatus.ARCHIVED,
         feed_id=FEED_ID,
         published_after=None,  # No date filter
@@ -593,7 +619,8 @@ def test_handle_pruning_changes_since_removal_with_keep_last_limit(
 
 
 @pytest.mark.unit
-def test_handle_pruning_changes_since_expansion_blocked_by_keep_last(
+@pytest.mark.asyncio
+async def test_handle_pruning_changes_since_expansion_blocked_by_keep_last(
     state_reconciler: StateReconciler,
     mock_download_db: MagicMock,
 ) -> None:
@@ -601,10 +628,11 @@ def test_handle_pruning_changes_since_expansion_blocked_by_keep_last(
     db_feed = deepcopy(MOCK_FEED)
     db_feed.since = datetime(2024, 6, 1, tzinfo=UTC)
     db_feed.keep_last = 5
-    db_feed.total_downloads = 5  # Already at limit
+    # Mock feed has 5 downloads, which equals the keep_last limit
+    db_feed.total_downloads_internal = 5  # Set the internal field directly
 
     log_params = {"feed_id": FEED_ID}
-    result = state_reconciler._handle_pruning_changes(
+    result = await state_reconciler._handle_pruning_changes(
         FEED_ID,
         config_since=datetime(2024, 5, 1, tzinfo=UTC),  # Earlier than DB since
         config_keep_last=5,  # Already at limit
@@ -617,7 +645,8 @@ def test_handle_pruning_changes_since_expansion_blocked_by_keep_last(
 
 
 @pytest.mark.unit
-def test_handle_pruning_changes_both_policies_change(
+@pytest.mark.asyncio
+async def test_handle_pruning_changes_both_policies_change(
     state_reconciler: StateReconciler,
     mock_download_db: MagicMock,
 ) -> None:
@@ -625,7 +654,8 @@ def test_handle_pruning_changes_both_policies_change(
     db_feed = deepcopy(MOCK_FEED)
     db_feed.since = datetime(2024, 6, 1, tzinfo=UTC)
     db_feed.keep_last = 5
-    db_feed.total_downloads = 4
+    # Mock feed has 4 downloads currently
+    db_feed.total_downloads_internal = 4
 
     mock_download_db.get_downloads_by_status.return_value = [
         MOCK_ARCHIVED_DOWNLOAD_1,
@@ -633,7 +663,7 @@ def test_handle_pruning_changes_both_policies_change(
     mock_download_db.requeue_downloads.return_value = 1
 
     log_params = {"feed_id": FEED_ID}
-    result = state_reconciler._handle_pruning_changes(
+    result = await state_reconciler._handle_pruning_changes(
         FEED_ID,
         config_since=datetime(2024, 5, 1, tzinfo=UTC),  # Earlier than DB since
         config_keep_last=8,  # Increase from 5 to 8
@@ -642,7 +672,7 @@ def test_handle_pruning_changes_both_policies_change(
     )
 
     assert result is True
-    mock_download_db.get_downloads_by_status.assert_called_once_with(
+    mock_download_db.get_downloads_by_status.assert_awaited_once_with(
         DownloadStatus.ARCHIVED,
         feed_id=FEED_ID,
         published_after=datetime(2024, 5, 1, tzinfo=UTC),  # Since filter applied
@@ -651,7 +681,8 @@ def test_handle_pruning_changes_both_policies_change(
 
 
 @pytest.mark.unit
-def test_handle_pruning_changes_since_expansion_limited_by_new_keep_last(
+@pytest.mark.asyncio
+async def test_handle_pruning_changes_since_expansion_limited_by_new_keep_last(
     state_reconciler: StateReconciler,
     mock_download_db: MagicMock,
 ) -> None:
@@ -659,7 +690,8 @@ def test_handle_pruning_changes_since_expansion_limited_by_new_keep_last(
     db_feed = deepcopy(MOCK_FEED)
     db_feed.since = datetime(2024, 8, 1, tzinfo=UTC)  # Original since date
     db_feed.keep_last = None  # No previous keep_last
-    db_feed.total_downloads = 10
+    # Mock feed has 10 downloads currently
+    db_feed.total_downloads_internal = 10
 
     # Mock 5 archived downloads that would be restored by since expansion
     mock_archived_downloads = [
@@ -670,7 +702,7 @@ def test_handle_pruning_changes_since_expansion_limited_by_new_keep_last(
     mock_download_db.requeue_downloads.return_value = 2  # Only 2 restored due to limit
 
     log_params = {"feed_id": FEED_ID}
-    result = state_reconciler._handle_pruning_changes(
+    result = await state_reconciler._handle_pruning_changes(
         FEED_ID,
         config_since=datetime(2024, 7, 1, tzinfo=UTC),  # Expand since further back
         config_keep_last=12,  # Add keep_last allowing only 2 more (12-10=2)
@@ -679,7 +711,7 @@ def test_handle_pruning_changes_since_expansion_limited_by_new_keep_last(
     )
 
     assert result is True
-    mock_download_db.get_downloads_by_status.assert_called_once_with(
+    mock_download_db.get_downloads_by_status.assert_awaited_once_with(
         DownloadStatus.ARCHIVED,
         feed_id=FEED_ID,
         published_after=datetime(2024, 7, 1, tzinfo=UTC),  # Since filter applied
@@ -688,7 +720,8 @@ def test_handle_pruning_changes_since_expansion_limited_by_new_keep_last(
 
 
 @pytest.mark.unit
-def test_handle_pruning_changes_no_archived_downloads(
+@pytest.mark.asyncio
+async def test_handle_pruning_changes_no_archived_downloads(
     state_reconciler: StateReconciler,
     mock_download_db: MagicMock,
 ) -> None:
@@ -696,12 +729,11 @@ def test_handle_pruning_changes_no_archived_downloads(
     db_feed = deepcopy(MOCK_FEED)
     db_feed.since = datetime(2024, 6, 1, tzinfo=UTC)
     db_feed.keep_last = None
-    db_feed.total_downloads = 5
 
     mock_download_db.get_downloads_by_status.return_value = []  # No archived downloads
 
     log_params = {"feed_id": FEED_ID}
-    result = state_reconciler._handle_pruning_changes(
+    result = await state_reconciler._handle_pruning_changes(
         FEED_ID,
         config_since=datetime(2024, 5, 1, tzinfo=UTC),  # Earlier than DB since
         config_keep_last=None,
@@ -714,7 +746,8 @@ def test_handle_pruning_changes_no_archived_downloads(
 
 
 @pytest.mark.unit
-def test_handle_pruning_changes_database_error(
+@pytest.mark.asyncio
+async def test_handle_pruning_changes_database_error(
     state_reconciler: StateReconciler,
     mock_download_db: MagicMock,
 ) -> None:
@@ -722,7 +755,6 @@ def test_handle_pruning_changes_database_error(
     db_feed = deepcopy(MOCK_FEED)
     db_feed.since = datetime(2024, 6, 1, tzinfo=UTC)
     db_feed.keep_last = None
-    db_feed.total_downloads = 5
 
     mock_download_db.get_downloads_by_status.side_effect = DatabaseOperationError(
         "DB error"
@@ -730,7 +762,7 @@ def test_handle_pruning_changes_database_error(
 
     log_params = {"feed_id": FEED_ID}
     with pytest.raises(StateReconciliationError) as exc_info:
-        state_reconciler._handle_pruning_changes(
+        await state_reconciler._handle_pruning_changes(
             FEED_ID,
             config_since=datetime(2024, 5, 1, tzinfo=UTC),
             config_keep_last=None,

@@ -23,7 +23,7 @@ BASE_PUBLISH_DATE = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
 SAMPLE_DOWNLOADS = [
     # Downloaded items (older to newer by published date)
     Download(
-        feed=TEST_FEED_ID,
+        feed_id=TEST_FEED_ID,
         id="downloaded_old_1",
         source_url="https://example.com/video1",
         title="Old Downloaded Video 1",
@@ -38,7 +38,7 @@ SAMPLE_DOWNLOADS = [
         updated_at=BASE_PUBLISH_DATE - timedelta(days=9),
     ),
     Download(
-        feed=TEST_FEED_ID,
+        feed_id=TEST_FEED_ID,
         id="downloaded_old_2",
         source_url="https://example.com/video2",
         title="Old Downloaded Video 2",
@@ -53,7 +53,7 @@ SAMPLE_DOWNLOADS = [
         updated_at=BASE_PUBLISH_DATE - timedelta(days=7),
     ),
     Download(
-        feed=TEST_FEED_ID,
+        feed_id=TEST_FEED_ID,
         id="downloaded_mid",
         source_url="https://example.com/video3",
         title="Mid Downloaded Video",
@@ -68,7 +68,7 @@ SAMPLE_DOWNLOADS = [
         updated_at=BASE_PUBLISH_DATE - timedelta(days=4),
     ),
     Download(
-        feed=TEST_FEED_ID,
+        feed_id=TEST_FEED_ID,
         id="downloaded_recent_1",
         source_url="https://example.com/video4",
         title="Recent Downloaded Video 1",
@@ -83,7 +83,7 @@ SAMPLE_DOWNLOADS = [
         updated_at=BASE_PUBLISH_DATE - timedelta(days=1),
     ),
     Download(
-        feed=TEST_FEED_ID,
+        feed_id=TEST_FEED_ID,
         id="downloaded_recent_2",
         source_url="https://example.com/video5",
         title="Recent Downloaded Video 2",
@@ -99,7 +99,7 @@ SAMPLE_DOWNLOADS = [
     ),
     # Non-downloaded items (should not have files deleted but can be archived)
     Download(
-        feed=TEST_FEED_ID,
+        feed_id=TEST_FEED_ID,
         id="queued_old",
         source_url="https://example.com/video6",
         title="Old Queued Video",
@@ -114,7 +114,7 @@ SAMPLE_DOWNLOADS = [
         updated_at=BASE_PUBLISH_DATE - timedelta(days=8),
     ),
     Download(
-        feed=TEST_FEED_ID,
+        feed_id=TEST_FEED_ID,
         id="error_old",
         source_url="https://example.com/video7",
         title="Old Error Video",
@@ -130,7 +130,7 @@ SAMPLE_DOWNLOADS = [
         updated_at=BASE_PUBLISH_DATE - timedelta(days=6),
     ),
     Download(
-        feed=TEST_FEED_ID,
+        feed_id=TEST_FEED_ID,
         id="skipped_old",
         source_url="https://example.com/video8",
         title="Old Skipped Video",
@@ -146,7 +146,7 @@ SAMPLE_DOWNLOADS = [
     ),
     # Items that should be excluded from pruning or have special handling
     Download(
-        feed=TEST_FEED_ID,
+        feed_id=TEST_FEED_ID,
         id="upcoming_recent",
         source_url="https://example.com/video9",
         title="Recent Upcoming Video",
@@ -161,7 +161,7 @@ SAMPLE_DOWNLOADS = [
         updated_at=BASE_PUBLISH_DATE - timedelta(days=2),
     ),
     Download(
-        feed=TEST_FEED_ID,
+        feed_id=TEST_FEED_ID,
         id="archived_old",
         source_url="https://example.com/video10",
         title="Old Archived Video",
@@ -205,7 +205,7 @@ async def create_dummy_file(file_manager: FileManager, download: Download) -> Pa
     Returns:
         Path to the created file.
     """
-    feed_dir = await file_manager._paths.feed_data_dir(download.feed)
+    feed_dir = await file_manager._paths.feed_data_dir(download.feed_id)
 
     file_name = f"{download.id}.{download.ext}"
     file_path = feed_dir / file_name
@@ -239,11 +239,11 @@ async def populated_test_data(
         title="Test Feed",
         description="Test feed for integration tests",
     )
-    feed_db.upsert_feed(test_feed)
+    await feed_db.upsert_feed(test_feed)
 
     # Insert all downloads into database
     for download in SAMPLE_DOWNLOADS:
-        download_db.upsert_download(download)
+        await download_db.upsert_download(download)
 
     # Create files only for DOWNLOADED items
     created_files: list[Path] = []
@@ -307,7 +307,7 @@ async def test_prune_feed_downloads_keep_last_success(
     assert files_deleted_count == expected_files_deleted
 
     # Verify remaining downloads in database
-    remaining_downloaded = download_db.get_downloads_by_status(
+    remaining_downloaded = await download_db.get_downloads_by_status(
         DownloadStatus.DOWNLOADED, feed_id=TEST_FEED_ID
     )
     assert len(remaining_downloaded) == 2  # Should keep 2 most recent
@@ -333,7 +333,7 @@ async def test_prune_feed_downloads_keep_last_success(
             )
 
     # Verify archived downloads increased
-    archived_downloads = download_db.get_downloads_by_status(
+    archived_downloads = await download_db.get_downloads_by_status(
         DownloadStatus.ARCHIVED, feed_id=TEST_FEED_ID
     )
     # Should have the original archived item plus the newly archived ones
@@ -341,7 +341,7 @@ async def test_prune_feed_downloads_keep_last_success(
         len(archived_downloads) == expected_archived + 1
     )  # +1 for pre-existing archived item
 
-    skipped_downloads = download_db.get_downloads_by_status(
+    skipped_downloads = await download_db.get_downloads_by_status(
         DownloadStatus.SKIPPED, feed_id=TEST_FEED_ID
     )
     assert len(skipped_downloads) == 1
@@ -381,7 +381,7 @@ async def test_prune_feed_downloads_since_date_success(
     assert files_deleted_count == expected_files_deleted
 
     # Verify remaining DOWNLOADED items (only items newer than cutoff)
-    remaining_downloaded = download_db.get_downloads_by_status(
+    remaining_downloaded = await download_db.get_downloads_by_status(
         DownloadStatus.DOWNLOADED, feed_id=TEST_FEED_ID
     )
     assert len(remaining_downloaded) == 2
@@ -405,7 +405,7 @@ async def test_prune_feed_downloads_since_date_success(
         )
 
     # Verify SKIPPED items were not affected (should still be SKIPPED)
-    skipped_downloads = download_db.get_downloads_by_status(
+    skipped_downloads = await download_db.get_downloads_by_status(
         DownloadStatus.SKIPPED, feed_id=TEST_FEED_ID
     )
     assert len(skipped_downloads) == 1
@@ -486,7 +486,7 @@ async def test_prune_feed_downloads_no_candidates(
     assert files_deleted_count == 0
 
     # Verify nothing changed
-    downloaded_items = download_db.get_downloads_by_status(
+    downloaded_items = await download_db.get_downloads_by_status(
         DownloadStatus.DOWNLOADED, feed_id=TEST_FEED_ID
     )
     assert len(downloaded_items) == 5
@@ -532,7 +532,7 @@ async def test_prune_feed_downloads_missing_files(
     assert files_deleted_count == expected_files_deleted
 
     # Verify the download was still archived despite missing file
-    archived_downloads = download_db.get_downloads_by_status(
+    archived_downloads = await download_db.get_downloads_by_status(
         DownloadStatus.ARCHIVED, feed_id=TEST_FEED_ID
     )
     archived_ids = {dl.id for dl in archived_downloads}
@@ -558,7 +558,7 @@ async def test_prune_feed_downloads_empty_feed(
         title="Empty Feed",
         description="Test feed with no downloads",
     )
-    feed_db.upsert_feed(test_feed)
+    await feed_db.upsert_feed(test_feed)
 
     archived_count, files_deleted_count = await pruner.prune_feed_downloads(
         feed_id=empty_feed_id,
@@ -590,12 +590,12 @@ async def test_prune_feed_downloads_only_excluded_statuses(
         title="Excluded Only Feed",
         description="Test feed with only excluded statuses",
     )
-    feed_db.upsert_feed(test_feed)
+    await feed_db.upsert_feed(test_feed)
 
     # Create downloads with only excluded statuses
     excluded_downloads = [
         Download(
-            feed=feed_id,
+            feed_id=feed_id,
             id="skipped_1",
             source_url="https://example.com/skipped1",
             title="Skipped Video 1",
@@ -610,7 +610,7 @@ async def test_prune_feed_downloads_only_excluded_statuses(
             updated_at=BASE_PUBLISH_DATE,
         ),
         Download(
-            feed=feed_id,
+            feed_id=feed_id,
             id="archived_1",
             source_url="https://example.com/archived1",
             title="Archived Video 1",
@@ -627,7 +627,7 @@ async def test_prune_feed_downloads_only_excluded_statuses(
     ]
 
     for download in excluded_downloads:
-        download_db.upsert_download(download)
+        await download_db.upsert_download(download)
 
     archived_count, files_deleted_count = await pruner.prune_feed_downloads(
         feed_id=feed_id,
@@ -640,12 +640,12 @@ async def test_prune_feed_downloads_only_excluded_statuses(
     assert files_deleted_count == 0
 
     # Verify items remain in their original status
-    skipped_items = download_db.get_downloads_by_status(
+    skipped_items = await download_db.get_downloads_by_status(
         DownloadStatus.SKIPPED, feed_id=feed_id
     )
     assert len(skipped_items) == 1
 
-    archived_items = download_db.get_downloads_by_status(
+    archived_items = await download_db.get_downloads_by_status(
         DownloadStatus.ARCHIVED, feed_id=feed_id
     )
     assert len(archived_items) == 1
@@ -672,14 +672,14 @@ async def test_prune_feed_downloads_large_dataset(
         title="Large Dataset Feed",
         description="Test feed with large dataset",
     )
-    feed_db.upsert_feed(test_feed)
+    await feed_db.upsert_feed(test_feed)
     num_downloads = 50
 
     # Create many downloads
     large_downloads: list[Download] = []
     for i in range(num_downloads):
         download = Download(
-            feed=feed_id,
+            feed_id=feed_id,
             id=f"download_{i:03d}",
             source_url=f"https://example.com/video{i}",
             title=f"Video {i}",
@@ -694,7 +694,7 @@ async def test_prune_feed_downloads_large_dataset(
             updated_at=BASE_PUBLISH_DATE - timedelta(days=i),
         )
         large_downloads.append(download)
-        download_db.upsert_download(download)
+        await download_db.upsert_download(download)
 
         # Create files for DOWNLOADED items
         if download.status == DownloadStatus.DOWNLOADED:
@@ -714,10 +714,10 @@ async def test_prune_feed_downloads_large_dataset(
     assert files_deleted_count == 20
 
     # Verify 10 most recent remain non-archived
-    remaining_downloaded = download_db.get_downloads_by_status(
+    remaining_downloaded = await download_db.get_downloads_by_status(
         DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
-    remaining_queued = download_db.get_downloads_by_status(
+    remaining_queued = await download_db.get_downloads_by_status(
         DownloadStatus.QUEUED, feed_id=feed_id
     )
 
@@ -777,19 +777,19 @@ async def test_prune_feed_downloads_future_date(
         DownloadStatus.UPCOMING,
     ]:
         remaining_downloads.extend(
-            download_db.get_downloads_by_status(status, feed_id=TEST_FEED_ID)
+            await download_db.get_downloads_by_status(status, feed_id=TEST_FEED_ID)
         )
 
     assert len(remaining_downloads) == 0
 
     # SKIPPED should remain
-    skipped_downloads = download_db.get_downloads_by_status(
+    skipped_downloads = await download_db.get_downloads_by_status(
         DownloadStatus.SKIPPED, feed_id=TEST_FEED_ID
     )
     assert len(skipped_downloads) == 1
 
     # ARCHIVED should now include the newly archived items plus the original
-    archived_downloads = download_db.get_downloads_by_status(
+    archived_downloads = await download_db.get_downloads_by_status(
         DownloadStatus.ARCHIVED, feed_id=TEST_FEED_ID
     )
     assert (
@@ -811,16 +811,16 @@ async def test_archive_feed_success(
 ):
     """Tests archive_feed successfully archives all non-terminal downloads and disables feed."""
     # Verify initial state
-    initial_downloaded = download_db.get_downloads_by_status(
+    initial_downloaded = await download_db.get_downloads_by_status(
         DownloadStatus.DOWNLOADED, feed_id=TEST_FEED_ID
     )
-    initial_queued = download_db.get_downloads_by_status(
+    initial_queued = await download_db.get_downloads_by_status(
         DownloadStatus.QUEUED, feed_id=TEST_FEED_ID
     )
-    initial_upcoming = download_db.get_downloads_by_status(
+    initial_upcoming = await download_db.get_downloads_by_status(
         DownloadStatus.UPCOMING, feed_id=TEST_FEED_ID
     )
-    initial_error = download_db.get_downloads_by_status(
+    initial_error = await download_db.get_downloads_by_status(
         DownloadStatus.ERROR, feed_id=TEST_FEED_ID
     )
 
@@ -851,11 +851,13 @@ async def test_archive_feed_success(
         DownloadStatus.UPCOMING,
         DownloadStatus.ERROR,
     ]:
-        remaining = download_db.get_downloads_by_status(status, feed_id=TEST_FEED_ID)
+        remaining = await download_db.get_downloads_by_status(
+            status, feed_id=TEST_FEED_ID
+        )
         assert len(remaining) == 0
 
     # Verify SKIPPED downloads are unchanged
-    skipped_downloads = download_db.get_downloads_by_status(
+    skipped_downloads = await download_db.get_downloads_by_status(
         DownloadStatus.SKIPPED, feed_id=TEST_FEED_ID
     )
     assert len(skipped_downloads) == 1
@@ -867,7 +869,7 @@ async def test_archive_feed_success(
         )
 
     # Verify feed is disabled
-    feed = feed_db.get_feed_by_id(TEST_FEED_ID)
+    feed = await feed_db.get_feed_by_id(TEST_FEED_ID)
     assert feed.is_enabled is False
 
     # Verify total_downloads was recalculated to 0
@@ -895,12 +897,12 @@ async def test_archive_feed_transaction_rollback_on_failure(
         title="Rollback Test Feed",
         description="Feed for testing transaction rollback",
     )
-    feed_db.upsert_feed(test_feed)
+    await feed_db.upsert_feed(test_feed)
 
     # Create test downloads
     test_downloads = [
         Download(
-            feed=feed_id,
+            feed_id=feed_id,
             id="download_1",
             source_url="https://example.com/video1",
             title="Video 1",
@@ -915,7 +917,7 @@ async def test_archive_feed_transaction_rollback_on_failure(
             updated_at=BASE_PUBLISH_DATE,
         ),
         Download(
-            feed=feed_id,
+            feed_id=feed_id,
             id="download_2",
             source_url="https://example.com/video2",
             title="Video 2",
@@ -933,15 +935,15 @@ async def test_archive_feed_transaction_rollback_on_failure(
 
     # Insert downloads and create file for downloaded item
     for download in test_downloads:
-        download_db.upsert_download(download)
+        await download_db.upsert_download(download)
         if download.status == DownloadStatus.DOWNLOADED:
             await create_dummy_file(file_manager, download)
 
     # Verify initial state
-    initial_downloaded = download_db.get_downloads_by_status(
+    initial_downloaded = await download_db.get_downloads_by_status(
         DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
-    initial_queued = download_db.get_downloads_by_status(
+    initial_queued = await download_db.get_downloads_by_status(
         DownloadStatus.QUEUED, feed_id=feed_id
     )
     assert len(initial_downloaded) == 1
@@ -950,12 +952,12 @@ async def test_archive_feed_transaction_rollback_on_failure(
     # Mock archive_download to fail partway through
     original_archive = download_db.archive_download
 
-    def failing_archive(feed: str, id: str) -> None:
-        if id == "download_2":
+    async def failing_archive(feed_id: str, download_id: str) -> None:
+        if download_id == "download_2":
             from anypod.exceptions import DatabaseOperationError
 
             raise DatabaseOperationError("Simulated archive failure")
-        return original_archive(feed, id)
+        return await original_archive(feed_id, download_id)
 
     download_db.archive_download = failing_archive
 
@@ -965,10 +967,10 @@ async def test_archive_feed_transaction_rollback_on_failure(
             await pruner.archive_feed(feed_id)
 
         # Verify rollback occurred - downloads should still be in original states
-        remaining_downloaded = download_db.get_downloads_by_status(
+        remaining_downloaded = await download_db.get_downloads_by_status(
             DownloadStatus.DOWNLOADED, feed_id=feed_id
         )
-        remaining_queued = download_db.get_downloads_by_status(
+        remaining_queued = await download_db.get_downloads_by_status(
             DownloadStatus.QUEUED, feed_id=feed_id
         )
 
@@ -983,7 +985,7 @@ async def test_archive_feed_transaction_rollback_on_failure(
             )
 
         # Feed should still be enabled (rollback)
-        feed = feed_db.get_feed_by_id(feed_id)
+        feed = await feed_db.get_feed_by_id(feed_id)
         assert feed.is_enabled is True
 
     finally:

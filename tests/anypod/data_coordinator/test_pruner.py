@@ -7,7 +7,6 @@ for identifying and removing old downloads according to configured retention
 rules, including file deletion and database record archiving.
 """
 
-import dataclasses
 import datetime
 from unittest.mock import AsyncMock, MagicMock
 
@@ -20,7 +19,6 @@ from anypod.db.types import Download, DownloadStatus
 from anypod.exceptions import (
     DatabaseOperationError,
     DownloadNotFoundError,
-    FeedNotFoundError,
     FileOperationError,
     PruneError,
 )
@@ -32,13 +30,24 @@ from anypod.file_manager import FileManager
 @pytest.fixture
 def mock_feed_db() -> MagicMock:
     """Provides a mock FeedDatabase."""
-    return MagicMock(spec=FeedDatabase)
+    mock = MagicMock(spec=FeedDatabase)
+    # Mock async methods
+    mock.set_feed_enabled = AsyncMock()
+    mock.update_total_downloads = AsyncMock()
+    return mock
 
 
 @pytest.fixture
 def mock_download_db() -> MagicMock:
     """Provides a mock DownloadDatabase."""
-    return MagicMock(spec=DownloadDatabase)
+    mock = MagicMock(spec=DownloadDatabase)
+    # Mock async methods
+    mock.get_downloads_by_status = AsyncMock()
+    mock.get_downloads_to_prune_by_keep_last = AsyncMock()
+    mock.get_downloads_to_prune_by_since = AsyncMock()
+    mock.archive_download = AsyncMock()
+    mock.count_downloads_by_status = AsyncMock()
+    return mock
 
 
 @pytest.fixture
@@ -62,7 +71,7 @@ def sample_downloaded_item() -> Download:
     """Provides a sample Download object with DOWNLOADED status."""
     base_time = datetime.datetime(2023, 1, 1, 12, 0, 0, tzinfo=datetime.UTC)
     return Download(
-        feed="test_feed",
+        feed_id="test_feed",
         id="test_dl_id_1",
         source_url="http://example.com/video1",
         title="Test Video 1",
@@ -82,7 +91,7 @@ def sample_queued_item() -> Download:
     """Provides a sample Download object with QUEUED status."""
     base_time = datetime.datetime(2023, 1, 2, 12, 0, 0, tzinfo=datetime.UTC)
     return Download(
-        feed="test_feed",
+        feed_id="test_feed",
         id="test_dl_id_2",
         source_url="http://example.com/video2",
         title="Test Video 2",
@@ -102,7 +111,7 @@ def sample_upcoming_item() -> Download:
     """Provides a sample Download object with UPCOMING status."""
     base_time = datetime.datetime(2023, 1, 3, 12, 0, 0, tzinfo=datetime.UTC)
     return Download(
-        feed="test_feed",
+        feed_id="test_feed",
         id="test_dl_id_3",
         source_url="http://example.com/video3",
         title="Test Video 3",
@@ -122,7 +131,7 @@ def sample_skipped_item() -> Download:
     """Provides a sample Download object with SKIPPED status."""
     base_time = datetime.datetime(2023, 1, 4, 12, 0, 0, tzinfo=datetime.UTC)
     return Download(
-        feed="test_feed",
+        feed_id="test_feed",
         id="test_dl_id_4",
         source_url="http://example.com/video4",
         title="Test Video 4",
@@ -141,7 +150,8 @@ def sample_skipped_item() -> Download:
 
 
 @pytest.mark.unit
-def test_identify_prune_candidates_keep_last_only(
+@pytest.mark.asyncio
+async def test_identify_prune_candidates_keep_last_only(
     pruner: Pruner,
     mock_download_db: MagicMock,
     sample_downloaded_item: Download,
@@ -152,19 +162,22 @@ def test_identify_prune_candidates_keep_last_only(
         downloads_to_prune
     )
 
-    result = pruner._identify_prune_candidates(
+    result = await pruner._identify_prune_candidates(
         "test_feed", keep_last=5, prune_before_date=None
     )
 
-    assert result == {sample_downloaded_item}
-    mock_download_db.get_downloads_to_prune_by_keep_last.assert_called_once_with(
+    assert len(result) == 1
+    assert next(iter(result)) == sample_downloaded_item
+
+    mock_download_db.get_downloads_to_prune_by_keep_last.assert_awaited_once_with(
         "test_feed", 5
     )
     mock_download_db.get_downloads_to_prune_by_since.assert_not_called()
 
 
 @pytest.mark.unit
-def test_identify_prune_candidates_date_only(
+@pytest.mark.asyncio
+async def test_identify_prune_candidates_date_only(
     pruner: Pruner,
     mock_download_db: MagicMock,
     sample_downloaded_item: Download,
@@ -174,19 +187,22 @@ def test_identify_prune_candidates_date_only(
     cutoff_date = datetime.datetime(2023, 6, 1, tzinfo=datetime.UTC)
     mock_download_db.get_downloads_to_prune_by_since.return_value = downloads_to_prune
 
-    result = pruner._identify_prune_candidates(
+    result = await pruner._identify_prune_candidates(
         "test_feed", keep_last=None, prune_before_date=cutoff_date
     )
 
-    assert result == {sample_downloaded_item}
-    mock_download_db.get_downloads_to_prune_by_since.assert_called_once_with(
+    assert len(result) == 1
+    assert any(item.content_equals(sample_downloaded_item) for item in result)
+
+    mock_download_db.get_downloads_to_prune_by_since.assert_awaited_once_with(
         "test_feed", cutoff_date
     )
     mock_download_db.get_downloads_to_prune_by_keep_last.assert_not_called()
 
 
 @pytest.mark.unit
-def test_identify_prune_candidates_both_rules_union(
+@pytest.mark.asyncio
+async def test_identify_prune_candidates_both_rules_union(
     pruner: Pruner,
     mock_download_db: MagicMock,
     sample_downloaded_item: Download,
@@ -202,27 +218,30 @@ def test_identify_prune_candidates_both_rules_union(
     )
     mock_download_db.get_downloads_to_prune_by_since.return_value = date_results
 
-    result = pruner._identify_prune_candidates(
+    result = await pruner._identify_prune_candidates(
         "test_feed", keep_last=3, prune_before_date=cutoff_date
     )
 
     # Should be union: {sample_downloaded_item, sample_queued_item}
-    assert result == {sample_downloaded_item, sample_queued_item}
-    mock_download_db.get_downloads_to_prune_by_keep_last.assert_called_once_with(
+    assert len(result) == 2
+    assert any(item.content_equals(sample_downloaded_item) for item in result)
+    assert any(item.content_equals(sample_queued_item) for item in result)
+    mock_download_db.get_downloads_to_prune_by_keep_last.assert_awaited_once_with(
         "test_feed", 3
     )
-    mock_download_db.get_downloads_to_prune_by_since.assert_called_once_with(
+    mock_download_db.get_downloads_to_prune_by_since.assert_awaited_once_with(
         "test_feed", cutoff_date
     )
 
 
 @pytest.mark.unit
-def test_identify_prune_candidates_no_rules_returns_empty(
+@pytest.mark.asyncio
+async def test_identify_prune_candidates_no_rules_returns_empty(
     pruner: Pruner,
     mock_download_db: MagicMock,
 ):
     """Tests _identify_prune_candidates returns empty set when no rules provided."""
-    result = pruner._identify_prune_candidates(
+    result = await pruner._identify_prune_candidates(
         "test_feed", keep_last=None, prune_before_date=None
     )
 
@@ -232,7 +251,8 @@ def test_identify_prune_candidates_no_rules_returns_empty(
 
 
 @pytest.mark.unit
-def test_identify_prune_candidates_keep_last_db_error_raises_prune_error(
+@pytest.mark.asyncio
+async def test_identify_prune_candidates_keep_last_db_error_raises_prune_error(
     pruner: Pruner,
     mock_download_db: MagicMock,
 ):
@@ -241,7 +261,7 @@ def test_identify_prune_candidates_keep_last_db_error_raises_prune_error(
     mock_download_db.get_downloads_to_prune_by_keep_last.side_effect = db_error
 
     with pytest.raises(PruneError) as exc_info:
-        pruner._identify_prune_candidates(
+        await pruner._identify_prune_candidates(
             "test_feed", keep_last=5, prune_before_date=None
         )
 
@@ -290,21 +310,23 @@ async def test_handle_file_deletion_file_operation_error_raises_prune_error(
 
 
 @pytest.mark.unit
-def test_archive_download_success(
+@pytest.mark.asyncio
+async def test_archive_download_success(
     pruner: Pruner,
     mock_download_db: MagicMock,
     sample_downloaded_item: Download,
 ):
     """Tests _archive_download successfully archives download."""
-    pruner._archive_download(sample_downloaded_item, "test_feed")
+    await pruner._archive_download(sample_downloaded_item, "test_feed")
 
-    mock_download_db.archive_download.assert_called_once_with(
+    mock_download_db.archive_download.assert_awaited_once_with(
         "test_feed", sample_downloaded_item.id
     )
 
 
 @pytest.mark.unit
-def test_archive_download_db_error_raises_prune_error(
+@pytest.mark.asyncio
+async def test_archive_download_db_error_raises_prune_error(
     pruner: Pruner,
     mock_download_db: MagicMock,
     sample_downloaded_item: Download,
@@ -314,7 +336,7 @@ def test_archive_download_db_error_raises_prune_error(
     mock_download_db.archive_download.side_effect = db_error
 
     with pytest.raises(PruneError) as exc_info:
-        pruner._archive_download(sample_downloaded_item, "test_feed")
+        await pruner._archive_download(sample_downloaded_item, "test_feed")
 
     assert exc_info.value.feed_id == "test_feed"
     assert exc_info.value.download_id == sample_downloaded_item.id
@@ -322,7 +344,8 @@ def test_archive_download_db_error_raises_prune_error(
 
 
 @pytest.mark.unit
-def test_archive_download_not_found_error_raises_prune_error(
+@pytest.mark.asyncio
+async def test_archive_download_not_found_error_raises_prune_error(
     pruner: Pruner,
     mock_download_db: MagicMock,
     sample_downloaded_item: Download,
@@ -332,7 +355,7 @@ def test_archive_download_not_found_error_raises_prune_error(
     mock_download_db.archive_download.side_effect = not_found_error
 
     with pytest.raises(PruneError) as exc_info:
-        pruner._archive_download(sample_downloaded_item, "test_feed")
+        await pruner._archive_download(sample_downloaded_item, "test_feed")
 
     assert exc_info.value.feed_id == "test_feed"
     assert exc_info.value.download_id == sample_downloaded_item.id
@@ -359,7 +382,7 @@ async def test_process_single_download_downloaded_file_deleted_successfully(
     mock_file_manager.delete_download_file.assert_called_once_with(
         "test_feed", "test_dl_id_1", "mp4"
     )
-    mock_download_db.archive_download.assert_called_once_with(
+    mock_download_db.archive_download.assert_awaited_once_with(
         "test_feed", sample_downloaded_item.id
     )
 
@@ -385,7 +408,7 @@ async def test_process_single_download_downloaded_file_not_found_returns_false(
     mock_file_manager.delete_download_file.assert_called_once_with(
         "test_feed", "test_dl_id_1", "mp4"
     )
-    mock_download_db.archive_download.assert_called_once_with(
+    mock_download_db.archive_download.assert_awaited_once_with(
         "test_feed", sample_downloaded_item.id
     )
 
@@ -405,7 +428,7 @@ async def test_process_single_download_non_downloaded_no_file_deletion(
 
     assert result is False
     mock_file_manager.delete_download_file.assert_not_called()
-    mock_download_db.archive_download.assert_called_once_with(
+    mock_download_db.archive_download.assert_awaited_once_with(
         "test_feed", sample_queued_item.id
     )
 
@@ -425,7 +448,7 @@ async def test_process_single_download_upcoming_no_file_deletion(
 
     assert result is False
     mock_file_manager.delete_download_file.assert_not_called()
-    mock_download_db.archive_download.assert_called_once_with(
+    mock_download_db.archive_download.assert_awaited_once_with(
         "test_feed", sample_upcoming_item.id
     )
 
@@ -447,74 +470,6 @@ async def test_process_single_download_archive_error_raises_prune_error(
         )
 
     assert exc_info.value.__cause__ is db_error
-
-
-# --- Tests for Pruner._recalculate_total_downloads ---
-
-
-@pytest.mark.unit
-def test_recalculate_total_downloads_success(
-    pruner: Pruner,
-    mock_download_db: MagicMock,
-    mock_feed_db: MagicMock,
-) -> None:
-    """Test successful recalculation of total_downloads."""
-    mock_download_db.count_downloads_by_status.return_value = 42
-
-    pruner._recalculate_total_downloads("test_feed")
-
-    mock_download_db.count_downloads_by_status.assert_called_once_with(
-        DownloadStatus.DOWNLOADED, feed_id="test_feed"
-    )
-    mock_feed_db.update_total_downloads.assert_called_once_with("test_feed", 42)
-
-
-@pytest.mark.unit
-def test_recalculate_total_downloads_count_error_logs_and_returns(
-    pruner: Pruner,
-    mock_download_db: MagicMock,
-    mock_feed_db: MagicMock,
-) -> None:
-    """Test that count error is logged and method returns early."""
-    mock_download_db.count_downloads_by_status.side_effect = DatabaseOperationError(
-        "Count failed"
-    )
-
-    pruner._recalculate_total_downloads("test_feed")
-
-    # Should not call update after count fails
-    mock_feed_db.update_total_downloads.assert_not_called()
-
-
-@pytest.mark.unit
-def test_recalculate_total_downloads_feed_not_found_raises_prune_error(
-    pruner: Pruner,
-    mock_download_db: MagicMock,
-    mock_feed_db: MagicMock,
-) -> None:
-    """Test that FeedNotFoundError is re-raised as PruneError."""
-    mock_download_db.count_downloads_by_status.return_value = 42
-    mock_feed_db.update_total_downloads.side_effect = FeedNotFoundError(
-        "Feed not found", feed_id="test_feed"
-    )
-
-    with pytest.raises(PruneError):
-        pruner._recalculate_total_downloads("test_feed")
-
-
-@pytest.mark.unit
-def test_recalculate_total_downloads_update_error_logs_and_returns(
-    pruner: Pruner,
-    mock_download_db: MagicMock,
-    mock_feed_db: MagicMock,
-) -> None:
-    """Test that update error is logged and method returns."""
-    mock_download_db.count_downloads_by_status.return_value = 42
-    mock_feed_db.update_total_downloads.side_effect = DatabaseOperationError(
-        "Update failed"
-    )
-
-    pruner._recalculate_total_downloads("test_feed")
 
 
 # --- Tests for Pruner.prune_feed_downloads ---
@@ -590,8 +545,8 @@ async def test_prune_feed_downloads_individual_failure_continues_processing(
 ):
     """Tests prune_feed_downloads continues processing other items when one fails."""
     dl1 = sample_downloaded_item
-    dl2 = dataclasses.replace(sample_queued_item, id="fail_item")
-    dl3 = dataclasses.replace(sample_downloaded_item, id="success_item")
+    dl2 = sample_queued_item.model_copy(update={"id": "fail_item"})
+    dl3 = sample_downloaded_item.model_copy(update={"id": "success_item"})
 
     candidates = [dl1, dl2, dl3]
     mock_download_db.get_downloads_to_prune_by_keep_last.return_value = candidates
@@ -664,14 +619,8 @@ async def test_archive_feed_success_with_downloads(
         "test_feed", sample_downloaded_item.id, "mp4"
     )
 
-    # Verify total_downloads was recalculated
-    mock_download_db.count_downloads_by_status.assert_called_once_with(
-        DownloadStatus.DOWNLOADED, feed_id="test_feed"
-    )
-    mock_feed_db.update_total_downloads.assert_called_once_with("test_feed", 0)
-
     # Verify feed was disabled
-    mock_feed_db.set_feed_enabled.assert_called_once_with("test_feed", False)
+    mock_feed_db.set_feed_enabled.assert_awaited_once_with("test_feed", False)
 
 
 @pytest.mark.unit
@@ -684,10 +633,11 @@ async def test_archive_feed_skips_archived_and_skipped_downloads(
     sample_skipped_item: Download,
 ):
     """Tests archive_feed skips ARCHIVED and SKIPPED downloads during archival."""
-    archived_item = dataclasses.replace(
-        sample_downloaded_item,
-        id="archived_item",
-        status=DownloadStatus.ARCHIVED,
+    archived_item = sample_downloaded_item.model_copy(
+        update={
+            "id": "archived_item",
+            "status": DownloadStatus.ARCHIVED,
+        }
     )
 
     # Setup: only return downloaded item, not skipped or archived
@@ -728,7 +678,7 @@ async def test_archive_feed_skips_archived_and_skipped_downloads(
     assert DownloadStatus.SKIPPED not in actual_statuses
 
     # Feed should still be disabled
-    mock_feed_db.set_feed_enabled.assert_called_once_with("test_feed", False)
+    mock_feed_db.set_feed_enabled.assert_awaited_once_with("test_feed", False)
 
 
 @pytest.mark.unit
@@ -755,7 +705,7 @@ async def test_archive_feed_empty_feed_only_disables(
     mock_feed_db.update_total_downloads.assert_not_called()
 
     # Feed should still be disabled
-    mock_feed_db.set_feed_enabled.assert_called_once_with("test_feed", False)
+    mock_feed_db.set_feed_enabled.assert_awaited_once_with("test_feed", False)
 
 
 @pytest.mark.unit
@@ -809,9 +759,9 @@ async def test_archive_feed_file_deletion_error_continues_archival(
     assert files_deleted_count == 0  # File deletion failed
 
     # Download should still be archived
-    mock_download_db.archive_download.assert_called_once_with(
+    mock_download_db.archive_download.assert_awaited_once_with(
         "test_feed", sample_downloaded_item.id
     )
 
     # Feed should still be disabled
-    mock_feed_db.set_feed_enabled.assert_called_once_with("test_feed", False)
+    mock_feed_db.set_feed_enabled.assert_awaited_once_with("test_feed", False)

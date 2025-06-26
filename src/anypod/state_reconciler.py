@@ -5,7 +5,6 @@ between YAML configuration and database state during application startup and
 when configuration changes are detected.
 """
 
-from copy import deepcopy
 from datetime import UTC, datetime
 import logging
 from typing import Any
@@ -48,7 +47,7 @@ class StateReconciler:
         self._pruner = pruner
         logger.debug("StateReconciler initialized.")
 
-    def _handle_new_feed(self, feed_id: str, feed_config: FeedConfig) -> None:
+    async def _handle_new_feed(self, feed_id: str, feed_config: FeedConfig) -> None:
         """Handle a new feed by inserting it into the database.
 
         Args:
@@ -96,14 +95,14 @@ class StateReconciler:
             explicit=explicit,
         )
         try:
-            self._feed_db.upsert_feed(new_feed)
+            await self._feed_db.upsert_feed(new_feed)
         except (DatabaseOperationError, ValueError) as e:
             raise StateReconciliationError(
                 "Failed to insert new feed into database.",
                 feed_id=feed_id,
             ) from e
 
-    def _handle_pruning_changes(
+    async def _handle_pruning_changes(
         self,
         feed_id: str,
         config_since: datetime | None,
@@ -243,7 +242,7 @@ class StateReconciler:
 
         # Find archived downloads that should be restored
         try:
-            downloads_to_restore = self._download_db.get_downloads_by_status(
+            downloads_to_restore = await self._download_db.get_downloads_by_status(
                 DownloadStatus.ARCHIVED,
                 feed_id=feed_id,
                 published_after=restore_filter_date,  # None means all downloads
@@ -281,7 +280,7 @@ class StateReconciler:
         # Restore downloads to QUEUED status in batch
         download_ids = [dl.id for dl in downloads_to_restore]
         try:
-            count_restored = self._download_db.requeue_downloads(
+            count_restored = await self._download_db.requeue_downloads(
                 feed_id, download_ids, from_status=DownloadStatus.ARCHIVED
             )
             logger.info(
@@ -296,7 +295,7 @@ class StateReconciler:
 
         return True
 
-    def _handle_existing_feed(
+    async def _handle_existing_feed(
         self, feed_id: str, feed_config: FeedConfig, db_feed: Feed
     ) -> bool:
         """Handle an existing feed by applying configuration changes.
@@ -315,7 +314,7 @@ class StateReconciler:
         log_params = {"feed_id": feed_id}
 
         # Collect all changes to apply in a single update
-        updated_feed = deepcopy(db_feed)
+        updated_feed = db_feed.model_copy()
 
         match (feed_config.enabled, db_feed.is_enabled):
             # Feed has been enabled
@@ -385,14 +384,14 @@ class StateReconciler:
         if feed_config.keep_last != db_feed.keep_last:
             updated_feed.keep_last = feed_config.keep_last
 
-        self._handle_pruning_changes(
+        await self._handle_pruning_changes(
             feed_id, feed_config.since, feed_config.keep_last, db_feed, log_params
         )
 
         if updated_feed != db_feed:
             logger.info("Feed configuration changes applied.", extra=log_params)
             try:
-                self._feed_db.upsert_feed(updated_feed)
+                await self._feed_db.upsert_feed(updated_feed)
             except DatabaseOperationError as e:
                 raise StateReconciliationError(
                     "Failed to update feed configuration.",
@@ -449,7 +448,7 @@ class StateReconciler:
 
         # Get all existing feeds from database
         try:
-            db_feeds = self._feed_db.get_feeds()
+            db_feeds = await self._feed_db.get_feeds()
         except (DatabaseOperationError, ValueError) as e:
             raise StateReconciliationError(
                 "Failed to fetch feeds from database.",
@@ -469,7 +468,7 @@ class StateReconciler:
             if db_feed is None:
                 # New feed - add to database
                 try:
-                    self._handle_new_feed(feed_id, feed_config)
+                    await self._handle_new_feed(feed_id, feed_config)
                 except StateReconciliationError as e:
                     logger.warning(
                         "Failed to add new feed, continuing with others.",
@@ -483,7 +482,7 @@ class StateReconciler:
             else:
                 # Existing feed - check for changes
                 try:
-                    if self._handle_existing_feed(feed_id, feed_config, db_feed):
+                    if await self._handle_existing_feed(feed_id, feed_config, db_feed):
                         changed_count += 1
                 except StateReconciliationError as e:
                     logger.warning(

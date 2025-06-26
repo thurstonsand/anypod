@@ -4,7 +4,7 @@
 
 from datetime import UTC, datetime
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 from xml.etree import ElementTree as ET
 
 import pytest
@@ -31,7 +31,10 @@ EXPECTED_GENERATOR = "AnyPod: https://github.com/thurstonsan/anypod"
 @pytest.fixture
 def mock_download_db() -> MagicMock:
     """Fixture to provide a mocked DownloadDatabase."""
-    return MagicMock(spec=DownloadDatabase)
+    mock = MagicMock(spec=DownloadDatabase)
+    # Configure async methods with AsyncMock
+    mock.get_downloads_by_status = AsyncMock()
+    return mock
 
 
 @pytest.fixture
@@ -66,7 +69,7 @@ def sample_downloads() -> list[Download]:
     """Fixture to provide sample download data."""
     return [
         Download(
-            feed=TEST_FEED_ID,
+            feed_id=TEST_FEED_ID,
             id="video1",
             source_url="https://youtube.com/watch?v=video1",
             title="Test Video 1",
@@ -82,7 +85,7 @@ def sample_downloads() -> list[Download]:
             description="Description for video 1",
         ),
         Download(
-            feed=TEST_FEED_ID,
+            feed_id=TEST_FEED_ID,
             id="video2",
             source_url="https://youtube.com/watch?v=video2",
             title="Test Video 2",
@@ -112,7 +115,8 @@ def rss_generator(
 
 
 @pytest.mark.unit
-def test_update_feed_success(
+@pytest.mark.asyncio
+async def test_update_feed_success(
     rss_generator: RSSFeedGenerator,
     mock_download_db: MagicMock,
     test_feed: Feed,
@@ -122,7 +126,7 @@ def test_update_feed_success(
     feed_id = TEST_FEED_ID
     mock_download_db.get_downloads_by_status.return_value = sample_downloads
 
-    rss_generator.update_feed(feed_id, test_feed)
+    await rss_generator.update_feed(feed_id, test_feed)
 
     mock_download_db.get_downloads_by_status.assert_called_once_with(
         status_to_filter=DownloadStatus.DOWNLOADED, feed_id=feed_id
@@ -135,7 +139,8 @@ def test_update_feed_success(
 
 
 @pytest.mark.unit
-def test_update_feed_database_error(
+@pytest.mark.asyncio
+async def test_update_feed_database_error(
     rss_generator: RSSFeedGenerator,
     mock_download_db: MagicMock,
     test_feed: Feed,
@@ -147,7 +152,7 @@ def test_update_feed_database_error(
     )
 
     with pytest.raises(RSSGenerationError) as exc_info:
-        rss_generator.update_feed(feed_id, test_feed)
+        await rss_generator.update_feed(feed_id, test_feed)
 
     assert "Failed to retrieve downloads for feed" in str(exc_info.value)
     assert exc_info.value.feed_id == feed_id
@@ -169,7 +174,8 @@ def test_get_feed_xml_not_found(rss_generator: RSSFeedGenerator):
 
 
 @pytest.mark.unit
-def test_generated_xml_structure(
+@pytest.mark.asyncio
+async def test_generated_xml_structure(
     rss_generator: RSSFeedGenerator,
     mock_download_db: MagicMock,
     test_feed: Feed,
@@ -179,7 +185,7 @@ def test_generated_xml_structure(
     feed_id = TEST_FEED_ID
     mock_download_db.get_downloads_by_status.return_value = sample_downloads
 
-    rss_generator.update_feed(feed_id, test_feed)
+    await rss_generator.update_feed(feed_id, test_feed)
     xml_bytes = rss_generator.get_feed_xml(feed_id)
 
     # Parse XML and verify structure
@@ -258,7 +264,8 @@ def test_generated_xml_structure(
 
 
 @pytest.mark.unit
-def test_generated_xml_enclosure_urls(
+@pytest.mark.asyncio
+async def test_generated_xml_enclosure_urls(
     rss_generator: RSSFeedGenerator,
     mock_download_db: MagicMock,
     test_feed: Feed,
@@ -268,7 +275,7 @@ def test_generated_xml_enclosure_urls(
     feed_id = TEST_FEED_ID
     mock_download_db.get_downloads_by_status.return_value = sample_downloads
 
-    rss_generator.update_feed(feed_id, test_feed)
+    await rss_generator.update_feed(feed_id, test_feed)
     xml_bytes = rss_generator.get_feed_xml(feed_id)
 
     root = ET.fromstring(xml_bytes)
@@ -296,7 +303,8 @@ def test_generated_xml_enclosure_urls(
 
 
 @pytest.mark.unit
-def test_generated_xml_mime_types(
+@pytest.mark.asyncio
+async def test_generated_xml_mime_types(
     rss_generator: RSSFeedGenerator,
     mock_download_db: MagicMock,
     test_feed: Feed,
@@ -305,7 +313,7 @@ def test_generated_xml_mime_types(
     feed_id = TEST_FEED_ID
     downloads_with_various_types = [
         Download(
-            feed=TEST_FEED_ID,
+            feed_id=TEST_FEED_ID,
             id="video_mp4",
             source_url="https://example.com/video",
             title="MP4 Video",
@@ -319,7 +327,7 @@ def test_generated_xml_mime_types(
             updated_at=datetime(2023, 1, 2, tzinfo=UTC),
         ),
         Download(
-            feed=TEST_FEED_ID,
+            feed_id=TEST_FEED_ID,
             id="audio_m4a",
             source_url="https://example.com/audio",
             title="M4A Audio",
@@ -336,7 +344,7 @@ def test_generated_xml_mime_types(
 
     mock_download_db.get_downloads_by_status.return_value = downloads_with_various_types
 
-    rss_generator.update_feed(feed_id, test_feed)
+    await rss_generator.update_feed(feed_id, test_feed)
     xml_bytes = rss_generator.get_feed_xml(feed_id)
 
     root = ET.fromstring(xml_bytes)
@@ -367,7 +375,8 @@ def test_generated_xml_mime_types(
 
 
 @pytest.mark.unit
-def test_empty_downloads_list(
+@pytest.mark.asyncio
+async def test_empty_downloads_list(
     rss_generator: RSSFeedGenerator,
     mock_download_db: MagicMock,
     test_feed: Feed,
@@ -376,7 +385,7 @@ def test_empty_downloads_list(
     feed_id = "empty_feed"
     mock_download_db.get_downloads_by_status.return_value = []
 
-    rss_generator.update_feed(feed_id, test_feed)
+    await rss_generator.update_feed(feed_id, test_feed)
     xml_bytes = rss_generator.get_feed_xml(feed_id)
 
     root = ET.fromstring(xml_bytes)

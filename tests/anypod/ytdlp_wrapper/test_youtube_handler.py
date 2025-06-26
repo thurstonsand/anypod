@@ -221,7 +221,7 @@ def test_parse_single_video_entry_success_basic(
     assert download.description == valid_video_entry.description
     assert download.mime_type == "video/mp4"  # Based on ext="mp4"
     assert download.filesize == 0  # Default for QUEUED status
-    assert download.feed == FEED_ID
+    assert download.feed_id == FEED_ID
 
 
 @pytest.mark.unit

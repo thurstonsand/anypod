@@ -68,7 +68,7 @@ class Downloader:
             DownloadError: If moving the file or updating the database fails.
         """
         log_params: dict[str, Any] = {
-            "feed_id": download.feed,
+            "feed_id": download.feed_id,
             "download_id": download.id,
             "downloaded_file_path": downloaded_file_path,
         }
@@ -76,21 +76,21 @@ class Downloader:
 
         try:
             file_stat = await aiofiles.os.stat(downloaded_file_path)
-            self.download_db.mark_as_downloaded(
-                feed=download.feed,
-                id=download.id,
+            await self.download_db.mark_as_downloaded(
+                feed_id=download.feed_id,
+                download_id=download.id,
                 ext=downloaded_file_path.suffix.lstrip("."),
                 filesize=file_stat.st_size,
             )
         except (DownloadNotFoundError, DatabaseOperationError) as e:
             raise DownloadError(
                 message="Failed to update database record to DOWNLOADED.",
-                feed_id=download.feed,
+                feed_id=download.feed_id,
                 download_id=download.id,
             ) from e
         logger.info("Database record updated to DOWNLOADED.", extra=log_params)
 
-    def _handle_download_failure(
+    async def _handle_download_failure(
         self, download: Download, feed_config: FeedConfig, error: Exception
     ) -> None:
         """Handle failures during the download process for a single item.
@@ -106,13 +106,13 @@ class Downloader:
             "Could not complete download.",
             exc_info=error,
             extra={
-                "feed_id": download.feed,
+                "feed_id": download.feed_id,
                 "download_id": download.id,
             },
         )
         try:
-            self.download_db.bump_retries(
-                feed_id=download.feed,
+            await self.download_db.bump_retries(
+                feed_id=download.feed_id,
                 download_id=download.id,
                 error_message=str(error),
                 max_allowed_errors=feed_config.max_errors,
@@ -121,7 +121,7 @@ class Downloader:
             logger.error(
                 "Failed to bump retries.",
                 exc_info=e,
-                extra={"feed_id": download.feed, "download_id": download.id},
+                extra={"feed_id": download.feed_id, "download_id": download.id},
             )
 
     async def _check_and_update_metadata(
@@ -150,7 +150,7 @@ class Downloader:
             DownloadError: If metadata fetch fails.
         """
         log_params: dict[str, Any] = {
-            "feed_id": download.feed,
+            "feed_id": download.feed_id,
             "download_id": download.id,
         }
         logger.debug("Re-fetching metadata to check for updates.", extra=log_params)
@@ -158,7 +158,7 @@ class Downloader:
         try:
             # Re-fetch metadata for this specific download
             _, fetched_downloads = await self.ytdlp_wrapper.fetch_metadata(
-                download.feed,
+                download.feed_id,
                 download.source_url,
                 feed_config.yt_args,
                 cookies_path=cookies_path,
@@ -174,7 +174,7 @@ class Downloader:
         # Find the matching download in the fetched results
         matching_download = None
         for fetched in fetched_downloads:
-            if fetched.id == download.id and fetched.feed == download.feed:
+            if fetched.id == download.id and fetched.feed_id == download.feed_id:
                 matching_download = fetched
                 break
 
@@ -225,7 +225,7 @@ class Downloader:
 
             # Persist changes to database
             try:
-                self.download_db.upsert_download(download)
+                await self.download_db.upsert_download(download)
             except DatabaseOperationError as e:
                 logger.error(
                     "Failed to update changed metadata in database.",
@@ -257,7 +257,7 @@ class Downloader:
                              (e.g., ytdlp error, file move error, DB update error).
         """
         log_params: dict[str, Any] = {
-            "feed_id": download_to_process.feed,
+            "feed_id": download_to_process.feed_id,
             "download_id": download_to_process.id,
         }
         logger.info("Processing single download.", extra=log_params)
@@ -279,7 +279,7 @@ class Downloader:
         except YtdlpApiError as e:
             raise DownloadError(
                 message="Failed to download media to file.",
-                feed_id=download_to_process.feed,
+                feed_id=download_to_process.feed_id,
                 download_id=download_to_process.id,
             ) from e
 
@@ -328,7 +328,7 @@ class Downloader:
         failure_count = 0
 
         try:
-            queued_downloads = self.download_db.get_downloads_by_status(
+            queued_downloads = await self.download_db.get_downloads_by_status(
                 DownloadStatus.QUEUED,
                 feed_id,
                 limit,
@@ -353,7 +353,7 @@ class Downloader:
                 await self._process_single_download(download, feed_config, cookies_path)
                 success_count += 1
             except DownloadError as e:
-                self._handle_download_failure(download, feed_config, e)
+                await self._handle_download_failure(download, feed_config, e)
                 failure_count += 1
 
         logger.info(

@@ -66,7 +66,7 @@ SAMPLE_FEED_CONFIG = FeedConfig(
 )
 
 
-def create_test_feed(feed_db: FeedDatabase, feed_id: str, url: str) -> Feed:
+async def create_test_feed(feed_db: FeedDatabase, feed_id: str, url: str) -> Feed:
     """Create a test feed in the database."""
     feed = Feed(
         id=feed_id,
@@ -76,7 +76,7 @@ def create_test_feed(feed_db: FeedDatabase, feed_id: str, url: str) -> Feed:
         last_successful_sync=datetime.min.replace(tzinfo=UTC),
         title=f"Test Feed {feed_id}",
     )
-    feed_db.upsert_feed(feed)
+    await feed_db.upsert_feed(feed)
     return feed
 
 
@@ -99,7 +99,7 @@ async def test_enqueue_new_downloads_success(
     feed_id = f"test_feed_{url_type}"
 
     # Create feed in database
-    create_test_feed(feed_db, feed_id, url)
+    await create_test_feed(feed_db, feed_id, url)
 
     feed_config = FeedConfig(
         url=url,
@@ -125,14 +125,14 @@ async def test_enqueue_new_downloads_success(
     assert queued_count >= 1, f"Expected at least 1 queued download for {url_type}"
 
     # Verify downloads are in the database
-    queued_downloads = download_db.get_downloads_by_status(
+    queued_downloads = await download_db.get_downloads_by_status(
         DownloadStatus.QUEUED, feed_id=feed_id
     )
     assert len(queued_downloads) >= 1, f"Expected queued downloads in DB for {url_type}"
 
     # Verify basic properties of the first download
     download = queued_downloads[0]
-    assert download.feed == feed_id
+    assert download.feed_id == feed_id
     assert download.id, f"Download ID should not be empty for {url_type}"
     assert download.title, f"Download title should not be empty for {url_type}"
     assert download.source_url, (
@@ -143,7 +143,7 @@ async def test_enqueue_new_downloads_success(
     assert download.status == DownloadStatus.QUEUED
 
     # Verify feed metadata was updated from extracted metadata
-    updated_feed = feed_db.get_feed_by_id(feed_id)
+    updated_feed = await feed_db.get_feed_by_id(feed_id)
 
     # Verify specific extracted values based on URL type
     if url_type == "video_short_link":
@@ -204,7 +204,7 @@ async def test_enqueue_new_downloads_invalid_url(
     feed_id = "test_invalid_feed"
 
     # Create feed in database
-    create_test_feed(feed_db, feed_id, INVALID_VIDEO_URL)
+    await create_test_feed(feed_db, feed_id, INVALID_VIDEO_URL)
 
     feed_config = FeedConfig(
         url=INVALID_VIDEO_URL,
@@ -243,7 +243,7 @@ async def test_enqueue_new_downloads_with_date_filter(
     feed_id = "test_date_filter"
 
     # Create feed in database
-    create_test_feed(feed_db, feed_id, COLETDJNZ_CHANNEL_VIDEOS)
+    await create_test_feed(feed_db, feed_id, COLETDJNZ_CHANNEL_VIDEOS)
 
     feed_config = FeedConfig(
         url=COLETDJNZ_CHANNEL_VIDEOS,
@@ -269,7 +269,7 @@ async def test_enqueue_new_downloads_with_date_filter(
     assert queued_count >= 0
 
     # Verify downloads in database match what was reported
-    queued_downloads = download_db.get_downloads_by_status(
+    queued_downloads = await download_db.get_downloads_by_status(
         DownloadStatus.QUEUED, feed_id=feed_id
     )
     assert len(queued_downloads) == queued_count
@@ -287,13 +287,13 @@ async def test_enqueue_handles_existing_upcoming_downloads(
     feed_id = "test_upcoming_feed"
 
     # Create feed in database
-    create_test_feed(feed_db, feed_id, SAMPLE_FEED_CONFIG.url)
+    await create_test_feed(feed_db, feed_id, SAMPLE_FEED_CONFIG.url)
 
     feed_config = SAMPLE_FEED_CONFIG
 
     # Insert an UPCOMING download manually
     upcoming_download = Download(
-        feed=feed_id,
+        feed_id=feed_id,
         id=BIG_BUCK_BUNNY_VIDEO_ID,
         source_url=BIG_BUCK_BUNNY_URL,
         title=BIG_BUCK_BUNNY_TITLE,
@@ -307,10 +307,10 @@ async def test_enqueue_handles_existing_upcoming_downloads(
         discovered_at=BIG_BUCK_BUNNY_PUBLISHED,
         updated_at=BIG_BUCK_BUNNY_PUBLISHED,
     )
-    download_db.upsert_download(upcoming_download)
+    await download_db.upsert_download(upcoming_download)
 
     # Verify it's in UPCOMING status
-    upcoming_downloads = download_db.get_downloads_by_status(
+    upcoming_downloads = await download_db.get_downloads_by_status(
         DownloadStatus.UPCOMING, feed_id=feed_id
     )
     assert len(upcoming_downloads) == 1
@@ -330,7 +330,7 @@ async def test_enqueue_handles_existing_upcoming_downloads(
     assert queued_count >= 1
 
     # Verify the download is now QUEUED
-    queued_downloads = download_db.get_downloads_by_status(
+    queued_downloads = await download_db.get_downloads_by_status(
         DownloadStatus.QUEUED, feed_id=feed_id
     )
     assert len(queued_downloads) >= 1
@@ -343,7 +343,7 @@ async def test_enqueue_handles_existing_upcoming_downloads(
     assert transitioned_download.status == DownloadStatus.QUEUED
 
     # Should be no more UPCOMING downloads for this feed
-    remaining_upcoming = download_db.get_downloads_by_status(
+    remaining_upcoming = await download_db.get_downloads_by_status(
         DownloadStatus.UPCOMING, feed_id=feed_id
     )
     assert len(remaining_upcoming) == 0
@@ -361,13 +361,13 @@ async def test_enqueue_handles_existing_downloaded_items(
     feed_id = "test_downloaded_ignored_feed"
 
     # Create feed in database
-    create_test_feed(feed_db, feed_id, SAMPLE_FEED_CONFIG.url)
+    await create_test_feed(feed_db, feed_id, SAMPLE_FEED_CONFIG.url)
 
     feed_config = SAMPLE_FEED_CONFIG
 
     # Insert a DOWNLOADED item
     downloaded_item = Download(
-        feed=feed_id,
+        feed_id=feed_id,
         id=BIG_BUCK_BUNNY_VIDEO_ID,
         source_url=BIG_BUCK_BUNNY_URL,
         title=BIG_BUCK_BUNNY_TITLE,
@@ -381,7 +381,7 @@ async def test_enqueue_handles_existing_downloaded_items(
         discovered_at=BIG_BUCK_BUNNY_PUBLISHED,
         updated_at=BIG_BUCK_BUNNY_PUBLISHED,
     )
-    download_db.upsert_download(downloaded_item)
+    await download_db.upsert_download(downloaded_item)
 
     # Run enqueuer
     fetch_until_date = datetime.now(UTC)
@@ -397,7 +397,7 @@ async def test_enqueue_handles_existing_downloaded_items(
     assert queued_count == 0
 
     # Verify the item remains DOWNLOADED
-    downloaded_downloads = download_db.get_downloads_by_status(
+    downloaded_downloads = await download_db.get_downloads_by_status(
         DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
     assert len(downloaded_downloads) == 1
@@ -405,7 +405,7 @@ async def test_enqueue_handles_existing_downloaded_items(
     assert downloaded_downloads[0].status == DownloadStatus.DOWNLOADED
 
     # Verify no items were queued
-    queued_downloads = download_db.get_downloads_by_status(
+    queued_downloads = await download_db.get_downloads_by_status(
         DownloadStatus.QUEUED, feed_id=feed_id
     )
     assert len(queued_downloads) == 0
@@ -423,7 +423,7 @@ async def test_enqueue_multiple_runs_idempotent(
     feed_id = "test_idempotent_feed"
 
     # Create feed in database
-    create_test_feed(feed_db, feed_id, SAMPLE_FEED_CONFIG.url)
+    await create_test_feed(feed_db, feed_id, SAMPLE_FEED_CONFIG.url)
 
     feed_config = SAMPLE_FEED_CONFIG
     fetch_since_date = datetime.min.replace(tzinfo=UTC)
@@ -440,7 +440,7 @@ async def test_enqueue_multiple_runs_idempotent(
     assert first_queued_count >= 1
 
     # Get downloads after first run
-    first_run_downloads = download_db.get_downloads_by_status(
+    first_run_downloads = await download_db.get_downloads_by_status(
         DownloadStatus.QUEUED, feed_id=feed_id
     )
 
@@ -458,7 +458,7 @@ async def test_enqueue_multiple_runs_idempotent(
     assert second_queued_count == 0
 
     # Downloads should be the same
-    second_run_downloads = download_db.get_downloads_by_status(
+    second_run_downloads = await download_db.get_downloads_by_status(
         DownloadStatus.QUEUED, feed_id=feed_id
     )
     assert len(second_run_downloads) == len(first_run_downloads)
@@ -476,7 +476,7 @@ async def test_enqueue_with_impossible_filter(
     feed_id = "test_impossible_filter"
 
     # Create feed in database
-    create_test_feed(feed_db, feed_id, BIG_BUCK_BUNNY_SHORT_URL)
+    await create_test_feed(feed_db, feed_id, BIG_BUCK_BUNNY_SHORT_URL)
 
     feed_config = FeedConfig(
         url=BIG_BUCK_BUNNY_SHORT_URL,
@@ -502,7 +502,7 @@ async def test_enqueue_with_impossible_filter(
     assert queued_count == 0
 
     # Verify downloads exist in database (the filter will apply during actual download)
-    queued_downloads = download_db.get_downloads_by_status(
+    queued_downloads = await download_db.get_downloads_by_status(
         DownloadStatus.QUEUED, feed_id=feed_id
     )
     assert len(queued_downloads) == 0
@@ -520,7 +520,7 @@ async def test_enqueue_feed_metadata_synchronization_with_overrides(
     feed_id = "test_metadata_sync"
 
     # Create feed in database
-    create_test_feed(feed_db, feed_id, BIG_BUCK_BUNNY_SHORT_URL)
+    await create_test_feed(feed_db, feed_id, BIG_BUCK_BUNNY_SHORT_URL)
 
     # Create feed config with metadata overrides
     metadata_overrides = FeedMetadataOverrides(  # type: ignore # quirk of pydantic
@@ -558,7 +558,7 @@ async def test_enqueue_feed_metadata_synchronization_with_overrides(
     assert queued_count >= 1
 
     # Verify feed metadata uses overrides where provided and extracted values as fallback
-    updated_feed = feed_db.get_feed_by_id(feed_id)
+    updated_feed = await feed_db.get_feed_by_id(feed_id)
 
     # These should come from overrides
     assert updated_feed.title == "Custom Podcast Title"
@@ -567,7 +567,7 @@ async def test_enqueue_feed_metadata_synchronization_with_overrides(
     assert updated_feed.language == "en-US"
     assert updated_feed.author == "Custom Author"
     assert updated_feed.category == PodcastCategories(["Technology", "Science"])
-    assert str(updated_feed.explicit) == "no"
+    assert updated_feed.explicit == PodcastExplicit.NO
 
     # Image URL should come from extracted metadata since not overridden
     assert (
@@ -587,7 +587,7 @@ async def test_enqueue_feed_metadata_partial_overrides(
     feed_id = "test_partial_metadata_sync"
 
     # Create feed in database
-    create_test_feed(feed_db, feed_id, BIG_BUCK_BUNNY_SHORT_URL)
+    await create_test_feed(feed_db, feed_id, BIG_BUCK_BUNNY_SHORT_URL)
 
     # Create feed config with only some metadata overrides
     metadata_overrides = FeedMetadataOverrides(  # type: ignore # quirk of pydantic
@@ -621,7 +621,7 @@ async def test_enqueue_feed_metadata_partial_overrides(
     assert queued_count >= 1
 
     # Verify feed metadata combines overrides and extracted values
-    updated_feed = feed_db.get_feed_by_id(feed_id)
+    updated_feed = await feed_db.get_feed_by_id(feed_id)
 
     # These should come from overrides
     assert updated_feed.title == "Custom Title Only"

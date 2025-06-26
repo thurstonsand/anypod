@@ -65,7 +65,7 @@ class DataCoordinator:
         self._cookies_path = cookies_path
         logger.debug("DataCoordinator initialized.")
 
-    def _calculate_fetch_since_date(self, feed_id: str) -> datetime:
+    async def _calculate_fetch_since_date(self, feed_id: str) -> datetime:
         """Calculate the date to use for fetching new downloads.
 
         Uses the feed's last_successful_sync timestamp. This method expects
@@ -83,7 +83,7 @@ class DataCoordinator:
                 or if last_successful_sync is not defined.
         """
         try:
-            feed = self._feed_db.get_feed_by_id(feed_id)
+            feed = await self._feed_db.get_feed_by_id(feed_id)
         except (FeedNotFoundError, DatabaseOperationError) as e:
             raise CoordinatorExecutionError(
                 f"Cannot retrieve feed for sync date calculation: {e}",
@@ -280,7 +280,7 @@ class DataCoordinator:
                 duration_seconds=duration,
             )
 
-    def _execute_rss_generation_phase(self, feed_id: str) -> PhaseResult:
+    async def _execute_rss_generation_phase(self, feed_id: str) -> PhaseResult:
         """Execute the RSS generation phase of feed processing.
 
         Args:
@@ -296,9 +296,11 @@ class DataCoordinator:
 
         try:
             # Get Feed object from database for RSS generation
-            feed = self._feed_db.get_feed_by_id(feed_id)
-            self._rss_generator.update_feed(feed_id, feed)
-            self._feed_db.mark_rss_generated(feed_id)
+            async with self._feed_db.session() as session:
+                feed = await self._feed_db.get_feed_by_id(feed_id)
+                await self._rss_generator.update_feed(feed_id, feed)
+                await self._feed_db.mark_rss_generated(feed_id)
+                await session.commit()
         except (RSSGenerationError, FeedNotFoundError, DatabaseOperationError) as e:
             duration = time.time() - phase_start
             logger.error(
@@ -326,7 +328,7 @@ class DataCoordinator:
                 duration_seconds=duration,
             )
 
-    def _update_feed_sync_status(
+    async def _update_feed_sync_status(
         self,
         feed_id: str,
         success: bool,
@@ -346,13 +348,13 @@ class DataCoordinator:
 
         try:
             if success:
-                self._feed_db.mark_sync_success(feed_id, fetch_until_date)
+                await self._feed_db.mark_sync_success(feed_id, fetch_until_date)
                 logger.info(
                     "Feed sync status updated to success.",
                     extra={**log_params, "sync_time": fetch_until_date.isoformat()},
                 )
             else:
-                self._feed_db.mark_sync_failure(feed_id)
+                await self._feed_db.mark_sync_failure(feed_id)
                 logger.info(
                     "Feed sync status updated to failure.",
                     extra=log_params,
@@ -406,7 +408,7 @@ class DataCoordinator:
         fetch_until_date = datetime.now(UTC)
 
         try:
-            fetch_since_date = self._calculate_fetch_since_date(feed_id)
+            fetch_since_date = await self._calculate_fetch_since_date(feed_id)
 
             # Phase 1: Enqueue new downloads
             results.enqueue_result = await self._execute_enqueue_phase(
@@ -422,7 +424,9 @@ class DataCoordinator:
             results.prune_result = await self._execute_prune_phase(feed_id, feed_config)
 
             # Phase 4: Generate RSS feed (always attempt)
-            results.rss_generation_result = self._execute_rss_generation_phase(feed_id)
+            results.rss_generation_result = await self._execute_rss_generation_phase(
+                feed_id
+            )
 
             # Determine overall success
             # Consider successful if at least RSS generation succeeded
@@ -454,7 +458,7 @@ class DataCoordinator:
             results.total_duration_seconds = (end_time - start_time).total_seconds()
 
             # Update feed sync status
-            results.feed_sync_updated = self._update_feed_sync_status(
+            results.feed_sync_updated = await self._update_feed_sync_status(
                 feed_id, results.overall_success, fetch_until_date
             )
 

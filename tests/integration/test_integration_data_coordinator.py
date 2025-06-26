@@ -60,7 +60,7 @@ def data_coordinator(
     )
 
 
-def create_test_feed(feed_db: FeedDatabase, feed_id: str) -> Feed:
+async def create_test_feed(feed_db: FeedDatabase, feed_id: str) -> Feed:
     """Create a test feed in the database."""
     feed = Feed(
         id=feed_id,
@@ -70,7 +70,7 @@ def create_test_feed(feed_db: FeedDatabase, feed_id: str) -> Feed:
         last_successful_sync=datetime.min.replace(tzinfo=UTC),
         title=f"Test Feed {feed_id}",
     )
-    feed_db.upsert_feed(feed)
+    await feed_db.upsert_feed(feed)
     return feed
 
 
@@ -92,29 +92,29 @@ def create_feed_config(
     )
 
 
-def setup_feed_with_initial_sync(feed_db: FeedDatabase, feed_id: str) -> Feed:
+async def setup_feed_with_initial_sync(feed_db: FeedDatabase, feed_id: str) -> Feed:
     """Create and setup a test feed with initial sync timestamp."""
-    _ = create_test_feed(feed_db, feed_id)
+    _ = await create_test_feed(feed_db, feed_id)
 
     # Set an initial last_successful_sync timestamp to enable process_feed
     # Use November 10, 2014 at 12:00 to ensure Big Buck Bunny (published 2014-11-10 14:05:55) is in range
     # With hourly cron, this creates a 2-hour window from 12:00-14:00 that includes the video
     initial_sync_time = datetime(2014, 11, 10, 12, 0, 0, tzinfo=UTC)
-    feed_db.mark_sync_success(feed_id, sync_time=initial_sync_time)
+    await feed_db.mark_sync_success(feed_id, sync_time=initial_sync_time)
 
-    return feed_db.get_feed_by_id(feed_id)
+    return await feed_db.get_feed_by_id(feed_id)
 
 
-def setup_feed_with_channel_sync(feed_db: FeedDatabase, feed_id: str) -> Feed:
+async def setup_feed_with_channel_sync(feed_db: FeedDatabase, feed_id: str) -> Feed:
     """Create and setup a test feed for channel testing with sync timestamp."""
-    _ = create_test_feed(feed_db, feed_id)
+    _ = await create_test_feed(feed_db, feed_id)
 
     # Set sync timestamp for July 9, 2024 to include newest coletdjnz videos (July 10, 2024)
     # With hourly cron, this creates a 2-hour window that includes the videos
     initial_sync_time = datetime(2024, 7, 9, 22, 0, 0, tzinfo=UTC)
-    feed_db.mark_sync_success(feed_id, sync_time=initial_sync_time)
+    await feed_db.mark_sync_success(feed_id, sync_time=initial_sync_time)
 
-    return feed_db.get_feed_by_id(feed_id)
+    return await feed_db.get_feed_by_id(feed_id)
 
 
 @pytest.mark.asyncio
@@ -136,7 +136,7 @@ async def test_process_feed_complete_success(
     feed_config = create_feed_config()
 
     # Setup feed with initial sync timestamp
-    setup_feed_with_initial_sync(feed_db, feed_id)
+    await setup_feed_with_initial_sync(feed_db, feed_id)
 
     # Process the feed
     results = await data_coordinator.process_feed(feed_id, feed_config)
@@ -173,7 +173,7 @@ async def test_process_feed_complete_success(
     assert len(results.rss_generation_result.errors) == 0
 
     # Verify database state consistency
-    downloaded_items = download_db.get_downloads_by_status(
+    downloaded_items = await download_db.get_downloads_by_status(
         DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
     assert len(downloaded_items) >= 1, "Should have downloaded items in database"
@@ -187,7 +187,7 @@ async def test_process_feed_complete_success(
         assert downloaded_item.filesize > 0, "Downloaded item should have filesize"
 
     # Verify no items left in QUEUED status
-    queued_items = download_db.get_downloads_by_status(
+    queued_items = await download_db.get_downloads_by_status(
         DownloadStatus.QUEUED, feed_id=feed_id
     )
     assert len(queued_items) == 0, (
@@ -201,7 +201,7 @@ async def test_process_feed_complete_success(
     assert b"<?xml" in feed_xml, "RSS feed should be valid XML"
 
     # Verify feed sync status updated
-    updated_feed = feed_db.get_feed_by_id(feed_id)
+    updated_feed = await feed_db.get_feed_by_id(feed_id)
     assert updated_feed.last_successful_sync is not None
     assert updated_feed.last_successful_sync > datetime(2024, 1, 1, tzinfo=UTC)
 
@@ -223,11 +223,11 @@ async def test_process_feed_incremental_processing(
     feed_config = create_feed_config()
 
     # Setup feed with initial sync timestamp
-    setup_feed_with_initial_sync(feed_db, feed_id)
+    await setup_feed_with_initial_sync(feed_db, feed_id)
 
     # Manually insert an existing downloaded item
     existing_download = Download(
-        feed=feed_id,
+        feed_id=feed_id,
         id=BIG_BUCK_BUNNY_VIDEO_ID,
         source_url=BIG_BUCK_BUNNY_URL,
         title=BIG_BUCK_BUNNY_TITLE,
@@ -241,7 +241,7 @@ async def test_process_feed_incremental_processing(
         discovered_at=BIG_BUCK_BUNNY_PUBLISHED,
         updated_at=BIG_BUCK_BUNNY_PUBLISHED,
     )
-    download_db.upsert_download(existing_download)
+    await download_db.upsert_download(existing_download)
 
     # Create a dummy file for the existing download
     feed_data_dir = Path(file_manager._paths.base_data_dir) / feed_id
@@ -250,7 +250,7 @@ async def test_process_feed_incremental_processing(
     dummy_file.write_bytes(b"dummy content")
 
     # Verify initial state
-    initial_downloaded = download_db.get_downloads_by_status(
+    initial_downloaded = await download_db.get_downloads_by_status(
         DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
     assert len(initial_downloaded) == 1
@@ -271,7 +271,7 @@ async def test_process_feed_incremental_processing(
     assert results.download_result.count == 0, "Should not download existing items"
 
     # Verify existing download is untouched
-    final_downloaded = download_db.get_downloads_by_status(
+    final_downloaded = await download_db.get_downloads_by_status(
         DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
     assert len(final_downloaded) == 1
@@ -302,7 +302,7 @@ async def test_process_feed_idempotency(
     feed_config = create_feed_config()
 
     # Setup feed with initial sync timestamp
-    setup_feed_with_initial_sync(feed_db, feed_id)
+    await setup_feed_with_initial_sync(feed_db, feed_id)
 
     # First run - should process normally
     first_results = await data_coordinator.process_feed(feed_id, feed_config)
@@ -311,7 +311,7 @@ async def test_process_feed_idempotency(
     assert first_results.total_downloaded >= 1
 
     # Capture state after first run
-    first_downloaded = download_db.get_downloads_by_status(
+    first_downloaded = await download_db.get_downloads_by_status(
         DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
     first_downloaded_count = len(first_downloaded)
@@ -344,7 +344,7 @@ async def test_process_feed_idempotency(
     assert second_results.rss_generation_result.success is True
 
     # Verify stable state - same downloads exist
-    second_downloaded = download_db.get_downloads_by_status(
+    second_downloaded = await download_db.get_downloads_by_status(
         DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
     second_downloaded_count = len(second_downloaded)
@@ -381,14 +381,14 @@ async def test_process_feed_with_retention_pruning(
     )
 
     # Setup feed with channel sync timestamp (for 2024 videos)
-    setup_feed_with_channel_sync(feed_db, feed_id)
+    await setup_feed_with_channel_sync(feed_db, feed_id)
 
     # Manually insert several old downloaded items to test pruning
     base_time = datetime(2020, 1, 1, tzinfo=UTC)
     old_downloads: list[Download] = []
     for i in range(3):
         old_download = Download(
-            feed=feed_id,
+            feed_id=feed_id,
             id=f"old_video_{i}",
             source_url=f"https://www.youtube.com/watch?v=old_video_{i}",
             title=f"Old Video {i}",
@@ -402,7 +402,7 @@ async def test_process_feed_with_retention_pruning(
             discovered_at=base_time.replace(day=i + 1),
             updated_at=base_time.replace(day=i + 1),
         )
-        download_db.upsert_download(old_download)
+        await download_db.upsert_download(old_download)
         old_downloads.append(old_download)
 
         # Create dummy files for old downloads
@@ -412,7 +412,7 @@ async def test_process_feed_with_retention_pruning(
         dummy_file.write_bytes(b"old dummy content")
 
     # Verify initial state - 3 old downloads
-    initial_downloaded = download_db.get_downloads_by_status(
+    initial_downloaded = await download_db.get_downloads_by_status(
         DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
     assert len(initial_downloaded) == 3
@@ -440,7 +440,7 @@ async def test_process_feed_with_retention_pruning(
     assert results.rss_generation_result.success is True
 
     # Verify final state - should have only keep_last=1 downloaded items
-    final_downloaded = download_db.get_downloads_by_status(
+    final_downloaded = await download_db.get_downloads_by_status(
         DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
     assert len(final_downloaded) == 1, (
@@ -466,7 +466,7 @@ async def test_process_feed_with_retention_pruning(
     assert old_files_remaining < 3, "Some old files should have been deleted"
 
     # Verify archived items exist in database
-    archived_downloads = download_db.get_downloads_by_status(
+    archived_downloads = await download_db.get_downloads_by_status(
         DownloadStatus.ARCHIVED, feed_id=feed_id
     )
     assert len(archived_downloads) >= 2, "Should have archived old downloads"
@@ -551,10 +551,10 @@ async def test_date_filtering_behavior(
     feed_config = create_feed_config(url=url)
 
     # Create feed
-    create_test_feed(feed_db, feed_id)
+    await create_test_feed(feed_db, feed_id)
 
     # Set sync timestamp - this determines the date filtering window
-    feed_db.mark_sync_success(feed_id, sync_time=sync_timestamp)
+    await feed_db.mark_sync_success(feed_id, sync_time=sync_timestamp)
 
     # Process the feed
     results = await data_coordinator.process_feed(feed_id, feed_config)

@@ -590,7 +590,7 @@ class YoutubeHandler:
             mime_type = entry.mime_type
 
         parsed_download = Download(
-            feed=feed_id,
+            feed_id=feed_id,
             id=entry.download_id,
             source_url=source_url,
             title=entry.title,

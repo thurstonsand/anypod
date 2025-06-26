@@ -14,7 +14,6 @@ from ..db.types import Download, DownloadStatus
 from ..exceptions import (
     DatabaseOperationError,
     DownloadNotFoundError,
-    FeedNotFoundError,
     FileOperationError,
     PruneError,
 )
@@ -47,7 +46,7 @@ class Pruner:
         self._file_manager = file_manager
         logger.debug("Pruner initialized.")
 
-    def _identify_prune_candidates(
+    async def _identify_prune_candidates(
         self,
         feed_id: str,
         keep_last: int | None,
@@ -84,7 +83,7 @@ class Pruner:
             )
             try:
                 downloads_for_keep_last = (
-                    self._download_db.get_downloads_to_prune_by_keep_last(
+                    await self._download_db.get_downloads_to_prune_by_keep_last(
                         feed_id, keep_last
                     )
                 )
@@ -100,8 +99,10 @@ class Pruner:
         if prune_before_date is not None:
             logger.debug("Identifying prune candidates by date rule.", extra=log_params)
             try:
-                downloads_for_since = self._download_db.get_downloads_to_prune_by_since(
-                    feed_id, prune_before_date
+                downloads_for_since = (
+                    await self._download_db.get_downloads_to_prune_by_since(
+                        feed_id, prune_before_date
+                    )
                 )
             except DatabaseOperationError as e:
                 raise PruneError(
@@ -151,7 +152,7 @@ class Pruner:
             ) from e
         logger.info("File deleted successfully during pruning.", extra=log_params)
 
-    def _archive_download(self, download: Download, feed_id: str) -> None:
+    async def _archive_download(self, download: Download, feed_id: str) -> None:
         """Archive a download in the database.
 
         Args:
@@ -168,7 +169,7 @@ class Pruner:
         logger.debug("Attempting to archive download.", extra=log_params)
 
         try:
-            self._download_db.archive_download(feed_id, download.id)
+            await self._download_db.archive_download(feed_id, download.id)
         except (DownloadNotFoundError, DatabaseOperationError) as e:
             raise PruneError(
                 message="Failed to archive download.",
@@ -216,47 +217,9 @@ class Pruner:
                 file_deleted = True
 
         # Always archive the download
-        self._archive_download(download, feed_id)
+        await self._archive_download(download, feed_id)
 
         return file_deleted
-
-    def _recalculate_total_downloads(self, feed_id: str) -> None:
-        """Recalculate and update total_downloads for a feed by counting DOWNLOADED downloads.
-
-        Args:
-            feed_id: The feed identifier.
-
-        Raises:
-            FeedNotFoundError: If the feed is not found in the database.
-        """
-        log_params: dict[str, Any] = {"feed_id": feed_id}
-        logger.debug("Recalculating total_downloads for feed.", extra=log_params)
-
-        try:
-            with self._download_db.transaction():
-                # Count only DOWNLOADED downloads (those that appear in RSS feed)
-                total_count = self._download_db.count_downloads_by_status(
-                    DownloadStatus.DOWNLOADED, feed_id=feed_id
-                )
-
-                # Update the feed's total_downloads in the same transaction
-                self._feed_db.update_total_downloads(feed_id, total_count)
-        except DatabaseOperationError as e:
-            logger.error(
-                "Failed to count downloaded items for total_downloads recalculation.",
-                exc_info=e,
-                extra=log_params,
-            )
-        except FeedNotFoundError as e:
-            raise PruneError(
-                message="Feed not found during total_downloads recalculation.",
-                feed_id=feed_id,
-            ) from e
-        else:
-            logger.info(
-                "Total downloads recalculated for feed.",
-                extra={**log_params, "new_total_downloads": total_count},
-            )
 
     async def prune_feed_downloads(
         self,
@@ -296,7 +259,7 @@ class Pruner:
         }
         logger.info("Starting pruning process for feed.", extra=log_params)
 
-        candidate_downloads = self._identify_prune_candidates(
+        candidate_downloads = await self._identify_prune_candidates(
             feed_id, keep_last, prune_before_date
         )
 
@@ -330,10 +293,6 @@ class Pruner:
                     },
                 )
 
-        # Recalculate total_downloads after archiving
-        if archived_count > 0:
-            self._recalculate_total_downloads(feed_id)
-
         logger.info(
             "Pruning process completed for feed.",
             extra={
@@ -364,14 +323,14 @@ class Pruner:
         log_params: dict[str, Any] = {"feed_id": feed_id}
         logger.info("Starting feed archival process.", extra=log_params)
 
-        with self._feed_db.transaction():
+        async with self._feed_db.session() as session:
             # Get all downloads for this feed by collecting from all status types
             all_downloads: list[Download] = []
             for status in DownloadStatus:
                 if status in (DownloadStatus.ARCHIVED, DownloadStatus.SKIPPED):
                     continue  # Skip already archived or skipped
                 try:
-                    downloads = self._download_db.get_downloads_by_status(
+                    downloads = await self._download_db.get_downloads_by_status(
                         status, feed_id=feed_id
                     )
                     all_downloads.extend(downloads)
@@ -397,20 +356,17 @@ class Pruner:
                 if file_deleted:
                     files_deleted_count += 1
 
-            # Recalculate total_downloads after archiving (should be 0)
-            if archived_count > 0:
-                self._recalculate_total_downloads(feed_id)
-
             # Disable the feed last
-            self._feed_db.set_feed_enabled(feed_id, False)
+            await self._feed_db.set_feed_enabled(feed_id, False)
+            await session.commit()
             logger.info("Feed disabled successfully.", extra=log_params)
 
-            logger.info(
-                "Feed archival process completed.",
-                extra={
-                    **log_params,
-                    "archived_count": archived_count,
-                    "files_deleted_count": files_deleted_count,
-                },
-            )
-            return archived_count, files_deleted_count
+        logger.info(
+            "Feed archival process completed.",
+            extra={
+                **log_params,
+                "archived_count": archived_count,
+                "files_deleted_count": files_deleted_count,
+            },
+        )
+        return archived_count, files_deleted_count

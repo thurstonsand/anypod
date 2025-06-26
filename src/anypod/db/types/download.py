@@ -1,16 +1,21 @@
-"""Data model representing a downloadable item."""
+"""Download table mapped with SQLModel."""
 
-from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from ..base_db import parse_datetime, parse_required_datetime
+from sqlalchemy import Column, Enum, Index, text
+from sqlalchemy.sql.schema import FetchedValue
+from sqlmodel import Field, Relationship, SQLModel
+
 from .download_status import DownloadStatus
+from .timezone_aware_datetime import SQLITE_DATETIME_NOW, TimezoneAwareDatetime
+
+if TYPE_CHECKING:
+    from .feed import Feed
 
 
-@dataclass(eq=False)
-class Download:
-    """Represent a download's data for adding and updating.
+class Download(SQLModel, table=True):
+    """Represent a download.
 
     Attributes:
         feed: The feed identifier.
@@ -37,21 +42,46 @@ class Download:
 
         Processing Timestamps:
             downloaded_at: When the download was completed (UTC).
+
+    Relationships:
+        feed_rel: The feed associated with this download.
     """
 
-    # Core identifiers and metadata
-    feed: str
-    id: str
+    # Composite primary key: (feed, id)
+    feed_id: str = Field(foreign_key="feed.id", primary_key=True)
+    id: str = Field(primary_key=True)
+
+    # Source + metadata
     source_url: str
     title: str
-    published: datetime  # Should be UTC
+    published: datetime = Field(sa_column=Column(TimezoneAwareDatetime))
+
+    # Media details
     ext: str
     mime_type: str
-    filesize: int  # Bytes
-    duration: int  # in seconds
-    status: DownloadStatus
-    discovered_at: datetime | None = None
-    updated_at: datetime | None = None
+    filesize: int = Field(gt=0)
+    duration: int = Field(gt=0)
+
+    # Processing state
+    status: DownloadStatus = Field(sa_column=Column(Enum(DownloadStatus)))
+
+    discovered_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(
+            TimezoneAwareDatetime,
+            nullable=False,
+            server_default=text(SQLITE_DATETIME_NOW),
+        ),
+    )
+    updated_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(
+            TimezoneAwareDatetime,
+            nullable=False,
+            server_default=text(SQLITE_DATETIME_NOW),
+            server_onupdate=FetchedValue(),
+        ),
+    )
 
     # Optional media metadata
     thumbnail: str | None = None
@@ -62,72 +92,59 @@ class Download:
     retries: int = 0
     last_error: str | None = None
 
-    # Processing timestamps
-    downloaded_at: datetime | None = None
+    # When the file was actually downloaded
+    downloaded_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(
+            TimezoneAwareDatetime,
+            server_onupdate=FetchedValue(),
+        ),
+    )
 
-    @classmethod
-    def from_row(cls, row: dict[str, Any]) -> "Download":
-        """Converts a row from the database to a Download.
+    # --- Relationships ----------------------------------------------------
 
-        Args:
-            row: A dictionary representing a row from the database.
+    feed: "Feed" = Relationship(back_populates="downloads")
 
-        Returns:
-            A Download object.
+    # Composite indexes
+    __table_args__ = (
+        Index("idx_feed_status", "feed_id", "status"),
+        Index("idx_feed_published", "feed_id", "published"),
+    )
 
-        Raises:
-            ValueError: If the date format is invalid or the status value is invalid.
-        """
-        published_str = row["published"]
-        try:
-            published_dt = datetime.fromisoformat(published_str)
-        except (TypeError, ValueError) as e:
-            raise ValueError(
-                f"Invalid date format for 'published' in DB row: {published_str}"
-            ) from e
-
-        status_str = row["status"]
-        try:
-            status_enum = DownloadStatus(status_str)
-        except ValueError as e:
-            raise ValueError(f"Invalid status value in DB row: {status_str}") from e
-
-        return cls(
-            feed=row["feed"],
-            id=row["id"],
-            source_url=row["source_url"],
-            title=row["title"],
-            published=published_dt,
-            ext=row["ext"],
-            mime_type=row["mime_type"],
-            filesize=row["filesize"],
-            duration=int(row["duration"]),
-            status=status_enum,
-            discovered_at=parse_required_datetime(row["discovered_at"]),
-            updated_at=parse_required_datetime(row["updated_at"]),
-            thumbnail=row.get("thumbnail"),
-            description=row.get("description"),
-            quality_info=row.get("quality_info"),
-            retries=row.get("retries", 0),
-            last_error=row.get("last_error"),
-            downloaded_at=parse_datetime(row.get("downloaded_at")),
-        )
-
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, Download):
-            return NotImplemented
-        # Equality is based solely on the composite primary key
-        return self.feed == other.feed and self.id == other.id
+    # --- Class Helpers -----------------------------------------------------
 
     def __hash__(self) -> int:
-        # Hash is based solely on the composite primary key
-        return hash((self.feed, self.id))
+        return hash((self.feed_id, self.id))
+
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, Download):
+            return False
+        return self.feed_id == other.feed_id and self.id == other.id
+
+    def model_dump_for_insert(self) -> dict[str, Any]:
+        """Use in place of Pydantic's model_dump() for insert operations.
+
+        This is necessary because certain fields are handled by the db directly,
+        so should be treated differently. It also excludes computed fields.
+
+        Returns:
+            A dictionary representation of the download, excluding fields that
+            the db handles directly.
+        """
+        dump = self.model_dump()
+        if "discovered_at" in dump and dump["discovered_at"] is None:
+            dump.pop("discovered_at")
+        if "downloaded_at" in dump and dump["downloaded_at"] is None:
+            dump.pop("downloaded_at")
+        if "updated_at" in dump and dump["updated_at"] is None:
+            dump.pop("updated_at")
+        return dump
 
     def content_equals(self, other: "Download") -> bool:
         """Compare downloads excluding timestamp fields.
 
-        Compares all fields except discovered_at and updated_at, which are
-        automatically managed by the database.
+        Compares all fields except discovered_at, updated_at, and downloaded_at,
+        which are automatically managed by the database.
 
         Args:
             other: The other Download to compare against.
@@ -135,18 +152,7 @@ class Download:
         Returns:
             True if all content fields are equal.
         """
-        return (
-            self.feed == other.feed
-            and self.id == other.id
-            and self.source_url == other.source_url
-            and self.title == other.title
-            and self.published == other.published
-            and self.ext == other.ext
-            and self.mime_type == other.mime_type
-            and self.filesize == other.filesize
-            and self.duration == other.duration
-            and self.status == other.status
-            and self.thumbnail == other.thumbnail
-            and self.description == other.description
-            and self.quality_info == other.quality_info
+        exclude_fields = {"discovered_at", "updated_at", "downloaded_at"}
+        return self.model_dump(exclude=exclude_fields) == other.model_dump(
+            exclude=exclude_fields
         )

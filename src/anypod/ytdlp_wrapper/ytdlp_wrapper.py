@@ -289,13 +289,13 @@ class YtdlpWrapper:
             YtdlpApiError: If the download fails or the downloaded file is not found.
         """
         download_temp_dir, download_data_dir = await self._prepare_download_dir(
-            download.feed
+            download.feed_id
         )
 
         logger.info(
             "Requesting media download via yt-dlp.",
             extra={
-                "feed_id": download.feed,
+                "feed_id": download.feed_id,
                 "download_id": download.id,
                 "download_target_dir": str(download_data_dir),
                 "source_url": download.source_url,
@@ -321,7 +321,7 @@ class YtdlpWrapper:
                 cookies_path=cookies_path,
             )
         except YtdlpApiError as e:
-            e.feed_id = download.feed
+            e.feed_id = download.feed_id
             e.url = download.source_url
             raise
 
@@ -335,7 +335,7 @@ class YtdlpWrapper:
                 "yt-dlp download call failed.",
                 exc_info=e,
                 extra={
-                    "feed_id": download.feed,
+                    "feed_id": download.feed_id,
                     "download_id": download.id,
                     "url": url_to_download,
                     "download_target_dir": str(download_data_dir),
@@ -347,14 +347,14 @@ class YtdlpWrapper:
                 "Unexpected error during yt-dlp download call.",
                 exc_info=e,
                 extra={
-                    "feed_id": download.feed,
+                    "feed_id": download.feed_id,
                     "download_id": download.id,
                     "url": url_to_download,
                 },
             )
             raise YtdlpApiError(
                 message="Unexpected error during media download.",
-                feed_id=download.feed,
+                feed_id=download.feed_id,
                 download_id=download.id,
                 url=url_to_download,
             ) from e
@@ -366,7 +366,7 @@ class YtdlpWrapper:
         if not downloaded_files:
             raise YtdlpApiError(
                 message="Downloaded file not found after attempted download. yt-dlp might have filtered.",
-                feed_id=download.feed,
+                feed_id=download.feed_id,
                 download_id=download.id,
                 url=url_to_download,
             )
@@ -374,7 +374,7 @@ class YtdlpWrapper:
             logger.warning(
                 "Multiple files found after attempting download. Using the first one.",
                 extra={
-                    "feed_id": download.feed,
+                    "feed_id": download.feed_id,
                     "download_id": download.id,
                     "files_found": [str(f) for f in downloaded_files],
                 },
@@ -386,7 +386,7 @@ class YtdlpWrapper:
         if not await aiofiles.os.path.isfile(downloaded_file):
             raise YtdlpApiError(
                 message="Downloaded file is invalid (not a file).",
-                feed_id=download.feed,
+                feed_id=download.feed_id,
                 download_id=download.id,
                 url=url_to_download,
             )
@@ -395,7 +395,7 @@ class YtdlpWrapper:
         if file_stat.st_size == 0:
             raise YtdlpApiError(
                 message="Downloaded file is invalid (empty).",
-                feed_id=download.feed,
+                feed_id=download.feed_id,
                 download_id=download.id,
                 url=url_to_download,
             )
@@ -403,7 +403,7 @@ class YtdlpWrapper:
         logger.info(
             "Download complete.",
             extra={
-                "feed_id": download.feed,
+                "feed_id": download.feed_id,
                 "download_id": download.id,
                 "file_path": str(downloaded_file),
             },

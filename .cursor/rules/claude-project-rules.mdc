@@ -37,13 +37,6 @@ uv run pre-commit run --all-files               # All of the above, prefer to us
 uvx yt-dlp # can research/view real data from youtube videos for research. see @example_feeds.yaml for real links
 ```
 
-#### Serena MCP
-
-Serena is capable of searching and updating code by symbol, relying on lsp to accurately and comprehensively find all references. Use it in conjunction with your other tools to make changes to the codebase. particularly rely on Serena for:
-
-- Gather information about a file/class: `get_symbol_overview` in conjunction with `find_symbol`, `find_referencing_symbols` to quickly and efficiently gather information an overview.
-- Do not use it to modify code, just to search by symbol
-
 ## Architecture
 
 ### Core Components

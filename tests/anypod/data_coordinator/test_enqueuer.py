@@ -48,13 +48,24 @@ MOCK_FEED = Feed(
 @pytest.fixture
 def mock_feed_db() -> MagicMock:
     """Provides a MagicMock for FeedDatabase."""
-    return MagicMock(spec=FeedDatabase)
+    mock = MagicMock(spec=FeedDatabase)
+    # Mock async methods
+    mock.get_feed_by_id = AsyncMock()
+    mock.update_feed_metadata = AsyncMock()
+    return mock
 
 
 @pytest.fixture
 def mock_download_db() -> MagicMock:
     """Provides a MagicMock for DownloadDatabase."""
-    return MagicMock(spec=DownloadDatabase)
+    mock = MagicMock(spec=DownloadDatabase)
+    # Mock async methods
+    mock.get_downloads_by_status = AsyncMock()
+    mock.get_download_by_id = AsyncMock()
+    mock.upsert_download = AsyncMock()
+    mock.mark_as_queued_from_upcoming = AsyncMock()
+    mock.bump_retries = AsyncMock()
+    return mock
 
 
 @pytest.fixture
@@ -124,7 +135,7 @@ def create_download(
 
     current_time = datetime.now(UTC)
     return Download(
-        feed=feed_id,
+        feed_id=feed_id,
         id=id,
         source_url=source_url or f"https://example.com/video/{id}",
         title=title or f"Test Video {id}",
@@ -148,7 +159,8 @@ FETCH_UNTIL_DATE = datetime.now(UTC)
 
 
 @pytest.mark.unit
-def test_synchronize_feed_metadata_handles_removed_overrides(
+@pytest.mark.asyncio
+async def test_synchronize_feed_metadata_handles_removed_overrides(
     enqueuer: Enqueuer,
     mock_feed_db: MagicMock,
 ):
@@ -200,12 +212,12 @@ def test_synchronize_feed_metadata_handles_removed_overrides(
 
     mock_feed_db.get_feed_by_id.return_value = current_feed_with_overrides
 
-    enqueuer._synchronize_feed_metadata(
+    await enqueuer._synchronize_feed_metadata(
         FEED_ID, fetched_feed, feed_config_no_overrides, {"feed_id": FEED_ID}
     )
 
     # Verify update_feed_metadata was called with the right changes
-    mock_feed_db.update_feed_metadata.assert_called_once()
+    mock_feed_db.update_feed_metadata.assert_awaited_once()
     call_args = mock_feed_db.update_feed_metadata.call_args
 
     # Should update to source values, clearing override fields that have no source equivalent
@@ -226,7 +238,8 @@ def test_synchronize_feed_metadata_handles_removed_overrides(
 
 
 @pytest.mark.unit
-def test_synchronize_feed_metadata_handles_partial_override_removal(
+@pytest.mark.asyncio
+async def test_synchronize_feed_metadata_handles_partial_override_removal(
     enqueuer: Enqueuer,
     mock_feed_db: MagicMock,
 ):
@@ -284,12 +297,12 @@ def test_synchronize_feed_metadata_handles_partial_override_removal(
 
     mock_feed_db.get_feed_by_id.return_value = current_feed
 
-    enqueuer._synchronize_feed_metadata(
+    await enqueuer._synchronize_feed_metadata(
         FEED_ID, fetched_feed, feed_config_partial, {"feed_id": FEED_ID}
     )
 
     # Verify the right mix of overrides and source values
-    mock_feed_db.update_feed_metadata.assert_called_once()
+    mock_feed_db.update_feed_metadata.assert_awaited_once()
     call_args = mock_feed_db.update_feed_metadata.call_args
 
     expected_updates = {
@@ -325,7 +338,7 @@ async def test_handle_existing_upcoming_downloads_none_found(
         FEED_ID, sample_feed_config
     )
     assert count == 0
-    mock_download_db.get_downloads_by_status.assert_called_once_with(
+    mock_download_db.get_downloads_by_status.assert_awaited_once_with(
         DownloadStatus.UPCOMING, feed_id=FEED_ID
     )
 
@@ -353,7 +366,7 @@ async def test_handle_existing_upcoming_download_transitions_to_queued(
     mock_ytdlp_wrapper.fetch_metadata.assert_awaited_once_with(
         FEED_ID, upcoming_dl.source_url, sample_feed_config.yt_args, cookies_path=None
     )
-    mock_download_db.mark_as_queued_from_upcoming.assert_called_once_with(
+    mock_download_db.mark_as_queued_from_upcoming.assert_awaited_once_with(
         FEED_ID, "video1"
     )
 
@@ -411,7 +424,7 @@ async def test_handle_existing_upcoming_download_refetch_fails_bumps_retries(
     )
 
     assert count == 0
-    mock_download_db.bump_retries.assert_called_once_with(
+    mock_download_db.bump_retries.assert_awaited_once_with(
         feed_id=FEED_ID,
         download_id="video1",
         error_message="Failed to re-fetch metadata for upcoming download.",
@@ -449,7 +462,7 @@ async def test_handle_existing_upcoming_download_refetch_fails_transitions_to_er
     )
 
     assert count == 0
-    mock_download_db.bump_retries.assert_called_once_with(
+    mock_download_db.bump_retries.assert_awaited_once_with(
         feed_id=FEED_ID,
         download_id="video1",
         error_message="Failed to re-fetch metadata for upcoming download.",
@@ -482,7 +495,7 @@ async def test_handle_existing_upcoming_download_refetch_returns_no_match(
     )
 
     assert count == 0
-    mock_download_db.bump_retries.assert_called_once_with(
+    mock_download_db.bump_retries.assert_awaited_once_with(
         feed_id=FEED_ID,
         download_id="video1",
         error_message="Original ID not found in re-fetched metadata, or mismatched/multiple downloads found.",
@@ -541,8 +554,8 @@ async def test_fetch_and_process_new_feed_downloads_new_vod_download(
     )
 
     assert count == 1
-    mock_download_db.get_download_by_id.assert_called_once_with(FEED_ID, "new_video1")
-    mock_download_db.upsert_download.assert_called_once_with(new_vod)
+    mock_download_db.get_download_by_id.assert_awaited_once_with(FEED_ID, "new_video1")
+    mock_download_db.upsert_download.assert_awaited_once_with(new_vod)
 
 
 @pytest.mark.unit
@@ -565,10 +578,10 @@ async def test_fetch_and_process_new_feed_downloads_new_upcoming_download(
     )
 
     assert count == 0  # Not QUEUED yet
-    mock_download_db.get_download_by_id.assert_called_once_with(
+    mock_download_db.get_download_by_id.assert_awaited_once_with(
         FEED_ID, "new_video_live"
     )
-    mock_download_db.upsert_download.assert_called_once_with(new_upcoming)
+    mock_download_db.upsert_download.assert_awaited_once_with(new_upcoming)
 
 
 @pytest.mark.unit
@@ -591,8 +604,8 @@ async def test_fetch_and_process_new_feed_downloads_existing_upcoming_now_vod(
     )
 
     assert count == 1
-    mock_download_db.get_download_by_id.assert_called_once_with(FEED_ID, "video_live1")
-    mock_download_db.upsert_download.assert_called_once()
+    mock_download_db.get_download_by_id.assert_awaited_once_with(FEED_ID, "video_live1")
+    mock_download_db.upsert_download.assert_awaited_once()
     upserted_download = mock_download_db.upsert_download.call_args[0][0]
     assert upserted_download == fetched_as_vod
 
@@ -620,7 +633,7 @@ async def test_fetch_and_process_new_feed_downloads_existing_downloaded_ignored(
     )
 
     assert count == 0
-    mock_download_db.get_download_by_id.assert_called_once_with(FEED_ID, "video_done")
+    mock_download_db.get_download_by_id.assert_awaited_once_with(FEED_ID, "video_done")
     mock_download_db.requeue_downloads.assert_not_called()
     mock_download_db.upsert_download.assert_not_called()
 
@@ -645,8 +658,8 @@ async def test_fetch_and_process_new_feed_downloads_existing_error_requeued(
     )
 
     assert count == 1  # Because it was re-queued
-    mock_download_db.get_download_by_id.assert_called_once_with(FEED_ID, "video_err")
-    mock_download_db.upsert_download.assert_called_once()
+    mock_download_db.get_download_by_id.assert_awaited_once_with(FEED_ID, "video_err")
+    mock_download_db.upsert_download.assert_awaited_once()
     upserted_download = mock_download_db.upsert_download.call_args[0][0]
     assert upserted_download == fetched_as_queued
 
@@ -860,7 +873,7 @@ async def test_enqueue_new_downloads_no_upcoming_no_new(
     )
 
     assert queued_count == 0
-    mock_download_db.get_downloads_by_status.assert_called_once_with(
+    mock_download_db.get_downloads_by_status.assert_awaited_once_with(
         DownloadStatus.UPCOMING, feed_id=FEED_ID
     )
     mock_ytdlp_wrapper.fetch_metadata.assert_awaited_once_with(

@@ -41,14 +41,26 @@ class PathManager:
         """Return the base URL for feed and media links."""
         return self._base_url
 
-    @property
-    def db_file_path(self) -> Path:
-        """Return the path to the database file.
+    async def db_dir(self) -> Path:
+        """Return the directory containing the database file.
+
+        Creates the directory if it doesn't exist.
 
         Returns:
-            Path to the database file.
+            Path to the database directory.
+
+        Raises:
+            FileOperationError: If the directory cannot be created.
         """
-        return self._base_data_dir / "anypod.db"
+        path = self._base_data_dir / "db"
+        try:
+            await aiofiles.os.makedirs(path, exist_ok=True)
+        except OSError as e:
+            raise FileOperationError(
+                "Failed to create database directory.",
+                file_name=str(path),
+            ) from e
+        return path
 
     async def feed_data_dir(self, feed_id: str) -> Path:
         """Return the directory for a feed's downloaded files.

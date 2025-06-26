@@ -63,10 +63,10 @@ class FeedgenCore:
         # Handle optional fields with null checks
         if feed.category:
             fg.podcast.itunes_category(  # type: ignore
-                feed.category.as_dict_list()
+                feed.category.rss_list()
             )
         if feed.explicit:
-            fg.podcast.itunes_explicit(str(feed.explicit))  # type: ignore
+            fg.podcast.itunes_explicit(feed.explicit.rss_str())  # type: ignore
         if feed.image_url:
             try:
                 fg.podcast.itunes_image(feed.image_url)  # type: ignore
@@ -126,7 +126,7 @@ class FeedgenCore:
                     logger.warning(
                         "Skipping invalid thumbnail URL for download.",
                         extra={
-                            "feed_id": download.feed,
+                            "feed_id": download.feed_id,
                             "download_id": download.id,
                             "thumbnail_url": download.thumbnail,
                         },
@@ -134,12 +134,12 @@ class FeedgenCore:
 
             try:
                 media_url = self._paths.media_file_url(
-                    download.feed, download.id, download.ext
+                    download.feed_id, download.id, download.ext
                 )
             except ValueError as e:
                 raise RSSGenerationError(
                     "Invalid feed or download identifier for media URL.",
-                    feed_id=download.feed,
+                    feed_id=download.feed_id,
                 ) from e
 
             fe.enclosure(  # type: ignore

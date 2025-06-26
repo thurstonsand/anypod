@@ -65,7 +65,7 @@ INVALID_FEED_CONFIG = FeedConfig(
 )
 
 
-def create_test_feed(feed_db: FeedDatabase, feed_id: str, url: str) -> Feed:
+async def create_test_feed(feed_db: FeedDatabase, feed_id: str, url: str) -> Feed:
     """Create a test feed in the database."""
     feed = Feed(
         id=feed_id,
@@ -75,7 +75,7 @@ def create_test_feed(feed_db: FeedDatabase, feed_id: str, url: str) -> Feed:
         last_successful_sync=datetime.min.replace(tzinfo=UTC),
         title=f"Test Feed {feed_id}",
     )
-    feed_db.upsert_feed(feed)
+    await feed_db.upsert_feed(feed)
     return feed
 
 
@@ -104,7 +104,7 @@ async def enqueue_test_items(
         fetch_since_date = datetime.min.replace(tzinfo=UTC)
 
     # Create feed in database first
-    create_test_feed(feed_db, feed_id, feed_config.url)
+    await create_test_feed(feed_db, feed_id, feed_config.url)
 
     fetch_until_date = datetime.now(UTC)
     return await enqueuer.enqueue_new_downloads(
@@ -137,7 +137,7 @@ async def test_download_queued_single_video_success(
     assert queued_count >= 1, "Expected at least 1 item to be queued by enqueuer"
 
     # Verify item is in QUEUED status
-    queued_downloads = download_db.get_downloads_by_status(
+    queued_downloads = await download_db.get_downloads_by_status(
         DownloadStatus.QUEUED, feed_id=feed_id
     )
     assert len(queued_downloads) >= 1
@@ -159,7 +159,7 @@ async def test_download_queued_single_video_success(
     assert failure_count == 0, f"Expected 0 failures, got {failure_count}"
 
     # Verify database was updated
-    downloads = download_db.get_downloads_by_status(
+    downloads = await download_db.get_downloads_by_status(
         DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
     assert len(downloads) >= 1
@@ -177,7 +177,7 @@ async def test_download_queued_single_video_success(
     assert await file_manager.download_exists(feed_id, download.id, download.ext)
 
     # Verify no more queued items for this feed
-    remaining_queued = download_db.get_downloads_by_status(
+    remaining_queued = await download_db.get_downloads_by_status(
         DownloadStatus.QUEUED, feed_id=feed_id
     )
     assert len(remaining_queued) == 0
@@ -204,7 +204,7 @@ async def test_download_queued_multiple_videos_success(
     assert queued_count >= 1, "Expected at least 1 item to be queued by enqueuer"
 
     # Get original queued items
-    original_queued = download_db.get_downloads_by_status(
+    original_queued = await download_db.get_downloads_by_status(
         DownloadStatus.QUEUED, feed_id=feed_id
     )
     original_count = len(original_queued)
@@ -223,7 +223,7 @@ async def test_download_queued_multiple_videos_success(
     assert success_count >= 1
 
     # Verify database updates
-    downloaded_items = download_db.get_downloads_by_status(
+    downloaded_items = await download_db.get_downloads_by_status(
         DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
     assert len(downloaded_items) == success_count
@@ -271,7 +271,7 @@ async def test_download_queued_with_limit(
 
     # If we got a success, verify it
     if success_count > 0:
-        downloaded_items = download_db.get_downloads_by_status(
+        downloaded_items = await download_db.get_downloads_by_status(
             DownloadStatus.DOWNLOADED, feed_id=feed_id
         )
         assert len(downloaded_items) == success_count
@@ -302,7 +302,7 @@ async def test_download_queued_no_queued_items(
     assert failure_count == 0
 
     # Verify no downloads in database for this feed
-    all_downloads = download_db.get_downloads_by_status(
+    all_downloads = await download_db.get_downloads_by_status(
         DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
     assert len(all_downloads) == 0
@@ -321,12 +321,12 @@ async def test_download_queued_handles_invalid_urls(
     feed_config = INVALID_FEED_CONFIG
 
     # Create the feed first
-    create_test_feed(feed_db, feed_id, feed_config.url)
+    await create_test_feed(feed_db, feed_id, feed_config.url)
 
     # Manually insert an invalid download to test error handling
     published_time = datetime.now(UTC)
     invalid_download = Download(
-        feed=feed_id,
+        feed_id=feed_id,
         id="invalid_video_id",
         source_url=INVALID_VIDEO_URL,
         title="Invalid Video",
@@ -340,10 +340,10 @@ async def test_download_queued_handles_invalid_urls(
         discovered_at=published_time,
         updated_at=published_time,
     )
-    download_db.upsert_download(invalid_download)
+    await download_db.upsert_download(invalid_download)
 
     # Verify it's queued
-    queued_downloads = download_db.get_downloads_by_status(
+    queued_downloads = await download_db.get_downloads_by_status(
         DownloadStatus.QUEUED, feed_id=feed_id
     )
     assert len(queued_downloads) == 1
@@ -361,7 +361,7 @@ async def test_download_queued_handles_invalid_urls(
     assert failure_count == 1
 
     # Verify the download had its retry count bumped
-    updated_download = download_db.get_download_by_id(feed_id, "invalid_video_id")
+    updated_download = await download_db.get_download_by_id(feed_id, "invalid_video_id")
     assert updated_download.retries > 0
     assert updated_download.last_error is not None
 
@@ -386,12 +386,12 @@ async def test_download_queued_retry_logic_max_errors(
     )
 
     # Create the feed first
-    create_test_feed(feed_db, feed_id, feed_config.url)
+    await create_test_feed(feed_db, feed_id, feed_config.url)
 
     # Insert an invalid download
     published_time = datetime.now(UTC)
     invalid_download = Download(
-        feed=feed_id,
+        feed_id=feed_id,
         id="will_error_out",
         source_url=INVALID_VIDEO_URL,
         title="Will Error Out",
@@ -405,7 +405,7 @@ async def test_download_queued_retry_logic_max_errors(
         discovered_at=published_time,
         updated_at=published_time,
     )
-    download_db.upsert_download(invalid_download)
+    await download_db.upsert_download(invalid_download)
 
     # Run downloader - first failure, should bump retry
     success_count, failure_count = await downloader.download_queued(
@@ -418,7 +418,7 @@ async def test_download_queued_retry_logic_max_errors(
     assert failure_count == 1
 
     # Check download status - should now be ERROR since max_errors=1
-    updated_download = download_db.get_download_by_id(feed_id, "will_error_out")
+    updated_download = await download_db.get_download_by_id(feed_id, "will_error_out")
     assert updated_download.retries == 1
     assert updated_download.status == DownloadStatus.ERROR
     assert updated_download.last_error is not None
@@ -447,7 +447,7 @@ async def test_download_queued_mixed_success_and_failure(
     # Then manually add an invalid download to the same feed
     published_time = datetime.now(UTC)
     invalid_download = Download(
-        feed=feed_id,
+        feed_id=feed_id,
         id="invalid_mixed_test",
         source_url=INVALID_VIDEO_URL,
         title="Invalid Mixed Test",
@@ -461,10 +461,10 @@ async def test_download_queued_mixed_success_and_failure(
         discovered_at=published_time,
         updated_at=published_time,
     )
-    download_db.upsert_download(invalid_download)
+    await download_db.upsert_download(invalid_download)
 
     # Verify we have at least 2 queued items
-    queued_downloads = download_db.get_downloads_by_status(
+    queued_downloads = await download_db.get_downloads_by_status(
         DownloadStatus.QUEUED, feed_id=feed_id
     )
     assert len(queued_downloads) >= 2
@@ -483,7 +483,7 @@ async def test_download_queued_mixed_success_and_failure(
     assert success_count + failure_count == len(queued_downloads)
 
     # Verify successful downloads
-    downloaded_items = download_db.get_downloads_by_status(
+    downloaded_items = await download_db.get_downloads_by_status(
         DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
     assert len(downloaded_items) == success_count
@@ -494,7 +494,9 @@ async def test_download_queued_mixed_success_and_failure(
         )
 
     # Verify failed download had retry bumped
-    failed_download = download_db.get_download_by_id(feed_id, "invalid_mixed_test")
+    failed_download = await download_db.get_download_by_id(
+        feed_id, "invalid_mixed_test"
+    )
     assert failed_download.retries > 0
     assert failed_download.last_error is not None
 
@@ -528,7 +530,7 @@ async def test_download_queued_file_properties(
     assert success_count >= 1
 
     # Get the downloaded item
-    downloads = download_db.get_downloads_by_status(
+    downloads = await download_db.get_downloads_by_status(
         DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
     download = downloads[0]
@@ -585,7 +587,7 @@ async def test_filesize_metadata_flow(
     assert queued_count >= 1, "Should have queued at least one item"
 
     # Get the queued item and check initial filesize
-    queued_items = download_db.get_downloads_by_status(
+    queued_items = await download_db.get_downloads_by_status(
         DownloadStatus.QUEUED, feed_id=feed_id
     )
     queued_item = queued_items[0]
@@ -604,7 +606,7 @@ async def test_filesize_metadata_flow(
     assert success_count >= 1, "Should have downloaded at least one item"
 
     # Get the downloaded item
-    downloaded_items = download_db.get_downloads_by_status(
+    downloaded_items = await download_db.get_downloads_by_status(
         DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
     downloaded_item = downloaded_items[0]

@@ -11,6 +11,7 @@ import signal
 from ..config import AppSettings
 from ..data_coordinator import DataCoordinator, Downloader, Enqueuer, Pruner
 from ..db import DownloadDatabase, FeedDatabase
+from ..db.sqlalchemy_core import SqlalchemyCore
 from ..exceptions import (
     DatabaseOperationError,
     StateReconciliationError,
@@ -132,13 +133,15 @@ async def default(settings: AppSettings) -> None:
         )
         raise DatabaseOperationError("Failed to create data directory.") from e
 
-    logger.info(
-        "Initializing database components.",
-        extra={"db_path": str(path_manager.db_file_path)},
-    )
+    logger.info("Initializing database components.")
 
-    feed_db = FeedDatabase(db_path=path_manager.db_file_path)
-    download_db = DownloadDatabase(db_path=path_manager.db_file_path)
+    db_dir = await path_manager.db_dir()
+    db_core = SqlalchemyCore(db_dir)
+    # TODO: use alembic instead
+    await db_core.create_db_and_tables()
+
+    feed_db = FeedDatabase(db_core)
+    download_db = DownloadDatabase(db_core)
 
     scheduler = None
     try:
@@ -168,10 +171,9 @@ async def default(settings: AppSettings) -> None:
             logger.error("Error shutting down scheduler.", exc_info=e)
 
         try:
-            feed_db.close()
-            download_db.close()
+            await db_core.close()
             logger.info("Database connections closed.")
-        except DatabaseOperationError as e:
+        except Exception as e:
             logger.error("Error closing database connections.", exc_info=e)
 
         logger.info("Anypod shutdown completed.")

@@ -5,7 +5,6 @@ feed metadata, identifying new downloads, and managing their status in the
 database for subsequent processing by the Downloader.
 """
 
-from copy import deepcopy
 from datetime import datetime
 import logging
 from pathlib import Path
@@ -51,7 +50,7 @@ class Enqueuer:
         self._ytdlp_wrapper = ytdlp_wrapper
         logger.debug("Enqueuer initialized.")
 
-    def _try_bump_retries_and_log(
+    async def _try_bump_retries_and_log(
         self,
         feed_id: str,
         download_id: str,
@@ -73,7 +72,7 @@ class Enqueuer:
         """
         transitioned_to_error_state = False
         try:
-            _, _, transitioned_to_error = self._download_db.bump_retries(
+            _, _, transitioned_to_error = await self._download_db.bump_retries(
                 feed_id=feed_id,
                 download_id=download_id,
                 error_message=error_message,
@@ -101,7 +100,7 @@ class Enqueuer:
 
     # --- Helpers for _handle_existing_upcoming_downloads ---
 
-    def _get_upcoming_downloads_for_feed(
+    async def _get_upcoming_downloads_for_feed(
         self,
         feed_id: str,
         feed_url: str,
@@ -121,7 +120,7 @@ class Enqueuer:
         log_params = {"feed_id": feed_id}
         logger.debug("Fetching upcoming downloads from DB.", extra=log_params)
         try:
-            return self._download_db.get_downloads_by_status(
+            return await self._download_db.get_downloads_by_status(
                 DownloadStatus.UPCOMING, feed_id=feed_id
             )
         except (DatabaseOperationError, ValueError) as e:
@@ -156,7 +155,7 @@ class Enqueuer:
                 return None
             # Expected case
             case [download] if (
-                download.id == original_download_id and download.feed == feed_id
+                download.id == original_download_id and download.feed_id == feed_id
             ):
                 return download
             case [download]:
@@ -178,7 +177,10 @@ class Enqueuer:
                     },
                 )
                 for download in downloads:
-                    if download.id == original_download_id and download.feed == feed_id:
+                    if (
+                        download.id == original_download_id
+                        and download.feed_id == feed_id
+                    ):
                         return download
                 logger.warning(
                     "Could not find matching download in re-fetched multiple metadata. Original download might have been removed or changed ID.",
@@ -186,7 +188,7 @@ class Enqueuer:
                 )
                 return None
 
-    def _update_status_to_queued_if_vod(
+    async def _update_status_to_queued_if_vod(
         self,
         feed_id: str,
         db_download_id: str,
@@ -211,7 +213,7 @@ class Enqueuer:
                     extra=download_log_params,
                 )
                 try:
-                    self._download_db.mark_as_queued_from_upcoming(
+                    await self._download_db.mark_as_queued_from_upcoming(
                         feed_id, db_download_id
                     )
                 except (DownloadNotFoundError, DatabaseOperationError) as e:
@@ -288,7 +290,7 @@ class Enqueuer:
                 },
                 exc_info=e,
             )
-            self._try_bump_retries_and_log(
+            await self._try_bump_retries_and_log(
                 feed_id,
                 db_download.id,
                 error_message,
@@ -308,7 +310,7 @@ class Enqueuer:
                 extra=download_log_params,
             )
 
-            self._try_bump_retries_and_log(
+            await self._try_bump_retries_and_log(
                 feed_id,
                 db_download.id,
                 error_message,
@@ -317,7 +319,7 @@ class Enqueuer:
             )
             return False
 
-        return self._update_status_to_queued_if_vod(
+        return await self._update_status_to_queued_if_vod(
             feed_id, db_download.id, refetched_download, download_log_params
         )
 
@@ -392,7 +394,7 @@ class Enqueuer:
             )
         return fetched_feed, all_fetched_downloads
 
-    def _synchronize_feed_metadata(
+    async def _synchronize_feed_metadata(
         self,
         feed_id: str,
         fetched_feed: Feed,
@@ -414,110 +416,108 @@ class Enqueuer:
         Raises:
             EnqueueError: If feed is not found or update fails.
         """
-        try:
-            # Get current feed from database
-            current_feed = self._feed_db.get_feed_by_id(feed_id)
-        except FeedNotFoundError as e:
-            raise EnqueueError(
-                "Feed not found in database during metadata sync.",
-                feed_id=feed_id,
-            ) from e
-        except DatabaseOperationError as e:
-            logger.warning(
-                "Could not retrieve feed for metadata sync, skipping.",
-                extra=log_params,
-                exc_info=e,
-            )
-            return
+        async with self._feed_db.session() as session:
+            try:
+                # Get current feed from database
+                current_feed = await self._feed_db.get_feed_by_id(feed_id)
+            except FeedNotFoundError as e:
+                raise EnqueueError(
+                    "Feed not found in database during metadata sync.",
+                    feed_id=feed_id,
+                ) from e
+            except DatabaseOperationError as e:
+                logger.warning(
+                    "Could not retrieve feed for metadata sync, skipping.",
+                    extra=log_params,
+                    exc_info=e,
+                )
+                return
 
-        # Current metadata in database
-        current_metadata = {
-            "title": current_feed.title,
-            "subtitle": current_feed.subtitle,
-            "description": current_feed.description,
-            "language": current_feed.language,
-            "author": current_feed.author,
-            "image_url": current_feed.image_url,
-            "category": str(current_feed.category) if current_feed.category else None,
-            "explicit": str(current_feed.explicit) if current_feed.explicit else None,
-        }
-
-        # Start with override metadata if present
-        metadata_overrides = feed_config.metadata
-        if metadata_overrides:
-            candidate_metadata: dict[str, Any] = {
-                "title": metadata_overrides.title,
-                "subtitle": metadata_overrides.subtitle,
-                "description": metadata_overrides.description,
-                "language": metadata_overrides.language,
-                "author": metadata_overrides.author,
-                "image_url": metadata_overrides.image_url,
-                "category": str(metadata_overrides.categories)
-                if metadata_overrides.categories
-                else None,
-                "explicit": str(metadata_overrides.explicit)
-                if metadata_overrides.explicit
-                else None,
+            # Current metadata in database
+            current_metadata = {
+                "title": current_feed.title,
+                "subtitle": current_feed.subtitle,
+                "description": current_feed.description,
+                "language": current_feed.language,
+                "author": current_feed.author,
+                "image_url": current_feed.image_url,
+                "category": current_feed.category,
+                "explicit": current_feed.explicit,
             }
-        else:
-            candidate_metadata: dict[str, Any] = {}
 
-        # Fill in missing values from fetched feed
-        candidate_metadata["title"] = (
-            candidate_metadata.get("title") or fetched_feed.title
-        )
-        candidate_metadata["subtitle"] = (
-            candidate_metadata.get("subtitle") or fetched_feed.subtitle
-        )
-        candidate_metadata["description"] = (
-            candidate_metadata.get("description") or fetched_feed.description
-        )
-        candidate_metadata["language"] = (
-            candidate_metadata.get("language") or fetched_feed.language
-        )
-        candidate_metadata["author"] = (
-            candidate_metadata.get("author") or fetched_feed.author
-        )
-        candidate_metadata["image_url"] = (
-            candidate_metadata.get("image_url") or fetched_feed.image_url
-        )
-        candidate_metadata["category"] = candidate_metadata.get("category") or (
-            str(fetched_feed.category) if fetched_feed.category else None
-        )
-        candidate_metadata["explicit"] = candidate_metadata.get("explicit") or (
-            str(fetched_feed.explicit) if fetched_feed.explicit else None
-        )
+            # Start with override metadata if present
+            metadata_overrides = feed_config.metadata
+            if metadata_overrides:
+                candidate_metadata: dict[str, Any] = {
+                    "title": metadata_overrides.title,
+                    "subtitle": metadata_overrides.subtitle,
+                    "description": metadata_overrides.description,
+                    "language": metadata_overrides.language,
+                    "author": metadata_overrides.author,
+                    "image_url": metadata_overrides.image_url,
+                    "category": metadata_overrides.categories,
+                    "explicit": metadata_overrides.explicit,
+                }
+            else:
+                candidate_metadata: dict[str, Any] = {}
 
-        # Find fields that need updating
-        updates_needed = {
-            key: val
-            for key, val in candidate_metadata.items()
-            if current_metadata[key] != val
-        }
-
-        if not updates_needed:
-            logger.debug(
-                "No feed metadata changes detected, skipping update.",
-                extra=log_params,
+            # Fill in missing values from fetched feed
+            candidate_metadata["title"] = (
+                candidate_metadata.get("title") or fetched_feed.title
             )
-            return
+            candidate_metadata["subtitle"] = (
+                candidate_metadata.get("subtitle") or fetched_feed.subtitle
+            )
+            candidate_metadata["description"] = (
+                candidate_metadata.get("description") or fetched_feed.description
+            )
+            candidate_metadata["language"] = (
+                candidate_metadata.get("language") or fetched_feed.language
+            )
+            candidate_metadata["author"] = (
+                candidate_metadata.get("author") or fetched_feed.author
+            )
+            candidate_metadata["image_url"] = (
+                candidate_metadata.get("image_url") or fetched_feed.image_url
+            )
+            candidate_metadata["category"] = (
+                candidate_metadata.get("category") or fetched_feed.category
+            )
+            candidate_metadata["explicit"] = (
+                candidate_metadata.get("explicit") or fetched_feed.explicit
+            )
 
-        logger.info(
-            "Feed metadata changes detected, updating database.",
-            extra={**log_params, "changed_fields": list(updates_needed.keys())},
-        )
+            # Find fields that need updating
+            updates_needed = {
+                key: val
+                for key, val in candidate_metadata.items()
+                if current_metadata[key] != val
+            }
 
-        # Use transaction for atomic update
-        try:
-            self._feed_db.update_feed_metadata(feed_id, **updates_needed)
-        except (FeedNotFoundError, DatabaseOperationError) as e:
-            raise EnqueueError(
-                "Could not update feed metadata in database.",
-                feed_id=feed_id,
-            ) from e
+            if not updates_needed:
+                logger.debug(
+                    "No feed metadata changes detected, skipping update.",
+                    extra=log_params,
+                )
+                return
+
+            logger.info(
+                "Feed metadata changes detected, updating database.",
+                extra={**log_params, "changed_fields": list(updates_needed.keys())},
+            )
+
+            # Update metadata
+            try:
+                await self._feed_db.update_feed_metadata(feed_id, **updates_needed)
+                await session.commit()
+            except (FeedNotFoundError, DatabaseOperationError) as e:
+                raise EnqueueError(
+                    "Could not update feed metadata in database.",
+                    feed_id=feed_id,
+                ) from e
 
     # TODO: if this fails, download is potentially lost forever
-    def _handle_newly_fetched_download(
+    async def _handle_newly_fetched_download(
         self, download: Download, log_params: dict[str, Any]
     ) -> bool:
         """Handle a new download by upserting it to the database.
@@ -534,7 +534,7 @@ class Enqueuer:
             extra=log_params,
         )
         try:
-            self._download_db.upsert_download(download)
+            await self._download_db.upsert_download(download)
         except DatabaseOperationError as e:
             raise EnqueueError(
                 "Failed to insert new download.",
@@ -544,7 +544,7 @@ class Enqueuer:
             logger.debug("Successfully upserted download.", extra=log_params)
             return download.status == DownloadStatus.QUEUED
 
-    def _handle_existing_fetched_download(
+    async def _handle_existing_fetched_download(
         self,
         existing_db_download: Download,
         fetched_download: Download,
@@ -568,7 +568,7 @@ class Enqueuer:
         }
 
         # Create a copy of existing download to track changes
-        updated_download = deepcopy(existing_db_download)
+        updated_download = existing_db_download.model_copy()
 
         # Apply metadata changes directly to the copy
         if existing_db_download.source_url != fetched_download.source_url:
@@ -640,7 +640,7 @@ class Enqueuer:
                 extra=current_log_params,
             )
             try:
-                self._download_db.upsert_download(updated_download)
+                await self._download_db.upsert_download(updated_download)
             except DatabaseOperationError as e:
                 raise EnqueueError(
                     "Failed to update download.",
@@ -655,7 +655,7 @@ class Enqueuer:
             )
             return False
 
-    def _process_single_download(
+    async def _process_single_download(
         self,
         fetched_dl: Download,
         feed_id: str,
@@ -679,7 +679,7 @@ class Enqueuer:
         logger.debug("Processing fetched download.", extra=log_params)
 
         try:
-            existing_db_download = self._download_db.get_download_by_id(
+            existing_db_download = await self._download_db.get_download_by_id(
                 feed_id, fetched_dl.id
             )
         except DatabaseOperationError as e:
@@ -690,9 +690,9 @@ class Enqueuer:
             )
             return False  # Did not result in a new QUEUED download
         except DownloadNotFoundError:
-            return self._handle_newly_fetched_download(fetched_dl, log_params)
+            return await self._handle_newly_fetched_download(fetched_dl, log_params)
         else:
-            return self._handle_existing_fetched_download(
+            return await self._handle_existing_fetched_download(
                 existing_db_download, fetched_dl, feed_id, log_params
             )
 
@@ -716,7 +716,7 @@ class Enqueuer:
         feed_log_params = {"feed_id": feed_id}
         logger.debug("Handling existing upcoming downloads.", extra=feed_log_params)
 
-        upcoming_db_downloads = self._get_upcoming_downloads_for_feed(
+        upcoming_db_downloads = await self._get_upcoming_downloads_for_feed(
             feed_id, feed_config.url
         )
 
@@ -783,13 +783,15 @@ class Enqueuer:
         )
 
         # Synchronize feed metadata with database
-        self._synchronize_feed_metadata(
+        await self._synchronize_feed_metadata(
             feed_id, fetched_feed, feed_config, feed_log_params
         )
 
         queued_count = 0
         for fetched_dl in all_fetched_downloads:
-            if self._process_single_download(fetched_dl, feed_id, feed_log_params):
+            if await self._process_single_download(
+                fetched_dl, feed_id, feed_log_params
+            ):
                 queued_count += 1
 
         logger.debug(

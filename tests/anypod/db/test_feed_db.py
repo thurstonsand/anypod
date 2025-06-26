@@ -2,35 +2,42 @@
 
 """Tests for the FeedDatabase and Feed model functionality."""
 
-from collections.abc import Generator
+from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-import sqlite3
 import time
-from typing import Any
 
 import pytest
+import pytest_asyncio
 
 from anypod.config.types import PodcastCategories, PodcastExplicit
-from anypod.db import FeedDatabase
-from anypod.db.types import Feed, SourceType
+from anypod.db import DownloadDatabase, FeedDatabase
+from anypod.db.sqlalchemy_core import SqlalchemyCore
+from anypod.db.types import Download, DownloadStatus, Feed, SourceType
 from anypod.exceptions import FeedNotFoundError
 
 # --- Fixtures ---
 
 
-@pytest.fixture
-def db_path(tmp_path: Path) -> Path:
-    """Provides a temporary path for the database."""
-    return tmp_path / "test.db"
+@pytest_asyncio.fixture
+async def db_core(tmp_path: Path) -> AsyncGenerator[SqlalchemyCore]:
+    """Provides a SqlalchemyCore instance for testing."""
+    core = SqlalchemyCore(tmp_path)
+    await core.create_db_and_tables()
+    yield core
+    await core.close()
 
 
-@pytest.fixture
-def feed_db(db_path: Path) -> Generator[FeedDatabase]:
+@pytest_asyncio.fixture
+async def feed_db(db_core: SqlalchemyCore) -> FeedDatabase:
     """Provides a FeedDatabase instance for testing."""
-    db = FeedDatabase(db_path)
-    yield db
-    db.close()
+    return FeedDatabase(db_core)
+
+
+@pytest_asyncio.fixture
+async def download_db(db_core: SqlalchemyCore) -> DownloadDatabase:
+    """Provides a DownloadDatabase instance for testing."""
+    return DownloadDatabase(db_core)
 
 
 @pytest.fixture
@@ -48,7 +55,6 @@ def sample_feed() -> Feed:
         last_rss_generation=base_time + timedelta(hours=2),
         last_failed_sync=None,
         consecutive_failures=0,
-        total_downloads=5,
         title="Test Feed Title",
         subtitle="Test Feed Subtitle",
         description="Test feed description",
@@ -58,33 +64,6 @@ def sample_feed() -> Feed:
         category=PodcastCategories("Technology"),
         explicit=PodcastExplicit.NO,
     )
-
-
-@pytest.fixture
-def sample_feed_row_data() -> dict[str, Any]:
-    """Provides raw data for a sample Feed object, simulating a DB row."""
-    base_time = datetime(2023, 1, 1, 12, 0, 0, tzinfo=UTC)
-    return {
-        "id": "test_feed_123",
-        "is_enabled": True,
-        "source_type": str(SourceType.PLAYLIST),
-        "source_url": "https://www.youtube.com/playlist?list=PLtest123",
-        "created_at": base_time.isoformat(),
-        "updated_at": base_time.isoformat(),
-        "last_successful_sync": (base_time - timedelta(hours=1)).isoformat(),
-        "last_rss_generation": (base_time - timedelta(hours=2)).isoformat(),
-        "last_failed_sync": None,
-        "consecutive_failures": 0,
-        "total_downloads": 10,
-        "title": "Test Playlist Feed",
-        "subtitle": "Test Playlist Subtitle",
-        "description": "Test playlist description from DB",
-        "language": "fr",
-        "author": "Test Playlist Author",
-        "image_url": "https://example.com/playlist.jpg",
-        "category": "Business",
-        "explicit": "yes",
-    }
 
 
 @pytest.fixture
@@ -98,6 +77,50 @@ def minimal_feed() -> Feed:
         last_successful_sync=datetime.min.replace(tzinfo=UTC),
         # All optional fields use defaults
     )
+
+
+@pytest.fixture
+def sample_downloads() -> list[Download]:
+    """Provides sample Download instances for testing."""
+    base_time = datetime(2023, 1, 1, 12, 0, 0, tzinfo=UTC)
+    return [
+        Download(
+            feed_id="test_feed",
+            id="download1",
+            source_url="https://www.youtube.com/watch?v=test1",
+            title="Test Download 1",
+            published=base_time,
+            ext="mp4",
+            mime_type="video/mp4",
+            filesize=1024,
+            duration=60,
+            status=DownloadStatus.DOWNLOADED,
+        ),
+        Download(
+            feed_id="test_feed",
+            id="download2",
+            source_url="https://www.youtube.com/watch?v=test2",
+            title="Test Download 2",
+            published=base_time + timedelta(hours=1),
+            ext="mp4",
+            mime_type="video/mp4",
+            filesize=2048,
+            duration=120,
+            status=DownloadStatus.DOWNLOADED,
+        ),
+        Download(
+            feed_id="test_feed",
+            id="download3",
+            source_url="https://www.youtube.com/watch?v=test3",
+            title="Test Download 3",
+            published=base_time + timedelta(hours=2),
+            ext="mp4",
+            mime_type="video/mp4",
+            filesize=1536,
+            duration=90,
+            status=DownloadStatus.QUEUED,
+        ),
+    ]
 
 
 # --- Tests ---
@@ -121,98 +144,30 @@ def test_source_type_enum():
     assert SourceType("unknown") == SourceType.UNKNOWN
 
 
-# --- Tests for Feed.from_row ---
+# --- Tests for FeedDatabase schema initialization ---
 
 
 @pytest.mark.unit
-def test_feed_from_row_success(sample_feed_row_data: dict[str, Any]):
-    """Test successful conversion of a valid row dictionary to a Feed object."""
-    mock_row = sample_feed_row_data
-
-    # Expected Feed object based on the row data
-    expected_source_type = SourceType(mock_row["source_type"])
-    converted_feed = Feed.from_row(mock_row)
-
-    assert converted_feed.id == mock_row["id"]
-    assert converted_feed.is_enabled == bool(mock_row["is_enabled"])
-    assert converted_feed.source_type == expected_source_type
-    assert converted_feed.title == mock_row["title"]
-    assert converted_feed.subtitle == mock_row["subtitle"]
-    assert converted_feed.description == mock_row["description"]
-    assert converted_feed.language == mock_row["language"]
-    assert converted_feed.author == mock_row["author"]
-    assert converted_feed.image_url == mock_row["image_url"]
-    assert str(converted_feed.category) == mock_row["category"]
-    assert str(converted_feed.explicit) == mock_row["explicit"]
-    assert converted_feed.total_downloads == mock_row["total_downloads"]
-    assert converted_feed.consecutive_failures == mock_row["consecutive_failures"]
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize(
-    "malformed_field, malformed_value",
-    [
-        ("created_at", "not-a-date-string"),
-        ("updated_at", None),
-        ("source_type", "unknown_source_type"),
-        ("last_successful_sync", "invalid-date"),
-    ],
-)
-def test_feed_from_row_malformed_data(
-    sample_feed_row_data: dict[str, Any],
-    malformed_field: str,
-    malformed_value: Any,
-):
-    """Test that Feed.from_row raises ValueError for malformed data."""
-    corrupted_row_data = sample_feed_row_data.copy()
-    corrupted_row_data[malformed_field] = malformed_value
-
-    with pytest.raises(ValueError):
-        Feed.from_row(corrupted_row_data)
-
-
-# --- Tests for FeedDatabase._initialize_schema ---
-
-
-@pytest.mark.unit
-def test_feed_db_initialization_and_schema(feed_db: FeedDatabase):
-    """Test that the schema (tables and triggers) is created upon first DB interaction."""
-    conn: sqlite3.Connection = feed_db._db.db.conn  # type: ignore
-    assert conn is not None, "Connection should have been established"
-
-    cursor: sqlite3.Cursor | None = None
-    try:
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='feeds';"
-        )
-        table = cursor.fetchone()
-        assert table is not None, "'feeds' table should have been created"
-        assert table[0] == "feeds"
-
-        # Check for trigger
-        cursor.execute(
-            "SELECT name FROM sqlite_master WHERE type='trigger' AND name='feeds_update_timestamp';"
-        )
-        trigger = cursor.fetchone()
-        assert trigger is not None, (
-            "'feeds_update_timestamp' trigger should have been created"
-        )
-        assert trigger[0] == "feeds_update_timestamp"
-    finally:
-        if cursor:
-            cursor.close()
+@pytest.mark.asyncio
+async def test_feed_db_initialization_and_schema(feed_db: FeedDatabase):
+    """Test that the schema (tables) is created upon initialization."""
+    # The schema should already be created by the db_core fixture
+    # Just verify we can interact with the database
+    feeds = await feed_db.get_feeds()
+    assert isinstance(feeds, list)
+    assert len(feeds) == 0  # Should be empty initially
 
 
 # --- Tests for FeedDatabase.upsert_feed ---
 
 
 @pytest.mark.unit
-def test_upsert_and_get_feed(feed_db: FeedDatabase, sample_feed: Feed):
+@pytest.mark.asyncio
+async def test_upsert_and_get_feed(feed_db: FeedDatabase, sample_feed: Feed):
     """Test adding a new feed and then retrieving it."""
-    feed_db.upsert_feed(sample_feed)
+    await feed_db.upsert_feed(sample_feed)
 
-    retrieved_feed = feed_db.get_feed_by_id(sample_feed.id)
+    retrieved_feed = await feed_db.get_feed_by_id(sample_feed.id)
 
     assert retrieved_feed is not None, "Feed should be found in DB"
     assert retrieved_feed.id == sample_feed.id
@@ -226,15 +181,15 @@ def test_upsert_and_get_feed(feed_db: FeedDatabase, sample_feed: Feed):
     assert retrieved_feed.image_url == sample_feed.image_url
     assert str(retrieved_feed.category) == str(sample_feed.category)
     assert str(retrieved_feed.explicit) == str(sample_feed.explicit)
-    assert retrieved_feed.total_downloads == sample_feed.total_downloads
     assert retrieved_feed.consecutive_failures == sample_feed.consecutive_failures
 
 
 @pytest.mark.unit
-def test_upsert_feed_updates_existing(feed_db: FeedDatabase, sample_feed: Feed):
+@pytest.mark.asyncio
+async def test_upsert_feed_updates_existing(feed_db: FeedDatabase, sample_feed: Feed):
     """Test that upsert_feed updates an existing feed instead of raising an error."""
     # Add initial feed
-    feed_db.upsert_feed(sample_feed)
+    await feed_db.upsert_feed(sample_feed)
 
     # Create a modified version with the same id
     modified_feed = Feed(
@@ -251,15 +206,14 @@ def test_upsert_feed_updates_existing(feed_db: FeedDatabase, sample_feed: Feed):
         image_url="https://example.com/updated.jpg",  # Changed
         category=PodcastCategories("Business"),  # Changed
         explicit=PodcastExplicit.YES,  # Changed
-        total_downloads=15,  # Changed
         consecutive_failures=2,  # Changed
     )
 
     # Perform upsert with the modified feed
-    feed_db.upsert_feed(modified_feed)  # Should not raise IntegrityError
+    await feed_db.upsert_feed(modified_feed)  # Should not raise IntegrityError
 
     # Retrieve and verify
-    retrieved_feed = feed_db.get_feed_by_id(sample_feed.id)
+    retrieved_feed = await feed_db.get_feed_by_id(sample_feed.id)
 
     assert retrieved_feed is not None, "Feed should still be found"
     assert retrieved_feed.id == modified_feed.id
@@ -273,18 +227,20 @@ def test_upsert_feed_updates_existing(feed_db: FeedDatabase, sample_feed: Feed):
     assert retrieved_feed.image_url == modified_feed.image_url
     assert str(retrieved_feed.category) == str(modified_feed.category)
     assert str(retrieved_feed.explicit) == str(modified_feed.explicit)
-    assert retrieved_feed.total_downloads == modified_feed.total_downloads
     assert retrieved_feed.consecutive_failures == modified_feed.consecutive_failures
 
 
 @pytest.mark.unit
-def test_upsert_feed_with_none_timestamps(feed_db: FeedDatabase, minimal_feed: Feed):
+@pytest.mark.asyncio
+async def test_upsert_feed_with_none_timestamps(
+    feed_db: FeedDatabase, minimal_feed: Feed
+):
     """Test that database defaults are applied when created_at/updated_at are None."""
-    # Insert the feed with None timestamps
-    feed_db.upsert_feed(minimal_feed)
+    # Insert the feed with no timestamps
+    await feed_db.upsert_feed(minimal_feed)
 
     # Retrieve and verify timestamps were set by database
-    retrieved = feed_db.get_feed_by_id(minimal_feed.id)
+    retrieved = await feed_db.get_feed_by_id(minimal_feed.id)
 
     assert retrieved.created_at is not None, (
         "created_at should be set by database default"
@@ -306,10 +262,11 @@ def test_upsert_feed_with_none_timestamps(feed_db: FeedDatabase, minimal_feed: F
 
 
 @pytest.mark.unit
-def test_get_feed_by_id_not_found(feed_db: FeedDatabase):
+@pytest.mark.asyncio
+async def test_get_feed_by_id_not_found(feed_db: FeedDatabase):
     """Test that get_feed_by_id raises FeedNotFoundError for non-existent feed."""
     with pytest.raises(FeedNotFoundError) as exc_info:
-        feed_db.get_feed_by_id("non_existent_feed")
+        await feed_db.get_feed_by_id("non_existent_feed")
 
     assert exc_info.value.feed_id == "non_existent_feed"
 
@@ -318,7 +275,8 @@ def test_get_feed_by_id_not_found(feed_db: FeedDatabase):
 
 
 @pytest.mark.unit
-def test_get_feeds_all_and_filtered(feed_db: FeedDatabase):
+@pytest.mark.asyncio
+async def test_get_feeds_all_and_filtered(feed_db: FeedDatabase):
     """Test getting all feeds and filtering by enabled status."""
     # Create test feeds
     feed1 = Feed(
@@ -345,10 +303,10 @@ def test_get_feeds_all_and_filtered(feed_db: FeedDatabase):
 
     # Insert feeds
     for feed in [feed1, feed2, feed3]:
-        feed_db.upsert_feed(feed)
+        await feed_db.upsert_feed(feed)
 
     # Test get all feeds
-    all_feeds = feed_db.get_feeds()
+    all_feeds = await feed_db.get_feeds()
     assert len(all_feeds) == 3
     feed_ids = [f.id for f in all_feeds]
     assert "feed1" in feed_ids
@@ -358,7 +316,7 @@ def test_get_feeds_all_and_filtered(feed_db: FeedDatabase):
     assert feed_ids == ["feed1", "feed2", "feed3"]
 
     # Test get enabled feeds only
-    enabled_feeds = feed_db.get_feeds(enabled=True)
+    enabled_feeds = await feed_db.get_feeds(enabled=True)
     assert len(enabled_feeds) == 2
     enabled_ids = [f.id for f in enabled_feeds]
     assert "feed1" in enabled_ids
@@ -366,7 +324,7 @@ def test_get_feeds_all_and_filtered(feed_db: FeedDatabase):
     assert "feed2" not in enabled_ids
 
     # Test get disabled feeds only
-    disabled_feeds = feed_db.get_feeds(enabled=False)
+    disabled_feeds = await feed_db.get_feeds(enabled=False)
     assert len(disabled_feeds) == 1
     assert disabled_feeds[0].id == "feed2"
 
@@ -375,17 +333,18 @@ def test_get_feeds_all_and_filtered(feed_db: FeedDatabase):
 
 
 @pytest.mark.unit
-def test_mark_sync_success(feed_db: FeedDatabase, sample_feed: Feed):
+@pytest.mark.asyncio
+async def test_mark_sync_success(feed_db: FeedDatabase, sample_feed: Feed):
     """Test marking a feed sync as successful."""
     # Set up feed with some failures
     sample_feed.consecutive_failures = 3
-    feed_db.upsert_feed(sample_feed)
+    await feed_db.upsert_feed(sample_feed)
 
     # Mark sync success
-    feed_db.mark_sync_success(sample_feed.id)
+    await feed_db.mark_sync_success(sample_feed.id)
 
     # Verify changes
-    updated_feed = feed_db.get_feed_by_id(sample_feed.id)
+    updated_feed = await feed_db.get_feed_by_id(sample_feed.id)
     assert updated_feed.last_successful_sync is not None
     assert updated_feed.consecutive_failures == 0
 
@@ -396,10 +355,11 @@ def test_mark_sync_success(feed_db: FeedDatabase, sample_feed: Feed):
 
 
 @pytest.mark.unit
-def test_mark_sync_success_not_found(feed_db: FeedDatabase):
+@pytest.mark.asyncio
+async def test_mark_sync_success_not_found(feed_db: FeedDatabase):
     """Test marking sync success for non-existent feed."""
     with pytest.raises(FeedNotFoundError) as exc_info:
-        feed_db.mark_sync_success("non_existent_feed")
+        await feed_db.mark_sync_success("non_existent_feed")
 
     assert exc_info.value.feed_id == "non_existent_feed"
 
@@ -408,33 +368,35 @@ def test_mark_sync_success_not_found(feed_db: FeedDatabase):
 
 
 @pytest.mark.unit
-def test_mark_sync_failure(feed_db: FeedDatabase, sample_feed: Feed):
+@pytest.mark.asyncio
+async def test_mark_sync_failure(feed_db: FeedDatabase, sample_feed: Feed):
     """Test marking a feed sync as failed."""
     # Set up feed with no previous failures
     sample_feed.consecutive_failures = 0
-    feed_db.upsert_feed(sample_feed)
+    await feed_db.upsert_feed(sample_feed)
 
     # Mark first failure
-    feed_db.mark_sync_failure(sample_feed.id)
+    await feed_db.mark_sync_failure(sample_feed.id)
 
     # Verify changes
-    updated_feed = feed_db.get_feed_by_id(sample_feed.id)
+    updated_feed = await feed_db.get_feed_by_id(sample_feed.id)
     assert updated_feed.last_failed_sync is not None
     assert updated_feed.consecutive_failures == 1
 
     # Mark second failure
-    feed_db.mark_sync_failure(sample_feed.id)
+    await feed_db.mark_sync_failure(sample_feed.id)
 
     # Verify consecutive failures incremented
-    updated_feed2 = feed_db.get_feed_by_id(sample_feed.id)
+    updated_feed2 = await feed_db.get_feed_by_id(sample_feed.id)
     assert updated_feed2.consecutive_failures == 2
 
 
 @pytest.mark.unit
-def test_mark_sync_failure_not_found(feed_db: FeedDatabase):
+@pytest.mark.asyncio
+async def test_mark_sync_failure_not_found(feed_db: FeedDatabase):
     """Test marking sync failure for non-existent feed."""
     with pytest.raises(FeedNotFoundError) as exc_info:
-        feed_db.mark_sync_failure("non_existent_feed")
+        await feed_db.mark_sync_failure("non_existent_feed")
 
     assert exc_info.value.feed_id == "non_existent_feed"
 
@@ -443,19 +405,18 @@ def test_mark_sync_failure_not_found(feed_db: FeedDatabase):
 
 
 @pytest.mark.unit
-def test_mark_rss_generated(feed_db: FeedDatabase, sample_feed: Feed):
+@pytest.mark.asyncio
+async def test_mark_rss_generated(feed_db: FeedDatabase, sample_feed: Feed):
     """Test marking RSS generation for a feed."""
     # Set up feed with initial values
-    sample_feed.total_downloads = 10
-    feed_db.upsert_feed(sample_feed)
+    await feed_db.upsert_feed(sample_feed)
 
     # Mark RSS generated
-    feed_db.mark_rss_generated(sample_feed.id)
+    await feed_db.mark_rss_generated(sample_feed.id)
 
     # Verify changes
-    updated_feed = feed_db.get_feed_by_id(sample_feed.id)
+    updated_feed = await feed_db.get_feed_by_id(sample_feed.id)
     assert updated_feed.last_rss_generation is not None
-    assert updated_feed.total_downloads == sample_feed.total_downloads
 
     # Verify timestamp is recent
     current_time = datetime.now(UTC)
@@ -464,46 +425,11 @@ def test_mark_rss_generated(feed_db: FeedDatabase, sample_feed: Feed):
 
 
 @pytest.mark.unit
-def test_mark_rss_generated_not_found(feed_db: FeedDatabase):
+@pytest.mark.asyncio
+async def test_mark_rss_generated_not_found(feed_db: FeedDatabase):
     """Test marking RSS generated for non-existent feed."""
     with pytest.raises(FeedNotFoundError) as exc_info:
-        feed_db.mark_rss_generated("non_existent_feed")
-
-    assert exc_info.value.feed_id == "non_existent_feed"
-
-
-# --- Tests for FeedDatabase.update_total_downloads ---
-
-
-@pytest.mark.unit
-def test_update_total_downloads(feed_db: FeedDatabase, sample_feed: Feed):
-    """Test updating total_downloads count."""
-    # Insert feed
-    feed_db.upsert_feed(sample_feed)
-
-    # Verify initial count
-    initial_feed = feed_db.get_feed_by_id(sample_feed.id)
-    assert initial_feed.total_downloads == 5  # from sample_feed fixture
-
-    # Update total downloads
-    new_count = 42
-    feed_db.update_total_downloads(sample_feed.id, new_count)
-
-    # Verify the update
-    updated_feed = feed_db.get_feed_by_id(sample_feed.id)
-    assert updated_feed.total_downloads == new_count
-
-    # Test with zero count
-    feed_db.update_total_downloads(sample_feed.id, 0)
-    zero_feed = feed_db.get_feed_by_id(sample_feed.id)
-    assert zero_feed.total_downloads == 0
-
-
-@pytest.mark.unit
-def test_update_total_downloads_not_found(feed_db: FeedDatabase):
-    """Test updating total_downloads for non-existent feed."""
-    with pytest.raises(FeedNotFoundError) as exc_info:
-        feed_db.update_total_downloads("non_existent_feed", 100)
+        await feed_db.mark_rss_generated("non_existent_feed")
 
     assert exc_info.value.feed_id == "non_existent_feed"
 
@@ -512,32 +438,34 @@ def test_update_total_downloads_not_found(feed_db: FeedDatabase):
 
 
 @pytest.mark.unit
-def test_set_feed_enabled(feed_db: FeedDatabase, sample_feed: Feed):
+@pytest.mark.asyncio
+async def test_set_feed_enabled(feed_db: FeedDatabase, sample_feed: Feed):
     """Test enabling and disabling a feed."""
     # Set up feed as enabled
     sample_feed.is_enabled = True
-    feed_db.upsert_feed(sample_feed)
+    await feed_db.upsert_feed(sample_feed)
 
     # Disable the feed
-    feed_db.set_feed_enabled(sample_feed.id, False)
+    await feed_db.set_feed_enabled(sample_feed.id, False)
 
     # Verify change
-    updated_feed = feed_db.get_feed_by_id(sample_feed.id)
+    updated_feed = await feed_db.get_feed_by_id(sample_feed.id)
     assert updated_feed.is_enabled is False
 
     # Re-enable the feed
-    feed_db.set_feed_enabled(sample_feed.id, True)
+    await feed_db.set_feed_enabled(sample_feed.id, True)
 
     # Verify change
-    updated_feed2 = feed_db.get_feed_by_id(sample_feed.id)
+    updated_feed2 = await feed_db.get_feed_by_id(sample_feed.id)
     assert updated_feed2.is_enabled is True
 
 
 @pytest.mark.unit
-def test_set_feed_enabled_not_found(feed_db: FeedDatabase):
+@pytest.mark.asyncio
+async def test_set_feed_enabled_not_found(feed_db: FeedDatabase):
     """Test setting enabled status for non-existent feed."""
     with pytest.raises(FeedNotFoundError) as exc_info:
-        feed_db.set_feed_enabled("non_existent_feed", True)
+        await feed_db.set_feed_enabled("non_existent_feed", True)
 
     assert exc_info.value.feed_id == "non_existent_feed"
 
@@ -546,27 +474,34 @@ def test_set_feed_enabled_not_found(feed_db: FeedDatabase):
 
 
 @pytest.mark.unit
-def test_update_feed_metadata(feed_db: FeedDatabase, sample_feed: Feed):
+@pytest.mark.asyncio
+async def test_update_feed_metadata(feed_db: FeedDatabase, sample_feed: Feed):
     """Test updating feed metadata fields."""
-    feed_db.upsert_feed(sample_feed)
+    await feed_db.upsert_feed(sample_feed)
+
+    new_title = "New Title"
+    new_description = "New Description"
+    new_language = "de"
+    new_category = PodcastCategories("News")
+    new_explicit = PodcastExplicit.CLEAN
 
     # Update some metadata fields
-    feed_db.update_feed_metadata(
+    await feed_db.update_feed_metadata(
         sample_feed.id,
-        title="New Title",
-        description="New Description",
-        language="de",
-        category="News",
-        explicit="clean",
+        title=new_title,
+        description=new_description,
+        language=new_language,
+        category=new_category,
+        explicit=new_explicit,
     )
 
     # Verify changes
-    updated_feed = feed_db.get_feed_by_id(sample_feed.id)
-    assert updated_feed.title == "New Title"
-    assert updated_feed.description == "New Description"
-    assert updated_feed.language == "de"
-    assert str(updated_feed.category) == "News"
-    assert str(updated_feed.explicit) == "clean"
+    updated_feed = await feed_db.get_feed_by_id(sample_feed.id)
+    assert updated_feed.title == new_title
+    assert updated_feed.description == new_description
+    assert updated_feed.language == new_language
+    assert updated_feed.category == new_category
+    assert updated_feed.explicit == new_explicit
     # Other fields should be unchanged
     assert updated_feed.subtitle == sample_feed.subtitle
     assert updated_feed.author == sample_feed.author
@@ -574,19 +509,20 @@ def test_update_feed_metadata(feed_db: FeedDatabase, sample_feed: Feed):
 
 
 @pytest.mark.unit
-def test_update_feed_metadata_no_op(feed_db: FeedDatabase, sample_feed: Feed):
+@pytest.mark.asyncio
+async def test_update_feed_metadata_no_op(feed_db: FeedDatabase, sample_feed: Feed):
     """Test that update_feed_metadata is no-op when all fields are None."""
-    feed_db.upsert_feed(sample_feed)
+    await feed_db.upsert_feed(sample_feed)
 
     # Get initial updated_at timestamp
-    initial_feed = feed_db.get_feed_by_id(sample_feed.id)
+    initial_feed = await feed_db.get_feed_by_id(sample_feed.id)
     initial_updated_at = initial_feed.updated_at
 
     # Call update with all None values
-    feed_db.update_feed_metadata(sample_feed.id)
+    await feed_db.update_feed_metadata(sample_feed.id)
 
     # Should be no change
-    final_feed = feed_db.get_feed_by_id(sample_feed.id)
+    final_feed = await feed_db.get_feed_by_id(sample_feed.id)
     assert final_feed.title == sample_feed.title
     assert final_feed.subtitle == sample_feed.subtitle
     # updated_at should be unchanged since no actual update occurred
@@ -594,37 +530,166 @@ def test_update_feed_metadata_no_op(feed_db: FeedDatabase, sample_feed: Feed):
 
 
 @pytest.mark.unit
-def test_update_feed_metadata_not_found(feed_db: FeedDatabase):
+@pytest.mark.asyncio
+async def test_update_feed_metadata_not_found(feed_db: FeedDatabase):
     """Test updating metadata for non-existent feed."""
     with pytest.raises(FeedNotFoundError) as exc_info:
-        feed_db.update_feed_metadata("non_existent_feed", title="New Title")
+        await feed_db.update_feed_metadata("non_existent_feed", title="New Title")
 
     assert exc_info.value.feed_id == "non_existent_feed"
 
 
-# --- Tests for FeedDatabase triggers ---
+# --- Tests for FeedDatabase timestamp updates ---
 
 
 @pytest.mark.unit
-def test_database_triggers_update_timestamp(feed_db: FeedDatabase, sample_feed: Feed):
-    """Test that database triggers correctly update timestamps."""
+@pytest.mark.asyncio
+async def test_database_update_timestamp(feed_db: FeedDatabase, sample_feed: Feed):
+    """Test that database correctly updates timestamps."""
     # Insert feed
-    feed_db.upsert_feed(sample_feed)
+    await feed_db.upsert_feed(sample_feed)
 
     # Get initial timestamp
-    initial_feed = feed_db.get_feed_by_id(sample_feed.id)
+    initial_feed = await feed_db.get_feed_by_id(sample_feed.id)
     initial_updated_at = initial_feed.updated_at
     assert initial_updated_at is not None
 
     # Wait a moment to ensure timestamp differences
     time.sleep(0.1)
 
-    # Update the feed to trigger the updated_at trigger
-    feed_db._db.update("feeds", sample_feed.id, {"title": "Trigger Updated Title"})
+    # Update the feed to trigger the updated_at change
+    await feed_db.update_feed_metadata(sample_feed.id, title="Trigger Updated Title")
 
-    # Check that updated_at was changed by trigger
-    after_update = feed_db.get_feed_by_id(sample_feed.id)
+    # Check that updated_at was changed
+    after_update = await feed_db.get_feed_by_id(sample_feed.id)
     assert after_update.updated_at is not None
     assert after_update.updated_at != initial_updated_at
     assert after_update.updated_at.tzinfo == UTC
     assert after_update.updated_at > initial_updated_at
+
+
+# --- Tests for Feed.total_downloads property ---
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_total_downloads_property(
+    feed_db: FeedDatabase,
+    download_db: DownloadDatabase,
+    sample_feed: Feed,
+    sample_downloads: list[Download],
+):
+    """Test that the total_downloads property correctly counts downloaded items."""
+    # Insert the feed
+    await feed_db.upsert_feed(sample_feed)
+
+    # Insert sample downloads
+    for download in sample_downloads:
+        await download_db.upsert_download(download)
+
+    # Retrieve the feed and check total_downloads
+    retrieved_feed = await feed_db.get_feed_by_id(sample_feed.id)
+
+    # Should only count DOWNLOADED status downloads (2 out of 3)
+    assert retrieved_feed.total_downloads == 2
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_total_downloads_property_no_downloads(
+    feed_db: FeedDatabase, sample_feed: Feed
+):
+    """Test that the total_downloads property returns 0 when no downloads exist."""
+    # Insert the feed
+    await feed_db.upsert_feed(sample_feed)
+
+    # Retrieve the feed and check total_downloads
+    retrieved_feed = await feed_db.get_feed_by_id(sample_feed.id)
+
+    # Should be 0 when no downloads exist
+    assert retrieved_feed.total_downloads == 0
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_total_downloads_property_mixed_statuses(
+    feed_db: FeedDatabase, download_db: DownloadDatabase, sample_feed: Feed
+):
+    """Test that the total_downloads property only counts DOWNLOADED status."""
+    # Insert the feed
+    await feed_db.upsert_feed(sample_feed)
+
+    # Create downloads with different statuses
+    base_time = datetime(2023, 1, 1, 12, 0, 0, tzinfo=UTC)
+    downloads = [
+        Download(
+            feed_id="test_feed",
+            id="downloaded1",
+            source_url="https://www.youtube.com/watch?v=test1",
+            title="Downloaded 1",
+            published=base_time,
+            ext="mp4",
+            mime_type="video/mp4",
+            filesize=1024,
+            duration=60,
+            status=DownloadStatus.DOWNLOADED,
+        ),
+        Download(
+            feed_id="test_feed",
+            id="downloaded2",
+            source_url="https://www.youtube.com/watch?v=test2",
+            title="Downloaded 2",
+            published=base_time + timedelta(hours=1),
+            ext="mp4",
+            mime_type="video/mp4",
+            filesize=2048,
+            duration=120,
+            status=DownloadStatus.DOWNLOADED,
+        ),
+        Download(
+            feed_id="test_feed",
+            id="queued1",
+            source_url="https://www.youtube.com/watch?v=test3",
+            title="Queued 1",
+            published=base_time + timedelta(hours=2),
+            ext="mp4",
+            mime_type="video/mp4",
+            filesize=1536,
+            duration=90,
+            status=DownloadStatus.QUEUED,
+        ),
+        Download(
+            feed_id="test_feed",
+            id="error1",
+            source_url="https://www.youtube.com/watch?v=test4",
+            title="Error 1",
+            published=base_time + timedelta(hours=3),
+            ext="mp4",
+            mime_type="video/mp4",
+            filesize=1200,
+            duration=75,
+            status=DownloadStatus.ERROR,
+        ),
+        Download(
+            feed_id="test_feed",
+            id="upcoming1",
+            source_url="https://www.youtube.com/watch?v=test5",
+            title="Upcoming 1",
+            published=base_time + timedelta(hours=4),
+            ext="mp4",
+            mime_type="video/mp4",
+            filesize=1800,
+            duration=105,
+            status=DownloadStatus.UPCOMING,
+        ),
+    ]
+
+    # Insert all downloads
+    for download in downloads:
+        await download_db.upsert_download(download)
+
+    # Retrieve the feed and check total_downloads
+    retrieved_feed = await feed_db.get_feed_by_id(sample_feed.id)
+
+    # Should only count the 2 DOWNLOADED status downloads
+    assert retrieved_feed.total_downloads == 2

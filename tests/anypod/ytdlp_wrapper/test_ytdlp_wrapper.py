@@ -168,7 +168,7 @@ async def test_fetch_metadata_returns_feed_and_downloads_tuple(
         author="Test Author",
     )
     expected_download = Download(
-        feed=feed_id,
+        feed_id=feed_id,
         id="test123",
         source_url=url,
         title="Test Video",
@@ -246,7 +246,7 @@ async def test_download_media_to_file_success_simplified(
     download_id = "test_id_happy"
 
     dummy_download = Download(
-        feed=feed_id,
+        feed_id=feed_id,
         id=download_id,
         source_url="http://example.com/video_happy",
         title="Test Happy Video",

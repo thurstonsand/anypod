@@ -43,7 +43,7 @@ class RSSFeedGenerator:
         self._cache_lock = rwlock.RWLockWrite()
         logger.debug("RSSFeedGenerator initialized.")
 
-    def _get_feed_downloads(self, feed_id: str) -> list[Download]:
+    async def _get_feed_downloads(self, feed_id: str) -> list[Download]:
         """Get downloads for feed generation.
 
         Args:
@@ -58,7 +58,7 @@ class RSSFeedGenerator:
         """
         try:
             # Sorted by newest first
-            downloads = self._download_db.get_downloads_by_status(
+            downloads = await self._download_db.get_downloads_by_status(
                 status_to_filter=DownloadStatus.DOWNLOADED,
                 feed_id=feed_id,
             )
@@ -95,7 +95,7 @@ class RSSFeedGenerator:
             },
         )
 
-    def update_feed(self, feed_id: str, feed: Feed) -> None:
+    async def update_feed(self, feed_id: str, feed: Feed) -> None:
         """Generate RSS XML for a feed and cache it.
 
         Args:
@@ -110,7 +110,7 @@ class RSSFeedGenerator:
             extra={"feed_id": feed_id},
         )
 
-        downloads = self._get_feed_downloads(feed_id)
+        downloads = await self._get_feed_downloads(feed_id)
         feed_xml = (
             FeedgenCore(
                 paths=self._paths,

@@ -23,3 +23,6 @@ cookies.txt
 
 # lsp
 *.pkl
+
+# AI
+references/

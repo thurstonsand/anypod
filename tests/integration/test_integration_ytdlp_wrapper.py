@@ -82,7 +82,7 @@ YT_DLP_MINIMAL_ARGS = [
 
 # Metadata for Big Buck Bunny video - used in several tests
 BIG_BUCK_BUNNY_DOWNLOAD = Download(
-    feed="video",
+    feed_id="video",
     id="aqz-KE-bpKQ",
     source_url="https://www.youtube.com/watch?v=aqz-KE-bpKQ",
     title="Big Buck Bunny 60fps 4K - Official Blender Foundation Short Film",
@@ -285,7 +285,7 @@ async def test_download_media_to_file_success(
     """
     # Metadata for Big Buck Bunny video
     download = Download(
-        feed="video",
+        feed_id="video",
         id="aqz-KE-bpKQ",
         source_url="https://www.youtube.com/watch?v=aqz-KE-bpKQ",
         title="Big Buck Bunny 60fps 4K - Official Blender Foundation Short Film",
@@ -325,7 +325,7 @@ async def test_download_media_to_file_non_existent(
 ):
     """Tests that download fails with YtdlpApiError for a non-existent video URL."""
     non_existent_download = Download(
-        feed="non_existent_feed",
+        feed_id="non_existent_feed",
         id="non_existent_id",
         source_url=INVALID_VIDEO_URL,
         title="This Video Does Not Exist",

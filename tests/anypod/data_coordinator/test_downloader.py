@@ -7,7 +7,6 @@ for processing items in the download queue, interacting with YtdlpWrapper for
 media fetching, FileManager for storage, and DownloadDatabase for status updates.
 """
 
-import dataclasses
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, call, patch
@@ -48,7 +47,14 @@ MOCK_FEED = Feed(
 @pytest.fixture
 def mock_download_db() -> MagicMock:
     """Provides a mock DownloadDatabase."""
-    return MagicMock(spec=DownloadDatabase)
+    mock = MagicMock(spec=DownloadDatabase)
+    # Mock async methods
+    mock.get_downloads_by_status = AsyncMock()
+    mock.get_download_by_id = AsyncMock()
+    mock.upsert_download = AsyncMock()
+    mock.mark_as_downloaded = AsyncMock()
+    mock.bump_retries = AsyncMock()
+    return mock
 
 
 @pytest.fixture
@@ -89,7 +95,7 @@ def sample_download() -> Download:
     """Provides a sample Download object."""
     base_time = datetime(2023, 1, 1, 12, 0, 0, tzinfo=UTC)
     return Download(
-        feed="test_feed",
+        feed_id="test_feed",
         id="test_dl_id_1",
         source_url="http://example.com/video1",
         title="Test Video 1",
@@ -136,9 +142,9 @@ async def test_handle_download_success_updates_db(
 
     await downloader._handle_download_success(sample_download, downloaded_file)
 
-    mock_download_db.mark_as_downloaded.assert_called_once_with(
-        feed=sample_download.feed,
-        id=sample_download.id,
+    mock_download_db.mark_as_downloaded.assert_awaited_once_with(
+        feed_id=sample_download.feed_id,
+        download_id=sample_download.id,
         ext="mp4",
         filesize=1024,  # From our mocked stat result
     )
@@ -162,7 +168,7 @@ async def test_handle_download_success_db_update_fails_raises_downloader_error(
         await downloader._handle_download_success(sample_download, downloaded_file)
 
     assert exc_info.value.__cause__ is db_error
-    assert exc_info.value.feed_id == sample_download.feed
+    assert exc_info.value.feed_id == sample_download.feed_id
     assert exc_info.value.download_id == sample_download.id
 
 
@@ -170,7 +176,8 @@ async def test_handle_download_success_db_update_fails_raises_downloader_error(
 
 
 @pytest.mark.unit
-def test_handle_download_failure_bumps_retries(
+@pytest.mark.asyncio
+async def test_handle_download_failure_bumps_retries(
     downloader: Downloader,
     mock_download_db: MagicMock,
     sample_download: Download,
@@ -178,10 +185,12 @@ def test_handle_download_failure_bumps_retries(
 ):
     """Tests that _handle_download_failure calls bump_retries on DB manager."""
     error = ValueError("Download exploded")
-    downloader._handle_download_failure(sample_download, sample_feed_config, error)
+    await downloader._handle_download_failure(
+        sample_download, sample_feed_config, error
+    )
 
-    mock_download_db.bump_retries.assert_called_once_with(
-        feed_id=sample_download.feed,
+    mock_download_db.bump_retries.assert_awaited_once_with(
+        feed_id=sample_download.feed_id,
         download_id=sample_download.id,
         error_message=str(error),
         max_allowed_errors=sample_feed_config.max_errors,
@@ -189,7 +198,8 @@ def test_handle_download_failure_bumps_retries(
 
 
 @pytest.mark.unit
-def test_handle_download_failure_db_error_logged(
+@pytest.mark.asyncio
+async def test_handle_download_failure_db_error_logged(
     downloader: Downloader,
     mock_download_db: MagicMock,
     sample_download: Download,
@@ -202,7 +212,9 @@ def test_handle_download_failure_db_error_logged(
     )
 
     try:
-        downloader._handle_download_failure(sample_download, sample_feed_config, error)
+        await downloader._handle_download_failure(
+            sample_download, sample_feed_config, error
+        )
     except Exception as e:
         pytest.fail(
             f"_handle_download_failure should not raise an exception, but got: {e}"
@@ -222,12 +234,13 @@ async def test_check_and_update_metadata_detects_changes(
     sample_feed_config: FeedConfig,
 ):
     """Tests that _check_and_update_metadata detects and updates changed metadata."""
-    updated_download = dataclasses.replace(
-        sample_download,
-        title="Updated Title",
-        description="Updated description",
-        thumbnail="http://example.com/new_thumb.jpg",
-        duration=180,
+    updated_download = sample_download.model_copy(
+        update={
+            "title": "Updated Title",
+            "description": "Updated description",
+            "thumbnail": "http://example.com/new_thumb.jpg",
+            "duration": 180,
+        }
     )
 
     mock_ytdlp_wrapper.fetch_metadata.return_value = (MOCK_FEED, [updated_download])
@@ -237,13 +250,13 @@ async def test_check_and_update_metadata_detects_changes(
     )
 
     mock_ytdlp_wrapper.fetch_metadata.assert_called_once_with(
-        sample_download.feed,
+        sample_download.feed_id,
         sample_download.source_url,
         sample_feed_config.yt_args,
         cookies_path=None,
     )
 
-    mock_download_db.upsert_download.assert_called_once()
+    mock_download_db.upsert_download.assert_awaited_once()
     updated_in_db = mock_download_db.upsert_download.call_args[0][0]
     assert updated_in_db.title == updated_download.title
     assert updated_in_db.description == updated_download.description
@@ -317,7 +330,7 @@ async def test_check_and_update_metadata_no_matching_download_returns_original(
 ):
     """Tests that _check_and_update_metadata returns original when no matching download found."""
     # Mock the fetch to return a different download ID
-    different_download = dataclasses.replace(sample_download, id="different_id")
+    different_download = sample_download.model_copy(update={"id": "different_id"})
     mock_ytdlp_wrapper.fetch_metadata.return_value = (MOCK_FEED, [different_download])
 
     result = await downloader._check_and_update_metadata(
@@ -385,7 +398,7 @@ async def test_process_single_download_ytdlp_failure_raises_downloader_error(
     with pytest.raises(DownloadError) as exc_info:
         await downloader._process_single_download(sample_download, sample_feed_config)
 
-    assert exc_info.value.feed_id == sample_download.feed
+    assert exc_info.value.feed_id == sample_download.feed_id
     assert exc_info.value.download_id == sample_download.id
     assert exc_info.value.__cause__ is original_ytdlp_error
 
@@ -404,7 +417,7 @@ async def test_process_single_download_calls_check_metadata(
 ):
     """Tests that _process_single_download calls _check_and_update_metadata before downloading."""
     # Setup mocks
-    updated_download = dataclasses.replace(sample_download, title="Updated Title")
+    updated_download = sample_download.model_copy(update={"title": "Updated Title"})
     downloaded_path = Path("/final/video.mp4")
     mock_ytdlp_wrapper.download_media_to_file.return_value = downloaded_path
     mock_check_metadata.return_value = updated_download
@@ -442,7 +455,7 @@ async def test_download_queued_no_items_returns_zero_counts(
 
     assert success == 0
     assert failure == 0
-    mock_download_db.get_downloads_by_status.assert_called_once_with(
+    mock_download_db.get_downloads_by_status.assert_awaited_once_with(
         DownloadStatus.QUEUED, "test_feed", 5
     )
 
@@ -474,7 +487,7 @@ async def test_download_queued_processes_items_and_counts_success(
     sample_download: Download,  # Re-use for creating a list
 ):
     """Tests download_queued iterates and counts successful processing."""
-    download2 = dataclasses.replace(sample_download, id="test_dl_id_2")
+    download2 = sample_download.model_copy(update={"id": "test_dl_id_2"})
     queued_items = [sample_download, download2]
     mock_download_db.get_downloads_by_status.return_value = queued_items
 
@@ -505,7 +518,7 @@ async def test_download_queued_processes_items_and_counts_failures(
     sample_download: Download,
 ):
     """Tests download_queued iterates and counts failures from _process_single_download."""
-    download2 = dataclasses.replace(sample_download, id="test_dl_id_2")
+    download2 = sample_download.model_copy(update={"id": "test_dl_id_2"})
     queued_items = [sample_download, download2]
     mock_download_db.get_downloads_by_status.return_value = queued_items
 
@@ -536,9 +549,9 @@ async def test_download_queued_mixed_success_and_failure(
     sample_download: Download,
 ):
     """Tests download_queued handles a mix of success and failure."""
-    dl1 = dataclasses.replace(sample_download, id="dl1_success")
-    dl2 = dataclasses.replace(sample_download, id="dl2_fail")
-    dl3 = dataclasses.replace(sample_download, id="dl3_success")
+    dl1 = sample_download.model_copy(update={"id": "dl1_success"})
+    dl2 = sample_download.model_copy(update={"id": "dl2_fail"})
+    dl3 = sample_download.model_copy(update={"id": "dl3_success"})
     queued_items = [dl1, dl2, dl3]
     mock_download_db.get_downloads_by_status.return_value = queued_items
 

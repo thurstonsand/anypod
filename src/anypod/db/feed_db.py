@@ -4,23 +4,22 @@ This module provides the Feed dataclass and related enums for feed-related
 database operations.
 """
 
-from collections.abc import Generator
-from contextlib import contextmanager
-from dataclasses import asdict
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 import logging
-from pathlib import Path
 from typing import Any
 
-from ..config.types import PodcastCategories, PodcastExplicit
-from ..exceptions import DatabaseOperationError, FeedNotFoundError, NotFoundError
-from .sqlite_utils_core import SqliteUtilsCore, register_adapter
-from .types import Feed
+from sqlalchemy import update
+from sqlalchemy.dialects.sqlite import insert
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import col, select
 
-register_adapter(
-    PodcastCategories, lambda categories: str(categories) if categories else None
-)
-register_adapter(PodcastExplicit, lambda explicit: explicit.value if explicit else None)
+from ..config.types import PodcastCategories, PodcastExplicit
+from ..exceptions import FeedNotFoundError, NotFoundError
+from .decorators import handle_db_errors, handle_feed_db_errors
+from .sqlalchemy_core import SqlalchemyCore
+from .types import Feed
 
 logger = logging.getLogger(__name__)
 
@@ -29,110 +28,35 @@ class FeedDatabase:
     """Manage all database operations for feeds.
 
     Handles database initialization, CRUD operations, and queries for feed
-    records using SQLite as the backend.
+    records using SQLAlchemy as the backend.
 
     Attributes:
-        _db_path: Path to the database file.
-        _db: Core SQLite database wrapper.
-        _feed_table_name: Name of the feeds table.
+        _db: Core SQLAlchemy database manager.
     """
 
-    def __init__(self, db_path: Path):
-        self._db_path = db_path
-        self._db = SqliteUtilsCore(db_path)
-        self._feed_table_name = "feeds"
-        self._initialize_schema()
-        logger.debug("FeedDatabase initialized.", extra={"db_path": str(db_path)})
+    def __init__(self, db_core: SqlalchemyCore):
+        self._db = db_core
 
-    def _initialize_schema(self) -> None:
-        """Initialize the feeds table schema with triggers for timestamp management."""
-        # Create the feeds table
-        self._db.create_table(
-            self._feed_table_name,
-            {
-                "id": str,
-                "is_enabled": bool,
-                "source_type": str,  # from a SourceType,
-                "source_url": str,
-                # time keeping
-                "last_successful_sync": datetime,
-                "created_at": datetime,
-                "updated_at": datetime,
-                "last_rss_generation": datetime,
-                # error tracking
-                "last_failed_sync": datetime,
-                "consecutive_failures": int,
-                # download tracking
-                "total_downloads": int,
-                # retention policies
-                "since": datetime,
-                "keep_last": int,
-                # feed metadata
-                "title": str,
-                "subtitle": str,
-                "description": str,
-                "language": str,
-                "author": str,
-                "image_url": str,
-                "category": str,
-                "explicit": str,
-            },
-            pk="id",
-            not_null={
-                "id",
-                "is_enabled",
-                "source_type",
-                "source_url",
-                "last_successful_sync",
-                "created_at",
-                "updated_at",
-                "consecutive_failures",
-                "total_downloads",
-            },
-            defaults={
-                "created_at": "STRFTIME('%Y-%m-%dT%H:%M:%f+00:00','now')",
-                "updated_at": "STRFTIME('%Y-%m-%dT%H:%M:%f+00:00','now')",
-                "consecutive_failures": 0,
-                "total_downloads": 0,
-            },
-        )
+    # --- Transaction Support ---
+    @asynccontextmanager
+    async def session(self) -> AsyncGenerator[AsyncSession]:
+        """Provide a transactional session.
 
-        # Create trigger to set updated_at on UPDATE
-        self._db.create_trigger(
-            trigger_name=f"{self._feed_table_name}_update_timestamp",
-            table_name=self._feed_table_name,
-            trigger_event="AFTER UPDATE",
-            exclude_columns=["created_at", "updated_at"],
-            trigger_sql_body=f"""
-                UPDATE {self._db.quote(self._feed_table_name)}
-                SET updated_at = STRFTIME('%Y-%m-%dT%H:%M:%f+00:00','now')
-                WHERE id = NEW.id;
-            """,
-        )
+        This is a passthrough to the core SQLAlchemy session manager.
+        Use as an async context manager for database transactions.
 
-    @contextmanager
-    def transaction(self) -> Generator[None]:
-        """Provide a database transaction context manager.
-
-        Returns:
-            Context manager for database transactions.
+        Yields:
+            An active, transactional AsyncSession.
         """
-        with self._db.transaction():
-            yield
-
-    def close(self) -> None:
-        """Closes the database connection."""
-        logger.info("Closing database connection.")
-        self._db.close()
+        async with self._db.session() as session:
+            yield session
 
     # --- CRUD Operations ---
-
-    # TODO: there's some really weird edge cases around upserts the way sqlite-utils does it
-    # this should be greatly simplified in the 4.0 release
-    def upsert_feed(self, feed: Feed) -> None:
+    @handle_feed_db_errors("upsert feed", feed_id_from="feed.id")
+    async def upsert_feed(self, feed: Feed) -> None:
         """Insert or update a feed in the feeds table.
 
-        If a feed with the same id exists, it will be replaced.
+        If a feed with the same id exists, it will be updated.
 
         Args:
             feed: The Feed object to insert or update.
@@ -142,35 +66,20 @@ class FeedDatabase:
         """
         log_params = {"feed_id": feed.id}
         logger.debug("Attempting to upsert feed record.", extra=log_params)
-        try:
-            # Convert feed to dict and exclude None values for timestamp fields
-            # so database defaults can take effect
-            feed_dict = asdict(feed)
-            if feed_dict.get("created_at") is None:
-                feed_dict.pop("created_at", None)
-            if feed_dict.get("updated_at") is None:
-                feed_dict.pop("updated_at", None)
+        async with self._db.session() as session:
+            data = feed.model_dump_for_insert()
 
-            self._db.upsert(
-                self._feed_table_name,
-                feed_dict,
-                pk="id",
-                not_null={
-                    "id",
-                    "is_enabled",
-                    "source_type",
-                    "source_url",
-                    "last_successful_sync",
-                    "consecutive_failures",
-                    "total_downloads",
-                },
-            )
-        except DatabaseOperationError as e:
-            e.feed_id = feed.id
-            raise e
+            stmt = insert(Feed).values(**data)
+
+            # Don't include primary keys in the update
+            data.pop("id", None)
+            stmt = stmt.on_conflict_do_update(index_elements=["id"], set_=data)
+            await session.execute(stmt)
+            await session.commit()
         logger.debug("Upsert feed record execution complete.", extra=log_params)
 
-    def get_feed_by_id(self, feed_id: str) -> Feed:
+    @handle_feed_db_errors("get feed by ID")
+    async def get_feed_by_id(self, feed_id: str) -> Feed:
         """Retrieve a specific feed by ID.
 
         Args:
@@ -186,16 +95,14 @@ class FeedDatabase:
         """
         log_params = {"feed_id": feed_id}
         logger.debug("Attempting to get feed by ID.", extra=log_params)
-        try:
-            row = self._db.get(self._feed_table_name, feed_id)
-        except NotFoundError as e:
-            raise FeedNotFoundError("Feed not found.", feed_id=feed_id) from e
-        except DatabaseOperationError as e:
-            e.feed_id = feed_id
-            raise e
-        return Feed.from_row(row)
+        async with self._db.session() as session:
+            feed = await session.get(Feed, feed_id)
+            if not feed:
+                raise FeedNotFoundError("Feed not found.", feed_id=feed_id)
+            return feed
 
-    def get_feeds(self, enabled: bool | None = None) -> list[Feed]:
+    @handle_db_errors("get feeds")
+    async def get_feeds(self, enabled: bool | None = None) -> list[Feed]:
         """Get all feeds, or filter by enabled status if provided.
 
         Args:
@@ -211,25 +118,17 @@ class FeedDatabase:
         log_params = {"enabled_filter": enabled or "no_filter"}
         logger.debug("Attempting to get feeds.", extra=log_params)
 
-        if enabled is None:
-            where_clause = None
-            where_args = None
-        else:
-            where_clause = "is_enabled = :enabled"
-            where_args = {"enabled": enabled}
+        async with self._db.session() as session:
+            stmt = select(Feed)
+            if enabled is not None:
+                stmt = stmt.where(col(Feed.is_enabled) == enabled)
+            stmt = stmt.order_by(col(Feed.id))
 
-        try:
-            rows = self._db.rows_where(
-                self._feed_table_name,
-                where_clause,
-                where_args=where_args,
-                order_by="id ASC",
-            )
-        except DatabaseOperationError as e:
-            raise e
-        return [Feed.from_row(row) for row in rows]
+            result = await session.execute(stmt)
+            return list(result.scalars().all())
 
-    def mark_sync_success(
+    @handle_feed_db_errors("mark sync success")
+    async def mark_sync_success(
         self, feed_id: str, sync_time: datetime | None = None
     ) -> None:
         """Set last_successful_sync to current timestamp, reset consecutive_failures to 0.
@@ -244,30 +143,32 @@ class FeedDatabase:
         """
         log_params = {"feed_id": feed_id}
         logger.debug("Attempting to mark sync success for feed.", extra=log_params)
-        try:
-            self._db.update(
-                self._feed_table_name,
-                feed_id,
-                {
-                    "last_successful_sync": sync_time or datetime.now(UTC),
-                    "consecutive_failures": 0,
-                },
+        async with self._db.session() as session:
+            stmt = (
+                update(Feed)
+                .where(col(Feed.id) == feed_id)
+                .values(
+                    last_successful_sync=sync_time or datetime.now(UTC),
+                    consecutive_failures=0,
+                )
             )
-        except NotFoundError as e:
-            raise FeedNotFoundError("Feed not found.", feed_id=feed_id) from e
-        except DatabaseOperationError as e:
-            e.feed_id = feed_id
-            raise e
+            try:
+                self._db.assert_exactly_one_row_affected(
+                    await session.execute(stmt), feed_id=feed_id
+                )
+            except NotFoundError as e:
+                raise FeedNotFoundError("Feed not found.", feed_id=feed_id) from e
+            await session.commit()
         logger.info("Feed sync success marked.", extra=log_params)
 
-    def mark_sync_failure(
+    @handle_feed_db_errors("mark sync failure")
+    async def mark_sync_failure(
         self, feed_id: str, sync_time: datetime | None = None
     ) -> None:
         """Set last_failed_sync to current timestamp, increment consecutive_failures.
 
         Args:
             feed_id: The feed identifier.
-            error_message: The error message to record.
             sync_time: The time to set the last_failed_sync to. If None, the current time is used.
 
         Raises:
@@ -276,28 +177,27 @@ class FeedDatabase:
         """
         log_params = {"feed_id": feed_id}
         logger.debug("Attempting to mark sync failure for feed.", extra=log_params)
-
-        updates = {
-            "last_failed_sync": sync_time or datetime.now(UTC),
-            "consecutive_failures": 1,
-        }
-        conversions = {"consecutive_failures": "[consecutive_failures] + ?"}
-
-        try:
-            self._db.update(
-                self._feed_table_name,
-                feed_id,
-                updates,
-                conversions=conversions,
+        async with self._db.session() as session:
+            stmt = (
+                update(Feed)
+                .where(col(Feed.id) == feed_id)
+                .values(
+                    last_failed_sync=sync_time or datetime.now(UTC),
+                    consecutive_failures=col(Feed.consecutive_failures) + 1,
+                )
             )
-        except NotFoundError as e:
-            raise FeedNotFoundError("Feed not found.", feed_id=feed_id) from e
-        except DatabaseOperationError as e:
-            e.feed_id = feed_id
-            raise e
+
+            try:
+                self._db.assert_exactly_one_row_affected(
+                    await session.execute(stmt), feed_id=feed_id
+                )
+            except NotFoundError as e:
+                raise FeedNotFoundError("Feed not found.", feed_id=feed_id) from e
+            await session.commit()
         logger.warning("Feed sync failure marked.", extra=log_params)
 
-    def mark_rss_generated(self, feed_id: str) -> None:
+    @handle_feed_db_errors("mark RSS generated")
+    async def mark_rss_generated(self, feed_id: str) -> None:
         """Set last_rss_generation to the current timestamp.
 
         Args:
@@ -309,49 +209,25 @@ class FeedDatabase:
         """
         log_params = {"feed_id": feed_id}
         logger.debug("Attempting to mark RSS generated for feed.", extra=log_params)
-
-        try:
-            self._db.update(
-                self._feed_table_name,
-                feed_id,
-                {
-                    "last_rss_generation": datetime.now(UTC),
-                },
+        async with self._db.session() as session:
+            stmt = (
+                update(Feed)
+                .where(col(Feed.id) == feed_id)
+                .values(
+                    last_rss_generation=datetime.now(UTC),
+                )
             )
-        except NotFoundError as e:
-            raise FeedNotFoundError("Feed not found.", feed_id=feed_id) from e
-        except DatabaseOperationError as e:
-            e.feed_id = feed_id
-            raise e
+            try:
+                self._db.assert_exactly_one_row_affected(
+                    await session.execute(stmt), feed_id=feed_id
+                )
+            except NotFoundError as e:
+                raise FeedNotFoundError("Feed not found.", feed_id=feed_id) from e
+            await session.commit()
         logger.info("RSS generation marked for feed.", extra=log_params)
 
-    def update_total_downloads(self, feed_id: str, count: int) -> None:
-        """Set total_downloads to a specific count.
-
-        Args:
-            feed_id: The feed identifier.
-            count: The new total_downloads count.
-
-        Raises:
-            FeedNotFoundError: If the feed is not found.
-            DatabaseOperationError: If the database operation fails.
-        """
-        log_params = {"feed_id": feed_id, "count": count}
-        logger.debug("Attempting to update total_downloads for feed.", extra=log_params)
-        try:
-            self._db.update(
-                self._feed_table_name,
-                feed_id,
-                {"total_downloads": count},
-            )
-        except NotFoundError as e:
-            raise FeedNotFoundError("Feed not found.", feed_id=feed_id) from e
-        except DatabaseOperationError as e:
-            e.feed_id = feed_id
-            raise e
-        logger.info("Total downloads updated for feed.", extra=log_params)
-
-    def set_feed_enabled(self, feed_id: str, enabled: bool) -> None:
+    @handle_feed_db_errors("set feed enabled")
+    async def set_feed_enabled(self, feed_id: str, enabled: bool) -> None:
         """Set is_enabled to the provided value.
 
         Args:
@@ -364,20 +240,21 @@ class FeedDatabase:
         """
         log_params = {"feed_id": feed_id, "enabled": enabled}
         logger.debug("Attempting to set feed enabled status.", extra=log_params)
-        try:
-            self._db.update(
-                self._feed_table_name,
-                feed_id,
-                {"is_enabled": enabled},
+        async with self._db.session() as session:
+            stmt = (
+                update(Feed).where(col(Feed.id) == feed_id).values(is_enabled=enabled)
             )
-        except NotFoundError as e:
-            raise FeedNotFoundError("Feed not found.", feed_id=feed_id) from e
-        except DatabaseOperationError as e:
-            e.feed_id = feed_id
-            raise e
+            try:
+                self._db.assert_exactly_one_row_affected(
+                    await session.execute(stmt), feed_id=feed_id
+                )
+            except NotFoundError as e:
+                raise FeedNotFoundError("Feed not found.", feed_id=feed_id) from e
+            await session.commit()
         logger.info("Feed enabled status updated.", extra=log_params)
 
-    def update_feed_metadata(
+    @handle_feed_db_errors("update feed metadata")
+    async def update_feed_metadata(
         self,
         feed_id: str,
         *,
@@ -387,8 +264,8 @@ class FeedDatabase:
         language: str | None = None,
         author: str | None = None,
         image_url: str | None = None,
-        category: str | None = None,
-        explicit: str | None = None,
+        category: PodcastCategories | None = None,
+        explicit: PodcastExplicit | None = None,
     ) -> None:
         """Update feed metadata fields; no-op if all metadata fields are None.
 
@@ -436,15 +313,13 @@ class FeedDatabase:
 
         log_params = {"feed_id": feed_id, "updated_fields": list(updates.keys())}
         logger.debug("Attempting to update feed metadata.", extra=log_params)
-        try:
-            self._db.update(
-                self._feed_table_name,
-                feed_id,
-                updates,
-            )
-        except NotFoundError as e:
-            raise FeedNotFoundError("Feed not found.", feed_id=feed_id) from e
-        except DatabaseOperationError as e:
-            e.feed_id = feed_id
-            raise e
+        async with self._db.session() as session:
+            stmt = update(Feed).where(col(Feed.id) == feed_id).values(**updates)
+            try:
+                self._db.assert_exactly_one_row_affected(
+                    await session.execute(stmt), feed_id=feed_id
+                )
+            except NotFoundError as e:
+                raise FeedNotFoundError("Feed not found.", feed_id=feed_id) from e
+            await session.commit()
         logger.info("Feed metadata updated.", extra=log_params)

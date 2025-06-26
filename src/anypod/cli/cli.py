@@ -17,7 +17,7 @@ from .debug_enqueuer import run_debug_enqueuer_mode
 from .debug_ytdlp import run_debug_ytdlp_mode
 from .default import default
 
-DEBUG_DB_FILE = Path.cwd() / "debug.db"
+DEBUG_DB_DIR = Path.cwd()
 DEBUG_DOWNLOADS_DIR = Path.cwd() / "debug_downloads"
 
 
@@ -93,7 +93,7 @@ async def main_cli():
                     )
                     await run_debug_enqueuer_mode(
                         settings,
-                        DEBUG_DB_FILE,
+                        DEBUG_DB_DIR,
                         paths,
                     )
                 case DebugMode.DOWNLOADER:
@@ -103,7 +103,7 @@ async def main_cli():
                     )
                     await run_debug_downloader_mode(
                         settings,
-                        DEBUG_DB_FILE,
+                        DEBUG_DB_DIR,
                         paths,
                     )
 

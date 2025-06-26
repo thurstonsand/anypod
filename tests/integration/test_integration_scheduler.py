@@ -121,7 +121,7 @@ def mock_data_coordinator() -> MagicMock:
     return mock
 
 
-def create_test_feed(feed_db: FeedDatabase, feed_id: str) -> Feed:
+async def create_test_feed(feed_db: FeedDatabase, feed_id: str) -> Feed:
     """Create a test feed in the database."""
     feed = Feed(
         id=feed_id,
@@ -131,7 +131,7 @@ def create_test_feed(feed_db: FeedDatabase, feed_id: str) -> Feed:
         last_successful_sync=datetime.min.replace(tzinfo=UTC),
         title=f"Test Feed {feed_id}",
     )
-    feed_db.upsert_feed(feed)
+    await feed_db.upsert_feed(feed)
     return feed
 
 
@@ -418,10 +418,10 @@ async def test_scheduler_with_real_data_coordinator_and_file_download(
     feed_id = "real_download_test_feed"
 
     # Create feed in database
-    create_test_feed(feed_db, feed_id)
+    await create_test_feed(feed_db, feed_id)
 
     initial_sync_time = datetime(2014, 11, 10, 12, 0, 0, tzinfo=UTC)
-    feed_db.mark_sync_success(feed_id, sync_time=initial_sync_time)
+    await feed_db.mark_sync_success(feed_id, sync_time=initial_sync_time)
 
     feed_configs = {
         feed_id: create_feed_config(
@@ -442,10 +442,10 @@ async def test_scheduler_with_real_data_coordinator_and_file_download(
         # Wait for successful download completion
         async def download_completed() -> bool:
             # Check if feed was processed successfully
-            updated_feed = feed_db.get_feed_by_id(feed_id)
+            updated_feed = await feed_db.get_feed_by_id(feed_id)
             if updated_feed.last_successful_sync > initial_sync_time:
                 # Feed was processed, check for downloaded files
-                downloads = download_db.get_downloads_by_status(
+                downloads = await download_db.get_downloads_by_status(
                     DownloadStatus.DOWNLOADED, feed_id=feed_id
                 )
                 if downloads:

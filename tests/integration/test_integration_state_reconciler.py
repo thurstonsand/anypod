@@ -48,7 +48,7 @@ def create_test_download(
         published = datetime.now(UTC)
 
     return Download(
-        feed=feed_id,
+        feed_id=feed_id,
         id=download_id,
         source_url=f"https://example.com/{download_id}",
         title=f"Test Download {download_id}",
@@ -113,7 +113,7 @@ async def test_new_feed_addition(
 
     # Check database state
     feed_config = config_feeds[feed_id]
-    db_feed = feed_db.get_feed_by_id(feed_id)
+    db_feed = await feed_db.get_feed_by_id(feed_id)
     assert db_feed.id == feed_id
     assert db_feed.source_url == feed_config.url
     assert db_feed.is_enabled == feed_config.enabled
@@ -161,11 +161,11 @@ async def test_reconciliation_is_idempotent(
 
     # First reconciliation
     ready_feeds1 = await state_reconciler.reconcile_startup_state(config_feeds)
-    db_feed1 = feed_db.get_feed_by_id("test_feed")
+    db_feed1 = await feed_db.get_feed_by_id("test_feed")
 
     # Second reconciliation with same config
     ready_feeds2 = await state_reconciler.reconcile_startup_state(config_feeds)
-    db_feed2 = feed_db.get_feed_by_id("test_feed")
+    db_feed2 = await feed_db.get_feed_by_id("test_feed")
 
     # Results should be identical
     assert ready_feeds1 == ready_feeds2 == ["test_feed"]
@@ -191,7 +191,7 @@ async def test_feed_removal_archives_downloads(
         source_url="https://example.com/remove",
         last_successful_sync=BASE_TIME,
     )
-    feed_db.upsert_feed(feed)
+    await feed_db.upsert_feed(feed)
 
     # Add downloads in various states
     downloads = [
@@ -203,14 +203,14 @@ async def test_feed_removal_archives_downloads(
     ]
 
     for dl in downloads:
-        download_db.upsert_download(dl)
+        await download_db.upsert_download(dl)
 
     # Create file for downloaded item and mark as downloaded
     await write_test_media_file("to_remove", "dl1", "mp4", "test content", path_manager)
     media_path = await path_manager.media_file_path("to_remove", "dl1", "mp4")
 
     # Mark first download as downloaded
-    download_db.mark_as_downloaded(feed.id, "dl1", "mp4", 12)
+    await download_db.mark_as_downloaded(feed.id, "dl1", "mp4", 12)
 
     # Execute reconciliation with empty config (feed removed)
     ready_feeds = await state_reconciler.reconcile_startup_state({})
@@ -219,7 +219,7 @@ async def test_feed_removal_archives_downloads(
     assert ready_feeds == []
 
     # Check feed is disabled
-    db_feed = feed_db.get_feed_by_id("to_remove")
+    db_feed = await feed_db.get_feed_by_id("to_remove")
     assert db_feed.is_enabled is False
 
     # Check all downloads are archived
@@ -228,10 +228,12 @@ async def test_feed_removal_archives_downloads(
         DownloadStatus.QUEUED,
         DownloadStatus.ERROR,
     ]:
-        downloads = download_db.get_downloads_by_status(status, feed_id="to_remove")
+        downloads = await download_db.get_downloads_by_status(
+            status, feed_id="to_remove"
+        )
         assert len(downloads) == 0
 
-    archived = download_db.get_downloads_by_status(
+    archived = await download_db.get_downloads_by_status(
         DownloadStatus.ARCHIVED, feed_id="to_remove"
     )
     assert len(archived) == 3
@@ -258,7 +260,7 @@ async def test_feed_enable_disable_transitions(
         consecutive_failures=5,
         last_failed_sync=datetime.now(UTC),
     )
-    feed_db.upsert_feed(feed)
+    await feed_db.upsert_feed(feed)
 
     # Enable the feed
     config_feeds = {
@@ -276,7 +278,7 @@ async def test_feed_enable_disable_transitions(
 
     # Verify enabled and errors cleared
     assert ready_feeds == ["toggle_feed"]
-    db_feed = feed_db.get_feed_by_id("toggle_feed")
+    db_feed = await feed_db.get_feed_by_id("toggle_feed")
     assert db_feed.is_enabled is True
     assert db_feed.consecutive_failures == 0
     assert db_feed.last_failed_sync is None
@@ -287,7 +289,7 @@ async def test_feed_enable_disable_transitions(
 
     # Verify disabled but errors not modified
     assert ready_feeds == []
-    db_feed = feed_db.get_feed_by_id("toggle_feed")
+    db_feed = await feed_db.get_feed_by_id("toggle_feed")
     assert db_feed.is_enabled is False
     assert db_feed.consecutive_failures == 0  # Not changed
 
@@ -309,7 +311,7 @@ async def test_url_change_resets_error_state(
         last_successful_sync=BASE_TIME,
         consecutive_failures=3,
     )
-    feed_db.upsert_feed(feed)
+    await feed_db.upsert_feed(feed)
 
     # Change URL
     config_feeds = {
@@ -326,7 +328,7 @@ async def test_url_change_resets_error_state(
     await state_reconciler.reconcile_startup_state(config_feeds)
 
     # Verify URL changed and errors cleared
-    db_feed = feed_db.get_feed_by_id("url_change")
+    db_feed = await feed_db.get_feed_by_id("url_change")
     assert db_feed.source_url == "https://new.example.com/feed"
     assert db_feed.consecutive_failures == 0
 
@@ -349,7 +351,7 @@ async def test_since_expansion_restores_downloads(
         last_successful_sync=BASE_TIME,
         since=datetime(2024, 8, 15, tzinfo=UTC),  # Original since
     )
-    feed_db.upsert_feed(feed)
+    await feed_db.upsert_feed(feed)
 
     # Add archived downloads: both AFTER original since, but we'll only restore one
     downloads = [
@@ -369,7 +371,7 @@ async def test_since_expansion_restores_downloads(
     ]
 
     for dl in downloads:
-        download_db.upsert_download(dl)
+        await download_db.upsert_download(dl)
 
     # Change since to middle date - should restore only one download
     config_feeds = {
@@ -386,14 +388,14 @@ async def test_since_expansion_restores_downloads(
     await state_reconciler.reconcile_startup_state(config_feeds)
 
     # Verify only one download was restored (the one after new since date)
-    restored = download_db.get_downloads_by_status(
+    restored = await download_db.get_downloads_by_status(
         DownloadStatus.QUEUED, feed_id="since_test"
     )
     assert len(restored) == 1
     assert restored[0].id == "should_restore"
 
     # Verify one download remains archived (the one before new since date)
-    archived = download_db.get_downloads_by_status(
+    archived = await download_db.get_downloads_by_status(
         DownloadStatus.ARCHIVED, feed_id="since_test"
     )
     assert len(archived) == 1
@@ -417,9 +419,8 @@ async def test_keep_last_increase_restores_downloads(
         source_url="https://example.com/keep",
         last_successful_sync=BASE_TIME,
         keep_last=2,
-        total_downloads=0,
     )
-    feed_db.upsert_feed(feed)
+    await feed_db.upsert_feed(feed)
 
     # Add 2 current downloads
     for i in range(2):
@@ -429,7 +430,7 @@ async def test_keep_last_increase_restores_downloads(
             DownloadStatus.DOWNLOADED,
             datetime(2024, 10 - i, 1, tzinfo=UTC),
         )
-        download_db.upsert_download(dl)
+        await download_db.upsert_download(dl)
 
     # Add 3 archived downloads (older)
     for i in range(3):
@@ -439,7 +440,7 @@ async def test_keep_last_increase_restores_downloads(
             DownloadStatus.ARCHIVED,
             datetime(2024, 7 - i, 1, tzinfo=UTC),
         )
-        download_db.upsert_download(dl)
+        await download_db.upsert_download(dl)
 
     # Increase keep_last from 2 to 4 (should restore 2 of the 3 archived downloads)
     config_feeds = {
@@ -456,14 +457,14 @@ async def test_keep_last_increase_restores_downloads(
     await state_reconciler.reconcile_startup_state(config_feeds)
 
     # Verify 2 downloads were restored (to reach keep_last=4 total)
-    restored = download_db.get_downloads_by_status(
+    restored = await download_db.get_downloads_by_status(
         DownloadStatus.QUEUED, feed_id=feed.id
     )
     assert len(restored) == 2
     assert all(dl.id.startswith("archived_") for dl in restored)
 
     # Verify 1 download remains archived (the oldest one)
-    archived = download_db.get_downloads_by_status(
+    archived = await download_db.get_downloads_by_status(
         DownloadStatus.ARCHIVED, feed_id=feed.id
     )
     assert len(archived) == 1
@@ -489,7 +490,7 @@ async def test_metadata_updates(
         language="en",
         explicit=PodcastExplicit.YES,
     )
-    feed_db.upsert_feed(feed)
+    await feed_db.upsert_feed(feed)
 
     # Update metadata
     config_feeds = {
@@ -518,7 +519,7 @@ async def test_metadata_updates(
     feed_config = config_feeds["meta_test"]
     metadata = feed_config.metadata
     assert metadata is not None
-    db_feed = feed_db.get_feed_by_id("meta_test")
+    db_feed = await feed_db.get_feed_by_id("meta_test")
     assert db_feed.title == metadata.title
     assert db_feed.subtitle == metadata.subtitle
     assert db_feed.description == metadata.description
@@ -566,7 +567,7 @@ async def test_multiple_feeds_parallel_changes(
     ]
 
     for feed in feeds:
-        feed_db.upsert_feed(feed)
+        await feed_db.upsert_feed(feed)
 
     # Config with various changes
     config_feeds = {
@@ -607,7 +608,7 @@ async def test_multiple_feeds_parallel_changes(
     assert set(ready_feeds) == {"feed1", "feed2", "feed4"}
 
     # Check individual feed states
-    assert feed_db.get_feed_by_id("feed1").is_enabled is True
-    assert feed_db.get_feed_by_id("feed2").is_enabled is True
-    assert feed_db.get_feed_by_id("feed3").is_enabled is False  # Disabled
-    assert feed_db.get_feed_by_id("feed4").is_enabled is True  # New
+    assert (await feed_db.get_feed_by_id("feed1")).is_enabled is True
+    assert (await feed_db.get_feed_by_id("feed2")).is_enabled is True
+    assert (await feed_db.get_feed_by_id("feed3")).is_enabled is False  # Disabled
+    assert (await feed_db.get_feed_by_id("feed4")).is_enabled is True  # New
