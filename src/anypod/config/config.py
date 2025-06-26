@@ -107,7 +107,7 @@ class YamlFileFromFieldSource(PydanticBaseSettingsSource):
 
         # Process loaded_yaml after successful loading
         if isinstance(loaded_yaml, dict):
-            logger.info(
+            logger.debug(
                 "Successfully parsed YAML configuration file.",
                 extra={"file_path": str(file_path)},
             )
@@ -155,7 +155,7 @@ class YamlFileFromFieldSource(PydanticBaseSettingsSource):
             ) from e
 
         if yaml_path:
-            logger.info(
+            logger.debug(
                 "Loading YAML configuration.", extra={"file_path": str(yaml_path)}
             )
             try:
@@ -166,7 +166,7 @@ class YamlFileFromFieldSource(PydanticBaseSettingsSource):
                     config_file=str(yaml_path),
                 ) from e
         else:
-            logger.info(
+            logger.debug(
                 "No YAML configuration file specified or resolved; skipping YAML loading.",
             )
             self.yaml_data = {}

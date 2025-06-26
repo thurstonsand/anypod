@@ -389,7 +389,7 @@ class StateReconciler:
         )
 
         if updated_feed != db_feed:
-            logger.info("Feed configuration changes applied.", extra=log_params)
+            logger.debug("Feed configuration changes applied.", extra=log_params)
             try:
                 await self._feed_db.upsert_feed(updated_feed)
             except DatabaseOperationError as e:
@@ -441,7 +441,7 @@ class StateReconciler:
         Raises:
             StateReconciliationError: If reconciliation fails for critical operations.
         """
-        logger.info(
+        logger.debug(
             "Starting state reconciliation for startup.",
             extra={"config_feed_count": len(config_feeds)},
         )
@@ -510,7 +510,7 @@ class StateReconciler:
                 else:
                     removed_count += 1
 
-        logger.info(
+        logger.debug(
             "State reconciliation completed successfully.",
             extra={
                 "new_feeds": new_count,

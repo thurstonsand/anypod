@@ -223,13 +223,13 @@ class Enqueuer:
                         download_id=db_download_id,
                     ) from e
                 else:
-                    logger.info(
+                    logger.debug(
                         "Successfully updated upcoming to QUEUED.",
                         extra=download_log_params,
                     )
                     return True
             case DownloadStatus.UPCOMING:
-                logger.info(
+                logger.debug(
                     f"Re-fetched download status is still {DownloadStatus.UPCOMING}. No change needed.",
                     extra=download_log_params,
                 )
@@ -353,7 +353,7 @@ class Enqueuer:
         """
         # Use user-configured yt_args directly (date filtering handled by wrapper)
         user_yt_cli_args = list(feed_config.yt_args)  # Make a copy
-        logger.info(
+        logger.debug(
             "Fetching feed downloads.",
             extra={
                 **log_params,
@@ -435,6 +435,7 @@ class Enqueuer:
 
             # Current metadata in database
             current_metadata = {
+                "source_type": current_feed.source_type,
                 "title": current_feed.title,
                 "subtitle": current_feed.subtitle,
                 "description": current_feed.description,
@@ -443,6 +444,8 @@ class Enqueuer:
                 "image_url": current_feed.image_url,
                 "category": current_feed.category,
                 "explicit": current_feed.explicit,
+                "since": current_feed.since,
+                "keep_last": current_feed.keep_last,
             }
 
             # Start with override metadata if present
@@ -460,6 +463,12 @@ class Enqueuer:
                 }
             else:
                 candidate_metadata: dict[str, Any] = {}
+
+            # Always use source_type and config-based fields from authoritative sources
+            # (these should not be compared to their counterparts)
+            candidate_metadata["source_type"] = fetched_feed.source_type
+            candidate_metadata["since"] = feed_config.since
+            candidate_metadata["keep_last"] = feed_config.keep_last
 
             # Fill in missing values from fetched feed
             candidate_metadata["title"] = (
@@ -501,7 +510,7 @@ class Enqueuer:
                 )
                 return
 
-            logger.info(
+            logger.debug(
                 "Feed metadata changes detected, updating database.",
                 extra={**log_params, "changed_fields": list(updates_needed.keys())},
             )
@@ -595,7 +604,7 @@ class Enqueuer:
         # Handle status changes and their side effects
         match (existing_db_download.status, fetched_download.status):
             case (DownloadStatus.UPCOMING, DownloadStatus.QUEUED as fetched_status):
-                logger.info(
+                logger.debug(
                     f"Existing UPCOMING download has transitioned to VOD ({fetched_status}). Updating status.",
                     extra=current_log_params,
                 )
@@ -627,7 +636,7 @@ class Enqueuer:
                     extra=current_log_params,
                 )
             case (existing_status, fetched_status):
-                logger.info(
+                logger.debug(
                     f"Existing download status '{existing_status}' differs from fetched '{fetched_status}'. Updating status for consistency.",
                     extra=current_log_params,
                 )
@@ -726,7 +735,7 @@ class Enqueuer:
             )
             return 0
 
-        logger.info(
+        logger.debug(
             f"Found {len(upcoming_db_downloads)} existing upcoming downloads to re-check.",
             extra=feed_log_params,
         )
@@ -837,13 +846,13 @@ class Enqueuer:
                           This wraps underlying YtdlpApiError or DatabaseOperationError.
         """
         feed_log_params = {"feed_id": feed_id, "feed_url": feed_config.url}
-        logger.info("Starting enqueue_new_downloads process.", extra=feed_log_params)
+        logger.debug("Starting enqueue_new_downloads process.", extra=feed_log_params)
 
         # Handle existing UPCOMING downloads
         queued_from_upcoming = await self._handle_existing_upcoming_downloads(
             feed_id, feed_config, cookies_path
         )
-        logger.info(
+        logger.debug(
             "Upcoming downloads transitioned to QUEUED.",
             extra={**feed_log_params, "queued_count": queued_from_upcoming},
         )
@@ -852,13 +861,13 @@ class Enqueuer:
         queued_from_feed_fetch = await self._fetch_and_process_new_feed_downloads(
             feed_id, feed_config, fetch_since_date, fetch_until_date, cookies_path
         )
-        logger.info(
+        logger.debug(
             "New/updated downloads set to QUEUED.",
             extra={**feed_log_params, "queued_count": queued_from_feed_fetch},
         )
 
         total_queued_count = queued_from_upcoming + queued_from_feed_fetch
-        logger.info(
+        logger.debug(
             "Enqueue process completed for feed.",
             extra={
                 **feed_log_params,

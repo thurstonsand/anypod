@@ -321,6 +321,177 @@ async def test_synchronize_feed_metadata_handles_partial_override_removal(
     assert actual_updates == expected_updates
 
 
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_synchronize_feed_metadata_preserves_source_type_from_fetched_feed(
+    enqueuer: Enqueuer,
+    mock_feed_db: MagicMock,
+):
+    """Test that feed metadata sync includes source_type from fetched feed metadata."""
+    # Current feed in database has UNKNOWN source_type
+
+    current_feed = Feed(
+        id=FEED_ID,
+        title="Test Feed",
+        subtitle=None,
+        description=None,
+        language=None,
+        author=None,
+        image_url=None,
+        category=None,
+        explicit=None,
+        is_enabled=True,
+        source_type=SourceType.UNKNOWN,
+        source_url="https://example.com/test",
+        last_successful_sync=datetime.min.replace(tzinfo=UTC),
+        since=None,
+        keep_last=None,
+    )
+
+    # Fetched feed metadata has correct source_type from discovery process
+    fetched_feed = Feed(
+        id=FEED_ID,
+        title="Channel Title from YouTube",
+        subtitle=None,
+        description="Channel description from YouTube",
+        language=None,
+        author="Channel Author from YouTube",
+        image_url="https://yt3.googleusercontent.com/channel_image.jpg",
+        category=None,
+        explicit=None,
+        is_enabled=True,
+        source_type=SourceType.CHANNEL,
+        source_url="https://example.com/test",
+        last_successful_sync=datetime.min.replace(tzinfo=UTC),
+        since=None,
+        keep_last=None,
+    )
+
+    # Feed config with no metadata overrides
+    feed_config_no_overrides = FeedConfig(
+        url=FEED_URL,
+        schedule="* * * * *",  # type: ignore
+        yt_args="",  # type: ignore
+        max_errors=3,
+        keep_last=None,
+        since=None,
+        metadata=None,  # No overrides
+    )
+
+    mock_feed_db.get_feed_by_id.return_value = current_feed
+
+    await enqueuer._synchronize_feed_metadata(
+        FEED_ID, fetched_feed, feed_config_no_overrides, {"feed_id": FEED_ID}
+    )
+
+    # Verify update_feed_metadata was called with the right changes
+    mock_feed_db.update_feed_metadata.assert_awaited_once()
+    call_args = mock_feed_db.update_feed_metadata.call_args
+
+    expected_updates = {
+        "source_type": fetched_feed.source_type,
+        "title": fetched_feed.title,
+        "description": fetched_feed.description,
+        "author": fetched_feed.author,
+        "image_url": fetched_feed.image_url,
+    }
+
+    assert call_args[0][0] == FEED_ID
+    actual_updates = call_args[1]
+    assert actual_updates == expected_updates
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_synchronize_feed_metadata_preserves_source_type_with_metadata_overrides(
+    enqueuer: Enqueuer,
+    mock_feed_db: MagicMock,
+):
+    """Test that source_type is preserved even when metadata overrides are present."""
+    # Current feed in database
+    current_feed = Feed(
+        id=FEED_ID,
+        title="Override Title",
+        subtitle="Override Subtitle",
+        description="Override description",
+        language="en-US",
+        author="Override Author",
+        image_url="https://example.com/override.jpg",
+        category=PodcastCategories(["Technology"]),
+        explicit=PodcastExplicit.YES,
+        is_enabled=True,
+        source_type=SourceType.UNKNOWN,  # Bug: should be updated to CHANNEL
+        source_url="https://example.com/test",
+        last_successful_sync=datetime.min.replace(tzinfo=UTC),
+        since=datetime(2024, 1, 1, tzinfo=UTC),
+        keep_last=10,
+    )
+
+    # Fetched feed metadata with correct source_type
+    fetched_feed = Feed(
+        id=FEED_ID,
+        title="Source Title",
+        subtitle=None,
+        description="Source description",
+        language=None,
+        author="Source Author",
+        image_url="https://example.com/source.jpg",
+        category=None,
+        explicit=None,
+        is_enabled=True,
+        source_type=SourceType.CHANNEL,  # Should be preserved
+        source_url="https://example.com/test",
+        last_successful_sync=datetime.min.replace(tzinfo=UTC),
+        since=datetime(2024, 1, 1, tzinfo=UTC),
+        keep_last=15,  # Different keep_last to test config precedence
+    )
+
+    # Feed config with metadata overrides but different config values
+    metadata_overrides = FeedMetadataOverrides(  # type: ignore
+        title="Keep Override Title",
+        description="Keep Override Description",
+    )
+
+    feed_config_with_overrides = FeedConfig(
+        url=FEED_URL,
+        schedule="* * * * *",  # type: ignore
+        yt_args="",  # type: ignore
+        max_errors=3,
+        keep_last=20,  # Config keep_last should take precedence
+        since=datetime(2024, 2, 1, tzinfo=UTC),  # Config since should take precedence
+        metadata=metadata_overrides,
+    )
+
+    mock_feed_db.get_feed_by_id.return_value = current_feed
+
+    await enqueuer._synchronize_feed_metadata(
+        FEED_ID, fetched_feed, feed_config_with_overrides, {"feed_id": FEED_ID}
+    )
+
+    # Verify the update includes source_type and respects override hierarchy
+    mock_feed_db.update_feed_metadata.assert_awaited_once()
+    call_args = mock_feed_db.update_feed_metadata.call_args
+
+    # Only fields that changed from current state should be included
+    expected_updates = {
+        "source_type": fetched_feed.source_type,
+        "title": metadata_overrides.title,
+        "subtitle": None,
+        "description": metadata_overrides.description,
+        "language": None,
+        "author": fetched_feed.author,
+        "image_url": fetched_feed.image_url,
+        "category": None,
+        "explicit": None,
+        "since": feed_config_with_overrides.since,
+        "keep_last": feed_config_with_overrides.keep_last,
+    }
+
+    assert call_args[0][0] == FEED_ID
+    actual_updates = call_args[1]
+    assert actual_updates == expected_updates
+
+
 # --- Tests for Enqueuer._handle_existing_upcoming_downloads ---
 
 

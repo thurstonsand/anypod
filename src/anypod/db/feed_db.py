@@ -19,7 +19,7 @@ from ..config.types import PodcastCategories, PodcastExplicit
 from ..exceptions import FeedNotFoundError, NotFoundError
 from .decorators import handle_db_errors, handle_feed_db_errors
 from .sqlalchemy_core import SqlalchemyCore
-from .types import Feed
+from .types import Feed, SourceType
 
 logger = logging.getLogger(__name__)
 
@@ -159,7 +159,7 @@ class FeedDatabase:
             except NotFoundError as e:
                 raise FeedNotFoundError("Feed not found.", feed_id=feed_id) from e
             await session.commit()
-        logger.info("Feed sync success marked.", extra=log_params)
+        logger.debug("Feed sync success marked.", extra=log_params)
 
     @handle_feed_db_errors("mark sync failure")
     async def mark_sync_failure(
@@ -224,7 +224,7 @@ class FeedDatabase:
             except NotFoundError as e:
                 raise FeedNotFoundError("Feed not found.", feed_id=feed_id) from e
             await session.commit()
-        logger.info("RSS generation marked for feed.", extra=log_params)
+        logger.debug("RSS generation marked for feed.", extra=log_params)
 
     @handle_feed_db_errors("set feed enabled")
     async def set_feed_enabled(self, feed_id: str, enabled: bool) -> None:
@@ -251,13 +251,14 @@ class FeedDatabase:
             except NotFoundError as e:
                 raise FeedNotFoundError("Feed not found.", feed_id=feed_id) from e
             await session.commit()
-        logger.info("Feed enabled status updated.", extra=log_params)
+        logger.debug("Feed enabled status updated.", extra=log_params)
 
     @handle_feed_db_errors("update feed metadata")
     async def update_feed_metadata(
         self,
         feed_id: str,
         *,
+        source_type: SourceType | None = None,
         title: str | None = None,
         subtitle: str | None = None,
         description: str | None = None,
@@ -266,11 +267,14 @@ class FeedDatabase:
         image_url: str | None = None,
         category: PodcastCategories | None = None,
         explicit: PodcastExplicit | None = None,
+        since: datetime | None = None,
+        keep_last: int | None = None,
     ) -> None:
         """Update feed metadata fields; no-op if all metadata fields are None.
 
         Args:
             feed_id: The feed identifier.
+            source_type: Optional new source type.
             title: Optional new title.
             subtitle: Optional new subtitle.
             description: Optional new description.
@@ -279,6 +283,8 @@ class FeedDatabase:
             image_url: Optional new image URL.
             category: Optional new category.
             explicit: Optional new explicit flag.
+            since: Optional new since date.
+            keep_last: Optional new keep_last value.
 
         Raises:
             FeedNotFoundError: If the feed is not found.
@@ -286,6 +292,8 @@ class FeedDatabase:
         """
         # Build update dictionary with only non-None values
         updates: dict[str, Any] = {}
+        if source_type is not None:
+            updates["source_type"] = source_type
         if title is not None:
             updates["title"] = title
         if subtitle is not None:
@@ -302,6 +310,10 @@ class FeedDatabase:
             updates["category"] = category
         if explicit is not None:
             updates["explicit"] = explicit
+        if since is not None:
+            updates["since"] = since
+        if keep_last is not None:
+            updates["keep_last"] = keep_last
 
         # No-op if all fields are None
         if not updates:
@@ -322,4 +334,4 @@ class FeedDatabase:
             except NotFoundError as e:
                 raise FeedNotFoundError("Feed not found.", feed_id=feed_id) from e
             await session.commit()
-        logger.info("Feed metadata updated.", extra=log_params)
+        logger.debug("Feed metadata updated.", extra=log_params)

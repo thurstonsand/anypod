@@ -66,7 +66,7 @@ class FeedScheduler:
         """Start the scheduler."""
         # Start the scheduler
         self._scheduler.start()
-        logger.info(
+        logger.debug(
             "Feed scheduler started successfully.",
         )
 
@@ -80,13 +80,13 @@ class FeedScheduler:
             logger.debug("Scheduler is not running, nothing to stop.")
             return
 
-        logger.info(
+        logger.debug(
             "Stopping feed scheduler.",
             extra={"wait_for_jobs": wait_for_jobs},
         )
 
         self._scheduler.shutdown(wait=wait_for_jobs)
-        logger.info("Feed scheduler stopped successfully.")
+        logger.debug("Feed scheduler stopped successfully.")
 
     @property
     def running(self) -> bool:
@@ -159,7 +159,7 @@ class FeedScheduler:
         # Set context ID for automatic log correlation
         set_context_id(context_id)
 
-        logger.info(
+        logger.debug(
             "Starting scheduled feed processing job.",
             extra={
                 "feed_id": feed_id,
@@ -189,7 +189,7 @@ class FeedScheduler:
         }
 
         if retval.overall_success:
-            logger.info(
+            logger.debug(
                 "Scheduled feed processing job completed successfully.",
                 extra=log_params,
             )

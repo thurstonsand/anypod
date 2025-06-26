@@ -185,7 +185,7 @@ class YtdlpWrapper:
             "num_user_yt_cli_args": len(user_yt_cli_args),
         }
 
-        logger.info("Fetching metadata for feed.", extra=log_extra)
+        logger.debug("Fetching metadata for feed.", extra=log_extra)
 
         fetch_url, ref_type = await self._source_handler.determine_fetch_strategy(
             feed_id, url, cookies_path
@@ -211,7 +211,7 @@ class YtdlpWrapper:
         )
         actual_fetch_url = fetch_url or url
         if ref_type == ReferenceType.UNKNOWN_DIRECT_FETCH and not fetch_url:
-            logger.info(
+            logger.debug(
                 "Discovery indicated direct fetch, using original URL.",
                 extra={"feed_id": feed_id, "url": url},
             )
@@ -222,7 +222,7 @@ class YtdlpWrapper:
                 url=url,
             )
 
-        logger.info(
+        logger.debug(
             "Acquiring metadata.",
             extra={
                 "feed_id": feed_id,
@@ -255,7 +255,7 @@ class YtdlpWrapper:
             ref_type=ref_type,
         )
 
-        logger.info(
+        logger.debug(
             "Successfully processed metadata.",
             extra={
                 "feed_id": feed_id,
@@ -292,7 +292,7 @@ class YtdlpWrapper:
             download.feed_id
         )
 
-        logger.info(
+        logger.debug(
             "Requesting media download via yt-dlp.",
             extra={
                 "feed_id": download.feed_id,
@@ -400,7 +400,7 @@ class YtdlpWrapper:
                 url=url_to_download,
             )
 
-        logger.info(
+        logger.debug(
             "Download complete.",
             extra={
                 "feed_id": download.feed_id,

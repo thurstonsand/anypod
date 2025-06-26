@@ -1,6 +1,7 @@
 """Core yt-dlp thumbnail functionality and typed data access."""
 
 from typing import Any
+from urllib.parse import urlparse
 
 
 class YtdlpThumbnail:
@@ -53,13 +54,30 @@ class YtdlpThumbnail:
     def is_jpg(self) -> bool:
         """Check if the thumbnail is in JPG format."""
         url = self.url
-        return bool(url and url.endswith(".jpg"))
+        if not url:
+            return False
+        # Parse URL to get the path without query parameters
+        parsed_url = urlparse(url)
+        path = parsed_url.path.lower()
+
+        # Check for explicit JPG/JPEG file extensions
+        if path.endswith((".jpg", ".jpeg")):
+            return True
+
+        # YouTube channel thumbnails hosted on yt3.googleusercontent.com
+        # are typically JPEG format but don't have file extensions
+        return parsed_url.netloc.lower() == "yt3.googleusercontent.com"
 
     @property
     def is_png(self) -> bool:
         """Check if the thumbnail is in PNG format."""
         url = self.url
-        return bool(url and url.endswith(".png"))
+        if not url:
+            return False
+        # Parse URL to get the path without query parameters
+        parsed_url = urlparse(url)
+        path = parsed_url.path.lower()
+        return path.endswith(".png")
 
     @property
     def is_supported_format(self) -> bool:

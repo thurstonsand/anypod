@@ -149,7 +149,7 @@ class DownloadDatabase:
                     feed_id=feed_id,
                     download_id=download_id,
                 )
-        logger.info("Download marked as QUEUED from UPCOMING.", extra=log_params)
+        logger.debug("Download marked as QUEUED from UPCOMING.", extra=log_params)
 
     @handle_feed_db_errors("requeue downloads")
     async def requeue_downloads(
@@ -212,7 +212,7 @@ class DownloadDatabase:
                 )
             await session.commit()
 
-        logger.info(
+        logger.debug(
             "Downloads requeued.",
             extra={
                 **log_params,
@@ -274,7 +274,7 @@ class DownloadDatabase:
                     )
             await session.commit()
 
-        logger.info("Download marked as DOWNLOADED.", extra=log_params)
+        logger.debug("Download marked as DOWNLOADED.", extra=log_params)
 
     @handle_download_db_errors("mark download as SKIPPED")
     async def skip_download(self, feed_id: str, download_id: str) -> None:
@@ -313,7 +313,7 @@ class DownloadDatabase:
                     "Download not found.", feed_id=feed_id, download_id=download_id
                 ) from e
             await session.commit()
-        logger.info("Download marked as SKIPPED.", extra=log_params)
+        logger.debug("Download marked as SKIPPED.", extra=log_params)
 
     @handle_download_db_errors("mark download as ARCHIVED")
     async def archive_download(self, feed_id: str, download_id: str) -> None:
@@ -352,7 +352,7 @@ class DownloadDatabase:
                     "Download not found.", feed_id=feed_id, download_id=download_id
                 ) from e
             await session.commit()
-        logger.info("Download marked as ARCHIVED.", extra=log_params)
+        logger.debug("Download marked as ARCHIVED.", extra=log_params)
 
     @handle_download_db_errors("bump retry count")
     async def bump_retries(
@@ -406,7 +406,7 @@ class DownloadDatabase:
             )
 
             if transitioned_to_error:
-                logger.info(
+                logger.debug(
                     "Download transitioned to ERROR.",
                     extra={**log_params, "retries": download.retries},
                 )

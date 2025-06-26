@@ -443,7 +443,8 @@ class YoutubeHandler:
         Returns:
             Modified YtdlpArgs object with source-specific options applied.
         """
-        # No YouTube-specific filtering at discovery, metadata fetch, or media download needed
+        # Convert thumbnails to JPG format for podcast compatibility
+        args.convert_thumbnails("jpg")
         return args
 
     def extract_feed_metadata(
@@ -514,7 +515,7 @@ class YoutubeHandler:
             image_url=image_url,
         )
 
-        logger.info(
+        logger.debug(
             "Successfully extracted feed metadata.",
             extra={
                 "feed_id": feed_id,
@@ -636,7 +637,7 @@ class YoutubeHandler:
         Raises:
             YtdlpYoutubeDataError: If the URL is a playlists tab or other unsupported format.
         """
-        logger.info(
+        logger.debug(
             "Determining fetch strategy for URL.", extra={"initial_url": initial_url}
         )
 
@@ -647,9 +648,7 @@ class YoutubeHandler:
             discovery_args, FetchPurpose.DISCOVERY
         )
         # Apply standard discovery options
-        discovery_args.quiet().no_warnings().skip_download().flat_playlist().playlist_limit(
-            5
-        )
+        discovery_args.quiet().no_warnings().skip_download().flat_playlist()
 
         # Add cookies if provided
         if cookies_path is not None:
@@ -683,12 +682,13 @@ class YoutubeHandler:
 
         # Handle single video
         if youtube_info.extractor == "youtube":
-            logger.info(
+            logger.debug(
                 "Resolved as single video.",
                 extra={
                     "initial_url": initial_url,
                     "fetch_url": fetch_url,
                     "reference_type": ReferenceType.SINGLE,
+                    "extractor": youtube_info.extractor,
                 },
             )
             return fetch_url, ReferenceType.SINGLE
@@ -723,7 +723,7 @@ class YoutubeHandler:
                 or all(e and e.type == "playlist" for e in youtube_info.entries)
             )
         ):
-            logger.info(
+            logger.debug(
                 "URL identified as a main channel page. Searching for 'Videos' tab.",
                 extra={
                     "initial_url": initial_url,
@@ -734,12 +734,14 @@ class YoutubeHandler:
                 if entry and entry.type == "playlist":
                     tab_url = entry.webpage_url
                     if tab_url and tab_url.rstrip("/").endswith("/videos"):
-                        logger.info(
+                        logger.debug(
                             "Found 'Videos' tab for channel.",
                             extra={
                                 "initial_url": initial_url,
                                 "videos_tab_url": tab_url,
                                 "reference_type": ReferenceType.CHANNEL,
+                                "extractor": youtube_info.extractor,
+                                "type": youtube_info.type,
                             },
                         )
                         return tab_url, ReferenceType.CHANNEL
@@ -750,6 +752,8 @@ class YoutubeHandler:
                     "initial_url": initial_url,
                     "fetch_url": fetch_url,
                     "reference_type": ReferenceType.CHANNEL,
+                    "extractor": youtube_info.extractor,
+                    "type": youtube_info.type,
                 },
             )
             return fetch_url, ReferenceType.CHANNEL
@@ -767,12 +771,13 @@ class YoutubeHandler:
             )
         # Handle playlists and any other channel tabs
         elif youtube_info.extractor == "youtube:tab":
-            logger.info(
+            logger.debug(
                 "URL is a content collection (e.g., playlist or specific channel tab).",
                 extra={
                     "initial_url": initial_url,
                     "fetch_url": fetch_url,
                     "extractor": youtube_info.extractor,
+                    "type": youtube_info.type,
                     "reference_type": ReferenceType.COLLECTION,
                 },
             )
@@ -784,6 +789,7 @@ class YoutubeHandler:
                 "initial_url": initial_url,
                 "fetch_url": fetch_url,
                 "extractor": youtube_info.extractor,
+                "type": youtube_info.type,
                 "reference_type": ReferenceType.UNKNOWN_RESOLVED_URL,
             },
         )
@@ -832,7 +838,7 @@ class YoutubeHandler:
                     extra={"source_identifier": source_identifier},
                 )
             except YtdlpYoutubeVideoFilteredOutError as e:
-                logger.info(
+                logger.debug(
                     "Download filtered out by yt-dlp. Skipping.",
                     exc_info=e,
                     extra={"source_identifier": source_identifier},
@@ -875,7 +881,7 @@ class YoutubeHandler:
                             },
                         )
                     except YtdlpYoutubeVideoFilteredOutError as e:
-                        logger.info(
+                        logger.debug(
                             "Video in collection filtered out by yt-dlp. Skipping download.",
                             exc_info=e,
                             extra={
@@ -910,13 +916,13 @@ class YoutubeHandler:
                     extra={"source_identifier": source_identifier},
                 )
             except YtdlpYoutubeVideoFilteredOutError as e:
-                logger.info(
+                logger.debug(
                     "Video of unknown type filtered out by yt-dlp. Skipping.",
                     exc_info=e,
                     extra={"source_identifier": source_identifier},
                 )
 
-        logger.info(
+        logger.debug(
             "Finished parsing metadata.",
             extra={
                 "source_identifier": source_identifier,

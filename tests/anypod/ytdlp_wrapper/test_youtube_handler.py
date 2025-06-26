@@ -61,10 +61,10 @@ def valid_video_entry(valid_video_entry_data: dict[str, Any]) -> YoutubeEntry:
         FetchPurpose.METADATA_FETCH,
     ],
 )
-def test_set_source_specific_ytdlp_options_returns_unmodified_args(
+def test_set_source_specific_ytdlp_options_adds_thumbnail_conversion(
     youtube_handler: YoutubeHandler, purpose: FetchPurpose
 ):
-    """Tests that set_source_specific_ytdlp_options currently doesn't add any YouTube-specific options."""
+    """Tests that set_source_specific_ytdlp_options adds thumbnail conversion for JPG format."""
     input_args = YtdlpArgs(["--some-user-arg"])
     original_args_list = input_args.to_list()
 
@@ -75,9 +75,10 @@ def test_set_source_specific_ytdlp_options_returns_unmodified_args(
         f"Expected same YtdlpArgs object for purpose {purpose}"
     )
 
-    # Should not add any additional arguments beyond the user-provided ones
-    assert result_args.to_list() == original_args_list, (
-        f"Expected no additional args for purpose {purpose}, got {result_args.to_list()}"
+    # Should add thumbnail conversion args for JPG format (part of the thumbnail processing fix)
+    expected_args = [*original_args_list, "--convert-thumbnails", "jpg"]
+    assert result_args.to_list() == expected_args, (
+        f"Expected thumbnail conversion args for purpose {purpose}, got {result_args.to_list()}"
     )
 
 
@@ -839,6 +840,218 @@ async def test_determine_fetch_strategy_existing_channel_tab_not_main_page(
     # Should be treated as COLLECTION, not attempt channel tab resolution
     assert fetch_url == initial_url
     assert ref_type == ReferenceType.COLLECTION
+
+
+# --- Tests for YoutubeHandler source_type preservation and channel classification ---
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@patch.object(YtdlpCore, "extract_info")
+async def test_determine_fetch_strategy_preserves_channel_classification(
+    mock_extract_info: AsyncMock,
+    youtube_handler: YoutubeHandler,
+):
+    """Test that channel classification is properly preserved through the discovery process.
+
+    This test covers the YouTube channel classification fix where the source_type
+    was being lost during the feed metadata synchronization process.
+    """
+    initial_url = "https://www.youtube.com/@testchannel"
+    videos_tab_url = "https://www.youtube.com/@testchannel/videos"
+
+    # Mock yt-dlp discovery response for a channel with videos tab
+    mock_extract_info.return_value = YtdlpInfo(
+        {
+            "extractor": "youtube:tab",
+            "_type": "playlist",
+            "webpage_url": initial_url,
+            "id": "testchannel_main_id",
+            "title": "Test Channel",
+            "description": "A test channel description",
+            "uploader": "Test Channel Creator",
+            "thumbnail": "https://yt3.googleusercontent.com/testchannel_image",
+            "entries": [
+                {
+                    "_type": "playlist",
+                    "id": "testchannel_videos_id",
+                    "webpage_url": videos_tab_url,
+                    "title": "Videos",
+                },
+                {
+                    "_type": "playlist",
+                    "id": "testchannel_shorts_id",
+                    "webpage_url": "https://www.youtube.com/@testchannel/shorts",
+                    "title": "Shorts",
+                },
+            ],
+        }
+    )
+
+    fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
+        FEED_ID, initial_url
+    )
+
+    # Verify that the fetch strategy correctly identifies this as a channel
+    assert fetch_url == videos_tab_url
+    assert ref_type == ReferenceType.CHANNEL
+
+    # Verify that if we extract feed metadata from this discovery result,
+    # the source_type is correctly set to CHANNEL
+    discovery_result = mock_extract_info.return_value
+    extracted_feed = youtube_handler.extract_feed_metadata(
+        FEED_ID, discovery_result, ref_type, initial_url
+    )
+
+    # THE CRITICAL ASSERTION: source_type should be CHANNEL, not UNKNOWN
+    assert extracted_feed.source_type == SourceType.CHANNEL
+    assert extracted_feed.title == "Test Channel"
+    assert extracted_feed.description == "A test channel description"
+    assert extracted_feed.author == "Test Channel Creator"
+    assert (
+        extracted_feed.image_url
+        == "https://yt3.googleusercontent.com/testchannel_image"
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@patch.object(YtdlpCore, "extract_info")
+async def test_determine_fetch_strategy_channel_without_videos_tab_still_classified_correctly(
+    mock_extract_info: AsyncMock,
+    youtube_handler: YoutubeHandler,
+):
+    """Test that channels without explicit videos tab are still classified as CHANNEL."""
+    initial_url = "https://www.youtube.com/@newchannel"
+    resolved_channel_url = "https://www.youtube.com/@newchannel/featured"
+
+    # Mock yt-dlp discovery response for a channel with no videos tab but still channel-like
+    mock_extract_info.return_value = YtdlpInfo(
+        {
+            "extractor": "youtube:tab",
+            "_type": "playlist",
+            "webpage_url": resolved_channel_url,
+            "id": "newchannel_id",
+            "title": "New Channel",
+            "description": "A new channel with no videos yet",
+            "uploader": "New Channel Creator",
+            "thumbnail": "https://yt3.googleusercontent.com/newchannel_default",
+            "entries": [
+                {
+                    "_type": "playlist",
+                    "id": "newchannel_community_id",
+                    "webpage_url": "https://www.youtube.com/@newchannel/community",
+                    "title": "Community",
+                },
+                # No videos tab available
+            ],
+        }
+    )
+
+    fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
+        FEED_ID, initial_url
+    )
+
+    # Should still be classified as channel even without videos tab
+    assert fetch_url == resolved_channel_url
+    assert ref_type == ReferenceType.CHANNEL
+
+    # Extract feed metadata and verify source_type preservation
+    discovery_result = mock_extract_info.return_value
+    extracted_feed = youtube_handler.extract_feed_metadata(
+        FEED_ID, discovery_result, ref_type, initial_url
+    )
+
+    # Should still be CHANNEL, not UNKNOWN
+    assert extracted_feed.source_type == SourceType.CHANNEL
+    assert extracted_feed.title == "New Channel"
+
+
+@pytest.mark.unit
+def test_extract_feed_metadata_regression_test_source_type_mapping():
+    """Regression test to ensure all ReferenceType values map to correct SourceType.
+
+    This test verifies that the mapping between ReferenceType and SourceType
+    is complete and correct, covering the fix where YouTube channels were
+    being classified as UNKNOWN instead of CHANNEL.
+    """
+    feed_id = "test_mapping_regression"
+    basic_ytdlp_data = {
+        "id": "test_video_id",
+        "title": "Test Title",
+        "description": "Test Description",
+        "uploader": "Test Creator",
+        "thumbnail": "https://example.com/test_thumb.jpg",
+    }
+
+    # Test all reference type mappings
+    test_cases = [
+        (ReferenceType.SINGLE, SourceType.SINGLE_VIDEO),
+        (ReferenceType.CHANNEL, SourceType.CHANNEL),  # THE CRITICAL MAPPING
+        (ReferenceType.COLLECTION, SourceType.PLAYLIST),
+        (ReferenceType.UNKNOWN_RESOLVED_URL, SourceType.UNKNOWN),
+        (ReferenceType.UNKNOWN_DIRECT_FETCH, SourceType.UNKNOWN),
+    ]
+
+    youtube_handler = YoutubeHandler()
+
+    for ref_type, expected_source_type in test_cases:
+        ytdlp_info = YtdlpInfo(basic_ytdlp_data.copy())
+
+        extracted_feed = youtube_handler.extract_feed_metadata(
+            feed_id, ytdlp_info, ref_type, "https://example.com/source"
+        )
+
+        assert extracted_feed.source_type == expected_source_type, (
+            f"ReferenceType.{ref_type.name} should map to SourceType.{expected_source_type.name}"
+        )
+        assert extracted_feed.id == feed_id
+        assert extracted_feed.is_enabled is True
+
+
+@pytest.mark.unit
+def test_extract_feed_metadata_channel_specific_fields():
+    """Test that channel-specific metadata fields are properly extracted."""
+    feed_id = "test_channel_metadata"
+
+    # Comprehensive channel metadata from yt-dlp
+    channel_ytdlp_data = {
+        "id": "channel_id_123",
+        "title": "Amazing Tech Channel",
+        "description": "We review the latest technology and gadgets",
+        "uploader": "Tech Reviewer",
+        "channel": "Amazing Tech Channel",  # Fallback for author
+        "thumbnail": "https://yt3.googleusercontent.com/amazing_tech_channel_image",
+        "uploader_id": "UCamazingtech123",
+        "channel_id": "UCamazingtech123",
+        "webpage_url": "https://www.youtube.com/@amazingtech",
+    }
+
+    youtube_handler = YoutubeHandler()
+    ytdlp_info = YtdlpInfo(channel_ytdlp_data)
+
+    extracted_feed = youtube_handler.extract_feed_metadata(
+        feed_id,
+        ytdlp_info,
+        ReferenceType.CHANNEL,
+        "https://www.youtube.com/@amazingtech",
+    )
+
+    # Verify all metadata is correctly extracted
+    assert extracted_feed.source_type == SourceType.CHANNEL
+    assert extracted_feed.title == "Amazing Tech Channel"
+    assert extracted_feed.description == "We review the latest technology and gadgets"
+    assert (
+        extracted_feed.author == "Tech Reviewer"
+    )  # uploader takes precedence over channel
+    assert (
+        extracted_feed.image_url
+        == "https://yt3.googleusercontent.com/amazing_tech_channel_image"
+    )
+    assert extracted_feed.subtitle is None  # Not available from yt-dlp
+    assert extracted_feed.language is None  # Not available from yt-dlp
+    assert extracted_feed.id == feed_id
+    assert extracted_feed.is_enabled is True
 
 
 # --- Tests for YoutubeHandler.parse_metadata_to_downloads ---

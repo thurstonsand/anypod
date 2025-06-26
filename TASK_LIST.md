@@ -372,10 +372,9 @@ This section details the components that manage the lifecycle of downloads, from
     - jury's still out on channels, but maybe?
     - maybe we can pre-emptively classify these when they are added, store the type in the db, and pick the optimal way to retrieve based on that classification
     - **Future Optimization**: Could fetch detailed metadata in one call (86 fields vs 21) but 10x slower - out of scope
-
-  - [ ] Cut down on excessive logs
+  - [x] Cut down on excessive logs
   - [x] use the shared conftest for more fixtures
-  - [ ] make the db a folder instead of a file -- it creates `.db-wal` type in the same folder.
+  - [x] make the db a folder instead of a file -- it creates `.db-wal` type in the same folder.
 
 #### 5.4.1 Convert to async model for ytdlp
 
@@ -390,8 +389,9 @@ This section details the components that manage the lifecycle of downloads, from
   - also separate out the classes into different files
 - [x] Remove unused YtdlpCore methods: parse_options(), set_date_range(), set_playlist_limit(), set_cookies()
 - [x] **Conversion Order**: YtdlpCore → YtdlpWrapper → Enqueuer/Downloader/Pruner → DataCoordinator → StateReconciler
-- [ ] Consider if RSSFeedGenerator needs async updates (probably minimal since it's mostly CPU-bound)
-- [ ] Implement graceful shutdown handling - it hard crashes on ctrl-c right now
+- [x] Consider if RSSFeedGenerator needs async updates (probably minimal since it's mostly CPU-bound)
+  - the answer is no, for now at least
+- [x] Implement graceful shutdown handling - it hard crashes on ctrl-c right now
   - this includes during init when we're not in APScheduler yet (maybe we should be?)
 
 #### 5.4.2 Use SQLAlchemy AsyncIO
@@ -431,9 +431,9 @@ This section details the components that manage the lifecycle of downloads, from
 
 ### 5.5 Initial Sync Strategy
 - [ ] After reconciliation, trigger immediate sync:
-  - [ ] Process all enabled feeds to populate RSS
+  - [x] Process all enabled feeds to populate RSS
   - [ ] Ensure RSS feeds available before HTTP server starts
-  - [ ] Handle failures gracefully without blocking startup, unless config is wrong -- that should cause failure until fixed
+  - [x] Handle failures gracefully without blocking startup, unless config is wrong -- that should cause failure until fixed
 
 ## 6  HTTP Server
 

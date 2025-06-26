@@ -249,7 +249,7 @@ LOGGING_CONFIG: dict[str, Any] = {
         },
         "json_formatter": {
             "()": "pythonjsonlogger.json.JsonFormatter",
-            "format": "%(asctime)s %(levelname)s %(name)s %(message)s %(context_id)s",
+            "format": "%(asctime)s %(levelname)s %(name)s %(message)s",
         },
     },
     "handlers": {

@@ -105,7 +105,7 @@ class RSSFeedGenerator:
         Raises:
             RSSGenerationError: If feed generation fails.
         """
-        logger.info(
+        logger.debug(
             "Generating RSS feed XML.",
             extra={"feed_id": feed_id},
         )

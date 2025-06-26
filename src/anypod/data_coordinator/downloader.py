@@ -72,7 +72,7 @@ class Downloader:
             "download_id": download.id,
             "downloaded_file_path": downloaded_file_path,
         }
-        logger.info("Download successful, processing file.", extra=log_params)
+        logger.debug("Download successful, processing file.", extra=log_params)
 
         try:
             file_stat = await aiofiles.os.stat(downloaded_file_path)
@@ -211,7 +211,7 @@ class Downloader:
                 field: {"old": old_val, "new": new_val}
                 for field, (old_val, new_val) in changes.items()
             }
-            logger.info(
+            logger.debug(
                 "Detected metadata changes, updating database.",
                 extra={
                     **log_params,
@@ -320,7 +320,7 @@ class Downloader:
             "feed_id": feed_id,
             "feed_url": feed_config.url,
         }
-        logger.info(
+        logger.debug(
             "Starting download_queued process.",
             extra=log_params,
         )
@@ -340,10 +340,10 @@ class Downloader:
             ) from e
 
         if not queued_downloads:
-            logger.info("No queued downloads found for feed.", extra=log_params)
+            logger.debug("No queued downloads found for feed.", extra=log_params)
             return 0, 0
 
-        logger.info(
+        logger.debug(
             "Found queued items for feed. Processing...",
             extra={**log_params, "num_queued": len(queued_downloads)},
         )
@@ -356,7 +356,7 @@ class Downloader:
                 await self._handle_download_failure(download, feed_config, e)
                 failure_count += 1
 
-        logger.info(
+        logger.debug(
             "Finished processing queued downloads.",
             extra={
                 **log_params,

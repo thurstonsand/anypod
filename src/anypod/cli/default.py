@@ -75,7 +75,7 @@ async def _init(
     )
 
     # Run state reconciliation
-    logger.info("Running state reconciliation.")
+    logger.debug("Running state reconciliation.")
     state_reconciler = StateReconciler(
         feed_db=feed_db, download_db=download_db, pruner=pruner
     )
@@ -94,7 +94,9 @@ async def _init(
         raise RuntimeError("No enabled feeds found in config")
 
     # Initialize and start scheduler
-    logger.info("Initializing feed scheduler.", extra={"ready_feeds": len(ready_feeds)})
+    logger.debug(
+        "Initializing feed scheduler.", extra={"ready_feeds": len(ready_feeds)}
+    )
     return FeedScheduler(
         ready_feed_ids=ready_feeds,
         feed_configs=settings.feeds,
@@ -111,7 +113,7 @@ async def default(settings: AppSettings) -> None:
     Args:
         settings: Application settings object containing configuration.
     """
-    logger.info(
+    logger.debug(
         "Starting Anypod in default mode.",
         extra={"config_file": str(settings.config_file)},
     )
@@ -133,7 +135,7 @@ async def default(settings: AppSettings) -> None:
         )
         raise DatabaseOperationError("Failed to create data directory.") from e
 
-    logger.info("Initializing database components.")
+    logger.debug("Initializing database components.")
 
     db_dir = await path_manager.db_dir()
     db_core = SqlalchemyCore(db_dir)

@@ -18,7 +18,8 @@
       "mcp__serena__get_symbols_overview",
       "mcp__ide__getDiagnostics",
       "Bash(sqlite3:*)",
-      "Bash(alembic:*)"
+      "Bash(alembic:*)",
+      "Bash(python3:*)"
     ],
     "deny": []
   }

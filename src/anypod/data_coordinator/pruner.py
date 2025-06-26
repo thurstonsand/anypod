@@ -150,7 +150,7 @@ class Pruner:
                 feed_id=feed_id,
                 download_id=download.id,
             ) from e
-        logger.info("File deleted successfully during pruning.", extra=log_params)
+        logger.debug("File deleted successfully during pruning.", extra=log_params)
 
     async def _archive_download(self, download: Download, feed_id: str) -> None:
         """Archive a download in the database.
@@ -176,7 +176,7 @@ class Pruner:
                 feed_id=feed_id,
                 download_id=download.id,
             ) from e
-        logger.info("Download archived successfully.", extra=log_params)
+        logger.debug("Download archived successfully.", extra=log_params)
 
     async def _process_single_download_for_pruning(
         self, download: Download, feed_id: str
@@ -257,17 +257,17 @@ class Pruner:
                 prune_before_date.isoformat() if prune_before_date else None
             ),
         }
-        logger.info("Starting pruning process for feed.", extra=log_params)
+        logger.debug("Starting pruning process for feed.", extra=log_params)
 
         candidate_downloads = await self._identify_prune_candidates(
             feed_id, keep_last, prune_before_date
         )
 
         if not candidate_downloads:
-            logger.info("No downloads found to prune for feed.", extra=log_params)
+            logger.debug("No downloads found to prune for feed.", extra=log_params)
             return 0, 0
 
-        logger.info(
+        logger.debug(
             "Found candidates for pruning.",
             extra={**log_params, "candidate_count": len(candidate_downloads)},
         )
@@ -283,6 +283,20 @@ class Pruner:
                 archived_count += 1
                 if file_deleted:
                     files_deleted_count += 1
+
+                logger.info(
+                    "Download archived successfully.",
+                    extra={
+                        **log_params,
+                        "keep_last": keep_last,
+                        "prune_before_date": (
+                            prune_before_date.isoformat() if prune_before_date else None
+                        ),
+                        "download_id": download.id,
+                        "download_title": download.title,
+                        "file_deleted": file_deleted,
+                    },
+                )
             except PruneError as e:
                 logger.error(
                     "Failed to process download for pruning.",
@@ -293,7 +307,7 @@ class Pruner:
                     },
                 )
 
-        logger.info(
+        logger.debug(
             "Pruning process completed for feed.",
             extra={
                 **log_params,
@@ -321,7 +335,7 @@ class Pruner:
             PruneError: If feed disabling or download archiving fails.
         """
         log_params: dict[str, Any] = {"feed_id": feed_id}
-        logger.info("Starting feed archival process.", extra=log_params)
+        logger.debug("Starting feed archival process.", extra=log_params)
 
         async with self._feed_db.session() as session:
             # Get all downloads for this feed by collecting from all status types
@@ -340,7 +354,7 @@ class Pruner:
                         feed_id=feed_id,
                     ) from e
 
-            logger.info(
+            logger.debug(
                 "Downloads to archive for feed.",
                 extra={**log_params, "downloads_count": len(all_downloads)},
             )
@@ -359,9 +373,9 @@ class Pruner:
             # Disable the feed last
             await self._feed_db.set_feed_enabled(feed_id, False)
             await session.commit()
-            logger.info("Feed disabled successfully.", extra=log_params)
+            logger.debug("Feed disabled successfully.", extra=log_params)
 
-        logger.info(
+        logger.debug(
             "Feed archival process completed.",
             extra={
                 **log_params,

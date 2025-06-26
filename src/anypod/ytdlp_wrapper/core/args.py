@@ -28,6 +28,7 @@ class YtdlpArgs:
         self._dateafter: datetime | None = None
         self._datebefore: datetime | None = None
         self._output: str | None = None
+        self._convert_thumbnails: str | None = None
         self._paths_temp: Path | None = None
         self._paths_home: Path | None = None
         self._cookies: Path | None = None
@@ -72,6 +73,11 @@ class YtdlpArgs:
     def output(self, template: str) -> "YtdlpArgs":
         """Set output filename template."""
         self._output = template
+        return self
+
+    def convert_thumbnails(self, format: str) -> "YtdlpArgs":
+        """Convert thumbnails to specified format (jpg, png, webp)."""
+        self._convert_thumbnails = format
         return self
 
     def paths_temp(self, path: Path) -> "YtdlpArgs":
@@ -148,6 +154,8 @@ class YtdlpArgs:
             args.extend(["--datebefore", self._datebefore.strftime("%Y%m%d")])
         if self._output is not None:
             args.extend(["--output", self._output])
+        if self._convert_thumbnails is not None:
+            args.extend(["--convert-thumbnails", self._convert_thumbnails])
         if self._paths_temp is not None:
             args.extend(["--paths", f"temp:{self._paths_temp}"])
         if self._paths_home is not None:

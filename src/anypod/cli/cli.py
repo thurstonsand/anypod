@@ -38,7 +38,7 @@ async def main_cli():
 
     logger = logging.getLogger(__name__)
 
-    logger.info(
+    logger.debug(
         "Application logging configured.",
         extra={
             "log_format": settings.log_format,
@@ -108,7 +108,7 @@ async def main_cli():
                     )
 
         case None:
-            logger.info("Initializing Anypod in default mode.")
+            logger.debug("Initializing Anypod in default mode.")
             await default(settings)
 
     logger.debug("main_cli execution finished.")
