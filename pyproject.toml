@@ -46,7 +46,7 @@ managed = true
 
 [tool.pytest.ini_options]
 minversion = "7.0"
-pythonpath = ["src"]
+pythonpath = ["src", "tests"]
 testpaths = ["tests"]
 addopts = "-ra -q --tb=short --disable-warnings --strict-markers -n 4 --cov=src --cov-report=html --cov-report=term-missing"
 filterwarnings = ["error"]

@@ -7,6 +7,7 @@ from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from helpers.alembic import run_migrations
 import pytest
 import pytest_asyncio
 from sqlalchemy import update
@@ -23,8 +24,12 @@ from anypod.exceptions import DatabaseOperationError, DownloadNotFoundError
 @pytest_asyncio.fixture
 async def db_core(tmp_path: Path) -> AsyncGenerator[SqlalchemyCore]:
     """Provides a SqlalchemyCore instance for testing."""
-    core = SqlalchemyCore(tmp_path)
-    await core.create_db_and_tables()
+    # Run Alembic migrations to set up the database schema
+    db_path = tmp_path / "anypod.db"
+    run_migrations(db_path)
+
+    # Create SqlalchemyCore instance
+    core = SqlalchemyCore(db_dir=tmp_path)
     yield core
     await core.close()
 

@@ -50,7 +50,6 @@ async def run_debug_downloader_mode(
 
     try:
         db_core = SqlalchemyCore(debug_db_dir)
-        await db_core.create_db_and_tables()
         download_db = DownloadDatabase(db_core)
 
         file_manager = FileManager(paths)

@@ -7,20 +7,17 @@ from pathlib import Path
 import sqlite3
 from typing import Any
 
-from sqlalchemy import event, text
+from sqlalchemy import event
 from sqlalchemy.engine import CursorResult, Engine
 from sqlalchemy.ext.asyncio import (
-    AsyncConnection,
     AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
 from sqlalchemy.pool import ConnectionPoolEntry
-from sqlmodel import SQLModel
 
 from ..exceptions import DatabaseOperationError, NotFoundError
-from .types.timezone_aware_datetime import SQLITE_DATETIME_NOW
 
 logger = logging.getLogger(__name__)
 
@@ -45,13 +42,6 @@ class SqlalchemyCore:
             self.engine, class_=AsyncSession, expire_on_commit=False
         )
 
-    async def create_db_and_tables(self) -> None:
-        """Create all tables in the database based on SQLModel metadata."""
-        async with self.engine.begin() as conn:
-            await conn.run_sync(SQLModel.metadata.create_all)
-            # Create SQLite triggers for automatic timestamp updates
-            await self._create_timestamp_triggers(conn)
-
     @asynccontextmanager
     async def session(self) -> AsyncGenerator[AsyncSession]:
         """Provide a transactional session.
@@ -64,114 +54,6 @@ class SqlalchemyCore:
         """
         async with self.async_session_maker() as session:
             yield session
-
-    async def _create_timestamp_triggers(self, conn: AsyncConnection) -> None:
-        """Create SQLite triggers for automatic timestamp updates.
-
-        - Feed: UPDATE OF all columns EXCEPT created_at, updated_at
-        - Download: UPDATE OF all columns EXCEPT discovered_at, updated_at, downloaded_at
-        - Download downloaded_at: UPDATE OF status column with condition
-        """
-        await conn.execute(
-            text(
-                f"""
-                CREATE TRIGGER IF NOT EXISTS feeds_update_updated_at
-                AFTER UPDATE OF id, is_enabled, source_type, source_url, last_successful_sync,
-                                 last_rss_generation, last_failed_sync, consecutive_failures,
-                                 since, keep_last, title, subtitle, description, language, author, image_url,
-                                 category, explicit ON feed
-                FOR EACH ROW
-                BEGIN
-                    UPDATE feed SET updated_at = {SQLITE_DATETIME_NOW} WHERE id = NEW.id;
-                END;
-                """
-            )
-        )
-
-        await conn.execute(
-            text(
-                f"""
-                CREATE TRIGGER IF NOT EXISTS downloads_update_updated_at
-                AFTER UPDATE OF feed_id, id, source_url, title, published, ext, mime_type, filesize,
-                                 duration, status, thumbnail, description, quality_info, retries, last_error ON download
-                FOR EACH ROW
-                BEGIN
-                    UPDATE download SET updated_at = {SQLITE_DATETIME_NOW} WHERE feed_id = NEW.feed_id AND id = NEW.id;
-                END;
-                """
-            )
-        )
-
-        await conn.execute(
-            text(
-                f"""
-                CREATE TRIGGER IF NOT EXISTS downloads_update_downloaded_at
-                AFTER UPDATE OF status ON download
-                FOR EACH ROW
-                WHEN NEW.status = 'DOWNLOADED' AND OLD.status != 'DOWNLOADED'
-                BEGIN
-                    UPDATE download SET downloaded_at = {SQLITE_DATETIME_NOW} WHERE feed_id = NEW.feed_id AND id = NEW.id;
-                END;
-                """
-            )
-        )
-
-        # --- Triggers to maintain feed.total_downloads ---
-        await conn.execute(
-            text(
-                """
-                CREATE TRIGGER IF NOT EXISTS downloads_after_insert_total_downloads
-                AFTER INSERT ON download
-                FOR EACH ROW
-                WHEN NEW.status = 'DOWNLOADED'
-                BEGIN
-                    UPDATE feed SET total_downloads = total_downloads + 1 WHERE id = NEW.feed_id;
-                END;
-                """
-            )
-        )
-
-        await conn.execute(
-            text(
-                """
-                CREATE TRIGGER IF NOT EXISTS downloads_after_delete_total_downloads
-                AFTER DELETE ON download
-                FOR EACH ROW
-                WHEN OLD.status = 'DOWNLOADED'
-                BEGIN
-                    UPDATE feed SET total_downloads = total_downloads - 1 WHERE id = OLD.feed_id;
-                END;
-                """
-            )
-        )
-
-        await conn.execute(
-            text(
-                """
-                CREATE TRIGGER IF NOT EXISTS downloads_status_to_downloaded_total_downloads
-                AFTER UPDATE OF status ON download
-                FOR EACH ROW
-                WHEN NEW.status = 'DOWNLOADED' AND OLD.status != 'DOWNLOADED'
-                BEGIN
-                    UPDATE feed SET total_downloads = total_downloads + 1 WHERE id = NEW.feed_id;
-                END;
-                """
-            )
-        )
-
-        await conn.execute(
-            text(
-                """
-                CREATE TRIGGER IF NOT EXISTS downloads_status_from_downloaded_total_downloads
-                AFTER UPDATE OF status ON download
-                FOR EACH ROW
-                WHEN OLD.status = 'DOWNLOADED' AND NEW.status != 'downloaded'
-                BEGIN
-                    UPDATE feed SET total_downloads = total_downloads - 1 WHERE id = NEW.feed_id;
-                END;
-                """
-            )
-        )
 
     async def close(self) -> None:
         """Close the database engine and all its connections."""

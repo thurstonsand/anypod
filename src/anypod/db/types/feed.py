@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import computed_field
 from sqlalchemy import (
+    Boolean,
     Column,
     Enum,
     Integer,
@@ -83,15 +84,20 @@ class Feed(SQLModel, table=True):
     """
 
     id: str = Field(primary_key=True)
-    is_enabled: bool = Field(default=True, index=True)
+    is_enabled: bool = Field(
+        default=True,
+        sa_column=Column(Boolean, nullable=False, index=True, server_default="1"),
+    )
 
-    source_type: SourceType = Field(sa_column=Column(Enum(SourceType)))
+    source_type: SourceType = Field(sa_column=Column(Enum(SourceType), nullable=False))
     source_url: str
 
     # ----------------------------------------------------- time keeping ----
     last_successful_sync: datetime = Field(
         sa_column=Column(
-            TimezoneAwareDatetime, server_default=text(SQLITE_DATETIME_NOW)
+            TimezoneAwareDatetime,
+            nullable=False,
+            server_default=text(SQLITE_DATETIME_NOW),
         ),
     )
     created_at: datetime | None = Field(
@@ -119,13 +125,18 @@ class Feed(SQLModel, table=True):
     last_failed_sync: datetime | None = Field(
         default=None, sa_column=Column(TimezoneAwareDatetime)
     )
-    consecutive_failures: int = 0
+    consecutive_failures: int = Field(
+        default=0,
+        sa_column=Column(Integer, nullable=False, server_default="0"),
+    )
 
     # --------------------------------------------------- download metrics
     total_downloads_internal: int = Field(
         default=0,
         exclude=True,
-        sa_column=Column(Integer, server_default="0", name="total_downloads"),
+        sa_column=Column(
+            Integer, nullable=False, server_default="0", name="total_downloads"
+        ),
     )
 
     @computed_field

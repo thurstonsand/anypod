@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import Column, Enum, Index, text
+from sqlalchemy import Column, Enum, Index, Integer, text
 from sqlalchemy.sql.schema import FetchedValue
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -54,7 +54,7 @@ class Download(SQLModel, table=True):
     # Source + metadata
     source_url: str
     title: str
-    published: datetime = Field(sa_column=Column(TimezoneAwareDatetime))
+    published: datetime = Field(sa_column=Column(TimezoneAwareDatetime, nullable=False))
 
     # Media details
     ext: str
@@ -63,7 +63,9 @@ class Download(SQLModel, table=True):
     duration: int = Field(gt=0)
 
     # Processing state
-    status: DownloadStatus = Field(sa_column=Column(Enum(DownloadStatus)))
+    status: DownloadStatus = Field(
+        sa_column=Column(Enum(DownloadStatus), nullable=False)
+    )
 
     discovered_at: datetime | None = Field(
         default=None,
@@ -89,7 +91,9 @@ class Download(SQLModel, table=True):
     quality_info: str | None = None
 
     # Error tracking
-    retries: int = 0
+    retries: int = Field(
+        default=0, sa_column=Column(Integer, nullable=False, server_default="0")
+    )
     last_error: str | None = None
 
     # When the file was actually downloaded

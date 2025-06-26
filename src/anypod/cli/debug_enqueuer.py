@@ -46,7 +46,6 @@ async def run_debug_enqueuer_mode(
 
     try:
         db_core = SqlalchemyCore(debug_db_dir)
-        await db_core.create_db_and_tables()
         feed_db = FeedDatabase(db_core)
         download_db = DownloadDatabase(db_core)
         ytdlp_wrapper = YtdlpWrapper(paths)

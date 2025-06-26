@@ -3,6 +3,7 @@
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
+from helpers.alembic import run_migrations
 import pytest
 import pytest_asyncio
 
@@ -72,8 +73,13 @@ async def db_core(tmp_path: Path) -> AsyncGenerator[SqlalchemyCore]:
     Returns:
         Temporary database directory that auto-cleans up after test.
     """
+    db_path = tmp_path / "anypod.db"
+
+    # Run Alembic migrations to set up the database schema
+    run_migrations(db_path)
+
+    # Create SqlalchemyCore instance
     db_core = SqlalchemyCore(db_dir=tmp_path)
-    await db_core.create_db_and_tables()
     yield db_core
     await db_core.close()
 

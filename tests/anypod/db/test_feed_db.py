@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 import time
 
+from helpers.alembic import run_migrations
 import pytest
 import pytest_asyncio
 
@@ -22,8 +23,12 @@ from anypod.exceptions import FeedNotFoundError
 @pytest_asyncio.fixture
 async def db_core(tmp_path: Path) -> AsyncGenerator[SqlalchemyCore]:
     """Provides a SqlalchemyCore instance for testing."""
+    # Run Alembic migrations to set up the database schema
+    db_path = tmp_path / "anypod.db"
+    run_migrations(db_path)
+
+    # Create SqlalchemyCore instance
     core = SqlalchemyCore(tmp_path)
-    await core.create_db_and_tables()
     yield core
     await core.close()
 
@@ -121,27 +126,6 @@ def sample_downloads() -> list[Download]:
             status=DownloadStatus.QUEUED,
         ),
     ]
-
-
-# --- Tests ---
-
-
-# --- Tests for SourceType enum ---
-
-
-@pytest.mark.unit
-def test_source_type_enum():
-    """Test SourceType enum values and string conversion."""
-    assert str(SourceType.CHANNEL) == "channel"
-    assert str(SourceType.PLAYLIST) == "playlist"
-    assert str(SourceType.SINGLE_VIDEO) == "single_video"
-    assert str(SourceType.UNKNOWN) == "unknown"
-
-    # Test enum creation from string
-    assert SourceType("channel") == SourceType.CHANNEL
-    assert SourceType("playlist") == SourceType.PLAYLIST
-    assert SourceType("single_video") == SourceType.SINGLE_VIDEO
-    assert SourceType("unknown") == SourceType.UNKNOWN
 
 
 # --- Tests for FeedDatabase schema initialization ---

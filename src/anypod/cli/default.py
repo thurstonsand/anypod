@@ -137,9 +137,6 @@ async def default(settings: AppSettings) -> None:
 
     db_dir = await path_manager.db_dir()
     db_core = SqlalchemyCore(db_dir)
-    # TODO: use alembic instead
-    await db_core.create_db_and_tables()
-
     feed_db = FeedDatabase(db_core)
     download_db = DownloadDatabase(db_core)
 

@@ -6,6 +6,7 @@ from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 from pathlib import Path
 
+from helpers.alembic import run_migrations
 import pytest
 import pytest_asyncio
 from sqlalchemy import text
@@ -16,8 +17,13 @@ from anypod.db.types import Download, DownloadStatus, Feed, SourceType
 
 @pytest_asyncio.fixture
 async def db_core(tmp_path: Path) -> AsyncGenerator[SqlalchemyCore]:
-    """Provides a SqlalchemyCore instance without calling create_db_and_tables."""
-    core = SqlalchemyCore(tmp_path)
+    """Provides a SqlalchemyCore instance."""
+    # Run Alembic migrations to set up the database schema
+    db_path = tmp_path / "anypod.db"
+    run_migrations(db_path)
+
+    # Create SqlalchemyCore instance
+    core = SqlalchemyCore(db_dir=tmp_path)
     yield core
     await core.close()
 
@@ -25,10 +31,7 @@ async def db_core(tmp_path: Path) -> AsyncGenerator[SqlalchemyCore]:
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_create_db_and_tables_creates_expected_schema(db_core: SqlalchemyCore):
-    """Test that create_db_and_tables creates all expected tables and indexes."""
-    # Create tables
-    await db_core.create_db_and_tables()
-
+    """Test that all expected tables and indexes are created."""
     # Verify tables exist
     async with db_core.engine.begin() as conn:
         # Get table names
@@ -61,8 +64,6 @@ async def test_create_db_and_tables_creates_expected_schema(db_core: SqlalchemyC
 @pytest.mark.asyncio
 async def test_sqlite_triggers_are_created(db_core: SqlalchemyCore):
     """Test that SQLite triggers for timestamp management are created."""
-    await db_core.create_db_and_tables()
-
     # Check triggers exist
     async with db_core.engine.begin() as conn:
         result = await conn.execute(
@@ -88,8 +89,6 @@ async def test_sqlite_triggers_are_created(db_core: SqlalchemyCore):
 @pytest.mark.asyncio
 async def test_event_listener_sets_wal_mode(db_core: SqlalchemyCore):
     """Test that the connect event listener enables WAL mode."""
-    await db_core.create_db_and_tables()
-
     # Check journal mode
     async with db_core.engine.begin() as conn:
         result = await conn.execute(text("PRAGMA journal_mode"))
@@ -102,8 +101,6 @@ async def test_event_listener_sets_wal_mode(db_core: SqlalchemyCore):
 @pytest.mark.asyncio
 async def test_event_listener_sets_foreign_keys(db_core: SqlalchemyCore):
     """Test that the connect event listener enables foreign key constraints."""
-    await db_core.create_db_and_tables()
-
     # Insert a feed first
     async with db_core.session() as session:
         feed = Feed(
@@ -144,8 +141,6 @@ async def test_event_listener_sets_foreign_keys(db_core: SqlalchemyCore):
 @pytest.mark.asyncio
 async def test_event_listener_runs_on_each_connection(db_core: SqlalchemyCore):
     """Test that event listener runs on each new connection."""
-    await db_core.create_db_and_tables()
-
     # Get multiple connections and verify settings
     for _ in range(3):
         async with db_core.engine.begin() as conn:

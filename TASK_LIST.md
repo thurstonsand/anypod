@@ -415,13 +415,13 @@ This section details the components that manage the lifecycle of downloads, from
   - [x] Refactor methods to accept an `AsyncSession` parameter instead of using a shared instance.
   - [x] Replace `sqlite-utils` calls (`upsert`, `rows_where`, `get`) with `SQLAlchemy` ORM operations (`session.add`, `session.execute(select(...))`).
   - [x] Propagate `async` keyword up the call stack through the `data_coordinator` and `schedule` modules.
-- [ ] **Phase 5: Database Migrations with Alembic**
-  - [ ] Initialize Alembic with `alembic init -t async migrations`.
-  - [ ] Configure `alembic.ini` with the `sqlalchemy.url` for the async driver.
-  - [ ] Configure `migrations/env.py` to use `SQLModel.metadata` as the `target_metadata`.
-  - [ ] Generate an initial migration script: `alembic revision --autogenerate -m "Initial schema from SQLModels"`.
-  - [ ] Replace database triggers (`create_trigger`) with Alembic-managed versions.
-  - [ ] Review and apply the initial migration: `alembic upgrade head`.
+- [x] **Phase 5: Database Migrations with Alembic**
+  - [x] Initialize Alembic with `alembic init -t async migrations`.
+  - [x] Configure `alembic.ini` with the `sqlalchemy.url` for the async driver.
+  - [x] Configure `migrations/env.py` to use `SQLModel.metadata` as the `target_metadata`.
+  - [x] Generate an initial migration script: `alembic revision --autogenerate -m "Initial schema from SQLModels"`.
+  - [x] Replace database triggers (`create_trigger`) with Alembic-managed versions.
+  - [x] Review and apply the initial migration: `alembic upgrade head`.
 
 #### 5.4.3 Use aiofiles for file operations
 - [x] Add aiofiles dependency and convert FileManager to use async file operations
