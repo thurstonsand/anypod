@@ -464,7 +464,7 @@ class DataCoordinator:
             )
 
             # Log final results
-            logger.debug(
+            logger.info(
                 "Feed processing completed.",
                 extra={**log_params, **results.summary_dict()},
             )

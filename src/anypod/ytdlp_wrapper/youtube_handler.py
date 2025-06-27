@@ -533,7 +533,7 @@ class YoutubeHandler:
         # if a single video is requested, but the match filter excludes it,
         # yt-dlp will return a partial set of data that excludes the fields
         # on how to download the video. Check for that here
-        if not entry.ext and not entry.original_url and not entry.format_id:
+        if not entry.ext:
             raise YtdlpYoutubeVideoFilteredOutError(feed_id, entry.download_id)
 
         source_url = (
