@@ -17,7 +17,7 @@ from .debug_enqueuer import run_debug_enqueuer_mode
 from .debug_ytdlp import run_debug_ytdlp_mode
 from .default import default
 
-DEBUG_DB_FILE = Path.cwd() / "debug.db"
+DEBUG_DB_DIR = Path.cwd()
 DEBUG_DOWNLOADS_DIR = Path.cwd() / "debug_downloads"
 
 
@@ -38,7 +38,7 @@ async def main_cli():
 
     logger = logging.getLogger(__name__)
 
-    logger.info(
+    logger.debug(
         "Application logging configured.",
         extra={
             "log_format": settings.log_format,
@@ -82,7 +82,7 @@ async def main_cli():
                         "Initializing Anypod in 'ytdlp' debug mode.",
                         extra={"debug_config_file_path": str(settings.config_file)},
                     )
-                    run_debug_ytdlp_mode(
+                    await run_debug_ytdlp_mode(
                         settings.config_file,
                         paths,
                     )
@@ -91,9 +91,9 @@ async def main_cli():
                         "Initializing Anypod in 'enqueuer' debug mode.",
                         extra={"feeds_config_file_path": str(settings.config_file)},
                     )
-                    run_debug_enqueuer_mode(
+                    await run_debug_enqueuer_mode(
                         settings,
-                        DEBUG_DB_FILE,
+                        DEBUG_DB_DIR,
                         paths,
                     )
                 case DebugMode.DOWNLOADER:
@@ -101,14 +101,14 @@ async def main_cli():
                         "Initializing Anypod in 'downloader' debug mode.",
                         extra={"feeds_config_file_path": str(settings.config_file)},
                     )
-                    run_debug_downloader_mode(
+                    await run_debug_downloader_mode(
                         settings,
-                        DEBUG_DB_FILE,
+                        DEBUG_DB_DIR,
                         paths,
                     )
 
         case None:
-            logger.info("Initializing Anypod in default mode.")
+            logger.debug("Initializing Anypod in default mode.")
             await default(settings)
 
     logger.debug("main_cli execution finished.")

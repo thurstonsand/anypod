@@ -5,8 +5,11 @@ on the filesystem, including file deletion, existence checks, and stream access
 operations. Notably does not handle file creation, as that is done by yt-dlp.
 """
 
+from collections.abc import AsyncIterator
 import logging
-from typing import IO
+
+import aiofiles
+import aiofiles.os
 
 from .exceptions import FileOperationError
 from .path_manager import PathManager
@@ -32,7 +35,7 @@ class FileManager:
             extra={"base_download_path": str(self._paths.base_data_dir)},
         )
 
-    def delete_download_file(self, feed: str, download_id: str, ext: str) -> None:
+    async def delete_download_file(self, feed: str, download_id: str, ext: str) -> None:
         """Deletes a download file from the filesystem.
 
         Args:
@@ -45,7 +48,7 @@ class FileManager:
             FileOperationError: If an OS-level error occurs during file deletion, or if feed/download identifiers are invalid.
         """
         try:
-            file_path = self._paths.media_file_path(feed, download_id, ext)
+            file_path = await self._paths.media_file_path(feed, download_id, ext)
         except ValueError as e:
             raise FileOperationError(
                 "Invalid feed or download identifier.",
@@ -58,11 +61,11 @@ class FileManager:
         }
         logger.debug("Attempting to delete download file.", extra=log_params)
 
-        if not file_path.is_file():
+        if not await aiofiles.os.path.isfile(file_path):
             raise FileNotFoundError(f"Download file not found: {file_path}")
         else:
             try:
-                file_path.unlink()
+                await aiofiles.os.remove(file_path)
                 logger.debug("File unlinked successfully.", extra=log_params)
             except OSError as e:
                 raise FileOperationError(
@@ -70,7 +73,7 @@ class FileManager:
                     file_name=f"{download_id}.{ext}",
                 ) from e
 
-    def download_exists(self, feed: str, download_id: str, ext: str) -> bool:
+    async def download_exists(self, feed: str, download_id: str, ext: str) -> bool:
         """Checks if a specific download file exists.
 
         Args:
@@ -85,7 +88,7 @@ class FileManager:
             FileOperationError: If an OS-level error occurs during the file existence check, or if feed/download identifiers are invalid.
         """
         try:
-            file_path = self._paths.media_file_path(feed, download_id, ext)
+            file_path = await self._paths.media_file_path(feed, download_id, ext)
         except ValueError as e:
             raise FileOperationError(
                 "Invalid feed or download identifier.",
@@ -99,7 +102,7 @@ class FileManager:
         logger.debug("Checking if download file exists.", extra=log_params)
 
         try:
-            exists = file_path.is_file()
+            exists = await aiofiles.os.path.isfile(file_path)
             return exists
         except OSError as e:
             raise FileOperationError(
@@ -107,7 +110,9 @@ class FileManager:
                 file_name=str(file_path),
             ) from e
 
-    def get_download_stream(self, feed: str, download_id: str, ext: str) -> IO[bytes]:
+    async def get_download_stream(
+        self, feed: str, download_id: str, ext: str
+    ) -> AsyncIterator[bytes]:
         """Opens and returns a binary read stream for a download file.
 
         Args:
@@ -116,14 +121,14 @@ class FileManager:
             ext: File extension without the leading dot.
 
         Returns:
-            An IO[bytes] stream for the download file.
+            An async iterator yielding bytes from the download file.
 
         Raises:
             FileNotFoundError: If the file does not exist or is not a regular file.
             FileOperationError: If an OS-level error occurs while trying to open the file, or if feed/download identifiers are invalid.
         """
         try:
-            file_path = self._paths.media_file_path(feed, download_id, ext)
+            file_path = await self._paths.media_file_path(feed, download_id, ext)
         except ValueError as e:
             raise FileOperationError(
                 "Invalid feed or download identifier.",
@@ -136,7 +141,7 @@ class FileManager:
         }
         logger.debug("Attempting to get download stream.", extra=log_params)
 
-        if not self.download_exists(feed, download_id, ext):
+        if not await self.download_exists(feed, download_id, ext):
             logger.debug(
                 "File not found, cannot get stream.",
                 extra=log_params,
@@ -146,7 +151,9 @@ class FileManager:
             )
         logger.debug("File confirmed, opening for binary read.", extra=log_params)
         try:
-            return file_path.open("rb")
+            async with aiofiles.open(file_path, mode="rb") as file:
+                async for chunk in file:
+                    yield chunk
         except OSError as e:
             raise FileOperationError(
                 "Failed to open download file for reading.",

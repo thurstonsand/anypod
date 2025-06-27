@@ -13,6 +13,7 @@ from pathlib import Path
 from ..config import AppSettings
 from ..data_coordinator.downloader import Downloader
 from ..db import DownloadDatabase
+from ..db.sqlalchemy_core import SqlalchemyCore
 from ..db.types import Download, DownloadStatus
 from ..exceptions import DatabaseOperationError, DownloadError
 from ..file_manager import FileManager
@@ -22,9 +23,9 @@ from ..ytdlp_wrapper import YtdlpWrapper
 logger = logging.getLogger(__name__)
 
 
-def run_debug_downloader_mode(
+async def run_debug_downloader_mode(
     settings: AppSettings,
-    debug_db_path: Path,
+    debug_db_dir: Path,
     paths: PathManager,
 ) -> None:
     """Run the Downloader in debug mode to process queued downloads.
@@ -35,20 +36,21 @@ def run_debug_downloader_mode(
 
     Args:
         settings: Application settings containing feed configurations.
-        debug_db_path: Path to the database file.
+        debug_db_dir: Path to the database directory.
         paths: PathManager instance containing data and temporary directories.
     """
     logger.info(
         "Initializing Anypod in Downloader debug mode.",
         extra={
             "config_file": str(settings.config_file),
-            "debug_db_path": str(debug_db_path.resolve()),
+            "debug_db_dir": str(debug_db_dir.resolve()),
             "debug_downloads_path": str(paths.base_data_dir.resolve()),
         },
     )
 
     try:
-        download_db = DownloadDatabase(db_path=debug_db_path)
+        db_core = SqlalchemyCore(debug_db_dir)
+        download_db = DownloadDatabase(db_core)
 
         file_manager = FileManager(paths)
 
@@ -66,7 +68,7 @@ def run_debug_downloader_mode(
         logger.info(
             "No feeds configured. Downloader debug mode has nothing to process."
         )
-        download_db.close()
+        await db_core.close()
         return
 
     total_success_count = 0
@@ -80,7 +82,7 @@ def run_debug_downloader_mode(
         )
 
         try:
-            success_count, failure_count = downloader.download_queued(
+            success_count, failure_count = await downloader.download_queued(
                 feed_id=feed_id,
                 feed_config=feed_config,
                 cookies_path=settings.cookies_path,
@@ -119,7 +121,7 @@ def run_debug_downloader_mode(
 
         for status in DownloadStatus:
             try:
-                downloads_in_status = download_db.get_downloads_by_status(
+                downloads_in_status = await download_db.get_downloads_by_status(
                     status_to_filter=status,
                     limit=-1,  # get all
                 )
@@ -144,7 +146,7 @@ def run_debug_downloader_mode(
                     )
                     for i, dl in enumerate(downloads_list[:5]):
                         logger.info(
-                            f"  {i + 1}. ID: {dl.id}, Title: {dl.title}, Feed: {dl.feed}, "
+                            f"  {i + 1}. ID: {dl.id}, Title: {dl.title}, Feed: {dl.feed_id}, "
                             f"Ext: {dl.ext}, Filesize: {dl.filesize or 'N/A'}, "
                             f"Duration: {dl.duration}s, Quality: {dl.quality_info or 'N/A'}, "
                             f"Published: {dl.published.isoformat() if dl.published else 'N/A'}"
@@ -177,6 +179,6 @@ def run_debug_downloader_mode(
             logger.info("Debug downloads directory does not exist.")
 
     finally:
-        download_db.close()
+        await db_core.close()
 
     logger.info("Downloader debug mode processing complete.")

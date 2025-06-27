@@ -8,7 +8,6 @@ import pytest
 from anypod.db.types import Download, DownloadStatus, SourceType
 from anypod.exceptions import YtdlpApiError
 from anypod.ytdlp_wrapper import YtdlpWrapper
-from anypod.ytdlp_wrapper.ytdlp_core import YtdlpCore
 
 # some CC-BY licensed urls to test with
 TEST_URLS_SINGLE_AND_PLAYLIST = [
@@ -76,16 +75,14 @@ TEST_URLS_PARAMS = [
 INVALID_VIDEO_URL = "https://www.youtube.com/watch?v=thisvideodoesnotexistxyz"
 
 # CLI args for minimal quality downloads
-YT_DLP_MINIMAL_ARGS = YtdlpCore.parse_options(
-    [
-        "--format",
-        "worst*[ext=mp4]/worst[ext=mp4]/best[ext=mp4]",
-    ]
-)
+YT_DLP_MINIMAL_ARGS = [
+    "--format",
+    "worst*[ext=mp4]/worst[ext=mp4]/best[ext=mp4]",
+]
 
 # Metadata for Big Buck Bunny video - used in several tests
 BIG_BUCK_BUNNY_DOWNLOAD = Download(
-    feed="video",
+    feed_id="video",
     id="aqz-KE-bpKQ",
     source_url="https://www.youtube.com/watch?v=aqz-KE-bpKQ",
     title="Big Buck Bunny 60fps 4K - Official Blender Foundation Short Film",
@@ -104,10 +101,11 @@ BIG_BUCK_BUNNY_DOWNLOAD = Download(
 
 
 @pytest.mark.integration
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "url_type, url, expected_source_type, expected_title_contains", TEST_URLS_PARAMS
 )
-def test_fetch_metadata_success(
+async def test_fetch_metadata_success(
     ytdlp_wrapper: YtdlpWrapper,
     url_type: str,
     url: str,
@@ -121,7 +119,7 @@ def test_fetch_metadata_success(
     fields are populated.
     """
     feed_id = f"test_{url_type}"
-    feed, downloads = ytdlp_wrapper.fetch_metadata(
+    feed, downloads = await ytdlp_wrapper.fetch_metadata(
         feed_id=feed_id,
         url=url,
         user_yt_cli_args=YT_DLP_MINIMAL_ARGS,
@@ -165,10 +163,11 @@ def test_fetch_metadata_success(
 
 
 @pytest.mark.integration
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "url_type, url, expected_source_type, expected_title_contains", TEST_URLS_PARAMS
 )
-def test_thumbnail_format_validation(
+async def test_thumbnail_format_validation(
     ytdlp_wrapper: YtdlpWrapper,
     url_type: str,
     url: str,
@@ -182,7 +181,7 @@ def test_thumbnail_format_validation(
     excluding WebP and other unsupported formats for RSS feed compatibility.
     """
     feed_id = f"test_thumbnail_{url_type}"
-    _, downloads = ytdlp_wrapper.fetch_metadata(
+    _, downloads = await ytdlp_wrapper.fetch_metadata(
         feed_id=feed_id,
         url=url,
         user_yt_cli_args=YT_DLP_MINIMAL_ARGS,
@@ -211,7 +210,8 @@ def test_thumbnail_format_validation(
 
 
 @pytest.mark.integration
-def test_fetch_metadata_non_existent_video(
+@pytest.mark.asyncio
+async def test_fetch_metadata_non_existent_video(
     ytdlp_wrapper: YtdlpWrapper,
     cookies_path: Path | None,
 ):
@@ -219,7 +219,7 @@ def test_fetch_metadata_non_existent_video(
     feed_id = "test_non_existent"
 
     with pytest.raises(YtdlpApiError):
-        ytdlp_wrapper.fetch_metadata(
+        await ytdlp_wrapper.fetch_metadata(
             feed_id=feed_id,
             url=INVALID_VIDEO_URL,
             user_yt_cli_args=YT_DLP_MINIMAL_ARGS,
@@ -228,11 +228,12 @@ def test_fetch_metadata_non_existent_video(
 
 
 @pytest.mark.integration
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "url_type, url, expected_source_type, expected_title_contains",
     TEST_URLS_SINGLE_AND_PLAYLIST,
 )
-def test_fetch_metadata_with_impossible_filter(
+async def test_fetch_metadata_with_impossible_filter(
     ytdlp_wrapper: YtdlpWrapper,
     url_type: str,
     url: str,
@@ -243,16 +244,14 @@ def test_fetch_metadata_with_impossible_filter(
     """Tests that fetching metadata with a filter that matches no videos returns an empty list."""
     feed_id = f"test_impossible_filter_{url_type}"
 
-    impossible_filter_args = YtdlpCore.parse_options(
-        [
-            "--format",
-            "worst*[ext=mp4]/worst[ext=mp4]/best[ext=mp4]",
-            "--match-filter",
-            "duration > 10000000",
-        ]
-    )
+    impossible_filter_args = [
+        "--format",
+        "worst*[ext=mp4]/worst[ext=mp4]/best[ext=mp4]",
+        "--match-filter",
+        "duration > 10000000",
+    ]
 
-    feed, downloads = ytdlp_wrapper.fetch_metadata(
+    feed, downloads = await ytdlp_wrapper.fetch_metadata(
         feed_id=feed_id,
         url=url,
         user_yt_cli_args=impossible_filter_args,
@@ -274,7 +273,8 @@ def test_fetch_metadata_with_impossible_filter(
 
 
 @pytest.mark.integration
-def test_download_media_to_file_success(
+@pytest.mark.asyncio
+async def test_download_media_to_file_success(
     ytdlp_wrapper: YtdlpWrapper,
     cookies_path: Path | None,
 ):
@@ -285,7 +285,7 @@ def test_download_media_to_file_success(
     """
     # Metadata for Big Buck Bunny video
     download = Download(
-        feed="video",
+        feed_id="video",
         id="aqz-KE-bpKQ",
         source_url="https://www.youtube.com/watch?v=aqz-KE-bpKQ",
         title="Big Buck Bunny 60fps 4K - Official Blender Foundation Short Film",
@@ -305,9 +305,9 @@ def test_download_media_to_file_success(
     # Use the same minimal args as other tests, could be customized if needed
     cli_args = YT_DLP_MINIMAL_ARGS
 
-    downloaded_file_path = ytdlp_wrapper.download_media_to_file(
+    downloaded_file_path = await ytdlp_wrapper.download_media_to_file(
         download=download,
-        yt_cli_args=cli_args,
+        user_yt_cli_args=cli_args,
         cookies_path=cookies_path,
     )
 
@@ -318,13 +318,14 @@ def test_download_media_to_file_success(
 
 
 @pytest.mark.integration
-def test_download_media_to_file_non_existent(
+@pytest.mark.asyncio
+async def test_download_media_to_file_non_existent(
     ytdlp_wrapper: YtdlpWrapper,
     cookies_path: Path | None,
 ):
     """Tests that download fails with YtdlpApiError for a non-existent video URL."""
     non_existent_download = Download(
-        feed="non_existent_feed",
+        feed_id="non_existent_feed",
         id="non_existent_id",
         source_url=INVALID_VIDEO_URL,
         title="This Video Does Not Exist",
@@ -340,37 +341,36 @@ def test_download_media_to_file_non_existent(
     cli_args = YT_DLP_MINIMAL_ARGS
 
     with pytest.raises(YtdlpApiError) as excinfo:
-        ytdlp_wrapper.download_media_to_file(
+        await ytdlp_wrapper.download_media_to_file(
             download=non_existent_download,
-            yt_cli_args=cli_args,
+            user_yt_cli_args=cli_args,
             cookies_path=cookies_path,
         )
 
     # Check for messages indicating download failure from yt-dlp
-    assert "non-zero exit code" in str(excinfo.value).lower(), (
-        f"Expected 'non-zero exit code' in {excinfo.value}"
+    assert "exit code" in str(excinfo.value).lower(), (
+        f"Expected 'exit code' in {excinfo.value}"
     )
 
 
 @pytest.mark.integration
-def test_download_media_to_file_impossible_filter(
+@pytest.mark.asyncio
+async def test_download_media_to_file_impossible_filter(
     ytdlp_wrapper: YtdlpWrapper,
     cookies_path: Path | None,
 ):
     """Tests that download fails with YtdlpApiError when an impossible filter is applied."""
-    impossible_filter_args = YtdlpCore.parse_options(
-        [
-            "--format",
-            "worst*[ext=mp4]/worst[ext=mp4]/best[ext=mp4]",
-            "--match-filter",
-            "duration > 99999999",
-        ]
-    )
+    impossible_filter_args = [
+        "--format",
+        "worst*[ext=mp4]/worst[ext=mp4]/best[ext=mp4]",
+        "--match-filter",
+        "duration > 99999999",
+    ]
 
     with pytest.raises(YtdlpApiError) as excinfo:
-        ytdlp_wrapper.download_media_to_file(
+        await ytdlp_wrapper.download_media_to_file(
             download=BIG_BUCK_BUNNY_DOWNLOAD,
-            yt_cli_args=impossible_filter_args,
+            user_yt_cli_args=impossible_filter_args,
             cookies_path=cookies_path,
         )
 
@@ -379,7 +379,8 @@ def test_download_media_to_file_impossible_filter(
 
 
 @pytest.mark.integration
-def test_fetch_metadata_with_keep_last_limit(
+@pytest.mark.asyncio
+async def test_fetch_metadata_with_keep_last_limit(
     ytdlp_wrapper: YtdlpWrapper,
     cookies_path: Path | None,
 ):
@@ -393,14 +394,12 @@ def test_fetch_metadata_with_keep_last_limit(
     channel_url = "https://www.youtube.com/@coletdjnz/videos"
     keep_last = 2
 
-    minimal_args = YtdlpCore.parse_options(
-        [
-            "--format",
-            "worst*[ext=mp4]/worst[ext=mp4]/best[ext=mp4]",
-        ]
-    )
+    minimal_args = [
+        "--format",
+        "worst*[ext=mp4]/worst[ext=mp4]/best[ext=mp4]",
+    ]
 
-    feed, downloads = ytdlp_wrapper.fetch_metadata(
+    feed, downloads = await ytdlp_wrapper.fetch_metadata(
         feed_id=feed_id,
         url=channel_url,
         user_yt_cli_args=minimal_args,
@@ -429,7 +428,8 @@ def test_fetch_metadata_with_keep_last_limit(
 
 
 @pytest.mark.integration
-def test_fetch_metadata_with_keep_last_none_vs_limit(
+@pytest.mark.asyncio
+async def test_fetch_metadata_with_keep_last_none_vs_limit(
     ytdlp_wrapper: YtdlpWrapper,
     cookies_path: Path | None,
 ):
@@ -442,15 +442,13 @@ def test_fetch_metadata_with_keep_last_none_vs_limit(
     # Use a channel with multiple videos
     channel_url = "https://www.youtube.com/@coletdjnz/videos"
 
-    minimal_args = YtdlpCore.parse_options(
-        [
-            "--format",
-            "worst*[ext=mp4]/worst[ext=mp4]/best[ext=mp4]",
-        ]
-    )
+    minimal_args = [
+        "--format",
+        "worst*[ext=mp4]/worst[ext=mp4]/best[ext=mp4]",
+    ]
 
     # First, fetch with keep_last=1
-    _, downloads_limited = ytdlp_wrapper.fetch_metadata(
+    _, downloads_limited = await ytdlp_wrapper.fetch_metadata(
         feed_id=feed_id,
         url=channel_url,
         user_yt_cli_args=minimal_args,
@@ -459,13 +457,11 @@ def test_fetch_metadata_with_keep_last_none_vs_limit(
     )
 
     # Then, fetch with keep_last=None (no limit, but we'll use a reasonable playlist limit to avoid too many)
-    args_with_reasonable_limit = YtdlpCore.parse_options(
-        [
-            "--format",
-            "worst*[ext=mp4]/worst[ext=mp4]/best[ext=mp4]",
-        ]
-    )
-    _, downloads_unlimited = ytdlp_wrapper.fetch_metadata(
+    args_with_reasonable_limit = [
+        "--format",
+        "worst*[ext=mp4]/worst[ext=mp4]/best[ext=mp4]",
+    ]
+    _, downloads_unlimited = await ytdlp_wrapper.fetch_metadata(
         feed_id=feed_id,
         url=channel_url,
         user_yt_cli_args=args_with_reasonable_limit,

@@ -1,15 +1,18 @@
 """Shared fixtures for integration tests."""
 
-from collections.abc import Generator
+from collections.abc import AsyncGenerator
 from pathlib import Path
 
+from helpers.alembic import run_migrations
 import pytest
+import pytest_asyncio
 
 from anypod.data_coordinator.downloader import Downloader
 from anypod.data_coordinator.enqueuer import Enqueuer
 from anypod.data_coordinator.pruner import Pruner
 from anypod.db.download_db import DownloadDatabase
 from anypod.db.feed_db import FeedDatabase
+from anypod.db.sqlalchemy_core import SqlalchemyCore
 from anypod.file_manager import FileManager
 from anypod.path_manager import PathManager
 from anypod.rss.rss_feed import RSSFeedGenerator
@@ -48,33 +51,9 @@ def path_manager(tmp_path: Path) -> PathManager:
         PathManager configured with temporary directories for testing.
     """
     return PathManager(
-        base_data_dir=tmp_path / "data",
+        base_data_dir=tmp_path,
         base_url="http://localhost",
     )
-
-
-@pytest.fixture
-def feed_db(temp_db_path: Path) -> Generator[FeedDatabase]:
-    """Provide a FeedDatabase instance with temporary database.
-
-    Returns:
-        FeedDatabase instance that gets properly closed after test.
-    """
-    feed_db = FeedDatabase(db_path=temp_db_path)
-    yield feed_db
-    feed_db.close()
-
-
-@pytest.fixture
-def download_db(temp_db_path: Path) -> Generator[DownloadDatabase]:
-    """Provide a DownloadDatabase instance with temporary database.
-
-    Returns:
-        DownloadDatabase instance that gets properly closed after test.
-    """
-    download_db = DownloadDatabase(db_path=temp_db_path)
-    yield download_db
-    download_db.close()
 
 
 @pytest.fixture
@@ -85,6 +64,44 @@ def file_manager(path_manager: PathManager) -> FileManager:
         FileManager instance configured with test path manager.
     """
     return FileManager(path_manager)
+
+
+@pytest_asyncio.fixture
+async def db_core(tmp_path: Path) -> AsyncGenerator[SqlalchemyCore]:
+    """Provide a temporary database directory.
+
+    Returns:
+        Temporary database directory that auto-cleans up after test.
+    """
+    db_path = tmp_path / "anypod.db"
+
+    # Run Alembic migrations to set up the database schema
+    run_migrations(db_path)
+
+    # Create SqlalchemyCore instance
+    db_core = SqlalchemyCore(db_dir=tmp_path)
+    yield db_core
+    await db_core.close()
+
+
+@pytest.fixture
+def feed_db(db_core: SqlalchemyCore) -> FeedDatabase:
+    """Provide a FeedDatabase instance with temporary database.
+
+    Returns:
+        FeedDatabase instance that gets properly closed after test.
+    """
+    return FeedDatabase(db_core)
+
+
+@pytest.fixture
+def download_db(db_core: SqlalchemyCore) -> DownloadDatabase:
+    """Provide a DownloadDatabase instance with temporary database.
+
+    Returns:
+        DownloadDatabase instance that gets properly closed after test.
+    """
+    return DownloadDatabase(db_core)
 
 
 @pytest.fixture

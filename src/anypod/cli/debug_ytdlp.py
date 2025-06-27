@@ -15,7 +15,6 @@ from ..db.types import DownloadStatus
 from ..exceptions import YtdlpApiError
 from ..path_manager import PathManager
 from ..ytdlp_wrapper import YtdlpWrapper
-from ..ytdlp_wrapper.ytdlp_core import YtdlpCore
 
 # Import Download for potential type hinting if we pretty print, though not strictly needed if just printing raw output.
 # from ..db import Download
@@ -23,7 +22,7 @@ from ..ytdlp_wrapper.ytdlp_core import YtdlpCore
 logger = logging.getLogger(__name__)
 
 
-def run_debug_ytdlp_mode(debug_yaml_path: Path, paths: PathManager) -> None:
+async def run_debug_ytdlp_mode(debug_yaml_path: Path, paths: PathManager) -> None:
     """Load feed URLs from YAML and fetch metadata using yt-dlp.
 
     Loads feed URLs and yt-dlp CLI args from a YAML file and fetches metadata.
@@ -124,10 +123,10 @@ def run_debug_ytdlp_mode(debug_yaml_path: Path, paths: PathManager) -> None:
                     "yt_cli_args": cli_args,
                 },
             )
-            feed, downloads = ytdlp_wrapper.fetch_metadata(
+            feed, downloads = await ytdlp_wrapper.fetch_metadata(
                 feed_id=feed_id,
                 url=url,
-                user_yt_cli_args=YtdlpCore.parse_options(cli_args),
+                user_yt_cli_args=cli_args,
             )
 
             if downloads:
@@ -154,9 +153,9 @@ def run_debug_ytdlp_mode(debug_yaml_path: Path, paths: PathManager) -> None:
                                 },
                             )
                             try:
-                                file_path = ytdlp_wrapper.download_media_to_file(
+                                file_path = await ytdlp_wrapper.download_media_to_file(
                                     download=download,
-                                    yt_cli_args=YtdlpCore.parse_options(cli_args),
+                                    user_yt_cli_args=cli_args,
                                 )
                                 logger.info(
                                     "Successfully downloaded.",

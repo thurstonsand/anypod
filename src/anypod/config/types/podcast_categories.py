@@ -307,7 +307,7 @@ class PodcastCategories:
                 category_strings.append(main)
         return ", ".join(category_strings)
 
-    def as_dict_list(self) -> list[dict[str, str]]:
+    def rss_list(self) -> list[dict[str, str]]:
         """Convert to list of dictionaries for RSS generation.
 
         Returns:

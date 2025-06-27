@@ -19,7 +19,12 @@ Thumbs.db
 debug_downloads/
 yt-dlp_metadata/
 *.db
+*.db-shm
+*.db-wal
 cookies.txt
 
 # lsp
 *.pkl
+
+# AI
+references/

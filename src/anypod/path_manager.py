@@ -3,6 +3,8 @@
 from pathlib import Path
 from urllib.parse import urljoin
 
+import aiofiles.os
+
 from .exceptions import FileOperationError
 
 
@@ -39,16 +41,28 @@ class PathManager:
         """Return the base URL for feed and media links."""
         return self._base_url
 
-    @property
-    def db_file_path(self) -> Path:
-        """Return the path to the database file.
+    async def db_dir(self) -> Path:
+        """Return the directory containing the database file.
+
+        Creates the directory if it doesn't exist.
 
         Returns:
-            Path to the database file.
-        """
-        return self._base_data_dir / "anypod.db"
+            Path to the database directory.
 
-    def feed_data_dir(self, feed_id: str) -> Path:
+        Raises:
+            FileOperationError: If the directory cannot be created.
+        """
+        path = self._base_data_dir / "db"
+        try:
+            await aiofiles.os.makedirs(path, exist_ok=True)
+        except OSError as e:
+            raise FileOperationError(
+                "Failed to create database directory.",
+                file_name=str(path),
+            ) from e
+        return path
+
+    async def feed_data_dir(self, feed_id: str) -> Path:
         """Return the directory for a feed's downloaded files.
 
         Creates the directory if it doesn't exist.
@@ -68,7 +82,7 @@ class PathManager:
 
         path = self.base_data_dir / feed_id
         try:
-            path.mkdir(parents=True, exist_ok=True)
+            await aiofiles.os.makedirs(path, exist_ok=True)
         except OSError as e:
             raise FileOperationError(
                 "Failed to create feed data directory.",
@@ -76,7 +90,7 @@ class PathManager:
             ) from e
         return path
 
-    def feed_tmp_dir(self, feed_id: str) -> Path:
+    async def feed_tmp_dir(self, feed_id: str) -> Path:
         """Return the temporary directory for a feed.
 
         Creates the directory if it doesn't exist.
@@ -96,7 +110,7 @@ class PathManager:
 
         path = self.base_tmp_dir / feed_id
         try:
-            path.mkdir(parents=True, exist_ok=True)
+            await aiofiles.os.makedirs(path, exist_ok=True)
         except OSError as e:
             raise FileOperationError(
                 "Failed to create feed temporary directory.",
@@ -138,7 +152,7 @@ class PathManager:
 
         return urljoin(self._base_url, f"/media/{feed_id}/")
 
-    def media_file_path(self, feed_id: str, download_id: str, ext: str) -> Path:
+    async def media_file_path(self, feed_id: str, download_id: str, ext: str) -> Path:
         """Return the full file system path for a specific downloaded media file.
 
         Args:
@@ -155,7 +169,8 @@ class PathManager:
         if not download_id or not download_id.strip():
             raise ValueError("download_id cannot be empty or whitespace-only")
 
-        return self.feed_data_dir(feed_id) / f"{download_id}.{ext}"
+        feed_dir = await self.feed_data_dir(feed_id)
+        return feed_dir / f"{download_id}.{ext}"
 
     def media_file_url(self, feed_id: str, download_id: str, ext: str) -> str:
         """Return the HTTP URL for a specific downloaded media file.

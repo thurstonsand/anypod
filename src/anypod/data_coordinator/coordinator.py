@@ -65,7 +65,7 @@ class DataCoordinator:
         self._cookies_path = cookies_path
         logger.debug("DataCoordinator initialized.")
 
-    def _calculate_fetch_since_date(self, feed_id: str) -> datetime:
+    async def _calculate_fetch_since_date(self, feed_id: str) -> datetime:
         """Calculate the date to use for fetching new downloads.
 
         Uses the feed's last_successful_sync timestamp. This method expects
@@ -83,7 +83,7 @@ class DataCoordinator:
                 or if last_successful_sync is not defined.
         """
         try:
-            feed = self._feed_db.get_feed_by_id(feed_id)
+            feed = await self._feed_db.get_feed_by_id(feed_id)
         except (FeedNotFoundError, DatabaseOperationError) as e:
             raise CoordinatorExecutionError(
                 f"Cannot retrieve feed for sync date calculation: {e}",
@@ -108,7 +108,7 @@ class DataCoordinator:
 
         return fetch_since_date
 
-    def _execute_enqueue_phase(
+    async def _execute_enqueue_phase(
         self,
         feed_id: str,
         feed_config: FeedConfig,
@@ -130,7 +130,7 @@ class DataCoordinator:
         log_params = {"feed_id": feed_id, "phase": "enqueue"}
 
         try:
-            enqueued_count = self._enqueuer.enqueue_new_downloads(
+            enqueued_count = await self._enqueuer.enqueue_new_downloads(
                 feed_id,
                 feed_config,
                 fetch_since_date,
@@ -153,7 +153,7 @@ class DataCoordinator:
             )
         else:
             duration = time.time() - phase_start
-            logger.info(
+            logger.debug(
                 "Enqueue phase completed successfully.",
                 extra={
                     **log_params,
@@ -168,7 +168,7 @@ class DataCoordinator:
                 duration_seconds=duration,
             )
 
-    def _execute_download_phase(
+    async def _execute_download_phase(
         self, feed_id: str, feed_config: FeedConfig
     ) -> PhaseResult:
         """Execute the download phase of feed processing.
@@ -183,10 +183,10 @@ class DataCoordinator:
         phase_start = time.time()
         log_params = {"feed_id": feed_id, "phase": "download"}
 
-        logger.info("Starting download phase.", extra=log_params)
+        logger.debug("Starting download phase.", extra=log_params)
 
         try:
-            success_count, failure_count = self._downloader.download_queued(
+            success_count, failure_count = await self._downloader.download_queued(
                 feed_id, feed_config, self._cookies_path
             )
         except DownloadError as e:
@@ -205,7 +205,7 @@ class DataCoordinator:
             )
         else:
             duration = time.time() - phase_start
-            logger.info(
+            logger.debug(
                 "Download phase completed.",
                 extra={
                     **log_params,
@@ -223,7 +223,7 @@ class DataCoordinator:
                 duration_seconds=duration,
             )
 
-    def _execute_prune_phase(
+    async def _execute_prune_phase(
         self, feed_id: str, feed_config: FeedConfig
     ) -> PhaseResult:
         """Execute the prune phase of feed processing.
@@ -238,11 +238,14 @@ class DataCoordinator:
         phase_start = time.time()
         log_params = {"feed_id": feed_id, "phase": "prune"}
 
-        logger.info("Starting prune phase.", extra=log_params)
+        logger.debug("Starting prune phase.", extra=log_params)
 
         try:
             # Use feed_config.since as prune_before_date (different from fetch_since_date)
-            archived_count, files_deleted_count = self._pruner.prune_feed_downloads(
+            (
+                archived_count,
+                files_deleted_count,
+            ) = await self._pruner.prune_feed_downloads(
                 feed_id, feed_config.keep_last, feed_config.since
             )
         except PruneError as e:
@@ -261,7 +264,7 @@ class DataCoordinator:
             )
         else:
             duration = time.time() - phase_start
-            logger.info(
+            logger.debug(
                 "Prune phase completed successfully.",
                 extra={
                     **log_params,
@@ -277,7 +280,7 @@ class DataCoordinator:
                 duration_seconds=duration,
             )
 
-    def _execute_rss_generation_phase(self, feed_id: str) -> PhaseResult:
+    async def _execute_rss_generation_phase(self, feed_id: str) -> PhaseResult:
         """Execute the RSS generation phase of feed processing.
 
         Args:
@@ -289,13 +292,15 @@ class DataCoordinator:
         phase_start = time.time()
         log_params = {"feed_id": feed_id, "phase": "rss_generation"}
 
-        logger.info("Starting RSS generation phase.", extra=log_params)
+        logger.debug("Starting RSS generation phase.", extra=log_params)
 
         try:
             # Get Feed object from database for RSS generation
-            feed = self._feed_db.get_feed_by_id(feed_id)
-            self._rss_generator.update_feed(feed_id, feed)
-            self._feed_db.mark_rss_generated(feed_id)
+            async with self._feed_db.session() as session:
+                feed = await self._feed_db.get_feed_by_id(feed_id)
+                await self._rss_generator.update_feed(feed_id, feed)
+                await self._feed_db.mark_rss_generated(feed_id)
+                await session.commit()
         except (RSSGenerationError, FeedNotFoundError, DatabaseOperationError) as e:
             duration = time.time() - phase_start
             logger.error(
@@ -312,7 +317,7 @@ class DataCoordinator:
             )
         else:
             duration = time.time() - phase_start
-            logger.info(
+            logger.debug(
                 "RSS generation phase completed successfully.",
                 extra={**log_params, "duration_seconds": duration},
             )
@@ -323,36 +328,37 @@ class DataCoordinator:
                 duration_seconds=duration,
             )
 
-    def _update_feed_sync_status(
+    async def _update_feed_sync_status(
         self,
         feed_id: str,
-        success: bool,
+        results: ProcessingResults,
         fetch_until_date: datetime,
     ) -> bool:
         """Update the feed's sync status in the database.
 
         Args:
             feed_id: The feed identifier.
-            success: Whether the sync was successful.
+            results: The results of the feed processing.
             fetch_until_date: The upper bound date used during fetch. Used as new sync time if successful.
 
         Returns:
             True if the database update was successful.
         """
-        log_params = {"feed_id": feed_id, "sync_success": success}
+        log_params = {"feed_id": feed_id, "sync_success": results.overall_success}
 
         try:
-            if success:
-                self._feed_db.mark_sync_success(feed_id, fetch_until_date)
-                logger.info(
+            if results.overall_success:
+                await self._feed_db.mark_sync_success(feed_id, fetch_until_date)
+                logger.debug(
                     "Feed sync status updated to success.",
                     extra={**log_params, "sync_time": fetch_until_date.isoformat()},
                 )
             else:
-                self._feed_db.mark_sync_failure(feed_id)
+                await self._feed_db.mark_sync_failure(feed_id)
                 logger.info(
-                    "Feed sync status updated to failure.",
+                    "Feed sync unsuccessful.",
                     extra=log_params,
+                    exc_info=results.fatal_error,
                 )
         except (FeedNotFoundError, DatabaseOperationError) as e:
             logger.error(
@@ -364,7 +370,9 @@ class DataCoordinator:
         else:
             return True
 
-    def process_feed(self, feed_id: str, feed_config: FeedConfig) -> ProcessingResults:
+    async def process_feed(
+        self, feed_id: str, feed_config: FeedConfig
+    ) -> ProcessingResults:
         """Process a feed through all phases of the pipeline.
 
         Executes the complete feed processing workflow:
@@ -401,21 +409,25 @@ class DataCoordinator:
         fetch_until_date = datetime.now(UTC)
 
         try:
-            fetch_since_date = self._calculate_fetch_since_date(feed_id)
+            fetch_since_date = await self._calculate_fetch_since_date(feed_id)
 
             # Phase 1: Enqueue new downloads
-            results.enqueue_result = self._execute_enqueue_phase(
+            results.enqueue_result = await self._execute_enqueue_phase(
                 feed_id, feed_config, fetch_since_date, fetch_until_date
             )
 
             # Phase 2: Download queued media (always attempt, even if enqueue failed)
-            results.download_result = self._execute_download_phase(feed_id, feed_config)
+            results.download_result = await self._execute_download_phase(
+                feed_id, feed_config
+            )
 
             # Phase 3: Prune old downloads (always attempt)
-            results.prune_result = self._execute_prune_phase(feed_id, feed_config)
+            results.prune_result = await self._execute_prune_phase(feed_id, feed_config)
 
             # Phase 4: Generate RSS feed (always attempt)
-            results.rss_generation_result = self._execute_rss_generation_phase(feed_id)
+            results.rss_generation_result = await self._execute_rss_generation_phase(
+                feed_id
+            )
 
             # Determine overall success
             # Consider successful if at least RSS generation succeeded
@@ -447,12 +459,12 @@ class DataCoordinator:
             results.total_duration_seconds = (end_time - start_time).total_seconds()
 
             # Update feed sync status
-            results.feed_sync_updated = self._update_feed_sync_status(
-                feed_id, results.overall_success, fetch_until_date
+            results.feed_sync_updated = await self._update_feed_sync_status(
+                feed_id, results, fetch_until_date
             )
 
             # Log final results
-            logger.info(
+            logger.debug(
                 "Feed processing completed.",
                 extra={**log_params, **results.summary_dict()},
             )

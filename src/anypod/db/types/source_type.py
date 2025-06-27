@@ -2,8 +2,6 @@
 
 from enum import Enum
 
-from ..sqlite_utils_core import register_adapter
-
 
 class SourceType(Enum):
     """Represent the type of source for a feed.
@@ -12,13 +10,10 @@ class SourceType(Enum):
     and metadata extraction.
     """
 
-    CHANNEL = "channel"
-    PLAYLIST = "playlist"
-    SINGLE_VIDEO = "single_video"
-    UNKNOWN = "unknown"
+    CHANNEL = "CHANNEL"
+    PLAYLIST = "PLAYLIST"
+    SINGLE_VIDEO = "SINGLE_VIDEO"
+    UNKNOWN = "UNKNOWN"
 
     def __str__(self) -> str:
         return self.value
-
-
-register_adapter(SourceType, lambda source_type: source_type.value)

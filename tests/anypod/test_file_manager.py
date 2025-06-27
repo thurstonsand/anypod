@@ -43,7 +43,8 @@ def save_file(
 
 
 @pytest.mark.unit
-def test_delete_download_file_success(file_manager: FileManager):
+@pytest.mark.asyncio
+async def test_delete_download_file_success(file_manager: FileManager):
     """Tests successful deletion of an existing file."""
     feed_id = "delete_feed"
     download_id = "to_delete"
@@ -55,27 +56,29 @@ def test_delete_download_file_success(file_manager: FileManager):
 
     assert file_to_delete_path.exists()
 
-    file_manager.delete_download_file(feed_id, download_id, ext)
+    await file_manager.delete_download_file(feed_id, download_id, ext)
 
     assert not file_to_delete_path.exists(), "File should be deleted from disk."
 
 
 @pytest.mark.unit
-def test_delete_download_file_not_found(file_manager: FileManager):
+@pytest.mark.asyncio
+async def test_delete_download_file_not_found(file_manager: FileManager):
     """Tests delete_download_file raises FileNotFoundError for a non-existent file."""
     feed_id = "delete_feed_not_found"
     download_id = "non_existent"
     ext = "txt"
 
     with pytest.raises(FileNotFoundError):
-        file_manager.delete_download_file(feed_id, download_id, ext)
+        await file_manager.delete_download_file(feed_id, download_id, ext)
 
 
 # --- Tests for download_exists ---
 
 
 @pytest.mark.unit
-def test_download_exists_true(file_manager: FileManager):
+@pytest.mark.asyncio
+async def test_download_exists_true(file_manager: FileManager):
     """Tests download_exists returns True when a file exists."""
     feed_id = "exists_feed"
     download_id = "existing_file"
@@ -84,21 +87,23 @@ def test_download_exists_true(file_manager: FileManager):
 
     save_file(file_manager, feed_id, file_name, b"dummy data")
 
-    assert file_manager.download_exists(feed_id, download_id, ext) is True
+    assert await file_manager.download_exists(feed_id, download_id, ext) is True
 
 
 @pytest.mark.unit
-def test_download_exists_false_not_found(file_manager: FileManager):
+@pytest.mark.asyncio
+async def test_download_exists_false_not_found(file_manager: FileManager):
     """Tests download_exists returns False when a file does not exist."""
     feed_id = "exists_feed_false"
     download_id = "ghost_file"
     ext = "mp3"
 
-    assert file_manager.download_exists(feed_id, download_id, ext) is False
+    assert await file_manager.download_exists(feed_id, download_id, ext) is False
 
 
 @pytest.mark.unit
-def test_download_exists_false_is_directory(
+@pytest.mark.asyncio
+async def test_download_exists_false_is_directory(
     file_manager: FileManager, temp_base_download_path: Path
 ):
     """Tests download_exists returns False if the path is a directory, not a file."""
@@ -112,14 +117,15 @@ def test_download_exists_false_is_directory(
         parents=True, exist_ok=True
     )
 
-    assert file_manager.download_exists(feed_id, download_id, ext) is False
+    assert await file_manager.download_exists(feed_id, download_id, ext) is False
 
 
 # --- Tests for get_download_stream ---
 
 
 @pytest.mark.unit
-def test_get_download_stream_success(file_manager: FileManager):
+@pytest.mark.asyncio
+async def test_get_download_stream_success(file_manager: FileManager):
     """Tests successfully getting a stream for an existing file and checks its content."""
     feed_id = "stream_feed"
     download_id = "stream_me"
@@ -129,8 +135,14 @@ def test_get_download_stream_success(file_manager: FileManager):
 
     save_file(file_manager, feed_id, file_name, file_content)
 
-    with file_manager.get_download_stream(feed_id, download_id, ext) as stream:
-        read_content = stream.read()
+    read_content = b"".join(
+        [
+            chunk
+            async for chunk in file_manager.get_download_stream(
+                feed_id, download_id, ext
+            )
+        ]
+    )
 
     assert read_content == file_content, (
         "Streamed content does not match original content."
@@ -138,18 +150,21 @@ def test_get_download_stream_success(file_manager: FileManager):
 
 
 @pytest.mark.unit
-def test_get_download_stream_file_not_found(file_manager: FileManager):
+@pytest.mark.asyncio
+async def test_get_download_stream_file_not_found(file_manager: FileManager):
     """Tests get_download_stream raises FileNotFoundError for a non-existent file."""
     feed_id = "stream_feed_404"
     download_id = "no_such_file"
     ext = "mp3"
 
     with pytest.raises(FileNotFoundError):
-        file_manager.get_download_stream(feed_id, download_id, ext)
+        async for _ in file_manager.get_download_stream(feed_id, download_id, ext):
+            pass
 
 
 @pytest.mark.unit
-def test_get_download_stream_path_is_directory(
+@pytest.mark.asyncio
+async def test_get_download_stream_path_is_directory(
     file_manager: FileManager, temp_base_download_path: Path
 ):
     """Tests get_download_stream raises FileNotFoundError if the path is a directory."""
@@ -163,11 +178,13 @@ def test_get_download_stream_path_is_directory(
     )
 
     with pytest.raises(FileNotFoundError):
-        file_manager.get_download_stream(feed_id, download_id, ext)
+        async for _ in file_manager.get_download_stream(feed_id, download_id, ext):
+            pass
 
 
 @pytest.mark.unit
-def test_get_download_stream_file_operation_error(file_manager: FileManager):
+@pytest.mark.asyncio
+async def test_get_download_stream_file_operation_error(file_manager: FileManager):
     """Tests get_download_stream raises FileOperationError for a file operation error."""
     feed_id = "stream_feed_error"
     download_id = "error_file"
@@ -175,17 +192,19 @@ def test_get_download_stream_file_operation_error(file_manager: FileManager):
     file_name = f"{download_id}.{ext}"
 
     # Setup a dummy downloaded file in the correct location (media subdirectory)
-    file_path = file_manager._paths.media_file_path(feed_id, download_id, ext)
+    file_path = await file_manager._paths.media_file_path(feed_id, download_id, ext)
+    file_path.parent.mkdir(parents=True, exist_ok=True)
     with Path.open(file_path, "wb") as f:
         f.write(b"dummy content")
 
-    # Patch Path.open to simulate a file operation error on read
+    # Patch aiofiles.open to simulate a file operation error on read
     simulated_error = OSError("Simulated disk full error")
     with (
-        patch.object(Path, "open", side_effect=simulated_error),
+        patch("aiofiles.open", side_effect=simulated_error),
         pytest.raises(FileOperationError) as exc_info,
     ):
-        file_manager.get_download_stream(feed_id, download_id, ext)
+        async for _ in file_manager.get_download_stream(feed_id, download_id, ext):
+            pass
 
     # Verify the FileOperationError includes correct attributes and cause
     error = exc_info.value

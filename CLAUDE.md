@@ -31,15 +31,6 @@ uv run pre-commit run --all-files               # All of the above, prefer to us
 uvx yt-dlp # can research/view real data from youtube videos for research. see @example_feeds.yaml for real links
 ```
 
-#### Serena MCP
-
-Serena is capable of searching and updating code by symbol, relying on lsp to accurately and comprehensively find all references. Use it in conjunction with your other tools to make changes to the codebase. particularly rely on Serena for:
-
-- Gather information about a file/class: `get_symbol_overview` in conjunction with `find_symbol` to quickly and efficiently gather information an overview.
-- Refactoring code: as it is able to efficiently find all references of a symbol (`find_referencing_symbols`) or modifying symbols (`replace_symbol_body`)
-  - When using `replace_symbol_body`, Serena will handle indentation/whitespace to the correct level for that symbol. That is, you do not need to prepend whitespace outside the context of what would be syntactically correct for the code you are inserting.
-- Any other symbol-level operation can benefit from utilizing Serena over other options like pattern/regex/sed/etc.
-
 ## Architecture
 
 ### Core Components
@@ -203,6 +194,7 @@ COOKIE_PATH=/path/to/cookies.txt      # Optional cookies.txt file for yt-dlp aut
 - Catch specific exceptions rather than broad `Exception` catches
 - When adding new code/features, don't reference them with "new logic", "new field", etc. It is going to live in the code base for a long time past "new"
 - Order functions so each is defined before being referenced within the same file
+- Imports should always be at the top of the file, unless you are specifically trying to lazy load
 
 ### Docstring Guidelines
 - All functions, methods, classes, and tops of files require Google-style docstrings:

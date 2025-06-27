@@ -11,6 +11,7 @@ import signal
 from ..config import AppSettings
 from ..data_coordinator import DataCoordinator, Downloader, Enqueuer, Pruner
 from ..db import DownloadDatabase, FeedDatabase
+from ..db.sqlalchemy_core import SqlalchemyCore
 from ..exceptions import (
     DatabaseOperationError,
     StateReconciliationError,
@@ -35,13 +36,13 @@ def setup_graceful_shutdown() -> asyncio.Event:
     loop = asyncio.get_running_loop()
 
     # Register signal handlers for graceful shutdown using asyncio
-    loop.add_signal_handler(signal.SIGINT, shutdown_event.set)
-    loop.add_signal_handler(signal.SIGTERM, shutdown_event.set)
+    loop.add_signal_handler(signal.SIGINT, shutdown_event.set)  # type: ignore # this is in fact defined
+    loop.add_signal_handler(signal.SIGTERM, shutdown_event.set)  # type: ignore # this is in fact defined
 
     return shutdown_event
 
 
-def _init(
+async def _init(
     settings: AppSettings,
     feed_db: FeedDatabase,
     download_db: DownloadDatabase,
@@ -74,13 +75,13 @@ def _init(
     )
 
     # Run state reconciliation
-    logger.info("Running state reconciliation.")
+    logger.debug("Running state reconciliation.")
     state_reconciler = StateReconciler(
         feed_db=feed_db, download_db=download_db, pruner=pruner
     )
 
     try:
-        ready_feeds = state_reconciler.reconcile_startup_state(settings.feeds)
+        ready_feeds = await state_reconciler.reconcile_startup_state(settings.feeds)
     except StateReconciliationError as e:
         logger.error("State reconciliation failed, cannot continue.", exc_info=e)
         raise
@@ -93,7 +94,9 @@ def _init(
         raise RuntimeError("No enabled feeds found in config")
 
     # Initialize and start scheduler
-    logger.info("Initializing feed scheduler.", extra={"ready_feeds": len(ready_feeds)})
+    logger.debug(
+        "Initializing feed scheduler.", extra={"ready_feeds": len(ready_feeds)}
+    )
     return FeedScheduler(
         ready_feed_ids=ready_feeds,
         feed_configs=settings.feeds,
@@ -110,7 +113,7 @@ async def default(settings: AppSettings) -> None:
     Args:
         settings: Application settings object containing configuration.
     """
-    logger.info(
+    logger.debug(
         "Starting Anypod in default mode.",
         extra={"config_file": str(settings.config_file)},
     )
@@ -132,17 +135,16 @@ async def default(settings: AppSettings) -> None:
         )
         raise DatabaseOperationError("Failed to create data directory.") from e
 
-    logger.info(
-        "Initializing database components.",
-        extra={"db_path": str(path_manager.db_file_path)},
-    )
+    logger.debug("Initializing database components.")
 
-    feed_db = FeedDatabase(db_path=path_manager.db_file_path)
-    download_db = DownloadDatabase(db_path=path_manager.db_file_path)
+    db_dir = await path_manager.db_dir()
+    db_core = SqlalchemyCore(db_dir)
+    feed_db = FeedDatabase(db_core)
+    download_db = DownloadDatabase(db_core)
 
     scheduler = None
     try:
-        scheduler = _init(settings, feed_db, download_db, path_manager)
+        scheduler = await _init(settings, feed_db, download_db, path_manager)
 
         await scheduler.start()
 
@@ -168,10 +170,9 @@ async def default(settings: AppSettings) -> None:
             logger.error("Error shutting down scheduler.", exc_info=e)
 
         try:
-            feed_db.close()
-            download_db.close()
+            await db_core.close()
             logger.info("Database connections closed.")
-        except DatabaseOperationError as e:
+        except Exception as e:
             logger.error("Error closing database connections.", exc_info=e)
 
         logger.info("Anypod shutdown completed.")

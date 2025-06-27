@@ -5,13 +5,13 @@ implementing source-specific strategies for yt-dlp operations, including
 fetch strategy determination and metadata parsing.
 """
 
-from collections.abc import Callable
 from datetime import datetime
 from enum import Enum
-from typing import Any, Protocol
+from pathlib import Path
+from typing import Protocol
 
 from ..db.types import Download, Feed
-from .ytdlp_core import YtdlpInfo
+from .core import YtdlpArgs, YtdlpInfo
 
 
 class ReferenceType(Enum):
@@ -46,10 +46,6 @@ class FetchPurpose(Enum):
         return self.value
 
 
-# Type alias for the function YtdlpWrapper passes to handlers for discovery calls
-YdlApiCaller = Callable[[dict[str, Any], str], YtdlpInfo | None]
-
-
 class SourceHandlerBase(Protocol):
     """Protocol defining the interface for source-specific strategy and parsing logic.
 
@@ -58,29 +54,32 @@ class SourceHandlerBase(Protocol):
     and metadata parsing into Download objects.
     """
 
-    def get_source_specific_ydl_options(self, purpose: FetchPurpose) -> dict[str, Any]:
-        """Return source-specific options to be merged into yt-dlp opts.
+    def set_source_specific_ytdlp_options(
+        self, args: YtdlpArgs, purpose: FetchPurpose
+    ) -> YtdlpArgs:
+        """Apply source-specific CLI options to yt-dlp arguments.
 
         Args:
+            args: YtdlpArgs object to modify with source-specific options.
             purpose: The purpose of the fetch operation.
 
         Returns:
-            Dictionary of yt-dlp options specific to this source.
+            Modified YtdlpArgs object with source-specific options applied.
         """
         ...
 
-    def determine_fetch_strategy(
+    async def determine_fetch_strategy(
         self,
         feed_id: str,
         initial_url: str,
-        ydl_caller_for_discovery: YdlApiCaller,
+        cookies_path: Path | None = None,
     ) -> tuple[str | None, ReferenceType]:
         """Classify the initial URL and determine the final URL to fetch downloads from.
 
         Args:
             feed_id: The feed identifier.
             initial_url: The initial URL to classify.
-            ydl_caller_for_discovery: Function to call yt-dlp for discovery.
+            cookies_path: Path to cookies.txt file for authentication, or None if not needed.
 
         Returns:
             Tuple of (final_url, reference_type).

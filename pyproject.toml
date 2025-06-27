@@ -9,6 +9,9 @@ description = "Thin yt-dlp -> podcast solution"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "aiofiles>=24.1.0",
+    "aiosqlite>=0.21.0",
+    "alembic>=1.16.2",
     "apscheduler>=3.11.0",
     "croniter>=6.0.0",
     "feedgen>=1.0.0",
@@ -17,7 +20,9 @@ dependencies = [
     "python-json-logger>=3.3.0",
     "pyyaml>=6.0.2",
     "readerwriterlock>=1.0.9",
+    "sqlalchemy[asyncio]>=2.0.41",
     "sqlite-utils>=3.38",
+    "sqlmodel>=0.0.24",
     "yt-dlp>=2025.4.30",
 ]
 
@@ -41,7 +46,7 @@ managed = true
 
 [tool.pytest.ini_options]
 minversion = "7.0"
-pythonpath = ["src"]
+pythonpath = ["src", "tests"]
 testpaths = ["tests"]
 addopts = "-ra -q --tb=short --disable-warnings --strict-markers -n 4 --cov=src --cov-report=html --cov-report=term-missing"
 filterwarnings = ["error"]

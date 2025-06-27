@@ -14,9 +14,9 @@ class PodcastExplicit(str, Enum):
     in podcast RSS feeds according to Apple Podcasts standards.
     """
 
-    YES = "yes"
-    NO = "no"
-    CLEAN = "clean"
+    YES = "YES"
+    NO = "NO"
+    CLEAN = "CLEAN"
 
     @classmethod
     def from_str(cls, s: str) -> "PodcastExplicit":
@@ -32,12 +32,28 @@ class PodcastExplicit(str, Enum):
             ValueError: If string is not a valid explicit value.
         """
         try:
-            return cls(s.lower())
+            return cls(s.upper())
         except ValueError as e:
             raise ValueError(f"'{s}' is not one of {[m.value for m in cls]}") from e
 
     def __str__(self) -> str:
         return self.value
+
+    def rss_str(self) -> str:
+        """Get the string value for RSS.
+
+        Podcasts expect the value to be lowercase.
+
+        Returns:
+            String value formatted for RSS.
+        """
+        match self:
+            case PodcastExplicit.YES:
+                return "yes"
+            case PodcastExplicit.NO:
+                return "no"
+            case PodcastExplicit.CLEAN:
+                return "clean"
 
     @classmethod
     def __get_pydantic_core_schema__(

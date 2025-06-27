@@ -65,7 +65,7 @@ INVALID_FEED_CONFIG = FeedConfig(
 )
 
 
-def create_test_feed(feed_db: FeedDatabase, feed_id: str, url: str) -> Feed:
+async def create_test_feed(feed_db: FeedDatabase, feed_id: str, url: str) -> Feed:
     """Create a test feed in the database."""
     feed = Feed(
         id=feed_id,
@@ -75,11 +75,11 @@ def create_test_feed(feed_db: FeedDatabase, feed_id: str, url: str) -> Feed:
         last_successful_sync=datetime.min.replace(tzinfo=UTC),
         title=f"Test Feed {feed_id}",
     )
-    feed_db.upsert_feed(feed)
+    await feed_db.upsert_feed(feed)
     return feed
 
 
-def enqueue_test_items(
+async def enqueue_test_items(
     enqueuer: Enqueuer,
     feed_db: FeedDatabase,
     feed_id: str,
@@ -104,10 +104,10 @@ def enqueue_test_items(
         fetch_since_date = datetime.min.replace(tzinfo=UTC)
 
     # Create feed in database first
-    create_test_feed(feed_db, feed_id, feed_config.url)
+    await create_test_feed(feed_db, feed_id, feed_config.url)
 
     fetch_until_date = datetime.now(UTC)
-    return enqueuer.enqueue_new_downloads(
+    return await enqueuer.enqueue_new_downloads(
         feed_id=feed_id,
         feed_config=feed_config,
         fetch_since_date=fetch_since_date,
@@ -117,7 +117,8 @@ def enqueue_test_items(
 
 
 @pytest.mark.integration
-def test_download_queued_single_video_success(
+@pytest.mark.asyncio
+async def test_download_queued_single_video_success(
     enqueuer: Enqueuer,
     feed_db: FeedDatabase,
     downloader: Downloader,
@@ -130,13 +131,13 @@ def test_download_queued_single_video_success(
     feed_config = SAMPLE_FEED_CONFIG
 
     # First, use enqueuer to populate database with a real entry
-    queued_count = enqueue_test_items(
+    queued_count = await enqueue_test_items(
         enqueuer, feed_db, feed_id, feed_config, cookies_path=cookies_path
     )
     assert queued_count >= 1, "Expected at least 1 item to be queued by enqueuer"
 
     # Verify item is in QUEUED status
-    queued_downloads = download_db.get_downloads_by_status(
+    queued_downloads = await download_db.get_downloads_by_status(
         DownloadStatus.QUEUED, feed_id=feed_id
     )
     assert len(queued_downloads) >= 1
@@ -144,7 +145,7 @@ def test_download_queued_single_video_success(
     assert original_download.status == DownloadStatus.QUEUED
 
     # Now test the downloader
-    success_count, failure_count = downloader.download_queued(
+    success_count, failure_count = await downloader.download_queued(
         feed_id=feed_id,
         feed_config=feed_config,
         cookies_path=cookies_path,
@@ -158,7 +159,7 @@ def test_download_queued_single_video_success(
     assert failure_count == 0, f"Expected 0 failures, got {failure_count}"
 
     # Verify database was updated
-    downloads = download_db.get_downloads_by_status(
+    downloads = await download_db.get_downloads_by_status(
         DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
     assert len(downloads) >= 1
@@ -173,17 +174,18 @@ def test_download_queued_single_video_success(
     assert download.last_error is None  # Should be cleared
 
     # Verify file was actually downloaded
-    assert file_manager.download_exists(feed_id, download.id, download.ext)
+    assert await file_manager.download_exists(feed_id, download.id, download.ext)
 
     # Verify no more queued items for this feed
-    remaining_queued = download_db.get_downloads_by_status(
+    remaining_queued = await download_db.get_downloads_by_status(
         DownloadStatus.QUEUED, feed_id=feed_id
     )
     assert len(remaining_queued) == 0
 
 
 @pytest.mark.integration
-def test_download_queued_multiple_videos_success(
+@pytest.mark.asyncio
+async def test_download_queued_multiple_videos_success(
     enqueuer: Enqueuer,
     feed_db: FeedDatabase,
     downloader: Downloader,
@@ -196,20 +198,20 @@ def test_download_queued_multiple_videos_success(
     feed_config = CHANNEL_FEED_CONFIG
 
     # Use enqueuer to populate database with multiple entries
-    queued_count = enqueue_test_items(
+    queued_count = await enqueue_test_items(
         enqueuer, feed_db, feed_id, feed_config, cookies_path=cookies_path
     )
     assert queued_count >= 1, "Expected at least 1 item to be queued by enqueuer"
 
     # Get original queued items
-    original_queued = download_db.get_downloads_by_status(
+    original_queued = await download_db.get_downloads_by_status(
         DownloadStatus.QUEUED, feed_id=feed_id
     )
     original_count = len(original_queued)
     assert original_count >= 1
 
     # Test the downloader
-    success_count, failure_count = downloader.download_queued(
+    success_count, failure_count = await downloader.download_queued(
         feed_id=feed_id,
         feed_config=feed_config,
         cookies_path=cookies_path,
@@ -221,21 +223,22 @@ def test_download_queued_multiple_videos_success(
     assert success_count >= 1
 
     # Verify database updates
-    downloaded_items = download_db.get_downloads_by_status(
+    downloaded_items = await download_db.get_downloads_by_status(
         DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
     assert len(downloaded_items) == success_count
 
     # Verify files were downloaded
     for downloaded_item in downloaded_items:
-        assert file_manager.download_exists(
+        assert await file_manager.download_exists(
             feed_id, downloaded_item.id, downloaded_item.ext
         )
         assert downloaded_item.filesize is not None and downloaded_item.filesize > 0
 
 
 @pytest.mark.integration
-def test_download_queued_with_limit(
+@pytest.mark.asyncio
+async def test_download_queued_with_limit(
     enqueuer: Enqueuer,
     feed_db: FeedDatabase,
     downloader: Downloader,
@@ -247,13 +250,13 @@ def test_download_queued_with_limit(
     feed_config = CHANNEL_FEED_CONFIG
 
     # Use enqueuer to populate database
-    enqueued_count = enqueue_test_items(
+    enqueued_count = await enqueue_test_items(
         enqueuer, feed_db, feed_id, feed_config, cookies_path=cookies_path
     )
     assert enqueued_count >= 1
 
     # Test downloader with limit of 1
-    success_count, failure_count = downloader.download_queued(
+    success_count, failure_count = await downloader.download_queued(
         feed_id=feed_id,
         feed_config=feed_config,
         cookies_path=cookies_path,
@@ -268,14 +271,15 @@ def test_download_queued_with_limit(
 
     # If we got a success, verify it
     if success_count > 0:
-        downloaded_items = download_db.get_downloads_by_status(
+        downloaded_items = await download_db.get_downloads_by_status(
             DownloadStatus.DOWNLOADED, feed_id=feed_id
         )
         assert len(downloaded_items) == success_count
 
 
 @pytest.mark.integration
-def test_download_queued_no_queued_items(
+@pytest.mark.asyncio
+async def test_download_queued_no_queued_items(
     downloader: Downloader,
     download_db: DownloadDatabase,
     cookies_path: Path | None,
@@ -286,7 +290,7 @@ def test_download_queued_no_queued_items(
 
     # Don't run enqueuer, so no queued items exist
 
-    success_count, failure_count = downloader.download_queued(
+    success_count, failure_count = await downloader.download_queued(
         feed_id=feed_id,
         feed_config=feed_config,
         cookies_path=cookies_path,
@@ -298,14 +302,15 @@ def test_download_queued_no_queued_items(
     assert failure_count == 0
 
     # Verify no downloads in database for this feed
-    all_downloads = download_db.get_downloads_by_status(
+    all_downloads = await download_db.get_downloads_by_status(
         DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
     assert len(all_downloads) == 0
 
 
 @pytest.mark.integration
-def test_download_queued_handles_invalid_urls(
+@pytest.mark.asyncio
+async def test_download_queued_handles_invalid_urls(
     downloader: Downloader,
     feed_db: FeedDatabase,
     download_db: DownloadDatabase,
@@ -316,12 +321,12 @@ def test_download_queued_handles_invalid_urls(
     feed_config = INVALID_FEED_CONFIG
 
     # Create the feed first
-    create_test_feed(feed_db, feed_id, feed_config.url)
+    await create_test_feed(feed_db, feed_id, feed_config.url)
 
     # Manually insert an invalid download to test error handling
     published_time = datetime.now(UTC)
     invalid_download = Download(
-        feed=feed_id,
+        feed_id=feed_id,
         id="invalid_video_id",
         source_url=INVALID_VIDEO_URL,
         title="Invalid Video",
@@ -335,16 +340,16 @@ def test_download_queued_handles_invalid_urls(
         discovered_at=published_time,
         updated_at=published_time,
     )
-    download_db.upsert_download(invalid_download)
+    await download_db.upsert_download(invalid_download)
 
     # Verify it's queued
-    queued_downloads = download_db.get_downloads_by_status(
+    queued_downloads = await download_db.get_downloads_by_status(
         DownloadStatus.QUEUED, feed_id=feed_id
     )
     assert len(queued_downloads) == 1
 
     # Test downloader
-    success_count, failure_count = downloader.download_queued(
+    success_count, failure_count = await downloader.download_queued(
         feed_id=feed_id,
         feed_config=feed_config,
         cookies_path=cookies_path,
@@ -356,13 +361,14 @@ def test_download_queued_handles_invalid_urls(
     assert failure_count == 1
 
     # Verify the download had its retry count bumped
-    updated_download = download_db.get_download_by_id(feed_id, "invalid_video_id")
+    updated_download = await download_db.get_download_by_id(feed_id, "invalid_video_id")
     assert updated_download.retries > 0
     assert updated_download.last_error is not None
 
 
 @pytest.mark.integration
-def test_download_queued_retry_logic_max_errors(
+@pytest.mark.asyncio
+async def test_download_queued_retry_logic_max_errors(
     downloader: Downloader,
     feed_db: FeedDatabase,
     download_db: DownloadDatabase,
@@ -380,12 +386,12 @@ def test_download_queued_retry_logic_max_errors(
     )
 
     # Create the feed first
-    create_test_feed(feed_db, feed_id, feed_config.url)
+    await create_test_feed(feed_db, feed_id, feed_config.url)
 
     # Insert an invalid download
     published_time = datetime.now(UTC)
     invalid_download = Download(
-        feed=feed_id,
+        feed_id=feed_id,
         id="will_error_out",
         source_url=INVALID_VIDEO_URL,
         title="Will Error Out",
@@ -399,10 +405,10 @@ def test_download_queued_retry_logic_max_errors(
         discovered_at=published_time,
         updated_at=published_time,
     )
-    download_db.upsert_download(invalid_download)
+    await download_db.upsert_download(invalid_download)
 
     # Run downloader - first failure, should bump retry
-    success_count, failure_count = downloader.download_queued(
+    success_count, failure_count = await downloader.download_queued(
         feed_id=feed_id,
         feed_config=feed_config,
         cookies_path=cookies_path,
@@ -412,14 +418,15 @@ def test_download_queued_retry_logic_max_errors(
     assert failure_count == 1
 
     # Check download status - should now be ERROR since max_errors=1
-    updated_download = download_db.get_download_by_id(feed_id, "will_error_out")
+    updated_download = await download_db.get_download_by_id(feed_id, "will_error_out")
     assert updated_download.retries == 1
     assert updated_download.status == DownloadStatus.ERROR
     assert updated_download.last_error is not None
 
 
 @pytest.mark.integration
-def test_download_queued_mixed_success_and_failure(
+@pytest.mark.asyncio
+async def test_download_queued_mixed_success_and_failure(
     enqueuer: Enqueuer,
     feed_db: FeedDatabase,
     downloader: Downloader,
@@ -432,7 +439,7 @@ def test_download_queued_mixed_success_and_failure(
     feed_config = SAMPLE_FEED_CONFIG
 
     # First, enqueue a valid download
-    queued_count = enqueue_test_items(
+    queued_count = await enqueue_test_items(
         enqueuer, feed_db, feed_id, feed_config, cookies_path=cookies_path
     )
     assert queued_count >= 1
@@ -440,7 +447,7 @@ def test_download_queued_mixed_success_and_failure(
     # Then manually add an invalid download to the same feed
     published_time = datetime.now(UTC)
     invalid_download = Download(
-        feed=feed_id,
+        feed_id=feed_id,
         id="invalid_mixed_test",
         source_url=INVALID_VIDEO_URL,
         title="Invalid Mixed Test",
@@ -454,16 +461,16 @@ def test_download_queued_mixed_success_and_failure(
         discovered_at=published_time,
         updated_at=published_time,
     )
-    download_db.upsert_download(invalid_download)
+    await download_db.upsert_download(invalid_download)
 
     # Verify we have at least 2 queued items
-    queued_downloads = download_db.get_downloads_by_status(
+    queued_downloads = await download_db.get_downloads_by_status(
         DownloadStatus.QUEUED, feed_id=feed_id
     )
     assert len(queued_downloads) >= 2
 
     # Run downloader
-    success_count, failure_count = downloader.download_queued(
+    success_count, failure_count = await downloader.download_queued(
         feed_id=feed_id,
         feed_config=feed_config,
         cookies_path=cookies_path,
@@ -476,24 +483,27 @@ def test_download_queued_mixed_success_and_failure(
     assert success_count + failure_count == len(queued_downloads)
 
     # Verify successful downloads
-    downloaded_items = download_db.get_downloads_by_status(
+    downloaded_items = await download_db.get_downloads_by_status(
         DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
     assert len(downloaded_items) == success_count
 
     for downloaded_item in downloaded_items:
-        assert file_manager.download_exists(
+        assert await file_manager.download_exists(
             feed_id, downloaded_item.id, downloaded_item.ext
         )
 
     # Verify failed download had retry bumped
-    failed_download = download_db.get_download_by_id(feed_id, "invalid_mixed_test")
+    failed_download = await download_db.get_download_by_id(
+        feed_id, "invalid_mixed_test"
+    )
     assert failed_download.retries > 0
     assert failed_download.last_error is not None
 
 
 @pytest.mark.integration
-def test_download_queued_file_properties(
+@pytest.mark.asyncio
+async def test_download_queued_file_properties(
     enqueuer: Enqueuer,
     feed_db: FeedDatabase,
     downloader: Downloader,
@@ -506,11 +516,11 @@ def test_download_queued_file_properties(
     feed_config = SAMPLE_FEED_CONFIG
 
     # Enqueue and download
-    enqueue_test_items(
+    await enqueue_test_items(
         enqueuer, feed_db, feed_id, feed_config, cookies_path=cookies_path
     )
 
-    success_count, _ = downloader.download_queued(
+    success_count, _ = await downloader.download_queued(
         feed_id=feed_id,
         feed_config=feed_config,
         cookies_path=cookies_path,
@@ -520,18 +530,22 @@ def test_download_queued_file_properties(
     assert success_count >= 1
 
     # Get the downloaded item
-    downloads = download_db.get_downloads_by_status(
+    downloads = await download_db.get_downloads_by_status(
         DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
     download = downloads[0]
 
     # File should exist
-    assert file_manager.download_exists(feed_id, download.id, download.ext)
+    assert await file_manager.download_exists(feed_id, download.id, download.ext)
 
-    # File should be readable
-    stream = file_manager.get_download_stream(feed_id, download.id, download.ext)
-    assert stream.readable()
-    stream.close()
+    # File should be readable - get_download_stream returns an async iterator
+    stream_data = b""
+    async for chunk in file_manager.get_download_stream(
+        feed_id, download.id, download.ext
+    ):
+        stream_data += chunk
+        break  # Just check that we can read at least one chunk
+    assert len(stream_data) > 0
 
     # Database should have correct metadata
     assert download.ext in ["mp4", "webm", "mkv"]  # Common video formats
@@ -547,7 +561,8 @@ def test_download_queued_file_properties(
 
 
 @pytest.mark.integration
-def test_filesize_metadata_flow(
+@pytest.mark.asyncio
+async def test_filesize_metadata_flow(
     enqueuer: Enqueuer,
     feed_db: FeedDatabase,
     downloader: Downloader,
@@ -566,13 +581,13 @@ def test_filesize_metadata_flow(
     feed_config = SAMPLE_FEED_CONFIG
 
     # Enqueue items to get initial metadata
-    queued_count = enqueue_test_items(
+    queued_count = await enqueue_test_items(
         enqueuer, feed_db, feed_id, feed_config, cookies_path=cookies_path
     )
     assert queued_count >= 1, "Should have queued at least one item"
 
     # Get the queued item and check initial filesize
-    queued_items = download_db.get_downloads_by_status(
+    queued_items = await download_db.get_downloads_by_status(
         DownloadStatus.QUEUED, feed_id=feed_id
     )
     queued_item = queued_items[0]
@@ -582,7 +597,7 @@ def test_filesize_metadata_flow(
     assert initial_filesize >= 0, "Initial filesize should be non-negative"
 
     # Download the item
-    success_count, _ = downloader.download_queued(
+    success_count, _ = await downloader.download_queued(
         feed_id=feed_id,
         feed_config=feed_config,
         cookies_path=cookies_path,
@@ -591,7 +606,7 @@ def test_filesize_metadata_flow(
     assert success_count >= 1, "Should have downloaded at least one item"
 
     # Get the downloaded item
-    downloaded_items = download_db.get_downloads_by_status(
+    downloaded_items = await download_db.get_downloads_by_status(
         DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
     downloaded_item = downloaded_items[0]

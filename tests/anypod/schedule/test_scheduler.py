@@ -9,7 +9,7 @@ graceful error handling, and proper lifecycle management.
 
 from datetime import UTC, datetime
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from pydantic import ValidationError
 import pytest
@@ -27,13 +27,15 @@ from anypod.schedule.scheduler import FeedScheduler
 def mock_data_coordinator() -> MagicMock:
     """Provides a mock DataCoordinator."""
     mock = MagicMock()
-    mock.process_feed.return_value = ProcessingResults(
-        feed_id="test_feed",
-        start_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
-        enqueue_result=PhaseResult(success=True, count=1),
-        download_result=PhaseResult(success=True, count=1),
-        prune_result=PhaseResult(success=True, count=0),
-        rss_generation_result=PhaseResult(success=True, count=1),
+    mock.process_feed = AsyncMock(
+        return_value=ProcessingResults(
+            feed_id="test_feed",
+            start_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+            enqueue_result=PhaseResult(success=True, count=1),
+            download_result=PhaseResult(success=True, count=1),
+            prune_result=PhaseResult(success=True, count=0),
+            rss_generation_result=PhaseResult(success=True, count=1),
+        )
     )
     return mock
 
@@ -227,16 +229,17 @@ def test_job_to_feed_id(job_id: str, expected_feed_id: str | None):
 
 
 @pytest.mark.unit
+@pytest.mark.asyncio
 @patch.object(scheduler, "set_context_id")
 @patch.object(time, "time", return_value=1234567890)
-def test_process_feed_with_context_sets_context_and_calls_coordinator(
+async def test_process_feed_with_context_sets_context_and_calls_coordinator(
     _mock_time: MagicMock,
     mock_set_context_id: MagicMock,
     mock_data_coordinator: MagicMock,
     sample_feed_config: FeedConfig,
 ):
     """Test that _process_feed_with_context sets context ID and calls data coordinator."""
-    result = FeedScheduler._process_feed_with_context(
+    result = await FeedScheduler._process_feed_with_context(
         mock_data_coordinator, "test_feed", sample_feed_config
     )
 

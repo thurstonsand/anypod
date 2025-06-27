@@ -1,17 +1,50 @@
-"""Data model representing a feed."""
+"""Feed table mapped with SQLModel."""
 
-from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+from pydantic import computed_field
+from sqlalchemy import (
+    Boolean,
+    Column,
+    Enum,
+    Integer,
+    String,
+    TypeDecorator,
+    text,
+)
+from sqlalchemy.sql.schema import FetchedValue
+from sqlmodel import Field, Relationship, SQLModel
 
 from ...config.types import PodcastCategories, PodcastExplicit
-from ..base_db import parse_datetime, parse_required_datetime
 from .source_type import SourceType
+from .timezone_aware_datetime import SQLITE_DATETIME_NOW, TimezoneAwareDatetime
+
+if TYPE_CHECKING:
+    from .download import Download
 
 
-@dataclass
-class Feed:
-    """Represent a feed's data for adding and updating.
+class PodcastCategoriesType(TypeDecorator[PodcastCategories]):
+    """SQLAlchemy type for PodcastCategories that stores as string."""
+
+    impl = String
+    cache_ok = True
+
+    def process_bind_param(
+        self, value: PodcastCategories | None, dialect: Any
+    ) -> str | None:
+        """Convert PodcastCategories to string for storage."""
+        return str(value) if value is not None else None
+
+    def process_result_value(
+        self, value: str | None, dialect: Any
+    ) -> PodcastCategories | None:
+        """Convert string back to PodcastCategories."""
+        return PodcastCategories(value) if value is not None else None
+
+
+class Feed(SQLModel, table=True):
+    """ORM model representing a podcast/feed record.
 
     Attributes:
         id: The feed identifier.
@@ -45,89 +78,111 @@ class Feed:
             image_url: URL to feed image.
             category: List of podcast categories.
             explicit: Explicit content flag.
+
+    Relationships:
+        downloads: List of downloads associated with this feed.
     """
 
-    id: str
-    is_enabled: bool
-    source_type: SourceType
+    id: str = Field(primary_key=True)
+    is_enabled: bool = Field(
+        default=True,
+        sa_column=Column(Boolean, nullable=False, index=True, server_default="1"),
+    )
+
+    source_type: SourceType = Field(sa_column=Column(Enum(SourceType), nullable=False))
     source_url: str
 
-    # time keeping
-    last_successful_sync: datetime
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
-    last_rss_generation: datetime | None = None
+    # ----------------------------------------------------- time keeping ----
+    last_successful_sync: datetime = Field(
+        sa_column=Column(
+            TimezoneAwareDatetime,
+            nullable=False,
+            server_default=text(SQLITE_DATETIME_NOW),
+        ),
+    )
+    created_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(
+            TimezoneAwareDatetime,
+            nullable=False,
+            server_default=text(SQLITE_DATETIME_NOW),
+        ),
+    )
+    updated_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(
+            TimezoneAwareDatetime,
+            nullable=False,
+            server_default=text(SQLITE_DATETIME_NOW),
+            server_onupdate=FetchedValue(),
+        ),
+    )
+    last_rss_generation: datetime | None = Field(
+        default=None, sa_column=Column(TimezoneAwareDatetime)
+    )
 
-    # Error tracking
-    last_failed_sync: datetime | None = None
-    consecutive_failures: int = 0
+    # ------------------------------------------------------ error tracking
+    last_failed_sync: datetime | None = Field(
+        default=None, sa_column=Column(TimezoneAwareDatetime)
+    )
+    consecutive_failures: int = Field(
+        default=0,
+        sa_column=Column(Integer, nullable=False, server_default="0"),
+    )
 
-    # Download tracking
-    total_downloads: int = 0
+    # --------------------------------------------------- download metrics
+    total_downloads_internal: int = Field(
+        default=0,
+        exclude=True,
+        sa_column=Column(
+            Integer, nullable=False, server_default="0", name="total_downloads"
+        ),
+    )
 
-    # Retention policies
-    since: datetime | None = None
+    @computed_field
+    @property
+    def total_downloads(self) -> int:
+        """Read-only property for total downloads."""
+        return self.total_downloads_internal
+
+    # ------------------------------------------------ retention policies
+    since: datetime | None = Field(
+        default=None, sa_column=Column(TimezoneAwareDatetime)
+    )
     keep_last: int | None = None
 
-    # Feed metadata
+    # ------------------------------------------------ feed metadata
     title: str | None = None
     subtitle: str | None = None
     description: str | None = None
     language: str | None = None
     author: str | None = None
     image_url: str | None = None
-    category: PodcastCategories | None = None
-    explicit: PodcastExplicit | None = None
+    category: PodcastCategories | None = Field(
+        default=None, sa_column=Column(PodcastCategoriesType)
+    )
+    explicit: PodcastExplicit | None = Field(
+        default=None, sa_column=Column(Enum(PodcastExplicit))
+    )
 
-    @classmethod
-    def from_row(cls, row: dict[str, Any]) -> "Feed":
-        """Converts a row from the database to a Feed.
+    # ---------------------------------------------------- relationships
+    downloads: list["Download"] = Relationship(back_populates="feed")
 
-        Args:
-            row: A dictionary representing a row from the database.
+    # --- Class Helpers -----------------------------------------------------
 
-        Returns:
-            A Feed object.
+    def model_dump_for_insert(self) -> dict[str, Any]:
+        """Use in place of Pydantic's model_dump() for insert operations.
 
-        Raises:
-            ValueError: If a date format is invalid or source_type value is invalid.
+        This is necessary because certain fields are handled by the db directly,
+        so should be treated differently. It also excludes computed fields.
         """
-        try:
-            source_type_enum = SourceType(row["source_type"])
-        except ValueError as e:
-            raise ValueError(
-                f"Invalid source_type value in DB row: {row['source_type']}"
-            ) from e
+        dump = self.model_dump()
+        if "created_at" in dump and dump["created_at"] is None:
+            dump.pop("created_at")
+        if "updated_at" in dump and dump["updated_at"] is None:
+            dump.pop("updated_at")
 
-        return cls(
-            id=row["id"],
-            is_enabled=bool(row["is_enabled"]),
-            source_type=source_type_enum,
-            source_url=row["source_url"],
-            # time keeping
-            last_successful_sync=parse_required_datetime(row["last_successful_sync"]),
-            created_at=parse_required_datetime(row["created_at"]),
-            updated_at=parse_required_datetime(row["updated_at"]),
-            last_rss_generation=parse_datetime(row.get("last_rss_generation")),
-            # error tracking
-            last_failed_sync=parse_datetime(row.get("last_failed_sync")),
-            consecutive_failures=row.get("consecutive_failures", 0),
-            # download tracking
-            total_downloads=row.get("total_downloads", 0),
-            # retention policies
-            since=parse_datetime(row.get("since")),
-            keep_last=row.get("keep_last"),
-            # feed metadata
-            title=row.get("title"),
-            subtitle=row.get("subtitle"),
-            description=row.get("description"),
-            language=row.get("language"),
-            author=row.get("author"),
-            image_url=row.get("image_url"),
-            category=PodcastCategories(row["category"])
-            if row.get("category")
-            else None,
-            explicit=PodcastExplicit.from_str(row["explicit"])
-            if row.get("explicit")
-            else None,
-        )
+        # Don't include computed fields in database operations
+        dump.pop("total_downloads", None)
+        dump.pop("total_downloads_internal", None)
+        return dump

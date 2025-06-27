@@ -11,6 +11,7 @@ from pathlib import Path
 from ..config import AppSettings
 from ..data_coordinator.enqueuer import Enqueuer
 from ..db import DownloadDatabase, FeedDatabase
+from ..db.sqlalchemy_core import SqlalchemyCore
 from ..db.types import Download, DownloadStatus
 from ..exceptions import DatabaseOperationError, EnqueueError
 from ..path_manager import PathManager
@@ -19,9 +20,9 @@ from ..ytdlp_wrapper import YtdlpWrapper
 logger = logging.getLogger(__name__)
 
 
-def run_debug_enqueuer_mode(
+async def run_debug_enqueuer_mode(
     settings: AppSettings,
-    debug_db_path: Path,
+    debug_db_dir: Path,
     paths: PathManager,
 ) -> None:
     """Run the Enqueuer in debug mode to process feed metadata.
@@ -32,20 +33,21 @@ def run_debug_enqueuer_mode(
 
     Args:
         settings: Application settings containing feed configurations.
-        debug_db_path: Path to the database file.
+        debug_db_dir: Path to the database directory.
         paths: PathManager instance containing data and temporary directories.
     """
     logger.info(
         "Initializing Anypod in Enqueuer debug mode.",
         extra={
             "config_file": str(settings.config_file),
-            "debug_db_path": str(debug_db_path.resolve()),
+            "debug_db_dir": str(debug_db_dir.resolve()),
         },
     )
 
     try:
-        feed_db = FeedDatabase(db_path=debug_db_path)
-        download_db = DownloadDatabase(db_path=debug_db_path)
+        db_core = SqlalchemyCore(debug_db_dir)
+        feed_db = FeedDatabase(db_core)
+        download_db = DownloadDatabase(db_core)
         ytdlp_wrapper = YtdlpWrapper(paths)
         enqueuer = Enqueuer(feed_db, download_db, ytdlp_wrapper)
     except Exception as e:
@@ -58,8 +60,7 @@ def run_debug_enqueuer_mode(
 
     if not settings.feeds:
         logger.info("No feeds configured. Enqueuer debug mode has nothing to process.")
-        feed_db.close()
-        download_db.close()
+        await db_core.close()
         return
 
     total_newly_queued_count = 0
@@ -75,7 +76,7 @@ def run_debug_enqueuer_mode(
             # Use current time as fetch_until_date for day-aligned yt-dlp precision
             fetch_until_date = datetime.now(UTC)
 
-            newly_queued_count = enqueuer.enqueue_new_downloads(
+            newly_queued_count = await enqueuer.enqueue_new_downloads(
                 feed_id=feed_id,
                 feed_config=feed_config,
                 fetch_since_date=fetch_since_date,
@@ -112,7 +113,7 @@ def run_debug_enqueuer_mode(
 
         for status in DownloadStatus:
             try:
-                downloads_in_status = download_db.get_downloads_by_status(
+                downloads_in_status = await download_db.get_downloads_by_status(
                     status_to_filter=status,
                     limit=-1,  # get all
                 )
@@ -137,7 +138,7 @@ def run_debug_enqueuer_mode(
                     )
                     for i, dl in enumerate(downloads_list[:5]):
                         logger.info(
-                            f"  {i + 1}. ID: {dl.id}, Title: {dl.title}, Feed: {dl.feed}, "
+                            f"  {i + 1}. ID: {dl.id}, Title: {dl.title}, Feed: {dl.feed_id}, "
                             f"Ext: {dl.ext}, Duration: {dl.duration}s, "
                             f"Quality: {dl.quality_info or 'N/A'}, "
                             f"Published: {dl.published.isoformat() if dl.published else 'N/A'}"
@@ -145,7 +146,6 @@ def run_debug_enqueuer_mode(
         else:
             logger.info("No downloads found in the database.")
     finally:
-        feed_db.close()
-        download_db.close()
+        await db_core.close()
 
     logger.info("Enqueuer debug mode processing complete.")

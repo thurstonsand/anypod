@@ -368,21 +368,72 @@ This section details the components that manage the lifecycle of downloads, from
     - especially because theyve duplicated logic on retrieving the cookie -- this needs to be centralized somewhere else
     - ytdlp impl looks fine tho
   - [ ] optimize discover/metadata/download loop to cut down on calls to yt-dlp
-  - [ ] Cut down on excessive logs
+    - it looks like we are able to retrieve full video detail when querying a playlist without `--flat-playlist` option
+    - jury's still out on channels, but maybe?
+    - maybe we can pre-emptively classify these when they are added, store the type in the db, and pick the optimal way to retrieve based on that classification
+    - **Future Optimization**: Could fetch detailed metadata in one call (86 fields vs 21) but 10x slower - out of scope
+  - [x] Cut down on excessive logs
   - [x] use the shared conftest for more fixtures
-  - [ ] make the db a folder instead of a file -- it creates `.db-wal` type in the same folder.
+  - [x] make the db a folder instead of a file -- it creates `.db-wal` type in the same folder.
 
-### 5.4.1 Convert to async model
-- [ ] Wrap yt-dlp calls in `asyncio.create_subprocess_exec` so that they can be cancelled
-- [ ] Switch over from sqlite-utils to SQLAlchemy 2.0 AsyncIO + SQLModel
-- [ ] Implement graceful shutdown handling - it hard crashes on ctrl-c right now
+#### 5.4.1 Convert to async model for ytdlp
+
+**Context/Goals**: Convert anypod from sync to async to enable cancellable long-running operations (especially yt-dlp calls). Currently yt-dlp operations block and can't be interrupted. The async conversion will wrap yt-dlp in subprocess calls that can be properly cancelled, and ripple async throughout the codebase. Key insight: keep CLI args as `list[str]` instead of converting to dict, eliminating complex dict→CLI conversion.
+
+**Implementation Tasks**:
+- [x] **CLI Args Strategy**: Remove dict conversion in `feed_config.py` - keep `yt_args` as `list[str]` throughout pipeline
+- [x] **YtdlpCore Async**: Implement subprocess calls with `--dump-single-json --flat-playlist` for metadata, parse JSON to `YtdlpInfo`
+- [x] **Cancellation**: Proper subprocess cleanup (`proc.kill()` + `await proc.wait()` on `CancelledError`)
+- [x] Isolate yt-dlp cli args into YtdlpCore
+- [x] Consistent naming on the ydl vs ytdlp fns
+  - also separate out the classes into different files
+- [x] Remove unused YtdlpCore methods: parse_options(), set_date_range(), set_playlist_limit(), set_cookies()
+- [x] **Conversion Order**: YtdlpCore → YtdlpWrapper → Enqueuer/Downloader/Pruner → DataCoordinator → StateReconciler
+- [x] Consider if RSSFeedGenerator needs async updates (probably minimal since it's mostly CPU-bound)
+  - the answer is no, for now at least
+- [x] Implement graceful shutdown handling - it hard crashes on ctrl-c right now
   - this includes during init when we're not in APScheduler yet (maybe we should be?)
+
+#### 5.4.2 Use SQLAlchemy AsyncIO
+- [x] **Phase 1: Environment Setup & Dependencies**
+  - [x] Add `sqlalchemy[asyncio]`, `sqlmodel`, `aiosqlite`, and `alembic` to `pyproject.toml` using `uv add`.
+- [x] **Phase 2: Refactor Models to SQLModel**
+  - [x] Convert data models in `src/anypod/db/types/` (`download.py`, `feed.py`) to inherit from `SQLModel`, marking them with `table=True`.
+  - [x] Use `sqlmodel.Field` to define primary keys, indexes, and other constraints.
+  - [x] Define the one-to-many relationship between `Feed` and `Download` using `sqlmodel.Relationship`.
+  - [x] Integrate enum types into SQLModels:
+    - [x] For `Feed.source_type`, declare `sa_column=Column(Enum(SourceType))`.
+    - [x] For `Download.status`, declare `sa_column=Column(Enum(DownloadStatus))`.
+    - [x] Remove legacy `register_adapter` calls.
+- [x] **Phase 3: Implement the Asynchronous Core**
+  - [x] Create `src/anypod/db/sqlalchemy_core.py` to centralize database connectivity.
+  - [x] Implement `create_async_engine` using the `sqlite+aiosqlite` dialect and `QueuePool` (default).
+  - [x] Create an `async_session_maker` for producing `AsyncSession` instances.
+  - [x] Implement a `session()` async generator for dependency injection.
+- [x] **Phase 4: Refactor Data Access Logic**
+  - [x] Convert all methods in `src/anypod/db/feed_db.py` and `src/anypod/db/download_db.py` to `async def`.
+  - [x] Refactor methods to accept an `AsyncSession` parameter instead of using a shared instance.
+  - [x] Replace `sqlite-utils` calls (`upsert`, `rows_where`, `get`) with `SQLAlchemy` ORM operations (`session.add`, `session.execute(select(...))`).
+  - [x] Propagate `async` keyword up the call stack through the `data_coordinator` and `schedule` modules.
+- [x] **Phase 5: Database Migrations with Alembic**
+  - [x] Initialize Alembic with `alembic init -t async migrations`.
+  - [x] Configure `alembic.ini` with the `sqlalchemy.url` for the async driver.
+  - [x] Configure `migrations/env.py` to use `SQLModel.metadata` as the `target_metadata`.
+  - [x] Generate an initial migration script: `alembic revision --autogenerate -m "Initial schema from SQLModels"`.
+  - [x] Replace database triggers (`create_trigger`) with Alembic-managed versions.
+  - [x] Review and apply the initial migration: `alembic upgrade head`.
+
+#### 5.4.3 Use aiofiles for file operations
+- [x] Add aiofiles dependency and convert FileManager to use async file operations
+  - [x] **Dependencies**: Add `aiofiles` for async file operations
+  - [x] **File Operations**: Use `aiofiles.os` to replace path operations
+
 
 ### 5.5 Initial Sync Strategy
 - [ ] After reconciliation, trigger immediate sync:
-  - [ ] Process all enabled feeds to populate RSS
+  - [x] Process all enabled feeds to populate RSS
   - [ ] Ensure RSS feeds available before HTTP server starts
-  - [ ] Handle failures gracefully without blocking startup, unless config is wrong -- that should cause failure until fixed
+  - [x] Handle failures gracefully without blocking startup, unless config is wrong -- that should cause failure until fixed
 
 ## 6  HTTP Server
 

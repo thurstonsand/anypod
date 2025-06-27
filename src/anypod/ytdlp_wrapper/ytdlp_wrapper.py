@@ -10,12 +10,14 @@ import logging
 from pathlib import Path
 from typing import Any
 
+import aiofiles.os
+
 from ..db.types import Download, Feed
-from ..exceptions import YtdlpApiError
+from ..exceptions import FileOperationError, YtdlpApiError
 from ..path_manager import PathManager
 from .base_handler import FetchPurpose, ReferenceType, SourceHandlerBase
+from .core import YtdlpArgs, YtdlpCore
 from .youtube_handler import YoutubeHandler
-from .ytdlp_core import YtdlpCore, YtdlpInfo
 
 logger = logging.getLogger(__name__)
 
@@ -46,16 +48,16 @@ class YtdlpWrapper:
             },
         )
 
-    def _prepare_download_dir(self, feed_id: str) -> tuple[Path, Path]:
+    async def _prepare_download_dir(self, feed_id: str) -> tuple[Path, Path]:
         try:
-            feed_temp_path = self._paths.feed_tmp_dir(feed_id)
-            feed_data_path = self._paths.feed_data_dir(feed_id)
+            feed_temp_path = await self._paths.feed_tmp_dir(feed_id)
+            feed_data_path = await self._paths.feed_data_dir(feed_id)
         except ValueError as e:
             raise YtdlpApiError(
                 message="Invalid feed identifier for yt-dlp paths.",
                 feed_id=feed_id,
             ) from e
-        except OSError as e:
+        except FileOperationError as e:
             raise YtdlpApiError(
                 message="Failed to create directories for yt-dlp paths.",
                 feed_id=feed_id,
@@ -63,48 +65,51 @@ class YtdlpWrapper:
 
         return feed_temp_path, feed_data_path
 
-    def _prepare_ydl_options(
+    def _prepare_ytdlp_options(
         self,
-        user_cli_args: dict[str, Any],
+        args: YtdlpArgs,
         purpose: FetchPurpose,
-        source_specific_opts: dict[str, Any],
+        ref_type: ReferenceType | None = None,
+        fetch_since_date: datetime | None = None,
+        fetch_until_date: datetime | None = None,
+        keep_last: int | None = None,
         download_temp_dir: Path | None = None,
         download_data_dir: Path | None = None,
         download_id: str | None = None,
         cookies_path: Path | None = None,
-    ) -> dict[str, Any]:
+    ) -> YtdlpArgs:
         log_params: dict[str, Any] = {
             "purpose": purpose,
-            "num_user_provided_opts": len(user_cli_args),
-            "source_specific_opts": list(source_specific_opts.keys()),
+            "num_user_provided_opts": args.additional_args_count,
+            "ref_type": ref_type,
         }
         logger.debug("Preparing yt-dlp options.", extra=log_params)
 
-        base_opts: dict[str, Any] = {
-            "logger": logger,
-            "quiet": True,
-            "ignoreerrors": True,
-            "no_warnings": True,
-            "verbose": False,
-            **source_specific_opts,
-        }
+        # Add base options
+        args.quiet().no_warnings()
 
+        # Add date filtering and playlist limits (only for non-SINGLE references)
+        if ref_type != ReferenceType.SINGLE:
+            if fetch_since_date:
+                args.dateafter(fetch_since_date)
+                log_params["fetch_since_date_day_aligned"] = fetch_since_date.strftime(
+                    "%Y%m%d"
+                )
+            if fetch_until_date:
+                args.datebefore(fetch_until_date)
+                log_params["fetch_until_date_day_aligned"] = fetch_until_date.strftime(
+                    "%Y%m%d"
+                )
+            if keep_last:
+                args.playlist_limit(keep_last)
+                log_params["keep_last"] = keep_last
+
+        # Add purpose-specific options
         match purpose:
             case FetchPurpose.DISCOVERY:
-                final_opts = {
-                    **user_cli_args,
-                    **base_opts,
-                    "skip_download": True,
-                    "extract_flat": "in_playlist",
-                    "playlist_items": "1-5",
-                }
+                args.skip_download().flat_playlist().playlist_limit(5)
             case FetchPurpose.METADATA_FETCH:
-                final_opts = {
-                    **user_cli_args,
-                    **base_opts,
-                    "skip_download": True,
-                    "extract_flat": False,
-                }
+                args.skip_download()
             case FetchPurpose.MEDIA_DOWNLOAD:
                 if (
                     download_temp_dir is None
@@ -115,36 +120,29 @@ class YtdlpWrapper:
                         message="download_temp_dir, download_data_dir, and download_id are required for MEDIA_DOWNLOAD purpose",
                         download_id=download_id,
                     )
-                final_opts = {
-                    **user_cli_args,
-                    **base_opts,
-                    "skip_download": False,
-                    "outtmpl": f"{download_id}.%(ext)s",
-                    "paths": {
-                        "temp": str(download_temp_dir),
-                        "home": str(download_data_dir),
-                    },
-                    "extract_flat": False,
-                }
+                args.output(f"{download_id}.%(ext)s").paths_temp(
+                    download_temp_dir
+                ).paths_home(download_data_dir)
 
-        # Apply cookies if provided
-        YtdlpCore.set_cookies(final_opts, cookies_path)
+        # Add cookies if provided
+        if cookies_path is not None:
+            args.cookies(cookies_path)
 
         logger.debug(
             f"Prepared {purpose!s} options.",
             extra={
                 **log_params,
-                "final_opts_keys": list(final_opts.keys()),
+                "final_cli_args_count": len(args.to_list()),
                 "cookies_provided": cookies_path is not None,
             },
         )
-        return final_opts
+        return args
 
-    def fetch_metadata(
+    async def fetch_metadata(
         self,
         feed_id: str,
         url: str,
-        user_yt_cli_args: dict[str, Any],
+        user_yt_cli_args: list[str],
         fetch_since_date: datetime | None = None,
         fetch_until_date: datetime | None = None,
         keep_last: int | None = None,
@@ -159,7 +157,7 @@ class YtdlpWrapper:
         fetch_until_date are converted to YYYYMMDD format before being passed to yt-dlp.
         This means overlapping date windows that fall on the same day will use identical
         date ranges in yt-dlp, potentially returning duplicate results that are handled
-        by the deduplication logic in the Enqueuer. NOTE: This is only applied to playlists
+        by the deduplication logic in the Enqueuer. NOTE: This only applies to playlists
         and channels, not single videos.
 
         Args:
@@ -187,66 +185,33 @@ class YtdlpWrapper:
             "num_user_yt_cli_args": len(user_yt_cli_args),
         }
 
-        logger.info("Fetching metadata for feed.", extra=log_extra)
+        logger.debug("Fetching metadata for feed.", extra=log_extra)
 
-        source_specific_discovery_opts = (
-            self._source_handler.get_source_specific_ydl_options(FetchPurpose.DISCOVERY)
+        fetch_url, ref_type = await self._source_handler.determine_fetch_strategy(
+            feed_id, url, cookies_path
         )
 
-        def discovery_caller(
-            handler_discovery_opts: dict[str, Any], url_to_discover: str
-        ) -> YtdlpInfo | None:
-            logger.debug(
-                "Discovery caller invoked by strategy handler.",
-                extra={
-                    "feed_id": feed_id,
-                    "original_url": url,
-                    "url_to_discover": url_to_discover,
-                    "handler_discovery_opts": list(handler_discovery_opts.keys()),
-                },
-            )
-            effective_discovery_opts = self._prepare_ydl_options(
-                user_cli_args={},  # Pass empty because this is just for discovery
-                purpose=FetchPurpose.DISCOVERY,
-                source_specific_opts=source_specific_discovery_opts,
-                cookies_path=cookies_path,
-            )
-            effective_discovery_opts.update(handler_discovery_opts)
-            return YtdlpCore.extract_info(effective_discovery_opts, url_to_discover)
+        # Prepare CLI args with date filtering and source-specific options
+        metadata_fetch_args = YtdlpArgs(user_yt_cli_args)
 
-        fetch_url, ref_type = self._source_handler.determine_fetch_strategy(
-            feed_id, url, discovery_caller
+        # Apply source-specific options
+        metadata_fetch_args = self._source_handler.set_source_specific_ytdlp_options(
+            metadata_fetch_args, FetchPurpose.METADATA_FETCH
         )
 
-        yt_cli_args = dict(user_yt_cli_args)  # Make a copy
-        if ref_type == ReferenceType.SINGLE:
-            logger.debug(
-                "Skipping date filtering for single video as it is not needed.",
-                extra={
-                    "feed_id": feed_id,
-                    "url": url,
-                    "ref_type": ref_type,
-                },
-            )
-        else:
-            start_date = (
-                fetch_since_date.strftime("%Y%m%d") if fetch_since_date else None
-            )
-            end_date = fetch_until_date.strftime("%Y%m%d") if fetch_until_date else None
-            YtdlpCore.set_date_range(yt_cli_args, start_date, end_date)
-            YtdlpCore.set_playlist_limit(yt_cli_args, keep_last)
-
-            if fetch_since_date:
-                log_extra["fetch_since_date"] = fetch_since_date.isoformat()
-                log_extra["fetch_since_date_day_aligned"] = start_date
-            if fetch_until_date:
-                log_extra["fetch_until_date"] = fetch_until_date.isoformat()
-                log_extra["fetch_until_date_day_aligned"] = end_date
-            if keep_last:
-                log_extra["keep_last"] = keep_last
+        # Apply metadata fetch options
+        metadata_fetch_args = self._prepare_ytdlp_options(
+            args=metadata_fetch_args,
+            purpose=FetchPurpose.METADATA_FETCH,
+            ref_type=ref_type,
+            fetch_since_date=fetch_since_date,
+            fetch_until_date=fetch_until_date,
+            keep_last=keep_last,
+            cookies_path=cookies_path,
+        )
         actual_fetch_url = fetch_url or url
         if ref_type == ReferenceType.UNKNOWN_DIRECT_FETCH and not fetch_url:
-            logger.info(
+            logger.debug(
                 "Discovery indicated direct fetch, using original URL.",
                 extra={"feed_id": feed_id, "url": url},
             )
@@ -257,7 +222,7 @@ class YtdlpWrapper:
                 url=url,
             )
 
-        logger.info(
+        logger.debug(
             "Acquiring metadata.",
             extra={
                 "feed_id": feed_id,
@@ -267,19 +232,7 @@ class YtdlpWrapper:
             },
         )
 
-        source_specific_metadata_opts = (
-            self._source_handler.get_source_specific_ydl_options(
-                FetchPurpose.METADATA_FETCH
-            )
-        )
-        main_fetch_opts = self._prepare_ydl_options(
-            yt_cli_args,
-            FetchPurpose.METADATA_FETCH,
-            source_specific_metadata_opts,
-            cookies_path=cookies_path,
-        )
-
-        ytdlp_info = YtdlpCore.extract_info(main_fetch_opts, actual_fetch_url)
+        ytdlp_info = await YtdlpCore.extract_info(metadata_fetch_args, actual_fetch_url)
         if ytdlp_info is None:
             raise YtdlpApiError(
                 message="No information extracted by yt-dlp. This might be due to filters or content unavailability.",
@@ -302,7 +255,7 @@ class YtdlpWrapper:
             ref_type=ref_type,
         )
 
-        logger.info(
+        logger.debug(
             "Successfully processed metadata.",
             extra={
                 "feed_id": feed_id,
@@ -313,10 +266,10 @@ class YtdlpWrapper:
         )
         return extracted_feed, parsed_downloads
 
-    def download_media_to_file(
+    async def download_media_to_file(
         self,
         download: Download,
-        yt_cli_args: dict[str, Any],
+        user_yt_cli_args: list[str],
         cookies_path: Path | None = None,
     ) -> Path:
         """Download the media for a given Download to a target directory.
@@ -326,7 +279,7 @@ class YtdlpWrapper:
 
         Args:
             download: The Download object containing metadata.
-            yt_cli_args: User-provided yt-dlp CLI arguments for this feed.
+            user_yt_cli_args: User-provided yt-dlp CLI arguments for this feed.
             cookies_path: Path to cookies.txt file for authentication, or None if not needed.
 
         Returns:
@@ -335,35 +288,40 @@ class YtdlpWrapper:
         Raises:
             YtdlpApiError: If the download fails or the downloaded file is not found.
         """
-        download_temp_dir, download_data_dir = self._prepare_download_dir(download.feed)
+        download_temp_dir, download_data_dir = await self._prepare_download_dir(
+            download.feed_id
+        )
 
-        logger.info(
+        logger.debug(
             "Requesting media download via yt-dlp.",
             extra={
-                "feed_id": download.feed,
+                "feed_id": download.feed_id,
                 "download_id": download.id,
                 "download_target_dir": str(download_data_dir),
                 "source_url": download.source_url,
             },
         )
 
-        source_specific_download_opts = (
-            self._source_handler.get_source_specific_ydl_options(
-                FetchPurpose.MEDIA_DOWNLOAD
-            )
-        )
         try:
-            download_opts = self._prepare_ydl_options(
-                user_cli_args=yt_cli_args,
+            # Create download args
+            download_opts = YtdlpArgs(user_yt_cli_args)
+
+            # Apply source-specific options
+            download_opts = self._source_handler.set_source_specific_ytdlp_options(
+                download_opts, FetchPurpose.MEDIA_DOWNLOAD
+            )
+
+            # Apply download-specific options
+            download_opts = self._prepare_ytdlp_options(
+                args=download_opts,
                 purpose=FetchPurpose.MEDIA_DOWNLOAD,
-                source_specific_opts=source_specific_download_opts,
                 download_temp_dir=download_temp_dir,
                 download_data_dir=download_data_dir,
                 download_id=download.id,
                 cookies_path=cookies_path,
             )
         except YtdlpApiError as e:
-            e.feed_id = download.feed
+            e.feed_id = download.feed_id
             e.url = download.source_url
             raise
 
@@ -371,13 +329,13 @@ class YtdlpWrapper:
 
         try:
             # TODO: maybe we can get the filepath from here?
-            YtdlpCore.download(download_opts, url_to_download)
+            await YtdlpCore.download(download_opts, url_to_download)
         except YtdlpApiError as e:
             logger.error(
                 "yt-dlp download call failed.",
                 exc_info=e,
                 extra={
-                    "feed_id": download.feed,
+                    "feed_id": download.feed_id,
                     "download_id": download.id,
                     "url": url_to_download,
                     "download_target_dir": str(download_data_dir),
@@ -389,24 +347,26 @@ class YtdlpWrapper:
                 "Unexpected error during yt-dlp download call.",
                 exc_info=e,
                 extra={
-                    "feed_id": download.feed,
+                    "feed_id": download.feed_id,
                     "download_id": download.id,
                     "url": url_to_download,
                 },
             )
             raise YtdlpApiError(
                 message="Unexpected error during media download.",
-                feed_id=download.feed,
+                feed_id=download.feed_id,
                 download_id=download.id,
                 url=url_to_download,
             ) from e
 
-        downloaded_files = list(download_data_dir.glob(f"{download.id}.*"))
+        downloaded_files = list(
+            await aiofiles.os.wrap(download_data_dir.glob)(f"{download.id}.*")
+        )
 
         if not downloaded_files:
             raise YtdlpApiError(
                 message="Downloaded file not found after attempted download. yt-dlp might have filtered.",
-                feed_id=download.feed,
+                feed_id=download.feed_id,
                 download_id=download.id,
                 url=url_to_download,
             )
@@ -414,7 +374,7 @@ class YtdlpWrapper:
             logger.warning(
                 "Multiple files found after attempting download. Using the first one.",
                 extra={
-                    "feed_id": download.feed,
+                    "feed_id": download.feed_id,
                     "download_id": download.id,
                     "files_found": [str(f) for f in downloaded_files],
                 },
@@ -422,18 +382,28 @@ class YtdlpWrapper:
 
         downloaded_file = downloaded_files[0]
 
-        if not downloaded_file.is_file() or downloaded_file.stat().st_size == 0:
+        # Use aiofiles.os.stat for file size check
+        if not await aiofiles.os.path.isfile(downloaded_file):
             raise YtdlpApiError(
-                message="Downloaded file is invalid (not a file or empty).",
-                feed_id=download.feed,
+                message="Downloaded file is invalid (not a file).",
+                feed_id=download.feed_id,
                 download_id=download.id,
                 url=url_to_download,
             )
 
-        logger.info(
+        file_stat = await aiofiles.os.stat(downloaded_file)
+        if file_stat.st_size == 0:
+            raise YtdlpApiError(
+                message="Downloaded file is invalid (empty).",
+                feed_id=download.feed_id,
+                download_id=download.id,
+                url=url_to_download,
+            )
+
+        logger.debug(
             "Download complete.",
             extra={
-                "feed_id": download.feed,
+                "feed_id": download.feed_id,
                 "download_id": download.id,
                 "file_path": str(downloaded_file),
             },
