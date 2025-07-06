@@ -123,9 +123,15 @@ async def run_debug_ytdlp_mode(debug_yaml_path: Path, paths: PathManager) -> Non
                     "yt_cli_args": cli_args,
                 },
             )
+            source_type, resolved_url = await ytdlp_wrapper.discover_feed_properties(
+                feed_id, url
+            )
+
             feed, downloads = await ytdlp_wrapper.fetch_metadata(
                 feed_id=feed_id,
-                url=url,
+                source_type=source_type,
+                source_url=url,
+                resolved_url=resolved_url,
                 user_yt_cli_args=cli_args,
             )
 

@@ -668,7 +668,7 @@ class YoutubeHandler:
 
         youtube_info = YoutubeEntry(discovery_info, feed_id)
 
-        fetch_url = youtube_info.webpage_url or initial_url
+        fetch_url = youtube_info.webpage_url
         discovery_type = youtube_info.type or "<unknown>"
         logger.debug(
             "Discovery call successful.",

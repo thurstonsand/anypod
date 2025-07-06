@@ -121,13 +121,20 @@ def mock_data_coordinator() -> MagicMock:
     return mock
 
 
-async def create_test_feed(feed_db: FeedDatabase, feed_id: str) -> Feed:
+async def create_test_feed(
+    feed_db: FeedDatabase,
+    feed_id: str,
+    source_url: str,
+    source_type: SourceType,
+    resolved_url: str | None = None,
+) -> Feed:
     """Create a test feed in the database."""
     feed = Feed(
         id=feed_id,
         is_enabled=True,
-        source_type=SourceType.UNKNOWN,
-        source_url="https://example.com/test",
+        source_type=source_type,
+        source_url=source_url,
+        resolved_url=resolved_url,
         last_successful_sync=datetime.min.replace(tzinfo=UTC),
         title=f"Test Feed {feed_id}",
     )
@@ -417,8 +424,10 @@ async def test_scheduler_with_real_data_coordinator_and_file_download(
     """
     feed_id = "real_download_test_feed"
 
-    # Create feed in database
-    await create_test_feed(feed_db, feed_id)
+    # Create feed in database - Big Buck Bunny is a single video
+    await create_test_feed(
+        feed_db, feed_id, BIG_BUCK_BUNNY_SHORT_URL, SourceType.SINGLE_VIDEO
+    )
 
     initial_sync_time = datetime(2014, 11, 10, 12, 0, 0, tzinfo=UTC)
     await feed_db.mark_sync_success(feed_id, sync_time=initial_sync_time)

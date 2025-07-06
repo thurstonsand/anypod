@@ -194,7 +194,13 @@ async def test_fetch_metadata_returns_feed_and_downloads_tuple(
     mock_youtube_handler.parse_metadata_to_downloads.return_value = [expected_download]
 
     # Call the method under test
-    result = await ytdlp_wrapper.fetch_metadata(feed_id, url, yt_cli_args)
+    result = await ytdlp_wrapper.fetch_metadata(
+        feed_id=feed_id,
+        source_type=SourceType.SINGLE_VIDEO,
+        source_url=url,
+        resolved_url=url,
+        user_yt_cli_args=yt_cli_args,
+    )
 
     # Verify return type and structure
     assert isinstance(result, tuple), "fetch_metadata should return a tuple"
@@ -352,6 +358,14 @@ async def test_date_filtering_behavior_by_reference_type(
     """
     feed_id = "test_feed"
 
+    # Map reference_type to source_type for the new API
+    ref_to_source_mapping = {
+        ReferenceType.SINGLE: SourceType.SINGLE_VIDEO,
+        ReferenceType.COLLECTION: SourceType.PLAYLIST,
+        ReferenceType.CHANNEL: SourceType.CHANNEL,
+    }
+    source_type = ref_to_source_mapping[reference_type]
+
     # Mock the source handler to return the specified reference type
     mock_youtube_handler.determine_fetch_strategy = AsyncMock(
         return_value=(
@@ -376,7 +390,9 @@ async def test_date_filtering_behavior_by_reference_type(
 
     await ytdlp_wrapper.fetch_metadata(
         feed_id=feed_id,
-        url=url,
+        source_type=source_type,
+        source_url=url,
+        resolved_url=url,
         user_yt_cli_args=[],
         fetch_since_date=fetch_since_date,
         fetch_until_date=fetch_until_date,
@@ -430,6 +446,14 @@ async def test_keep_last_filtering_behavior_by_reference_type(
     feed_id = "test_feed"
     keep_last = 5
 
+    # Map reference_type to source_type for the new API
+    ref_to_source_mapping = {
+        ReferenceType.SINGLE: SourceType.SINGLE_VIDEO,
+        ReferenceType.COLLECTION: SourceType.PLAYLIST,
+        ReferenceType.CHANNEL: SourceType.CHANNEL,
+    }
+    source_type = ref_to_source_mapping[reference_type]
+
     # Mock the source handler to return the specified reference type
     mock_youtube_handler.determine_fetch_strategy = AsyncMock(
         return_value=(
@@ -451,7 +475,9 @@ async def test_keep_last_filtering_behavior_by_reference_type(
     # Call fetch_metadata with keep_last parameter
     await ytdlp_wrapper.fetch_metadata(
         feed_id=feed_id,
-        url=url,
+        source_type=source_type,
+        source_url=url,
+        resolved_url=url,
         user_yt_cli_args=[],
         keep_last=keep_last,
     )

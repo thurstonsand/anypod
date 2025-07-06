@@ -60,13 +60,20 @@ def data_coordinator(
     )
 
 
-async def create_test_feed(feed_db: FeedDatabase, feed_id: str) -> Feed:
+async def create_test_feed(
+    feed_db: FeedDatabase,
+    feed_id: str,
+    source_url: str,
+    source_type: SourceType,
+    resolved_url: str | None = None,
+) -> Feed:
     """Create a test feed in the database."""
     feed = Feed(
         id=feed_id,
         is_enabled=True,
-        source_type=SourceType.UNKNOWN,  # Will be determined by ytdlp
-        source_url="https://example.com/test",
+        source_type=source_type,
+        source_url=source_url,
+        resolved_url=resolved_url,
         last_successful_sync=datetime.min.replace(tzinfo=UTC),
         title=f"Test Feed {feed_id}",
     )
@@ -92,9 +99,15 @@ def create_feed_config(
     )
 
 
-async def setup_feed_with_initial_sync(feed_db: FeedDatabase, feed_id: str) -> Feed:
+async def setup_feed_with_initial_sync(
+    feed_db: FeedDatabase,
+    feed_id: str,
+    source_url: str,
+    source_type: SourceType,
+    resolved_url: str | None = None,
+) -> Feed:
     """Create and setup a test feed with initial sync timestamp."""
-    _ = await create_test_feed(feed_db, feed_id)
+    _ = await create_test_feed(feed_db, feed_id, source_url, source_type, resolved_url)
 
     # Set an initial last_successful_sync timestamp to enable process_feed
     # Use November 10, 2014 at 12:00 to ensure Big Buck Bunny (published 2014-11-10 14:05:55) is in range
@@ -105,9 +118,15 @@ async def setup_feed_with_initial_sync(feed_db: FeedDatabase, feed_id: str) -> F
     return await feed_db.get_feed_by_id(feed_id)
 
 
-async def setup_feed_with_channel_sync(feed_db: FeedDatabase, feed_id: str) -> Feed:
+async def setup_feed_with_channel_sync(
+    feed_db: FeedDatabase,
+    feed_id: str,
+    source_url: str,
+    source_type: SourceType,
+    resolved_url: str | None = None,
+) -> Feed:
     """Create and setup a test feed for channel testing with sync timestamp."""
-    _ = await create_test_feed(feed_db, feed_id)
+    _ = await create_test_feed(feed_db, feed_id, source_url, source_type, resolved_url)
 
     # Set sync timestamp for July 9, 2024 to include newest coletdjnz videos (July 10, 2024)
     # With hourly cron, this creates a 2-hour window that includes the videos
@@ -136,7 +155,9 @@ async def test_process_feed_complete_success(
     feed_config = create_feed_config()
 
     # Setup feed with initial sync timestamp
-    await setup_feed_with_initial_sync(feed_db, feed_id)
+    await setup_feed_with_initial_sync(
+        feed_db, feed_id, feed_config.url, SourceType.SINGLE_VIDEO
+    )
 
     # Process the feed
     results = await data_coordinator.process_feed(feed_id, feed_config)
@@ -223,7 +244,9 @@ async def test_process_feed_incremental_processing(
     feed_config = create_feed_config()
 
     # Setup feed with initial sync timestamp
-    await setup_feed_with_initial_sync(feed_db, feed_id)
+    await setup_feed_with_initial_sync(
+        feed_db, feed_id, feed_config.url, SourceType.SINGLE_VIDEO
+    )
 
     # Manually insert an existing downloaded item
     existing_download = Download(
@@ -302,7 +325,9 @@ async def test_process_feed_idempotency(
     feed_config = create_feed_config()
 
     # Setup feed with initial sync timestamp
-    await setup_feed_with_initial_sync(feed_db, feed_id)
+    await setup_feed_with_initial_sync(
+        feed_db, feed_id, feed_config.url, SourceType.SINGLE_VIDEO
+    )
 
     # First run - should process normally
     first_results = await data_coordinator.process_feed(feed_id, feed_config)
@@ -381,7 +406,9 @@ async def test_process_feed_with_retention_pruning(
     )
 
     # Setup feed with channel sync timestamp (for 2024 videos)
-    await setup_feed_with_channel_sync(feed_db, feed_id)
+    await setup_feed_with_channel_sync(
+        feed_db, feed_id, feed_config.url, SourceType.PLAYLIST, feed_config.url
+    )
 
     # Manually insert several old downloaded items to test pruning
     base_time = datetime(2020, 1, 1, tzinfo=UTC)
@@ -475,12 +502,14 @@ async def test_process_feed_with_retention_pruning(
 @pytest.mark.asyncio
 @pytest.mark.integration
 @pytest.mark.parametrize(
-    "test_case, url, sync_timestamp, expected_enqueue_count, description",
+    "test_case, url, source_type, resolved_url, sync_timestamp, expected_enqueue_count, description",
     [
         # Single video tests - should always ignore date filtering
         (
             "single_video_ignores_date_filter_out_of_range",
             BIG_BUCK_BUNNY_SHORT_URL,
+            SourceType.SINGLE_VIDEO,
+            None,
             datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC),
             1,
             "Single video should be downloaded regardless of out-of-range date (ignores date filtering)",
@@ -488,6 +517,8 @@ async def test_process_feed_with_retention_pruning(
         (
             "single_video_ignores_date_filter_in_range",
             BIG_BUCK_BUNNY_SHORT_URL,
+            SourceType.SINGLE_VIDEO,
+            None,
             datetime(2014, 11, 10, 12, 0, 0, tzinfo=UTC),
             1,
             "Single video should be downloaded when in date range (but still ignores date filtering)",
@@ -496,12 +527,16 @@ async def test_process_feed_with_retention_pruning(
         (
             "channel_excludes_out_of_range",
             COLETDJNZ_CHANNEL_VIDEOS,
+            SourceType.PLAYLIST,
+            COLETDJNZ_CHANNEL_VIDEOS,
             datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC),
             0,
             "Channel should exclude all videos when sync date is after all uploads (2025 > 2024)",
         ),
         (
             "channel_includes_recent_videos",
+            COLETDJNZ_CHANNEL_VIDEOS,
+            SourceType.PLAYLIST,
             COLETDJNZ_CHANNEL_VIDEOS,
             datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
             2,
@@ -511,6 +546,8 @@ async def test_process_feed_with_retention_pruning(
         (
             "playlist_excludes_out_of_range",
             TEST_PLAYLIST_URL,
+            SourceType.PLAYLIST,
+            None,
             datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC),
             0,
             "Playlist should exclude videos when sync date is after all uploads (2025 > 2022)",
@@ -518,6 +555,8 @@ async def test_process_feed_with_retention_pruning(
         (
             "playlist_includes_in_range",
             TEST_PLAYLIST_URL,
+            SourceType.PLAYLIST,
+            None,
             datetime(2022, 1, 1, 12, 0, 0, tzinfo=UTC),
             1,
             "Playlist should include video uploaded 2022-07-29 when sync from 2022-01-01",
@@ -529,6 +568,8 @@ async def test_date_filtering_behavior(
     feed_db: FeedDatabase,
     test_case: str,
     url: str,
+    source_type: SourceType,
+    resolved_url: str | None,
     sync_timestamp: datetime,
     expected_enqueue_count: int,
     description: str,
@@ -551,7 +592,7 @@ async def test_date_filtering_behavior(
     feed_config = create_feed_config(url=url)
 
     # Create feed
-    await create_test_feed(feed_db, feed_id)
+    await create_test_feed(feed_db, feed_id, url, source_type, resolved_url)
 
     # Set sync timestamp - this determines the date filtering window
     await feed_db.mark_sync_success(feed_id, sync_time=sync_timestamp)

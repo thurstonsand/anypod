@@ -13,12 +13,14 @@ from .config import FeedConfig
 from .data_coordinator import Pruner
 from .db import DownloadDatabase
 from .db.feed_db import FeedDatabase
-from .db.types import DownloadStatus, Feed, SourceType
+from .db.types import DownloadStatus, Feed
 from .exceptions import (
     DatabaseOperationError,
     PruneError,
     StateReconciliationError,
+    YtdlpApiError,
 )
+from .ytdlp_wrapper import YtdlpWrapper
 
 logger = logging.getLogger(__name__)
 
@@ -34,16 +36,19 @@ class StateReconciler:
         _feed_db: Database manager for feed record operations.
         _download_db: Database manager for download record operations.
         _pruner: Pruner for feed pruning on deletion.
+        _ytdlp_wrapper: YtdlpWrapper for feed discovery operations.
     """
 
     def __init__(
         self,
         feed_db: FeedDatabase,
         download_db: DownloadDatabase,
+        ytdlp_wrapper: YtdlpWrapper,
         pruner: Pruner,
     ):
         self._feed_db = feed_db
         self._download_db = download_db
+        self._ytdlp_wrapper = ytdlp_wrapper
         self._pruner = pruner
         logger.debug("StateReconciler initialized.")
 
@@ -75,11 +80,35 @@ class StateReconciler:
             feed_config.since if feed_config.since else datetime.min.replace(tzinfo=UTC)
         )
 
+        # Discover feed properties (source type and resolved URL)
+        try:
+            (
+                source_type,
+                resolved_url,
+            ) = await self._ytdlp_wrapper.discover_feed_properties(
+                feed_id, feed_config.url
+            )
+        except YtdlpApiError as e:
+            raise StateReconciliationError(
+                "Failed to discover feed properties during feed creation.",
+                feed_id=feed_id,
+            ) from e
+        else:
+            logger.debug(
+                "Feed discovery completed.",
+                extra={
+                    **log_params,
+                    "discovered_source_type": source_type.value,
+                    "discovered_resolved_url": resolved_url,
+                },
+            )
+
         new_feed = Feed(
             id=feed_id,
             is_enabled=feed_config.enabled,
-            source_type=SourceType.UNKNOWN,  # to be defined later by ytdlp_wrapper
+            source_type=source_type,
             source_url=feed_config.url,
+            resolved_url=resolved_url,
             last_successful_sync=initial_sync,
             # Retention policies
             since=feed_config.since,
@@ -316,9 +345,9 @@ class StateReconciler:
         # Collect all changes to apply in a single update
         updated_feed = db_feed.model_copy()
 
-        match (feed_config.enabled, db_feed.is_enabled):
+        match db_feed.is_enabled, feed_config.enabled:
             # Feed has been enabled
-            case (True, False):
+            case (False, True):
                 logger.info(
                     "Feed has been enabled.",
                     extra=log_params,
@@ -327,8 +356,33 @@ class StateReconciler:
                 updated_feed.consecutive_failures = 0
                 updated_feed.last_failed_sync = None
                 updated_feed.last_successful_sync = datetime.min.replace(tzinfo=UTC)
+
+                # Re-discover feed properties when re-enabling (in case anything changed)
+                try:
+                    (
+                        source_type,
+                        resolved_url,
+                    ) = await self._ytdlp_wrapper.discover_feed_properties(
+                        feed_id, feed_config.url
+                    )
+                except YtdlpApiError as e:
+                    raise StateReconciliationError(
+                        "Failed to re-discover feed properties when re-enabling feed.",
+                        feed_id=feed_id,
+                    ) from e
+                else:
+                    updated_feed.source_type = source_type
+                    updated_feed.resolved_url = resolved_url
+                    logger.debug(
+                        "Feed re-discovery completed for re-enabled feed.",
+                        extra={
+                            **log_params,
+                            "discovered_source_type": source_type.value,
+                            "discovered_resolved_url": resolved_url,
+                        },
+                    )
             # Feed has been disabled
-            case (False, True):
+            case (True, False):
                 logger.info(
                     "Feed has been disabled.",
                     extra=log_params,
@@ -352,6 +406,30 @@ class StateReconciler:
             updated_feed.consecutive_failures = 0
             updated_feed.last_failed_sync = None
 
+            # Re-discover feed properties when URL changes
+            try:
+                (
+                    source_type,
+                    resolved_url,
+                ) = await self._ytdlp_wrapper.discover_feed_properties(
+                    feed_id, feed_config.url
+                )
+            except YtdlpApiError as e:
+                raise StateReconciliationError(
+                    "Failed to re-discover feed properties when URL changed.",
+                    feed_id=feed_id,
+                ) from e
+            else:
+                updated_feed.source_type = source_type
+                updated_feed.resolved_url = resolved_url
+                logger.debug(
+                    "Feed re-discovery completed for URL change.",
+                    extra={
+                        **log_params,
+                        "discovered_source_type": source_type.value,
+                        "discovered_resolved_url": resolved_url,
+                    },
+                )
         # Check metadata changes
         if metadata := feed_config.metadata:
             if metadata.title != db_feed.title:

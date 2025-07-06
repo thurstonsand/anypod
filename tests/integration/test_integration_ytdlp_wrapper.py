@@ -10,69 +10,119 @@ from anypod.exceptions import YtdlpApiError
 from anypod.ytdlp_wrapper import YtdlpWrapper
 
 # some CC-BY licensed urls to test with
+# (url_type, url, expected_source_type, expected_feed_title_contains, expected_resolved_url)
 TEST_URLS_SINGLE_AND_PLAYLIST = [
     (
         "video_short_link",
         "https://youtu.be/aqz-KE-bpKQ?si=gggSJ6WU2A1w7_FL",
         SourceType.SINGLE_VIDEO,
         "Big Buck Bunny",
+        "https://www.youtube.com/watch?v=aqz-KE-bpKQ",
     ),
     (
         "video_in_playlist_link",
         "https://www.youtube.com/watch?v=aqz-KE-bpKQ&list=PLt5yu3-wZAlSLRHmI1qNm0wjyVNWw1pCU",
         SourceType.PLAYLIST,
         "single video playlist",
+        "https://www.youtube.com/playlist?list=PLt5yu3-wZAlSLRHmI1qNm0wjyVNWw1pCU",
     ),
 ]
 
-# (url_type, url, expected_source_type, expected_feed_title_contains)
+# (url_type, url, expected_source_type, expected_feed_title_contains, expected_resolved_url)
 TEST_URLS_PARAMS = [
     (
         "video_short_link",
         "https://youtu.be/aqz-KE-bpKQ?si=gggSJ6WU2A1w7_FL",
         SourceType.SINGLE_VIDEO,
         "Big Buck Bunny",
+        "https://www.youtube.com/watch?v=aqz-KE-bpKQ",
     ),
     (
         "video_in_playlist_link",
         "https://www.youtube.com/watch?v=aqz-KE-bpKQ&list=PLt5yu3-wZAlSLRHmI1qNm0wjyVNWw1pCU",
         SourceType.PLAYLIST,
         "single video playlist",
+        "https://www.youtube.com/playlist?list=PLt5yu3-wZAlSLRHmI1qNm0wjyVNWw1pCU",
     ),
     (
         "channel",
         "https://www.youtube.com/@coletdjnz",
         SourceType.CHANNEL,
         "cole-dlp-test-acc",
+        "https://www.youtube.com/@coletdjnz/videos",
     ),
     (
         "channel_shorts_tab",
         "https://www.youtube.com/@coletdjnz/shorts",
         SourceType.PLAYLIST,
         "cole-dlp-test-acc",
+        "https://www.youtube.com/@coletdjnz/shorts",
     ),
     (
         "channel_videos_tab",
         "https://www.youtube.com/@coletdjnz/videos",
         SourceType.PLAYLIST,
         "cole-dlp-test-acc",
+        "https://www.youtube.com/@coletdjnz/videos",
     ),
     (
         "playlist",
         "https://youtube.com/playlist?list=PLt5yu3-wZAlSLRHmI1qNm0wjyVNWw1pCU&si=ZSBBgcLWYf2bxd5l",
         SourceType.PLAYLIST,
         "single video playlist",
+        "https://www.youtube.com/playlist?list=PLt5yu3-wZAlSLRHmI1qNm0wjyVNWw1pCU&si=ZSBBgcLWYf2bxd5l",
     ),
     (
         "video_standard_link",
         "https://www.youtube.com/watch?v=ZY6TS8Q4C8s",
         SourceType.SINGLE_VIDEO,
         "VFX Artists React to Bad and Great CGi 173",
+        "https://www.youtube.com/watch?v=ZY6TS8Q4C8s",
     ),
 ]
 
 # --- Tests for YtdlpWrapper integration ---
 INVALID_VIDEO_URL = "https://www.youtube.com/watch?v=thisvideodoesnotexistxyz"
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "url_type, url, expected_source_type, expected_title_contains, expected_resolved_url",
+    TEST_URLS_PARAMS,
+)
+async def test_discover_feed_properties(
+    ytdlp_wrapper: YtdlpWrapper,
+    url_type: str,
+    url: str,
+    expected_source_type: SourceType,
+    expected_title_contains: str,
+    expected_resolved_url: str,
+    cookies_path: Path | None,
+):
+    """Tests discover_feed_properties method for various URL types.
+
+    This test validates that the discovery method correctly identifies
+    source types and resolves URLs for different YouTube URL formats.
+    """
+    feed_id = f"test_discover_{url_type}"
+
+    source_type, resolved_url = await ytdlp_wrapper.discover_feed_properties(
+        feed_id=feed_id,
+        url=url,
+        cookies_path=cookies_path,
+    )
+
+    # Verify source type is correctly identified
+    assert source_type == expected_source_type, (
+        f"Expected source_type {expected_source_type} for {url_type}, got {source_type}"
+    )
+
+    # Verify resolved URL matches expected value
+    assert resolved_url == expected_resolved_url, (
+        f"Expected resolved_url {expected_resolved_url} for {url_type}, got {resolved_url}"
+    )
+
 
 # CLI args for minimal quality downloads
 YT_DLP_MINIMAL_ARGS = [
@@ -103,7 +153,8 @@ BIG_BUCK_BUNNY_DOWNLOAD = Download(
 @pytest.mark.integration
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "url_type, url, expected_source_type, expected_title_contains", TEST_URLS_PARAMS
+    "url_type, url, expected_source_type, expected_title_contains, expected_resolved_url",
+    TEST_URLS_PARAMS,
 )
 async def test_fetch_metadata_success(
     ytdlp_wrapper: YtdlpWrapper,
@@ -111,6 +162,7 @@ async def test_fetch_metadata_success(
     url: str,
     expected_source_type: SourceType,
     expected_title_contains: str,
+    expected_resolved_url: str,
     cookies_path: Path | None,
 ):
     """Tests successful metadata fetching for various URL types.
@@ -121,7 +173,9 @@ async def test_fetch_metadata_success(
     feed_id = f"test_{url_type}"
     feed, downloads = await ytdlp_wrapper.fetch_metadata(
         feed_id=feed_id,
-        url=url,
+        source_type=expected_source_type,
+        source_url=url,
+        resolved_url=expected_resolved_url,
         user_yt_cli_args=YT_DLP_MINIMAL_ARGS,
         keep_last=1,
         cookies_path=cookies_path,
@@ -165,7 +219,8 @@ async def test_fetch_metadata_success(
 @pytest.mark.integration
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "url_type, url, expected_source_type, expected_title_contains", TEST_URLS_PARAMS
+    "url_type, url, expected_source_type, expected_title_contains, expected_resolved_url",
+    TEST_URLS_PARAMS,
 )
 async def test_thumbnail_format_validation(
     ytdlp_wrapper: YtdlpWrapper,
@@ -173,6 +228,7 @@ async def test_thumbnail_format_validation(
     url: str,
     expected_source_type: SourceType,
     expected_title_contains: str,
+    expected_resolved_url: str,
     cookies_path: Path | None,
 ):
     """Tests that thumbnail URLs returned are in valid PNG or JPG format.
@@ -183,7 +239,9 @@ async def test_thumbnail_format_validation(
     feed_id = f"test_thumbnail_{url_type}"
     _, downloads = await ytdlp_wrapper.fetch_metadata(
         feed_id=feed_id,
-        url=url,
+        source_type=expected_source_type,
+        source_url=url,
+        resolved_url=expected_resolved_url,
         user_yt_cli_args=YT_DLP_MINIMAL_ARGS,
         keep_last=1,
         cookies_path=cookies_path,
@@ -198,9 +256,9 @@ async def test_thumbnail_format_validation(
     # All test videos should have thumbnails
     assert download.thumbnail, f"Download should have a thumbnail for {url_type}"
 
-    # Check that thumbnail URL ends with supported format
-    assert download.thumbnail.endswith(".jpg") or download.thumbnail.endswith(".png"), (
-        f"Thumbnail URL should end with .jpg or .png, got: {download.thumbnail}"
+    # Check that thumbnail URL contains supported format (may have query params after)
+    assert ".jpg" in download.thumbnail or ".png" in download.thumbnail, (
+        f"Thumbnail URL should contain .jpg or .png, got: {download.thumbnail}"
     )
 
     # Verify it's a valid URL format
@@ -221,7 +279,9 @@ async def test_fetch_metadata_non_existent_video(
     with pytest.raises(YtdlpApiError):
         await ytdlp_wrapper.fetch_metadata(
             feed_id=feed_id,
-            url=INVALID_VIDEO_URL,
+            source_type=SourceType.SINGLE_VIDEO,
+            source_url=INVALID_VIDEO_URL,
+            resolved_url=INVALID_VIDEO_URL,
             user_yt_cli_args=YT_DLP_MINIMAL_ARGS,
             cookies_path=cookies_path,
         )
@@ -230,7 +290,7 @@ async def test_fetch_metadata_non_existent_video(
 @pytest.mark.integration
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "url_type, url, expected_source_type, expected_title_contains",
+    "url_type, url, expected_source_type, expected_title_contains, expected_resolved_url",
     TEST_URLS_SINGLE_AND_PLAYLIST,
 )
 async def test_fetch_metadata_with_impossible_filter(
@@ -239,6 +299,7 @@ async def test_fetch_metadata_with_impossible_filter(
     url: str,
     expected_source_type: SourceType,
     expected_title_contains: str,
+    expected_resolved_url: str,
     cookies_path: Path | None,
 ):
     """Tests that fetching metadata with a filter that matches no videos returns an empty list."""
@@ -253,7 +314,9 @@ async def test_fetch_metadata_with_impossible_filter(
 
     feed, downloads = await ytdlp_wrapper.fetch_metadata(
         feed_id=feed_id,
-        url=url,
+        source_type=expected_source_type,
+        source_url=url,
+        resolved_url=expected_resolved_url,
         user_yt_cli_args=impossible_filter_args,
         cookies_path=cookies_path,
     )
@@ -390,6 +453,7 @@ async def test_fetch_metadata_with_keep_last_limit(
     returns exactly 2 downloads (the most recent ones).
     """
     feed_id = "test_keep_last"
+    source_type = SourceType.PLAYLIST
     # Use a channel with multiple videos
     channel_url = "https://www.youtube.com/@coletdjnz/videos"
     keep_last = 2
@@ -401,7 +465,9 @@ async def test_fetch_metadata_with_keep_last_limit(
 
     feed, downloads = await ytdlp_wrapper.fetch_metadata(
         feed_id=feed_id,
-        url=channel_url,
+        source_type=source_type,
+        source_url=channel_url,
+        resolved_url=None,
         user_yt_cli_args=minimal_args,
         keep_last=keep_last,
         cookies_path=cookies_path,
@@ -415,7 +481,7 @@ async def test_fetch_metadata_with_keep_last_limit(
     # Verify feed metadata is still populated correctly
     assert feed.id == feed_id
     assert feed.is_enabled is True
-    assert feed.source_type == SourceType.PLAYLIST
+    assert feed.source_type == source_type
     assert feed.title and "cole-dlp-test-acc" in feed.title.lower()
 
     # Verify all downloads have proper metadata
@@ -439,6 +505,7 @@ async def test_fetch_metadata_with_keep_last_none_vs_limit(
     to ensure the limiting is working correctly.
     """
     feed_id = "test_keep_last_comparison"
+    source_type = SourceType.PLAYLIST
     # Use a channel with multiple videos
     channel_url = "https://www.youtube.com/@coletdjnz/videos"
 
@@ -450,7 +517,9 @@ async def test_fetch_metadata_with_keep_last_none_vs_limit(
     # First, fetch with keep_last=1
     _, downloads_limited = await ytdlp_wrapper.fetch_metadata(
         feed_id=feed_id,
-        url=channel_url,
+        source_type=source_type,
+        source_url=channel_url,
+        resolved_url=None,
         user_yt_cli_args=minimal_args,
         keep_last=1,
         cookies_path=cookies_path,
@@ -463,7 +532,9 @@ async def test_fetch_metadata_with_keep_last_none_vs_limit(
     ]
     _, downloads_unlimited = await ytdlp_wrapper.fetch_metadata(
         feed_id=feed_id,
-        url=channel_url,
+        source_type=source_type,
+        source_url=channel_url,
+        resolved_url=None,
         user_yt_cli_args=args_with_reasonable_limit,
         keep_last=None,
         cookies_path=cookies_path,

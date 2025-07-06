@@ -13,8 +13,10 @@ see @DESIGN_DOC.md for in depth design doc.
 # Install dependencies and setup
 uv sync
 
-# Run application
-uv run anypod --config-file example_feeds.yaml
+# Run application (dev)
+# Needs timeout because it will run forever
+timeout 30 ./scripts/run_dev.sh        # Run full application with fresh database (recommended)
+timeout 30 ./scripts/run_dev.sh --keep # Run application keeping existing database
 
 # Debug modes for testing components
 DEBUG_MODE=ytdlp uv run anypod --config-file debug.yaml               # Test yt-dlp operations

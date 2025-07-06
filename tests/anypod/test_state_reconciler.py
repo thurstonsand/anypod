@@ -29,6 +29,7 @@ from anypod.exceptions import (
     StateReconciliationError,
 )
 from anypod.state_reconciler import StateReconciler
+from anypod.ytdlp_wrapper import YtdlpWrapper
 
 # Test constants
 FEED_ID = "test_feed"
@@ -136,11 +137,25 @@ def mock_pruner() -> MagicMock:
 
 
 @pytest.fixture
+def mock_ytdlp_wrapper() -> MagicMock:
+    """Provides a MagicMock for YtdlpWrapper."""
+    mock = MagicMock(spec=YtdlpWrapper)
+    # Configure discover_feed_properties to return a valid tuple
+    mock.discover_feed_properties = AsyncMock(return_value=(SourceType.UNKNOWN, None))
+    return mock
+
+
+@pytest.fixture
 def state_reconciler(
-    mock_feed_db: MagicMock, mock_download_db: MagicMock, mock_pruner: MagicMock
+    mock_feed_db: MagicMock,
+    mock_download_db: MagicMock,
+    mock_ytdlp_wrapper: MagicMock,
+    mock_pruner: MagicMock,
 ) -> StateReconciler:
     """Provides a StateReconciler instance with mocked dependencies."""
-    return StateReconciler(mock_feed_db, mock_download_db, mock_pruner)
+    return StateReconciler(
+        mock_feed_db, mock_download_db, mock_ytdlp_wrapper, mock_pruner
+    )
 
 
 @pytest.fixture

@@ -12,7 +12,7 @@ from typing import Any
 
 import aiofiles.os
 
-from ..db.types import Download, Feed
+from ..db.types import Download, Feed, SourceType
 from ..exceptions import FileOperationError, YtdlpApiError
 from ..path_manager import PathManager
 from .base_handler import FetchPurpose, ReferenceType, SourceHandlerBase
@@ -47,6 +47,65 @@ class YtdlpWrapper:
                 "app_data_dir": str(self._paths.base_data_dir),
             },
         )
+
+    async def discover_feed_properties(
+        self,
+        feed_id: str,
+        url: str,
+        cookies_path: Path | None = None,
+    ) -> tuple[SourceType, str | None]:
+        """Discover feed properties: source type and resolved URL.
+
+        Determine the feed's source type and the final resolved URL to use for
+        metadata fetching.
+
+        Args:
+            feed_id: The feed identifier.
+            url: The original feed URL from configuration.
+            cookies_path: Path to cookies.txt file for authentication, or None if not needed.
+
+        Returns:
+            Tuple of (source_type, resolved_url) where:
+            - source_type: The categorized type of the feed source
+            - resolved_url: The final URL to use for metadata fetching
+
+        Raises:
+            YtdlpApiError: If discovery fails or no fetchable URL is determined.
+        """
+        log_config: dict[str, Any] = {
+            "feed_id": feed_id,
+            "url": url,
+        }
+
+        logger.debug("Discovering feed properties.", extra=log_config)
+
+        resolved_url, ref_type = await self._source_handler.determine_fetch_strategy(
+            feed_id, url, cookies_path
+        )
+
+        match ref_type:
+            case ReferenceType.SINGLE:
+                source_type = SourceType.SINGLE_VIDEO
+            case ReferenceType.CHANNEL:
+                source_type = SourceType.CHANNEL
+            case ReferenceType.COLLECTION:
+                source_type = SourceType.PLAYLIST
+            case (
+                ReferenceType.UNKNOWN_RESOLVED_URL | ReferenceType.UNKNOWN_DIRECT_FETCH
+            ):
+                source_type = SourceType.UNKNOWN
+
+        logger.debug(
+            "Successfully discovered feed properties.",
+            extra={
+                **log_config,
+                "source_type": source_type.value,
+                "resolved_url": resolved_url,
+                "reference_type": ref_type.value,
+            },
+        )
+
+        return source_type, resolved_url
 
     async def _prepare_download_dir(self, feed_id: str) -> tuple[Path, Path]:
         try:
@@ -141,17 +200,18 @@ class YtdlpWrapper:
     async def fetch_metadata(
         self,
         feed_id: str,
-        url: str,
+        source_type: SourceType,
+        source_url: str,
+        resolved_url: str | None,
         user_yt_cli_args: list[str],
         fetch_since_date: datetime | None = None,
         fetch_until_date: datetime | None = None,
         keep_last: int | None = None,
         cookies_path: Path | None = None,
     ) -> tuple[Feed, list[Download]]:
-        """Fetches metadata for a given feed and URL using yt-dlp.
+        """Fetches metadata for a given feed using yt-dlp.
 
-        This method determines the appropriate fetch strategy for the provided URL,
-        acquires metadata, and parses it into feed metadata and a list of found downloads.
+        Uses the pre-discovered source type and resolved URL to fetch metadata.
 
         Date filtering uses yt-dlp's day-level precision: both fetch_since_date and
         fetch_until_date are converted to YYYYMMDD format before being passed to yt-dlp.
@@ -162,7 +222,9 @@ class YtdlpWrapper:
 
         Args:
             feed_id: The identifier for the feed.
-            url: The URL to fetch metadata from.
+            source_type: The source type of the feed.
+            source_url: The original source URL from configuration.
+            resolved_url: The resolved URL to fetch from.
             user_yt_cli_args: User-configured command-line arguments for yt-dlp.
             fetch_since_date: The lower bound date for the fetch operation (inclusive).
                 Converted to YYYYMMDD format for yt-dlp compatibility.
@@ -177,19 +239,29 @@ class YtdlpWrapper:
             metadata and downloads is a list of Download objects.
 
         Raises:
-            YtdlpApiError: If no fetchable URL is determined or if no information is extracted.
+            YtdlpApiError: If no information is extracted.
         """
-        log_extra: dict[str, Any] = {
+        # fallback to source_url if no resolved_url is provided
+        resolved_url = resolved_url or source_url
+        log_config: dict[str, Any] = {
             "feed_id": feed_id,
-            "url": url,
+            "source_url": source_url,
+            "source_type": str(source_type),
             "num_user_yt_cli_args": len(user_yt_cli_args),
         }
 
-        logger.debug("Fetching metadata for feed.", extra=log_extra)
+        logger.debug("Fetching metadata for feed.", extra=log_config)
 
-        fetch_url, ref_type = await self._source_handler.determine_fetch_strategy(
-            feed_id, url, cookies_path
-        )
+        # Convert SourceType back to ReferenceType for internal processing
+        match source_type:
+            case SourceType.SINGLE_VIDEO:
+                ref_type = ReferenceType.SINGLE
+            case SourceType.CHANNEL:
+                ref_type = ReferenceType.CHANNEL
+            case SourceType.PLAYLIST:
+                ref_type = ReferenceType.COLLECTION
+            case SourceType.UNKNOWN:
+                ref_type = ReferenceType.UNKNOWN_RESOLVED_URL
 
         # Prepare CLI args with date filtering and source-specific options
         metadata_fetch_args = YtdlpArgs(user_yt_cli_args)
@@ -209,42 +281,30 @@ class YtdlpWrapper:
             keep_last=keep_last,
             cookies_path=cookies_path,
         )
-        actual_fetch_url = fetch_url or url
-        if ref_type == ReferenceType.UNKNOWN_DIRECT_FETCH and not fetch_url:
-            logger.debug(
-                "Discovery indicated direct fetch, using original URL.",
-                extra={"feed_id": feed_id, "url": url},
-            )
-        elif not fetch_url:
-            raise YtdlpApiError(
-                message="Strategy determination returned no fetchable URL. Aborting.",
-                feed_id=feed_id,
-                url=url,
-            )
 
         logger.debug(
             "Acquiring metadata.",
             extra={
                 "feed_id": feed_id,
-                "actual_fetch_url": actual_fetch_url,
-                "original_url": url,
+                "fetch_url": resolved_url,
+                "source_url": source_url,
                 "reference_type": ref_type.name,
             },
         )
 
-        ytdlp_info = await YtdlpCore.extract_info(metadata_fetch_args, actual_fetch_url)
+        ytdlp_info = await YtdlpCore.extract_info(metadata_fetch_args, resolved_url)
         if ytdlp_info is None:
             raise YtdlpApiError(
                 message="No information extracted by yt-dlp. This might be due to filters or content unavailability.",
                 feed_id=feed_id,
-                url=actual_fetch_url,
+                url=resolved_url,
             )
 
         extracted_feed = self._source_handler.extract_feed_metadata(
             feed_id,
             ytdlp_info,
             ref_type,
-            url,
+            source_url,
             fetch_until_date,
         )
 
@@ -259,8 +319,8 @@ class YtdlpWrapper:
             "Successfully processed metadata.",
             extra={
                 "feed_id": feed_id,
-                "fetch_url": actual_fetch_url,
-                "original_url": url,
+                "fetch_url": resolved_url,
+                "source_url": source_url,
                 "num_downloads_identified": len(parsed_downloads),
             },
         )

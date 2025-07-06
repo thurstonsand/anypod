@@ -476,16 +476,13 @@ def test_parse_single_video_entry_error_missing_extension(
     youtube_handler: YoutubeHandler,
     valid_video_entry: YoutubeEntry,
 ):
-    """Tests YtdlpYoutubeDataError if 'ext' is missing for a non-live video."""
+    """Tests YtdlpYoutubeVideoFilteredOutError if 'ext' is missing (filtered out by yt-dlp)."""
     del valid_video_entry._ytdlp_info._info_dict["ext"]
-    # To avoid YtdlpYoutubeVideoFilteredOutError, ensure one of original_url or format_id exists
-    valid_video_entry._ytdlp_info._info_dict["original_url"] = (
-        "http://example.com/original"
-    )
 
-    with pytest.raises(YtdlpYoutubeDataError) as e:
+    with pytest.raises(YtdlpYoutubeVideoFilteredOutError) as e:
         youtube_handler._parse_single_video_entry(valid_video_entry, FEED_ID)
-    assert "Missing extension" in str(e.value)
+    assert e.value.feed_id == FEED_ID
+    assert e.value.download_id == valid_video_entry.download_id
 
 
 @pytest.mark.unit

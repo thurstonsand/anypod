@@ -65,13 +65,20 @@ INVALID_FEED_CONFIG = FeedConfig(
 )
 
 
-async def create_test_feed(feed_db: FeedDatabase, feed_id: str, url: str) -> Feed:
-    """Create a test feed in the database."""
+async def create_test_feed(
+    feed_db: FeedDatabase,
+    feed_id: str,
+    url: str,
+    source_type: SourceType,
+    resolved_url: str | None = None,
+) -> Feed:
+    """Create a test feed in the database with specified properties."""
     feed = Feed(
         id=feed_id,
         is_enabled=True,
-        source_type=SourceType.UNKNOWN,  # Will be determined by ytdlp
+        source_type=source_type,
         source_url=url,
+        resolved_url=resolved_url,
         last_successful_sync=datetime.min.replace(tzinfo=UTC),
         title=f"Test Feed {feed_id}",
     )
@@ -84,27 +91,17 @@ async def enqueue_test_items(
     feed_db: FeedDatabase,
     feed_id: str,
     feed_config: FeedConfig,
+    source_type: SourceType,
+    resolved_url: str | None = None,
     fetch_since_date: datetime | None = None,
     cookies_path: Path | None = None,
 ) -> int:
-    """Helper function to enqueue test items for a feed.
-
-    Args:
-        enqueuer: The Enqueuer instance to use.
-        feed_db: The FeedDatabase instance to use.
-        feed_id: The feed identifier.
-        feed_config: The feed configuration.
-        fetch_since_date: Optional date filter, defaults to datetime.min.
-        cookies_path: Path to cookies.txt file for authentication, or None if not needed.
-
-    Returns:
-        Number of items queued.
-    """
+    """Helper function to enqueue test items for a feed."""
     if fetch_since_date is None:
         fetch_since_date = datetime.min.replace(tzinfo=UTC)
 
     # Create feed in database first
-    await create_test_feed(feed_db, feed_id, feed_config.url)
+    await create_test_feed(feed_db, feed_id, feed_config.url, source_type, resolved_url)
 
     fetch_until_date = datetime.now(UTC)
     return await enqueuer.enqueue_new_downloads(
@@ -132,7 +129,12 @@ async def test_download_queued_single_video_success(
 
     # First, use enqueuer to populate database with a real entry
     queued_count = await enqueue_test_items(
-        enqueuer, feed_db, feed_id, feed_config, cookies_path=cookies_path
+        enqueuer,
+        feed_db,
+        feed_id,
+        feed_config,
+        SourceType.SINGLE_VIDEO,
+        cookies_path=cookies_path,
     )
     assert queued_count >= 1, "Expected at least 1 item to be queued by enqueuer"
 
@@ -199,7 +201,13 @@ async def test_download_queued_multiple_videos_success(
 
     # Use enqueuer to populate database with multiple entries
     queued_count = await enqueue_test_items(
-        enqueuer, feed_db, feed_id, feed_config, cookies_path=cookies_path
+        enqueuer,
+        feed_db,
+        feed_id,
+        feed_config,
+        SourceType.PLAYLIST,
+        COLETDJNZ_CHANNEL_VIDEOS,
+        cookies_path=cookies_path,
     )
     assert queued_count >= 1, "Expected at least 1 item to be queued by enqueuer"
 
@@ -251,7 +259,13 @@ async def test_download_queued_with_limit(
 
     # Use enqueuer to populate database
     enqueued_count = await enqueue_test_items(
-        enqueuer, feed_db, feed_id, feed_config, cookies_path=cookies_path
+        enqueuer,
+        feed_db,
+        feed_id,
+        feed_config,
+        SourceType.PLAYLIST,
+        COLETDJNZ_CHANNEL_VIDEOS,
+        cookies_path=cookies_path,
     )
     assert enqueued_count >= 1
 
@@ -321,7 +335,16 @@ async def test_download_queued_handles_invalid_urls(
     feed_config = INVALID_FEED_CONFIG
 
     # Create the feed first
-    await create_test_feed(feed_db, feed_id, feed_config.url)
+    feed = Feed(
+        id=feed_id,
+        is_enabled=True,
+        source_type=SourceType.UNKNOWN,
+        source_url=feed_config.url,
+        resolved_url=feed_config.url,
+        last_successful_sync=datetime.min.replace(tzinfo=UTC),
+        title=f"Test Feed {feed_id}",
+    )
+    await feed_db.upsert_feed(feed)
 
     # Manually insert an invalid download to test error handling
     published_time = datetime.now(UTC)
@@ -386,7 +409,16 @@ async def test_download_queued_retry_logic_max_errors(
     )
 
     # Create the feed first
-    await create_test_feed(feed_db, feed_id, feed_config.url)
+    feed = Feed(
+        id=feed_id,
+        is_enabled=True,
+        source_type=SourceType.UNKNOWN,
+        source_url=feed_config.url,
+        resolved_url=feed_config.url,
+        last_successful_sync=datetime.min.replace(tzinfo=UTC),
+        title=f"Test Feed {feed_id}",
+    )
+    await feed_db.upsert_feed(feed)
 
     # Insert an invalid download
     published_time = datetime.now(UTC)
@@ -440,7 +472,12 @@ async def test_download_queued_mixed_success_and_failure(
 
     # First, enqueue a valid download
     queued_count = await enqueue_test_items(
-        enqueuer, feed_db, feed_id, feed_config, cookies_path=cookies_path
+        enqueuer,
+        feed_db,
+        feed_id,
+        feed_config,
+        SourceType.SINGLE_VIDEO,
+        cookies_path=cookies_path,
     )
     assert queued_count >= 1
 
@@ -517,7 +554,12 @@ async def test_download_queued_file_properties(
 
     # Enqueue and download
     await enqueue_test_items(
-        enqueuer, feed_db, feed_id, feed_config, cookies_path=cookies_path
+        enqueuer,
+        feed_db,
+        feed_id,
+        feed_config,
+        SourceType.SINGLE_VIDEO,
+        cookies_path=cookies_path,
     )
 
     success_count, _ = await downloader.download_queued(
@@ -582,7 +624,12 @@ async def test_filesize_metadata_flow(
 
     # Enqueue items to get initial metadata
     queued_count = await enqueue_test_items(
-        enqueuer, feed_db, feed_id, feed_config, cookies_path=cookies_path
+        enqueuer,
+        feed_db,
+        feed_id,
+        feed_config,
+        SourceType.SINGLE_VIDEO,
+        cookies_path=cookies_path,
     )
     assert queued_count >= 1, "Should have queued at least one item"
 
