@@ -11,7 +11,7 @@ import pytest
 from anypod.db.types import Download, DownloadStatus, Feed, SourceType
 from anypod.path_manager import PathManager
 from anypod.ytdlp_wrapper import YtdlpWrapper
-from anypod.ytdlp_wrapper.base_handler import FetchPurpose, ReferenceType
+from anypod.ytdlp_wrapper.base_handler import FetchPurpose
 from anypod.ytdlp_wrapper.core import YtdlpArgs, YtdlpCore, YtdlpInfo
 from anypod.ytdlp_wrapper.youtube_handler import YoutubeHandler
 
@@ -36,27 +36,6 @@ def ytdlp_wrapper(
 
 
 # --- Tests for YtdlpWrapper._prepare_ydl_options ---
-
-
-@pytest.mark.unit
-def test_prepare_ydl_options_discovery_basic(
-    ytdlp_wrapper: YtdlpWrapper,
-):
-    """Tests basic option preparation for DISCOVERY purpose with no user CLI args and no source-specific options."""
-    args = YtdlpArgs()
-    purpose = FetchPurpose.DISCOVERY
-
-    prepared_args = ytdlp_wrapper._prepare_ytdlp_options(args, purpose)
-
-    # Convert to list to check options
-    prepared_opts = prepared_args.to_list()
-
-    assert "--skip-download" in prepared_opts
-    assert "--quiet" in prepared_opts
-    assert "--no-warnings" in prepared_opts
-    assert "--flat-playlist" in prepared_opts
-    assert "--playlist-items" in prepared_opts
-    assert ":5" in prepared_opts
 
 
 @pytest.mark.unit
@@ -181,13 +160,10 @@ async def test_fetch_metadata_returns_feed_and_downloads_tuple(
     )
 
     # Mock handler methods to return our expected objects
-    mock_youtube_handler.set_source_specific_ytdlp_options.side_effect = (
-        lambda args, purpose: args  # type: ignore
-    )
     mock_youtube_handler.determine_fetch_strategy = AsyncMock(
         return_value=(
             url,
-            ReferenceType.SINGLE,
+            SourceType.SINGLE_VIDEO,
         )
     )
     mock_youtube_handler.extract_feed_metadata.return_value = expected_feed
@@ -216,13 +192,13 @@ async def test_fetch_metadata_returns_feed_and_downloads_tuple(
 
     # Verify that the handler methods were called with correct parameters
     mock_youtube_handler.extract_feed_metadata.assert_called_once_with(
-        feed_id, mock_main_ytdlp_info, ReferenceType.SINGLE, url, None
+        feed_id, mock_main_ytdlp_info, SourceType.SINGLE_VIDEO, url, None
     )
     mock_youtube_handler.parse_metadata_to_downloads.assert_called_once_with(
         feed_id,
         mock_main_ytdlp_info,
         source_identifier=feed_id,
-        ref_type=ReferenceType.SINGLE,
+        source_type=SourceType.SINGLE_VIDEO,
     )
 
 
@@ -245,7 +221,6 @@ async def test_download_media_to_file_success_simplified(
     mock_ytdlcore_download: AsyncMock,
     mock_prepare_options: MagicMock,
     ytdlp_wrapper: YtdlpWrapper,
-    mock_youtube_handler: MagicMock,
 ):
     """Tests the happy path of download_media_to_file."""
     feed_id = "test_feed_happy"
@@ -282,9 +257,6 @@ async def test_download_media_to_file_success_simplified(
     ]
     mock_prepare_options.return_value = YtdlpArgs(mock_ydl_opts_for_core_download)
     mock_ytdlcore_download.return_value = None
-    mock_youtube_handler.set_source_specific_ytdlp_options.side_effect = (
-        lambda args, purpose: args.extend_args(["--source-opt", "youtube_specific"])  # type: ignore
-    )
 
     expected_final_file.parent.mkdir(parents=True, exist_ok=True)
     expected_final_file.touch()
@@ -304,7 +276,6 @@ async def test_download_media_to_file_success_simplified(
 
     mock_prep_dl_dir.assert_called_once_with(feed_id)
 
-    mock_youtube_handler.set_source_specific_ytdlp_options.assert_called_once()
     # Check that mock_prepare_options was called correctly
     mock_prepare_options.assert_called_once()
     _, kwargs = mock_prepare_options.call_args
@@ -334,11 +305,11 @@ async def test_download_media_to_file_success_simplified(
 
 @pytest.mark.unit
 @pytest.mark.parametrize(
-    "reference_type,url,should_call_set_date_range",
+    "source_type,url,should_call_set_date_range",
     [
-        (ReferenceType.SINGLE, "https://www.youtube.com/watch?v=test", False),
-        (ReferenceType.COLLECTION, "https://www.youtube.com/playlist?list=test", True),
-        (ReferenceType.CHANNEL, "https://www.youtube.com/@test/videos", True),
+        (SourceType.SINGLE_VIDEO, "https://www.youtube.com/watch?v=test", False),
+        (SourceType.PLAYLIST, "https://www.youtube.com/playlist?list=test", True),
+        (SourceType.CHANNEL, "https://www.youtube.com/@test/videos", True),
     ],
 )
 @patch.object(YtdlpCore, "extract_info")
@@ -347,35 +318,23 @@ async def test_date_filtering_behavior_by_reference_type(
     mock_extract_info: AsyncMock,
     ytdlp_wrapper: YtdlpWrapper,
     mock_youtube_handler: MagicMock,
-    reference_type: ReferenceType,
+    source_type: SourceType,
     url: str,
     should_call_set_date_range: bool,
 ):
-    """Test that date filtering is applied correctly based on reference type.
+    """Test that date filtering is applied correctly based on source type.
 
     Single videos should skip date filtering to avoid partial metadata,
     while collections and channels should apply date filtering.
     """
     feed_id = "test_feed"
 
-    # Map reference_type to source_type for the new API
-    ref_to_source_mapping = {
-        ReferenceType.SINGLE: SourceType.SINGLE_VIDEO,
-        ReferenceType.COLLECTION: SourceType.PLAYLIST,
-        ReferenceType.CHANNEL: SourceType.CHANNEL,
-    }
-    source_type = ref_to_source_mapping[reference_type]
-
-    # Mock the source handler to return the specified reference type
+    # Mock the source handler to return the specified source type
     mock_youtube_handler.determine_fetch_strategy = AsyncMock(
         return_value=(
             url,
-            reference_type,
+            source_type,
         )
-    )
-    # Mock the set_source_specific_ytdlp_options method to return the passed args unchanged
-    mock_youtube_handler.set_source_specific_ytdlp_options.side_effect = (
-        lambda args, purpose: args  # type: ignore
     )
 
     # Mock the extract_info call to avoid actual yt-dlp calls
@@ -398,7 +357,7 @@ async def test_date_filtering_behavior_by_reference_type(
         fetch_until_date=fetch_until_date,
     )
 
-    # Verify date filtering is applied in CLI args based on reference type
+    # Verify date filtering is applied in CLI args based on source type
     if should_call_set_date_range:
         # Check that extract_info was called with CLI args containing date filters
         call_args = mock_extract_info.call_args[0]
@@ -421,11 +380,11 @@ async def test_date_filtering_behavior_by_reference_type(
 
 @pytest.mark.unit
 @pytest.mark.parametrize(
-    "reference_type,url,should_call_set_playlist_limit",
+    "source_type,url,should_call_set_playlist_limit",
     [
-        (ReferenceType.SINGLE, "https://www.youtube.com/watch?v=test", False),
-        (ReferenceType.COLLECTION, "https://www.youtube.com/playlist?list=test", True),
-        (ReferenceType.CHANNEL, "https://www.youtube.com/@test/videos", True),
+        (SourceType.SINGLE_VIDEO, "https://www.youtube.com/watch?v=test", False),
+        (SourceType.PLAYLIST, "https://www.youtube.com/playlist?list=test", True),
+        (SourceType.CHANNEL, "https://www.youtube.com/@test/videos", True),
     ],
 )
 @patch.object(YtdlpCore, "extract_info")
@@ -434,11 +393,11 @@ async def test_keep_last_filtering_behavior_by_reference_type(
     mock_extract_info: AsyncMock,
     ytdlp_wrapper: YtdlpWrapper,
     mock_youtube_handler: MagicMock,
-    reference_type: ReferenceType,
+    source_type: SourceType,
     url: str,
     should_call_set_playlist_limit: bool,
 ):
-    """Test that keep_last filtering is applied correctly based on reference type.
+    """Test that keep_last filtering is applied correctly based on source type.
 
     Single videos should skip playlist limiting since they're not playlists,
     while collections and channels should apply playlist limiting.
@@ -446,24 +405,12 @@ async def test_keep_last_filtering_behavior_by_reference_type(
     feed_id = "test_feed"
     keep_last = 5
 
-    # Map reference_type to source_type for the new API
-    ref_to_source_mapping = {
-        ReferenceType.SINGLE: SourceType.SINGLE_VIDEO,
-        ReferenceType.COLLECTION: SourceType.PLAYLIST,
-        ReferenceType.CHANNEL: SourceType.CHANNEL,
-    }
-    source_type = ref_to_source_mapping[reference_type]
-
-    # Mock the source handler to return the specified reference type
+    # Mock the source handler to return the specified source type
     mock_youtube_handler.determine_fetch_strategy = AsyncMock(
         return_value=(
             url,
-            reference_type,
+            source_type,
         )
-    )
-    # Mock the set_source_specific_ytdlp_options method to return the passed args unchanged
-    mock_youtube_handler.set_source_specific_ytdlp_options.side_effect = (
-        lambda args, purpose: args  # type: ignore
     )
 
     # Mock the extract_info call to avoid actual yt-dlp calls
@@ -482,7 +429,7 @@ async def test_keep_last_filtering_behavior_by_reference_type(
         keep_last=keep_last,
     )
 
-    # Verify playlist limit is applied in CLI args based on reference type
+    # Verify playlist limit is applied in CLI args based on source type
     if should_call_set_playlist_limit:
         # Check that extract_info was called with CLI args containing playlist limit
         call_args = mock_extract_info.call_args[0]

@@ -9,10 +9,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from anypod.db.types import Download, DownloadStatus, SourceType
-from anypod.ytdlp_wrapper.base_handler import FetchPurpose
-from anypod.ytdlp_wrapper.core import YtdlpArgs, YtdlpCore
+from anypod.ytdlp_wrapper.core import YtdlpCore
 from anypod.ytdlp_wrapper.youtube_handler import (
-    ReferenceType,
     YoutubeEntry,
     YoutubeHandler,
     YtdlpInfo,
@@ -50,72 +48,9 @@ def valid_video_entry(valid_video_entry_data: dict[str, Any]) -> YoutubeEntry:
     return YoutubeEntry(YtdlpInfo(valid_video_entry_data.copy()), FEED_ID)
 
 
-# --- Tests for YoutubeHandler.set_source_specific_ytdlp_options ---
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize(
-    "purpose",
-    [
-        FetchPurpose.DISCOVERY,
-        FetchPurpose.METADATA_FETCH,
-    ],
-)
-def test_set_source_specific_ytdlp_options_adds_thumbnail_conversion(
-    youtube_handler: YoutubeHandler, purpose: FetchPurpose
-):
-    """Tests that set_source_specific_ytdlp_options adds thumbnail conversion for JPG format."""
-    input_args = YtdlpArgs(["--some-user-arg"])
-    original_args_list = input_args.to_list()
-
-    result_args = youtube_handler.set_source_specific_ytdlp_options(input_args, purpose)
-
-    # Should return the same args object
-    assert result_args is input_args, (
-        f"Expected same YtdlpArgs object for purpose {purpose}"
-    )
-
-    # Should add thumbnail conversion args for JPG format (part of the thumbnail processing fix)
-    expected_args = [*original_args_list, "--convert-thumbnails", "jpg"]
-    assert result_args.to_list() == expected_args, (
-        f"Expected thumbnail conversion args for purpose {purpose}, got {result_args.to_list()}"
-    )
-
-
 FEED_ID = "test_feed"
 
 # --- Tests for YoutubeHandler.extract_feed_metadata ---
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize(
-    "ref_type, expected_source_type",
-    [
-        (ReferenceType.SINGLE, SourceType.SINGLE_VIDEO),
-        (ReferenceType.CHANNEL, SourceType.CHANNEL),
-        (ReferenceType.COLLECTION, SourceType.PLAYLIST),
-        (ReferenceType.UNKNOWN_RESOLVED_URL, SourceType.UNKNOWN),
-        (ReferenceType.UNKNOWN_DIRECT_FETCH, SourceType.UNKNOWN),
-    ],
-)
-def test_extract_feed_metadata_source_type_mapping(
-    youtube_handler: YoutubeHandler,
-    valid_video_entry_data: dict[str, Any],
-    ref_type: ReferenceType,
-    expected_source_type: SourceType,
-):
-    """Tests that ReferenceType is correctly mapped to SourceType in extract_feed_metadata."""
-    feed_id = "test_mapping_feed"
-    valid_video_entry_data["channel"] = "Test Channel"
-    ytdlp_info = YtdlpInfo(valid_video_entry_data)
-
-    extracted_feed = youtube_handler.extract_feed_metadata(
-        feed_id, ytdlp_info, ref_type, "https://example.com/source"
-    )
-
-    assert extracted_feed.source_type == expected_source_type
-    assert extracted_feed.id == feed_id
-    assert extracted_feed.is_enabled is True
 
 
 @pytest.mark.unit
@@ -135,7 +70,7 @@ def test_extract_feed_metadata_with_full_metadata(
         }
     )
     ytdlp_info = YtdlpInfo(valid_video_entry_data)
-    ref_type = ReferenceType.CHANNEL
+    ref_type = SourceType.CHANNEL
 
     extracted_feed = youtube_handler.extract_feed_metadata(
         feed_id, ytdlp_info, ref_type, "https://example.com/source"
@@ -163,7 +98,7 @@ def test_extract_feed_metadata_author_fallback(
     # Ensure uploader is not present
     valid_video_entry_data.pop("uploader", None)
     ytdlp_info = YtdlpInfo(valid_video_entry_data)
-    ref_type = ReferenceType.SINGLE
+    ref_type = SourceType.SINGLE_VIDEO
 
     extracted_feed = youtube_handler.extract_feed_metadata(
         feed_id, ytdlp_info, ref_type, "https://example.com/source"
@@ -183,7 +118,7 @@ def test_extract_feed_metadata_minimal_data(
         "title": "Minimal Video Title",
     }
     ytdlp_info = YtdlpInfo(minimal_data)
-    ref_type = ReferenceType.UNKNOWN_DIRECT_FETCH
+    ref_type = SourceType.UNKNOWN
 
     extracted_feed = youtube_handler.extract_feed_metadata(
         feed_id, ytdlp_info, ref_type, "https://example.com/source"
@@ -536,7 +471,7 @@ async def test_determine_fetch_strategy_single_video(
 
     mock_extract_info.assert_called_once()
     assert fetch_url == initial_url
-    assert ref_type == ReferenceType.SINGLE
+    assert ref_type == SourceType.SINGLE_VIDEO
 
 
 @pytest.mark.unit
@@ -581,7 +516,7 @@ async def test_determine_fetch_strategy_channel_main_page_finds_videos_tab(
 
     mock_extract_info.assert_called_once()
     assert fetch_url == videos_tab_url
-    assert ref_type == ReferenceType.CHANNEL
+    assert ref_type == SourceType.CHANNEL
 
 
 @pytest.mark.unit
@@ -618,7 +553,7 @@ async def test_determine_fetch_strategy_channel_main_page_no_videos_tab(
     )
 
     assert fetch_url == resolved_channel_url
-    assert ref_type == ReferenceType.CHANNEL
+    assert ref_type == SourceType.CHANNEL
 
 
 @pytest.mark.unit
@@ -644,7 +579,7 @@ async def test_determine_fetch_strategy_channel_videos_tab_direct(
         FEED_ID, initial_url
     )
     assert fetch_url == initial_url
-    assert ref_type == ReferenceType.COLLECTION
+    assert ref_type == SourceType.PLAYLIST
 
 
 @pytest.mark.unit
@@ -673,7 +608,7 @@ async def test_determine_fetch_strategy_playlist_url(youtube_handler: YoutubeHan
 
         mock_extract_info.assert_called_once()
         assert fetch_url == initial_url
-        assert ref_type == ReferenceType.COLLECTION
+        assert ref_type == SourceType.PLAYLIST
 
 
 @pytest.mark.unit
@@ -712,7 +647,7 @@ async def test_determine_fetch_strategy_discovery_fails(
     )
 
     assert fetch_url == initial_url
-    assert ref_type == ReferenceType.UNKNOWN_DIRECT_FETCH
+    assert ref_type == SourceType.UNKNOWN
 
 
 @pytest.mark.unit
@@ -738,7 +673,7 @@ async def test_determine_fetch_strategy_unknown_extractor(
     )
 
     assert fetch_url == resolved_url_from_yt_dlp
-    assert ref_type == ReferenceType.UNKNOWN_RESOLVED_URL
+    assert ref_type == SourceType.UNKNOWN
 
 
 @pytest.mark.unit
@@ -779,7 +714,7 @@ async def test_determine_fetch_strategy_channel_with_no_videos_but_has_entries(
 
     # Should fallback to using the resolved URL as CHANNEL type
     assert fetch_url == resolved_channel_url
-    assert ref_type == ReferenceType.CHANNEL
+    assert ref_type == SourceType.CHANNEL
 
 
 @pytest.mark.unit
@@ -808,7 +743,7 @@ async def test_determine_fetch_strategy_channel_with_empty_entries(
 
     # Should identify as channel even with empty entries
     assert fetch_url == resolved_channel_url
-    assert ref_type == ReferenceType.CHANNEL
+    assert ref_type == SourceType.CHANNEL
 
 
 @pytest.mark.unit
@@ -836,7 +771,7 @@ async def test_determine_fetch_strategy_existing_channel_tab_not_main_page(
 
     # Should be treated as COLLECTION, not attempt channel tab resolution
     assert fetch_url == initial_url
-    assert ref_type == ReferenceType.COLLECTION
+    assert ref_type == SourceType.PLAYLIST
 
 
 # --- Tests for YoutubeHandler source_type preservation and channel classification ---
@@ -891,7 +826,7 @@ async def test_determine_fetch_strategy_preserves_channel_classification(
 
     # Verify that the fetch strategy correctly identifies this as a channel
     assert fetch_url == videos_tab_url
-    assert ref_type == ReferenceType.CHANNEL
+    assert ref_type == SourceType.CHANNEL
 
     # Verify that if we extract feed metadata from this discovery result,
     # the source_type is correctly set to CHANNEL
@@ -951,7 +886,7 @@ async def test_determine_fetch_strategy_channel_without_videos_tab_still_classif
 
     # Should still be classified as channel even without videos tab
     assert fetch_url == resolved_channel_url
-    assert ref_type == ReferenceType.CHANNEL
+    assert ref_type == SourceType.CHANNEL
 
     # Extract feed metadata and verify source_type preservation
     discovery_result = mock_extract_info.return_value
@@ -962,48 +897,6 @@ async def test_determine_fetch_strategy_channel_without_videos_tab_still_classif
     # Should still be CHANNEL, not UNKNOWN
     assert extracted_feed.source_type == SourceType.CHANNEL
     assert extracted_feed.title == "New Channel"
-
-
-@pytest.mark.unit
-def test_extract_feed_metadata_regression_test_source_type_mapping():
-    """Regression test to ensure all ReferenceType values map to correct SourceType.
-
-    This test verifies that the mapping between ReferenceType and SourceType
-    is complete and correct, covering the fix where YouTube channels were
-    being classified as UNKNOWN instead of CHANNEL.
-    """
-    feed_id = "test_mapping_regression"
-    basic_ytdlp_data = {
-        "id": "test_video_id",
-        "title": "Test Title",
-        "description": "Test Description",
-        "uploader": "Test Creator",
-        "thumbnail": "https://example.com/test_thumb.jpg",
-    }
-
-    # Test all reference type mappings
-    test_cases = [
-        (ReferenceType.SINGLE, SourceType.SINGLE_VIDEO),
-        (ReferenceType.CHANNEL, SourceType.CHANNEL),  # THE CRITICAL MAPPING
-        (ReferenceType.COLLECTION, SourceType.PLAYLIST),
-        (ReferenceType.UNKNOWN_RESOLVED_URL, SourceType.UNKNOWN),
-        (ReferenceType.UNKNOWN_DIRECT_FETCH, SourceType.UNKNOWN),
-    ]
-
-    youtube_handler = YoutubeHandler()
-
-    for ref_type, expected_source_type in test_cases:
-        ytdlp_info = YtdlpInfo(basic_ytdlp_data.copy())
-
-        extracted_feed = youtube_handler.extract_feed_metadata(
-            feed_id, ytdlp_info, ref_type, "https://example.com/source"
-        )
-
-        assert extracted_feed.source_type == expected_source_type, (
-            f"ReferenceType.{ref_type.name} should map to SourceType.{expected_source_type.name}"
-        )
-        assert extracted_feed.id == feed_id
-        assert extracted_feed.is_enabled is True
 
 
 @pytest.mark.unit
@@ -1030,7 +923,7 @@ def test_extract_feed_metadata_channel_specific_fields():
     extracted_feed = youtube_handler.extract_feed_metadata(
         feed_id,
         ytdlp_info,
-        ReferenceType.CHANNEL,
+        SourceType.CHANNEL,
         "https://www.youtube.com/@amazingtech",
     )
 
@@ -1061,7 +954,7 @@ def test_parse_metadata_to_downloads_incomplete_info_dict(
     """Tests that an incomplete info_dict results in an empty list of downloads."""
     incomplete_data = {"id": "id_for_init"}
     downloads = youtube_handler.parse_metadata_to_downloads(
-        FEED_ID, YtdlpInfo(incomplete_data), FEED_ID, ReferenceType.SINGLE
+        FEED_ID, YtdlpInfo(incomplete_data), FEED_ID, SourceType.SINGLE_VIDEO
     )
     assert downloads == []
 
@@ -1071,14 +964,14 @@ def test_parse_metadata_to_downloads_incomplete_info_dict(
 def test_parse_metadata_to_downloads_single_success(
     mock_parse_single: MagicMock, youtube_handler: YoutubeHandler
 ):
-    """Tests parsing for ReferenceType.SINGLE with successful single entry parsing."""
+    """Tests parsing for SourceType.SINGLE_VIDEO with successful single entry parsing."""
     mock_download = MagicMock(spec=Download)
     mock_parse_single.return_value = mock_download
     info_dict = {"id": "video1", "title": "Single Video"}
     ytdlp_info = YtdlpInfo(info_dict)
 
     downloads = youtube_handler.parse_metadata_to_downloads(
-        FEED_ID, ytdlp_info, FEED_ID, ReferenceType.SINGLE
+        FEED_ID, ytdlp_info, FEED_ID, SourceType.SINGLE_VIDEO
     )
 
     assert downloads == [mock_download]
@@ -1092,7 +985,7 @@ def test_parse_metadata_to_downloads_single_parse_error(
     mock_parse_single: MagicMock,
     youtube_handler: YoutubeHandler,
 ):
-    """Tests ReferenceType.SINGLE when _parse_single_video_entry raises YtdlpYoutubeDataError."""
+    """Tests SourceType.SINGLE_VIDEO when _parse_single_video_entry raises YtdlpYoutubeDataError."""
     feed_id = "feed_single_err"
     download_id = "video_err"
     mock_parse_single.side_effect = YtdlpYoutubeDataError(
@@ -1102,7 +995,7 @@ def test_parse_metadata_to_downloads_single_parse_error(
     ytdlp_info = YtdlpInfo(info_dict)
 
     downloads = youtube_handler.parse_metadata_to_downloads(
-        feed_id, ytdlp_info, feed_id, ReferenceType.SINGLE
+        feed_id, ytdlp_info, feed_id, SourceType.SINGLE_VIDEO
     )
 
     assert downloads == []
@@ -1116,7 +1009,7 @@ def test_parse_metadata_to_downloads_single_filtered_out(
     mock_parse_single: MagicMock,
     youtube_handler: YoutubeHandler,
 ):
-    """Tests ReferenceType.SINGLE when _parse_single_video_entry raises YtdlpYoutubeVideoFilteredOutError."""
+    """Tests SourceType.SINGLE_VIDEO when _parse_single_video_entry raises YtdlpYoutubeVideoFilteredOutError."""
     feed_id = "feed_single_filter"
     download_id = "video_filter"
     mock_parse_single.side_effect = YtdlpYoutubeVideoFilteredOutError(
@@ -1126,7 +1019,7 @@ def test_parse_metadata_to_downloads_single_filtered_out(
     ytdlp_info = YtdlpInfo(info_dict)
 
     downloads = youtube_handler.parse_metadata_to_downloads(
-        feed_id, ytdlp_info, feed_id, ReferenceType.SINGLE
+        feed_id, ytdlp_info, feed_id, SourceType.SINGLE_VIDEO
     )
 
     assert downloads == []
@@ -1139,7 +1032,7 @@ def test_parse_metadata_to_downloads_single_filtered_out(
 def test_parse_metadata_to_downloads_collection_success(
     mock_parse_single: MagicMock, youtube_handler: YoutubeHandler
 ):
-    """Tests parsing for ReferenceType.COLLECTION with multiple successful entries."""
+    """Tests parsing for SourceType.PLAYLIST with multiple successful entries."""
     mock_download1 = MagicMock(spec=Download)
     mock_download2 = MagicMock(spec=Download)
     entry1_data = {"id": "v1", "title": "Video 1"}
@@ -1154,7 +1047,7 @@ def test_parse_metadata_to_downloads_collection_success(
     source_id = "feed_collection"
 
     downloads = youtube_handler.parse_metadata_to_downloads(
-        source_id, ytdlp_info, source_id, ReferenceType.COLLECTION
+        source_id, ytdlp_info, source_id, SourceType.PLAYLIST
     )
 
     assert downloads == [mock_download1, mock_download2]
@@ -1173,7 +1066,7 @@ def test_parse_metadata_to_downloads_collection_with_errors(
     mock_parse_single: MagicMock,
     youtube_handler: YoutubeHandler,
 ):
-    """Tests ReferenceType.COLLECTION where some entries parse successfully and others fail."""
+    """Tests SourceType.PLAYLIST where some entries parse successfully and others fail."""
     mock_download1 = MagicMock(spec=Download)
     feed_id = "feed_coll_err"
     entry1_data = {"id": "v1", "title": "Video 1"}
@@ -1195,7 +1088,7 @@ def test_parse_metadata_to_downloads_collection_with_errors(
     ytdlp_info_collection = YtdlpInfo(info_dict)
 
     downloads = youtube_handler.parse_metadata_to_downloads(
-        feed_id, ytdlp_info_collection, feed_id, ReferenceType.COLLECTION
+        feed_id, ytdlp_info_collection, feed_id, SourceType.PLAYLIST
     )
 
     assert downloads == [mock_download1]
@@ -1208,7 +1101,7 @@ def test_parse_metadata_to_downloads_collection_with_errors(
 def test_parse_metadata_to_downloads_collection_no_entries_list(
     youtube_handler: YoutubeHandler,
 ):
-    """Tests ReferenceType.COLLECTION when 'entries' is missing or not a list."""
+    """Tests SourceType.PLAYLIST when 'entries' is missing or not a list."""
     feed_id = "feed_no_entries"
     info_dict = {
         "id": "playlist_no_entries_id",
@@ -1217,7 +1110,7 @@ def test_parse_metadata_to_downloads_collection_no_entries_list(
     ytdlp_info_no_entries = YtdlpInfo(info_dict)
 
     downloads_no_entries = youtube_handler.parse_metadata_to_downloads(
-        feed_id, ytdlp_info_no_entries, feed_id, ReferenceType.COLLECTION
+        feed_id, ytdlp_info_no_entries, feed_id, SourceType.PLAYLIST
     )
     assert downloads_no_entries == []
 
@@ -1226,12 +1119,12 @@ def test_parse_metadata_to_downloads_collection_no_entries_list(
 @patch.object(YoutubeHandler, "_parse_single_video_entry")
 @pytest.mark.parametrize(
     "unknown_ref_type",
-    [ReferenceType.UNKNOWN_DIRECT_FETCH, ReferenceType.UNKNOWN_RESOLVED_URL],
+    [SourceType.UNKNOWN, SourceType.UNKNOWN],
 )
 def test_parse_metadata_to_downloads_unknown_type_behaves_as_single(
     mock_parse_single: MagicMock,
     youtube_handler: YoutubeHandler,
-    unknown_ref_type: ReferenceType,
+    unknown_ref_type: SourceType,
 ):
     """Tests that UNKNOWN reference types are parsed as if they were SINGLE, and logs a warning."""
     mock_download = MagicMock(spec=Download)
@@ -1253,12 +1146,12 @@ def test_parse_metadata_to_downloads_unknown_type_behaves_as_single(
 @patch.object(YoutubeHandler, "_parse_single_video_entry")
 @pytest.mark.parametrize(
     "unknown_ref_type",
-    [ReferenceType.UNKNOWN_DIRECT_FETCH, ReferenceType.UNKNOWN_RESOLVED_URL],
+    [SourceType.UNKNOWN, SourceType.UNKNOWN],
 )
 def test_parse_metadata_to_downloads_unknown_type_with_playlist_shape_data(
     mock_parse_single: MagicMock,
     youtube_handler: YoutubeHandler,
-    unknown_ref_type: ReferenceType,
+    unknown_ref_type: SourceType,
 ):
     """Tests that UNKNOWN ref type with playlist-like data (has 'entries').
 

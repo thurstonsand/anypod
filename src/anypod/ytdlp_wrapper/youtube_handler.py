@@ -18,7 +18,6 @@ from ..exceptions import (
     YtdlpFieldInvalidError,
     YtdlpFieldMissingError,
 )
-from .base_handler import FetchPurpose, ReferenceType
 from .core import YtdlpArgs, YtdlpCore, YtdlpInfo
 
 logger = logging.getLogger(__name__)
@@ -431,27 +430,11 @@ class YoutubeHandler:
     parsing into Download objects.
     """
 
-    def set_source_specific_ytdlp_options(
-        self, args: YtdlpArgs, purpose: FetchPurpose
-    ) -> YtdlpArgs:
-        """Apply YouTube-specific CLI options to yt-dlp arguments.
-
-        Args:
-            args: YtdlpArgs object to modify with source-specific options.
-            purpose: The purpose of the fetch operation.
-
-        Returns:
-            Modified YtdlpArgs object with source-specific options applied.
-        """
-        # Convert thumbnails to JPG format for podcast compatibility
-        args.convert_thumbnails("jpg")
-        return args
-
     def extract_feed_metadata(
         self,
         feed_id: str,
         ytdlp_info: YtdlpInfo,
-        ref_type: ReferenceType,
+        source_type: SourceType,
         source_url: str,
         fetch_until_date: datetime | None = None,
     ) -> Feed:
@@ -460,7 +443,7 @@ class YoutubeHandler:
         Args:
             feed_id: The feed identifier.
             ytdlp_info: The yt-dlp metadata information.
-            ref_type: The type of reference being parsed.
+            source_type: The type of source being parsed.
             source_url: The original source URL for this feed.
             fetch_until_date: The upper bound date for the fetch operation, used for setting last_successful_sync. Optional.
 
@@ -471,24 +454,11 @@ class YoutubeHandler:
             "Extracting feed metadata.",
             extra={
                 "feed_id": feed_id,
-                "ref_type": ref_type,
+                "source_type": source_type,
             },
         )
 
         youtube_info = YoutubeEntry(ytdlp_info, feed_id)
-
-        # Map ReferenceType to SourceType
-        match ref_type:
-            case ReferenceType.SINGLE:
-                source_type = SourceType.SINGLE_VIDEO
-            case ReferenceType.CHANNEL:
-                source_type = SourceType.CHANNEL
-            case ReferenceType.COLLECTION:
-                source_type = SourceType.PLAYLIST
-            case (
-                ReferenceType.UNKNOWN_RESOLVED_URL | ReferenceType.UNKNOWN_DIRECT_FETCH
-            ):
-                source_type = SourceType.UNKNOWN
 
         # Extract metadata with fallbacks
         author = youtube_info.uploader or youtube_info.channel
@@ -620,7 +590,7 @@ class YoutubeHandler:
         feed_id: str,
         initial_url: str,
         cookies_path: Path | None = None,
-    ) -> tuple[str | None, ReferenceType]:
+    ) -> tuple[str | None, SourceType]:
         """Determine the fetch strategy for a YouTube URL.
 
         Analyzes the URL to determine if it represents a single video,
@@ -632,7 +602,7 @@ class YoutubeHandler:
             cookies_path: Path to cookies.txt file for authentication, or None if not needed.
 
         Returns:
-            Tuple of (final_url_to_fetch, reference_type).
+            Tuple of (final_url_to_fetch, source_type).
 
         Raises:
             YtdlpYoutubeDataError: If the URL is a playlists tab or other unsupported format.
@@ -643,12 +613,10 @@ class YoutubeHandler:
 
         # Build discovery args directly
         discovery_args = YtdlpArgs([])
-        # Apply source-specific discovery options
-        discovery_args = self.set_source_specific_ytdlp_options(
-            discovery_args, FetchPurpose.DISCOVERY
-        )
         # Apply standard discovery options
-        discovery_args.quiet().no_warnings().skip_download().flat_playlist()
+        discovery_args.quiet().no_warnings().skip_download().flat_playlist().convert_thumbnails(
+            "jpg"
+        )
 
         # Add cookies if provided
         if cookies_path is not None:
@@ -664,7 +632,7 @@ class YoutubeHandler:
             logger.warning(
                 "Discovery call failed for URL.", extra={"initial_url": initial_url}
             )
-            return initial_url, ReferenceType.UNKNOWN_DIRECT_FETCH
+            return initial_url, SourceType.UNKNOWN
 
         youtube_info = YoutubeEntry(discovery_info, feed_id)
 
@@ -687,11 +655,11 @@ class YoutubeHandler:
                 extra={
                     "initial_url": initial_url,
                     "fetch_url": fetch_url,
-                    "reference_type": ReferenceType.SINGLE,
+                    "source_type": SourceType.SINGLE_VIDEO,
                     "extractor": youtube_info.extractor,
                 },
             )
-            return fetch_url, ReferenceType.SINGLE
+            return fetch_url, SourceType.SINGLE_VIDEO
         # Handle channels
         # Heuristic to identify a "main channel page" (e.g., @handle, /channel/UC...)
         # In this case, we delegate to the channel's Videos tab
@@ -739,24 +707,24 @@ class YoutubeHandler:
                             extra={
                                 "initial_url": initial_url,
                                 "videos_tab_url": tab_url,
-                                "reference_type": ReferenceType.CHANNEL,
+                                "source_type": SourceType.CHANNEL,
                                 "extractor": youtube_info.extractor,
                                 "type": youtube_info.type,
                             },
                         )
-                        return tab_url, ReferenceType.CHANNEL
+                        return tab_url, SourceType.CHANNEL
 
             logger.warning(
                 "'Videos' tab not found for main channel page. Using resolved URL as channel.",
                 extra={
                     "initial_url": initial_url,
                     "fetch_url": fetch_url,
-                    "reference_type": ReferenceType.CHANNEL,
+                    "source_type": SourceType.CHANNEL,
                     "extractor": youtube_info.extractor,
                     "type": youtube_info.type,
                 },
             )
-            return fetch_url, ReferenceType.CHANNEL
+            return fetch_url, SourceType.CHANNEL
         # Handle the Playlist tabs
         # Playlist tabs will end up creating a "playlist" of playlists
         # I don't know what to do with that, so just throw
@@ -778,10 +746,10 @@ class YoutubeHandler:
                     "fetch_url": fetch_url,
                     "extractor": youtube_info.extractor,
                     "type": youtube_info.type,
-                    "reference_type": ReferenceType.COLLECTION,
+                    "source_type": SourceType.PLAYLIST,
                 },
             )
-            return fetch_url, ReferenceType.COLLECTION
+            return fetch_url, SourceType.PLAYLIST
 
         logger.warning(
             "Unhandled URL classification by extractor. Defaulting to unknown resolved URL.",
@@ -790,17 +758,17 @@ class YoutubeHandler:
                 "fetch_url": fetch_url,
                 "extractor": youtube_info.extractor,
                 "type": youtube_info.type,
-                "reference_type": ReferenceType.UNKNOWN_RESOLVED_URL,
+                "source_type": SourceType.UNKNOWN,
             },
         )
-        return fetch_url, ReferenceType.UNKNOWN_RESOLVED_URL
+        return fetch_url, SourceType.UNKNOWN
 
     def parse_metadata_to_downloads(
         self,
         feed_id: str,
         ytdlp_info: YtdlpInfo,
         source_identifier: str,
-        ref_type: ReferenceType,
+        source_type: SourceType,
     ) -> list[Download]:
         """Parse yt-dlp metadata into Download objects.
 
@@ -808,7 +776,7 @@ class YoutubeHandler:
             feed_id: The feed identifier.
             ytdlp_info: The yt-dlp metadata information.
             source_identifier: Identifier for the source being parsed.
-            ref_type: The type of reference being parsed.
+            source_type: The type of source being parsed.
 
         Returns:
             List of successfully parsed Download objects.
@@ -817,12 +785,12 @@ class YoutubeHandler:
             "Parsing metadata to downloads.",
             extra={
                 "source_identifier": source_identifier,
-                "ref_type": ref_type,
+                "source_type": source_type,
             },
         )
         youtube_info = YoutubeEntry(ytdlp_info, feed_id)
         downloads: list[Download] = []
-        if ref_type == ReferenceType.SINGLE:
+        if source_type == SourceType.SINGLE_VIDEO:
             logger.debug(
                 "Parsing as single download.",
                 extra={"source_identifier": source_identifier},
@@ -843,7 +811,7 @@ class YoutubeHandler:
                     exc_info=e,
                     extra={"source_identifier": source_identifier},
                 )
-        elif ref_type in (ReferenceType.COLLECTION, ReferenceType.CHANNEL):
+        elif source_type in (SourceType.PLAYLIST, SourceType.CHANNEL):
             logger.debug(
                 "Parsing as collection.",
                 extra={
@@ -894,15 +862,15 @@ class YoutubeHandler:
                     "Expected collection but no 'entries' list found in info_dict.",
                     extra={
                         "source_identifier": source_identifier,
-                        "ref_type": ref_type,
+                        "source_type": source_type,
                     },
                 )
         else:  # UNKNOWN_RESOLVED_URL or UNKNOWN_DIRECT_FETCH
             logger.warning(
-                "Parsing with unknown reference type, attempting as single download.",
+                "Parsing with unknown source type, attempting as single download.",
                 extra={
                     "source_identifier": source_identifier,
-                    "ref_type": ref_type,
+                    "source_type": source_type,
                 },
             )
             try:
@@ -926,7 +894,7 @@ class YoutubeHandler:
             "Finished parsing metadata.",
             extra={
                 "source_identifier": source_identifier,
-                "ref_type": ref_type,
+                "source_type": source_type,
                 "downloads_identified": len(downloads),
             },
         )

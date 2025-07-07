@@ -15,7 +15,8 @@
     ],
     "typeCheckingMode": "strict",
     "strict": [
-        "src"
+        "src",
+        "tests"
     ],
     "pythonVersion": "3.13",
     "pythonPlatform": "All",

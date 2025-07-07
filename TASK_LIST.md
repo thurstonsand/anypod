@@ -372,9 +372,9 @@ This section details the components that manage the lifecycle of downloads, from
     - jury's still out on channels, but maybe?
     - maybe we can pre-emptively classify these when they are added, store the type in the db, and pick the optimal way to retrieve based on that classification
     - **Future Optimization**: Could fetch detailed metadata in one call (86 fields vs 21) but 10x slower - out of scope
-    - [ ] not sure we need ReferenceType anymore. SourceType might be good enough
-    - [ ] i think we can get rid of DISCOVERY type
-    - [ ] get rid of `set_source_specific_ytdlp_options`
+    - [x] not sure we need ReferenceType anymore. SourceType might be good enough
+    - [x] i think we can get rid of DISCOVERY type
+    - [x] get rid of `set_source_specific_ytdlp_options`
   - [x] Cut down on excessive logs
   - [x] use the shared conftest for more fixtures
   - [x] make the db a folder instead of a file -- it creates `.db-wal` type in the same folder.

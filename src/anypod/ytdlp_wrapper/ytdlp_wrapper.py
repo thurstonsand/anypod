@@ -15,7 +15,7 @@ import aiofiles.os
 from ..db.types import Download, Feed, SourceType
 from ..exceptions import FileOperationError, YtdlpApiError
 from ..path_manager import PathManager
-from .base_handler import FetchPurpose, ReferenceType, SourceHandlerBase
+from .base_handler import FetchPurpose, SourceHandlerBase
 from .core import YtdlpArgs, YtdlpCore
 from .youtube_handler import YoutubeHandler
 
@@ -79,21 +79,9 @@ class YtdlpWrapper:
 
         logger.debug("Discovering feed properties.", extra=log_config)
 
-        resolved_url, ref_type = await self._source_handler.determine_fetch_strategy(
+        resolved_url, source_type = await self._source_handler.determine_fetch_strategy(
             feed_id, url, cookies_path
         )
-
-        match ref_type:
-            case ReferenceType.SINGLE:
-                source_type = SourceType.SINGLE_VIDEO
-            case ReferenceType.CHANNEL:
-                source_type = SourceType.CHANNEL
-            case ReferenceType.COLLECTION:
-                source_type = SourceType.PLAYLIST
-            case (
-                ReferenceType.UNKNOWN_RESOLVED_URL | ReferenceType.UNKNOWN_DIRECT_FETCH
-            ):
-                source_type = SourceType.UNKNOWN
 
         logger.debug(
             "Successfully discovered feed properties.",
@@ -101,7 +89,6 @@ class YtdlpWrapper:
                 **log_config,
                 "source_type": source_type.value,
                 "resolved_url": resolved_url,
-                "reference_type": ref_type.value,
             },
         )
 
@@ -128,7 +115,7 @@ class YtdlpWrapper:
         self,
         args: YtdlpArgs,
         purpose: FetchPurpose,
-        ref_type: ReferenceType | None = None,
+        source_type: SourceType | None = None,
         fetch_since_date: datetime | None = None,
         fetch_until_date: datetime | None = None,
         keep_last: int | None = None,
@@ -140,15 +127,15 @@ class YtdlpWrapper:
         log_params: dict[str, Any] = {
             "purpose": purpose,
             "num_user_provided_opts": args.additional_args_count,
-            "ref_type": ref_type,
+            "source_type": source_type,
         }
         logger.debug("Preparing yt-dlp options.", extra=log_params)
 
         # Add base options
-        args.quiet().no_warnings()
+        args.quiet().no_warnings().convert_thumbnails("jpg")
 
         # Add date filtering and playlist limits (only for non-SINGLE references)
-        if ref_type != ReferenceType.SINGLE:
+        if source_type != SourceType.SINGLE_VIDEO:
             if fetch_since_date:
                 args.dateafter(fetch_since_date)
                 log_params["fetch_since_date_day_aligned"] = fetch_since_date.strftime(
@@ -165,8 +152,6 @@ class YtdlpWrapper:
 
         # Add purpose-specific options
         match purpose:
-            case FetchPurpose.DISCOVERY:
-                args.skip_download().flat_playlist().playlist_limit(5)
             case FetchPurpose.METADATA_FETCH:
                 args.skip_download()
             case FetchPurpose.MEDIA_DOWNLOAD:
@@ -252,30 +237,14 @@ class YtdlpWrapper:
 
         logger.debug("Fetching metadata for feed.", extra=log_config)
 
-        # Convert SourceType back to ReferenceType for internal processing
-        match source_type:
-            case SourceType.SINGLE_VIDEO:
-                ref_type = ReferenceType.SINGLE
-            case SourceType.CHANNEL:
-                ref_type = ReferenceType.CHANNEL
-            case SourceType.PLAYLIST:
-                ref_type = ReferenceType.COLLECTION
-            case SourceType.UNKNOWN:
-                ref_type = ReferenceType.UNKNOWN_RESOLVED_URL
-
         # Prepare CLI args with date filtering and source-specific options
         metadata_fetch_args = YtdlpArgs(user_yt_cli_args)
-
-        # Apply source-specific options
-        metadata_fetch_args = self._source_handler.set_source_specific_ytdlp_options(
-            metadata_fetch_args, FetchPurpose.METADATA_FETCH
-        )
 
         # Apply metadata fetch options
         metadata_fetch_args = self._prepare_ytdlp_options(
             args=metadata_fetch_args,
             purpose=FetchPurpose.METADATA_FETCH,
-            ref_type=ref_type,
+            source_type=source_type,
             fetch_since_date=fetch_since_date,
             fetch_until_date=fetch_until_date,
             keep_last=keep_last,
@@ -288,7 +257,7 @@ class YtdlpWrapper:
                 "feed_id": feed_id,
                 "fetch_url": resolved_url,
                 "source_url": source_url,
-                "reference_type": ref_type.name,
+                "source_type": source_type.name,
             },
         )
 
@@ -303,7 +272,7 @@ class YtdlpWrapper:
         extracted_feed = self._source_handler.extract_feed_metadata(
             feed_id,
             ytdlp_info,
-            ref_type,
+            source_type,
             source_url,
             fetch_until_date,
         )
@@ -312,7 +281,7 @@ class YtdlpWrapper:
             feed_id,
             ytdlp_info,
             source_identifier=feed_id,
-            ref_type=ref_type,
+            source_type=source_type,
         )
 
         logger.debug(
@@ -365,11 +334,6 @@ class YtdlpWrapper:
         try:
             # Create download args
             download_opts = YtdlpArgs(user_yt_cli_args)
-
-            # Apply source-specific options
-            download_opts = self._source_handler.set_source_specific_ytdlp_options(
-                download_opts, FetchPurpose.MEDIA_DOWNLOAD
-            )
 
             # Apply download-specific options
             download_opts = self._prepare_ytdlp_options(
