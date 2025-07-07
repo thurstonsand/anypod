@@ -571,3 +571,4 @@ yt-dlp's `daterange` parameter only supports YYYYMMDD format, not hour/minute/se
 * Support Patreon
 * Support "generic source" after looking at overlap from a few sources
 * crop thumbnails so they are the right ratio; also consider converting from webp to png/jpg
+* configurable channel tab selection: allow users to specify which tab (videos, shorts, live, etc.) to use when discovering channel URLs, with /videos as default

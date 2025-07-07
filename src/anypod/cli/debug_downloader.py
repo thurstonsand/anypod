@@ -8,7 +8,6 @@ Recommend running debug_enqueuer first to populate the database.
 """
 
 import logging
-from pathlib import Path
 
 from ..config import AppSettings
 from ..data_coordinator.downloader import Downloader
@@ -25,7 +24,6 @@ logger = logging.getLogger(__name__)
 
 async def run_debug_downloader_mode(
     settings: AppSettings,
-    debug_db_dir: Path,
     paths: PathManager,
 ) -> None:
     """Run the Downloader in debug mode to process queued downloads.
@@ -36,20 +34,20 @@ async def run_debug_downloader_mode(
 
     Args:
         settings: Application settings containing feed configurations.
-        debug_db_dir: Path to the database directory.
         paths: PathManager instance containing data and temporary directories.
     """
+    db_dir = await paths.db_dir()
     logger.info(
         "Initializing Anypod in Downloader debug mode.",
         extra={
             "config_file": str(settings.config_file),
-            "debug_db_dir": str(debug_db_dir.resolve()),
+            "db_dir": str(db_dir.resolve()),
             "debug_downloads_path": str(paths.base_data_dir.resolve()),
         },
     )
 
     try:
-        db_core = SqlalchemyCore(debug_db_dir)
+        db_core = SqlalchemyCore(db_dir)
         download_db = DownloadDatabase(db_core)
 
         file_manager = FileManager(paths)

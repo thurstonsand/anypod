@@ -16,7 +16,7 @@ Thumbs.db
 *.tmp
 
 # Testing
-debug_downloads/
+tmpdata/
 yt-dlp_metadata/
 *.db
 *.db-shm

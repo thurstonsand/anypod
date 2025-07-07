@@ -5,7 +5,7 @@ feed metadata, identifying new downloads, and managing their status in the
 database for subsequent processing by the Downloader.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 import logging
 from pathlib import Path
 from typing import Any
@@ -13,7 +13,7 @@ from typing import Any
 from ..config import FeedConfig
 from ..db import DownloadDatabase
 from ..db.feed_db import FeedDatabase
-from ..db.types import Download, DownloadStatus, Feed
+from ..db.types import Download, DownloadStatus, Feed, SourceType
 from ..exceptions import (
     DatabaseOperationError,
     DownloadNotFoundError,
@@ -276,9 +276,9 @@ class Enqueuer:
         try:
             _, fetched_downloads = await self._ytdlp_wrapper.fetch_metadata(
                 feed.id,
-                feed.source_type,
-                feed.source_url,
-                feed.resolved_url,
+                SourceType.SINGLE_VIDEO,
+                db_download.source_url,
+                None,
                 feed_config.yt_args,
                 cookies_path=cookies_path,
             )
@@ -697,14 +697,18 @@ class Enqueuer:
                 existing_db_download, fetched_dl, feed_id, log_params
             )
 
-    async def _handle_existing_upcoming_downloads(
+    async def _handle_remaining_upcoming_downloads(
         self, feed: Feed, feed_config: FeedConfig, cookies_path: Path | None = None
     ) -> int:
-        """Re-fetch metadata for existing DB entries with UPCOMING status.
+        """Re-fetch metadata for existing UPCOMING downloads not processed by main feed.
 
-        If a download is now a VOD, its status is updated to QUEUED. If
-        metadata re-fetch fails repeatedly (controlled by feed_config.max_errors),
-        the download's status is transitioned to ERROR.
+        If a download is now a VOD, its status is updated to QUEUED. If metadata
+        re-fetch fails repeatedly (controlled by feed_config.max_errors), the
+        download's status is transitioned to ERROR.
+
+        Only processes UPCOMING downloads where the published date is in the past,
+        as these are likely to have transitioned to VOD. Skips downloads with
+        future published dates to avoid unnecessary network calls.
 
         Args:
             feed: The Feed object from the database.
@@ -715,7 +719,7 @@ class Enqueuer:
             The count of downloads successfully transitioned from 'upcoming' to 'queued'.
         """
         feed_log_params = {"feed_id": feed.id}
-        logger.debug("Handling existing upcoming downloads.", extra=feed_log_params)
+        logger.debug("Handling remaining upcoming downloads.", extra=feed_log_params)
 
         upcoming_db_downloads = await self._get_upcoming_downloads_for_feed(
             feed.id, feed_config.url
@@ -723,17 +727,39 @@ class Enqueuer:
 
         if not upcoming_db_downloads:
             logger.debug(
-                "No existing upcoming downloads to process.", extra=feed_log_params
+                "No remaining upcoming downloads to process.", extra=feed_log_params
+            )
+            return 0
+
+        # Filter to only check downloads with past published dates
+        current_time = datetime.now(UTC)
+        ready_downloads = [
+            download
+            for download in upcoming_db_downloads
+            if download.published <= current_time
+        ]
+
+        future_downloads_count = len(upcoming_db_downloads) - len(ready_downloads)
+        if future_downloads_count > 0:
+            logger.debug(
+                f"Skipping {future_downloads_count} upcoming downloads with future published dates.",
+                extra=feed_log_params,
+            )
+
+        if not ready_downloads:
+            logger.debug(
+                "No upcoming downloads with past published dates to check.",
+                extra=feed_log_params,
             )
             return 0
 
         logger.debug(
-            f"Found {len(upcoming_db_downloads)} existing upcoming downloads to re-check.",
+            f"Found {len(ready_downloads)} upcoming downloads with past published dates to re-check.",
             extra=feed_log_params,
         )
 
         queued_count = 0
-        for db_download in upcoming_db_downloads:
+        for db_download in ready_downloads:
             if await self._process_single_upcoming_download(
                 db_download, feed, feed_config, feed_log_params, cookies_path
             ):
@@ -855,16 +881,7 @@ class Enqueuer:
                 feed_url=feed_config.url,
             ) from e
 
-        # Handle existing UPCOMING downloads
-        queued_from_upcoming = await self._handle_existing_upcoming_downloads(
-            feed, feed_config, cookies_path
-        )
-        logger.debug(
-            "Upcoming downloads transitioned to QUEUED.",
-            extra={**feed_log_params, "queued_count": queued_from_upcoming},
-        )
-
-        # Fetch and process all feed downloads
+        # Fetch and process all feed downloads first (includes UPCOMING)
         (
             feed,
             queued_from_feed_fetch,
@@ -872,11 +889,22 @@ class Enqueuer:
             feed, feed_config, fetch_since_date, fetch_until_date, cookies_path
         )
         logger.debug(
-            "New/updated downloads set to QUEUED.",
+            "Downloads processed from feed.",
             extra={**feed_log_params, "queued_count": queued_from_feed_fetch},
         )
 
-        total_queued_count = queued_from_upcoming + queued_from_feed_fetch
+        # Handle remaining UPCOMING downloads (only those with past published dates)
+        queued_from_remaining_upcoming = (
+            await self._handle_remaining_upcoming_downloads(
+                feed, feed_config, cookies_path
+            )
+        )
+        logger.debug(
+            "Remaining upcoming downloads transitioned to QUEUED.",
+            extra={**feed_log_params, "queued_count": queued_from_remaining_upcoming},
+        )
+
+        total_queued_count = queued_from_feed_fetch + queued_from_remaining_upcoming
         logger.debug(
             "Enqueue process completed for feed.",
             extra={

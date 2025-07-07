@@ -487,7 +487,7 @@ async def test_synchronize_feed_metadata_preserves_source_type_with_metadata_ove
     assert actual_updates == expected_updates
 
 
-# --- Tests for Enqueuer._handle_existing_upcoming_downloads ---
+# --- Tests for Enqueuer._handle_remaining_upcoming_downloads ---
 
 
 @pytest.mark.unit
@@ -497,10 +497,10 @@ async def test_handle_existing_upcoming_downloads_none_found(
     mock_download_db: MagicMock,
     sample_feed_config: FeedConfig,
 ):
-    """Test _handle_existing_upcoming_downloads when no upcoming downloads are in DB."""
+    """Test _handle_remaining_upcoming_downloads when no upcoming downloads are in DB."""
     mock_download_db.get_downloads_by_status.return_value = []
 
-    count = await enqueuer._handle_existing_upcoming_downloads(
+    count = await enqueuer._handle_remaining_upcoming_downloads(
         MOCK_FEED, sample_feed_config
     )
     assert count == 0
@@ -524,16 +524,16 @@ async def test_handle_existing_upcoming_download_transitions_to_queued(
     mock_download_db.get_downloads_by_status.return_value = [upcoming_dl]
     mock_ytdlp_wrapper.fetch_metadata.return_value = (MOCK_FEED, [refetched_vod_dl])
 
-    count = await enqueuer._handle_existing_upcoming_downloads(
+    count = await enqueuer._handle_remaining_upcoming_downloads(
         MOCK_FEED, sample_feed_config
     )
 
     assert count == 1
     mock_ytdlp_wrapper.fetch_metadata.assert_awaited_once_with(
         FEED_ID,
-        MOCK_FEED.source_type,
-        MOCK_FEED.source_url,
-        MOCK_FEED.resolved_url,
+        SourceType.SINGLE_VIDEO,
+        upcoming_dl.source_url,
+        None,
         sample_feed_config.yt_args,
         cookies_path=None,
     )
@@ -561,16 +561,16 @@ async def test_handle_existing_upcoming_download_remains_upcoming(
         [refetched_upcoming_dl],
     )
 
-    count = await enqueuer._handle_existing_upcoming_downloads(
+    count = await enqueuer._handle_remaining_upcoming_downloads(
         MOCK_FEED, sample_feed_config
     )
 
     assert count == 0
     mock_ytdlp_wrapper.fetch_metadata.assert_awaited_once_with(
         FEED_ID,
-        MOCK_FEED.source_type,
-        MOCK_FEED.source_url,
-        MOCK_FEED.resolved_url,
+        SourceType.SINGLE_VIDEO,
+        upcoming_dl.source_url,
+        None,
         sample_feed_config.yt_args,
         cookies_path=None,
     )
@@ -595,7 +595,7 @@ async def test_handle_existing_upcoming_download_refetch_fails_bumps_retries(
     # Simulate bump_retries not transitioning to ERROR
     mock_download_db.bump_retries.return_value = (1, DownloadStatus.UPCOMING, False)
 
-    count = await enqueuer._handle_existing_upcoming_downloads(
+    count = await enqueuer._handle_remaining_upcoming_downloads(
         MOCK_FEED, sample_feed_config
     )
 
@@ -633,7 +633,7 @@ async def test_handle_existing_upcoming_download_refetch_fails_transitions_to_er
         True,
     )
 
-    count = await enqueuer._handle_existing_upcoming_downloads(
+    count = await enqueuer._handle_remaining_upcoming_downloads(
         MOCK_FEED, sample_feed_config
     )
 
@@ -666,7 +666,7 @@ async def test_handle_existing_upcoming_download_refetch_returns_no_match(
     )
     mock_download_db.bump_retries.return_value = (1, DownloadStatus.UPCOMING, False)
 
-    count = await enqueuer._handle_existing_upcoming_downloads(
+    count = await enqueuer._handle_remaining_upcoming_downloads(
         MOCK_FEED, sample_feed_config
     )
 
@@ -856,31 +856,35 @@ async def test_enqueue_new_downloads_full_flow_mixed_scenarios(
 ):
     """Test the main enqueue_new_downloads with a mix of scenarios."""
     mock_feed_db.get_feed_by_id.return_value = MOCK_FEED  # Return mock feed
-    # --- Setup for _handle_existing_upcoming_downloads ---
-    # 1. Upcoming that becomes VOD
+    # --- Setup for main feed fetch ---
+    # 1. New VOD from feed
+    new_vod_feed = create_download("feed_new_vod", DownloadStatus.QUEUED)
+    # 2. Existing UPCOMING in DB, now fetched as VOD from feed
+    existing_up3_db = create_download("feed_up3_now_vod", DownloadStatus.UPCOMING)
+    fetched_up3_as_vod = create_download("feed_up3_now_vod", DownloadStatus.QUEUED)
+    # 3. New upcoming from feed
+    new_upcoming_feed = create_download("feed_new_upcoming", DownloadStatus.UPCOMING)
+
+    # Main feed fetch returns these 3 items
+    main_feed_fetch_result = [new_vod_feed, fetched_up3_as_vod, new_upcoming_feed]
+
+    # --- Setup for _handle_remaining_upcoming_downloads ---
+    # 4. Upcoming that becomes VOD (not returned by main feed)
     upcoming1_db = create_download("up1", DownloadStatus.UPCOMING)
     upcoming1_refetched_vod = create_download("up1", DownloadStatus.QUEUED)
-    # 2. Upcoming that stays upcoming
+    # 5. Upcoming that stays upcoming (not returned by main feed)
     upcoming2_db = create_download("up2", DownloadStatus.UPCOMING)
     upcoming2_refetched_upcoming = create_download("up2", DownloadStatus.UPCOMING)
 
+    # get_downloads_by_status is called after main feed processing
+    # By then, existing_up3_db would have been updated to QUEUED, so only return truly remaining UPCOMING
     mock_download_db.get_downloads_by_status.return_value = [upcoming1_db, upcoming2_db]
 
-    # --- Setup for _fetch_and_process_new_feed_downloads ---
-    # 3. New VOD from feed
-    new_vod_feed = create_download("feed_new_vod", DownloadStatus.QUEUED)
-    # 4. Existing UPCOMING in DB, now fetched as VOD from feed
-    existing_up3_db = create_download("feed_up3_now_vod", DownloadStatus.UPCOMING)
-    fetched_up3_as_vod = create_download("feed_up3_now_vod", DownloadStatus.QUEUED)
-    # 5. New upcoming from feed
-    new_upcoming_feed = create_download("feed_new_upcoming", DownloadStatus.UPCOMING)
-
-    # The third call to ytdlp_wrapper.fetch_metadata (for the main feed)
-    main_feed_fetch_result = [new_vod_feed, fetched_up3_as_vod, new_upcoming_feed]
+    # Mock the main feed fetch first, then individual re-fetches for remaining
     mock_ytdlp_wrapper.fetch_metadata.side_effect = [
-        (MOCK_FEED, [upcoming1_refetched_vod]),
-        (MOCK_FEED, [upcoming2_refetched_upcoming]),
-        (MOCK_FEED, main_feed_fetch_result),
+        (MOCK_FEED, main_feed_fetch_result),  # Main feed fetch
+        (MOCK_FEED, [upcoming1_refetched_vod]),  # Re-fetch for up1
+        (MOCK_FEED, [upcoming2_refetched_upcoming]),  # Re-fetch for up2
     ]
 
     # Mock get_download_by_id calls for main feed processing
@@ -907,34 +911,18 @@ async def test_enqueue_new_downloads_full_flow_mixed_scenarios(
     # - existing_up3_db -> QUEUED (1)
     assert total_queued == 3
 
-    # Assert calls for _handle_existing_upcoming_downloads
+    # Assert calls for _handle_remaining_upcoming_downloads
     assert mock_download_db.get_downloads_by_status.call_count == 1
     assert mock_download_db.get_downloads_by_status.call_args_list[0] == call(
         DownloadStatus.UPCOMING, feed_id=FEED_ID
     )
 
     # Assert ytdlp_wrapper.fetch_metadata calls
-    # Call 1 (upcoming1_db)
-    # Call 2 (upcoming2_db)
-    # Call 3 (main feed fetch)
+    # Call 1: main feed fetch
+    # Call 2: re-fetch for upcoming1_db
+    # Call 3: re-fetch for upcoming2_db
     assert mock_ytdlp_wrapper.fetch_metadata.call_count == 3
     expected_calls = [
-        call(
-            FEED_ID,
-            MOCK_FEED.source_type,
-            MOCK_FEED.source_url,
-            MOCK_FEED.resolved_url,
-            sample_feed_config.yt_args,
-            cookies_path=None,
-        ),
-        call(
-            FEED_ID,
-            MOCK_FEED.source_type,
-            MOCK_FEED.source_url,
-            MOCK_FEED.resolved_url,
-            sample_feed_config.yt_args,
-            cookies_path=None,
-        ),
         call(
             FEED_ID,
             MOCK_FEED.source_type,
@@ -946,11 +934,27 @@ async def test_enqueue_new_downloads_full_flow_mixed_scenarios(
             sample_feed_config.keep_last,
             None,
         ),
+        call(
+            FEED_ID,
+            SourceType.SINGLE_VIDEO,  # Always SINGLE_VIDEO for individual re-fetches
+            "https://example.com/video/up1",  # Individual video URL
+            None,  # No resolved URL for individual videos
+            sample_feed_config.yt_args,
+            cookies_path=None,
+        ),
+        call(
+            FEED_ID,
+            SourceType.SINGLE_VIDEO,  # Always SINGLE_VIDEO for individual re-fetches
+            "https://example.com/video/up2",  # Individual video URL
+            None,  # No resolved URL for individual videos
+            sample_feed_config.yt_args,
+            cookies_path=None,
+        ),
     ]
     mock_ytdlp_wrapper.fetch_metadata.assert_has_calls(expected_calls)
 
     # Assert download_db calls
-    # - mark_as_queued_from_upcoming called for upcoming1_db (from _handle_existing_upcoming_downloads)
+    # - mark_as_queued_from_upcoming called for upcoming1_db (from _handle_remaining_upcoming_downloads)
     # - upsert_download called for new_vod_feed, existing_up3_db (with updated status), and new_upcoming_feed
     mock_download_db.mark_as_queued_from_upcoming.assert_has_calls(
         [
@@ -995,10 +999,13 @@ async def test_enqueue_new_downloads_db_error_on_get_upcoming(
     enqueuer: Enqueuer,
     mock_download_db: MagicMock,
     mock_feed_db: MagicMock,
+    mock_ytdlp_wrapper: MagicMock,
     sample_feed_config: FeedConfig,
 ):
     """Test EnqueueError when DB fails during fetching upcoming downloads."""
     mock_feed_db.get_feed_by_id.return_value = MOCK_FEED  # Return mock feed
+    # Mock main feed fetch to succeed but get_downloads_by_status fails
+    mock_ytdlp_wrapper.fetch_metadata.return_value = (MOCK_FEED, [])
     mock_download_db.get_downloads_by_status.side_effect = DatabaseOperationError(
         "DB error"
     )

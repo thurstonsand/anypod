@@ -90,27 +90,29 @@ anypod/
 │   │   ├── config.py            # Main config loader
 │   │   ├── feed_config.py       # Feed-specific configuration
 │   │   └── types/               # Config type definitions
-│   │       ├── feed_metadata_overrides.py
-│   │       ├── podcast_categories.py
-│   │       └── podcast_explicit.py
+│   │       ├── cron_expression.py         # Cron expression type
+│   │       ├── feed_metadata_overrides.py # Feed metadata overrides
+│   │       ├── podcast_categories.py      # Podcast categories
+│   │       └── podcast_explicit.py        # Podcast explicit flag
 │   ├── data_coordinator/        # Core orchestration logic
 │   │   ├── coordinator.py       # Main coordinator
 │   │   ├── downloader.py        # Download logic
 │   │   ├── enqueuer.py          # Metadata fetch & enqueue
 │   │   ├── pruner.py            # Retention policy implementation
 │   │   └── types/               # Coordinator types
-│   │       ├── phase_result.py
-│   │       └── processing_results.py
+│   │       ├── phase_result.py       # Result of a single phase
+│   │       └── processing_results.py # Overall processing results
 │   ├── db/                      # Database layer
-│   │   ├── base_db.py           # Shared database components
+│   │   ├── decorators.py        # DB error handling decorators
 │   │   ├── download_db.py       # Download-specific operations
 │   │   ├── feed_db.py           # Feed-specific operations
-│   │   ├── sqlite_utils_core.py # SQLite-Utils wrapper
+│   │   ├── sqlalchemy_core.py   # SQLAlchemy core
 │   │   └── types/               # Database types
-│   │       ├── download.py
-│   │       ├── download_status.py
-│   │       ├── feed.py
-│   │       └── source_type.py
+│   │       ├── download.py                # Download model
+│   │       ├── download_status.py         # Download status enum
+│   │       ├── feed.py                    # Feed model
+│   │       ├── source_type.py             # Source type enum
+│   │       └── timezone_aware_datetime.py # Timezone-aware datetime type
 │   ├── rss/                     # RSS feed generation
 │   │   ├── feedgen_core.py      # Feed generation logic
 │   │   └── rss_feed.py          # `feedgen` wrapper
@@ -120,8 +122,12 @@ anypod/
 │   ├── ytdlp_wrapper/           # `yt-dlp` integration
 │   │   ├── base_handler.py      # Base handler interface for different source types
 │   │   ├── youtube_handler.py   # YouTube source handler
-│   │   ├── ytdlp_core.py        # `yt-dlp` wrapper
-│   │   └── ytdlp_wrapper.py     # High-level wrapper
+│   │   ├── ytdlp_wrapper.py     # High-level wrapper
+│   │   └── core/                # Core yt-dlp wrapper
+│   │       ├── args.py          # yt-dlp argument builder
+│   │       ├── core.py          # yt-dlp core runner
+│   │       ├── info.py          # yt-dlp info parser
+│   │       └── thumbnails.py    # yt-dlp thumbnail parser
 │   ├── exceptions.py            # Custom exceptions
 │   ├── file_manager.py          # File operations abstraction
 │   ├── logging_config.py        # Logging configuration

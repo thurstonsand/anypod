@@ -132,21 +132,7 @@ class YamlFileFromFieldSource(PydanticBaseSettingsSource):
         return field_value, field_name, self.field_is_complex(field)
 
     def __call__(self) -> dict[str, Any]:
-        """Load YAML data from file specified in the config_file field, unless debug_mode is 'ytdlp'."""
-        current_debug_mode_value = self._get_current_state_of("debug_mode")
-        # Check against the enum member or its string value
-        if (
-            current_debug_mode_value == DebugMode.YTDLP
-            or current_debug_mode_value == DebugMode.YTDLP.value
-        ):
-            logger.info(
-                "YAML configuration loading skipped due to debug_mode='ytdlp'.",
-                extra={
-                    "debug_mode_status": f"({type(current_debug_mode_value).__name__}) {current_debug_mode_value}"
-                },
-            )
-            return {}
-
+        """Load YAML data from file specified in the config_file field."""
         try:
             yaml_path = self._get_yaml_path()
         except TypeError as e:
