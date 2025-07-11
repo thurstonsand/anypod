@@ -21,20 +21,26 @@ from anypod.db import DownloadDatabase, FeedDatabase
 from anypod.db.types import Download, DownloadStatus, Feed, SourceType
 from anypod.path_manager import PathManager
 from anypod.state_reconciler import StateReconciler
+from anypod.ytdlp_wrapper import YtdlpWrapper
 
 # Test constants
 TEST_CRON_SCHEDULE = "0 * * * *"
 BASE_TIME = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
+
+# Real URLs for testing
+BIG_BUCK_BUNNY_SHORT_URL = "https://youtu.be/aqz-KE-bpKQ"
+COLETDJNZ_CHANNEL_VIDEOS = "https://www.youtube.com/@coletdjnz/videos"
 
 
 @pytest.fixture
 def state_reconciler(
     feed_db: FeedDatabase,
     download_db: DownloadDatabase,
+    ytdlp_wrapper: YtdlpWrapper,
     pruner: Pruner,
 ) -> StateReconciler:
     """Provides a StateReconciler instance with real dependencies."""
-    return StateReconciler(feed_db, download_db, pruner)
+    return StateReconciler(feed_db, download_db, ytdlp_wrapper, pruner)
 
 
 def create_test_download(
@@ -86,7 +92,7 @@ async def test_new_feed_addition(
     # Setup config
     config_feeds = {
         "new_feed": FeedConfig(
-            url="https://example.com/new_feed",
+            url=BIG_BUCK_BUNNY_SHORT_URL,
             schedule=TEST_CRON_SCHEDULE,  # type: ignore
             enabled=True,
             keep_last=50,
@@ -116,6 +122,7 @@ async def test_new_feed_addition(
     db_feed = await feed_db.get_feed_by_id(feed_id)
     assert db_feed.id == feed_id
     assert db_feed.source_url == feed_config.url
+    assert db_feed.source_type == SourceType.SINGLE_VIDEO
     assert db_feed.is_enabled == feed_config.enabled
     assert db_feed.keep_last == feed_config.keep_last
     assert db_feed.since == feed_config.since
@@ -146,7 +153,7 @@ async def test_reconciliation_is_idempotent(
     # Setup config
     config_feeds = {
         "test_feed": FeedConfig(
-            url="https://example.com/test",
+            url=BIG_BUCK_BUNNY_SHORT_URL,
             schedule=TEST_CRON_SCHEDULE,  # type: ignore
             enabled=True,
             keep_last=10,
@@ -187,8 +194,9 @@ async def test_feed_removal_archives_downloads(
         id="to_remove",
         title="Feed to Remove",
         is_enabled=True,
-        source_type=SourceType.CHANNEL,
-        source_url="https://example.com/remove",
+        source_type=SourceType.PLAYLIST,
+        source_url=COLETDJNZ_CHANNEL_VIDEOS,
+        resolved_url=COLETDJNZ_CHANNEL_VIDEOS,
         last_successful_sync=BASE_TIME,
     )
     await feed_db.upsert_feed(feed)
@@ -254,8 +262,9 @@ async def test_feed_enable_disable_transitions(
         id="toggle_feed",
         title="Toggle Feed",
         is_enabled=False,
-        source_type=SourceType.CHANNEL,
-        source_url="https://example.com/toggle",
+        source_type=SourceType.PLAYLIST,
+        source_url=COLETDJNZ_CHANNEL_VIDEOS,
+        resolved_url=COLETDJNZ_CHANNEL_VIDEOS,
         last_successful_sync=BASE_TIME,
         consecutive_failures=5,
         last_failed_sync=datetime.now(UTC),
@@ -265,7 +274,7 @@ async def test_feed_enable_disable_transitions(
     # Enable the feed
     config_feeds = {
         "toggle_feed": FeedConfig(
-            url="https://example.com/toggle",
+            url=COLETDJNZ_CHANNEL_VIDEOS,
             schedule=TEST_CRON_SCHEDULE,  # type: ignore
             enabled=True,
             keep_last=None,
@@ -306,8 +315,9 @@ async def test_url_change_resets_error_state(
         id="url_change",
         title="URL Change Feed",
         is_enabled=True,
-        source_type=SourceType.CHANNEL,
-        source_url="https://old.example.com/feed",
+        source_type=SourceType.PLAYLIST,
+        source_url=COLETDJNZ_CHANNEL_VIDEOS,
+        resolved_url=COLETDJNZ_CHANNEL_VIDEOS,
         last_successful_sync=BASE_TIME,
         consecutive_failures=3,
     )
@@ -316,7 +326,7 @@ async def test_url_change_resets_error_state(
     # Change URL
     config_feeds = {
         "url_change": FeedConfig(
-            url="https://new.example.com/feed",
+            url=BIG_BUCK_BUNNY_SHORT_URL,
             schedule=TEST_CRON_SCHEDULE,  # type: ignore
             enabled=True,
             keep_last=None,
@@ -329,7 +339,7 @@ async def test_url_change_resets_error_state(
 
     # Verify URL changed and errors cleared
     db_feed = await feed_db.get_feed_by_id("url_change")
-    assert db_feed.source_url == "https://new.example.com/feed"
+    assert db_feed.source_url == BIG_BUCK_BUNNY_SHORT_URL
     assert db_feed.consecutive_failures == 0
 
 
@@ -346,8 +356,9 @@ async def test_since_expansion_restores_downloads(
         id="since_test",
         title="Since Test Feed",
         is_enabled=True,
-        source_type=SourceType.CHANNEL,
-        source_url="https://example.com/since",
+        source_type=SourceType.PLAYLIST,
+        source_url=COLETDJNZ_CHANNEL_VIDEOS,
+        resolved_url=COLETDJNZ_CHANNEL_VIDEOS,
         last_successful_sync=BASE_TIME,
         since=datetime(2024, 8, 15, tzinfo=UTC),  # Original since
     )
@@ -376,7 +387,7 @@ async def test_since_expansion_restores_downloads(
     # Change since to middle date - should restore only one download
     config_feeds = {
         "since_test": FeedConfig(
-            url="https://example.com/since",
+            url=COLETDJNZ_CHANNEL_VIDEOS,
             schedule=TEST_CRON_SCHEDULE,  # type: ignore
             enabled=True,
             since=datetime(2024, 7, 15, tzinfo=UTC),  # Between the two downloads
@@ -415,8 +426,9 @@ async def test_keep_last_increase_restores_downloads(
         id="keep_last_test",
         title="Keep Last Test Feed",
         is_enabled=True,
-        source_type=SourceType.CHANNEL,
-        source_url="https://example.com/keep",
+        source_type=SourceType.PLAYLIST,
+        source_url=COLETDJNZ_CHANNEL_VIDEOS,
+        resolved_url=COLETDJNZ_CHANNEL_VIDEOS,
         last_successful_sync=BASE_TIME,
         keep_last=2,
     )
@@ -484,8 +496,9 @@ async def test_metadata_updates(
         title="Original Title",
         subtitle="Original Subtitle",
         is_enabled=True,
-        source_type=SourceType.CHANNEL,
-        source_url="https://example.com/meta",
+        source_type=SourceType.PLAYLIST,
+        source_url=COLETDJNZ_CHANNEL_VIDEOS,
+        resolved_url=COLETDJNZ_CHANNEL_VIDEOS,
         last_successful_sync=BASE_TIME,
         language="en",
         explicit=PodcastExplicit.YES,
@@ -495,7 +508,7 @@ async def test_metadata_updates(
     # Update metadata
     config_feeds = {
         "meta_test": FeedConfig(
-            url="https://example.com/meta",
+            url=COLETDJNZ_CHANNEL_VIDEOS,
             schedule=TEST_CRON_SCHEDULE,  # type: ignore
             enabled=True,
             keep_last=None,
@@ -544,24 +557,26 @@ async def test_multiple_feeds_parallel_changes(
             id="feed1",
             title="Feed 1",
             is_enabled=True,
-            source_type=SourceType.CHANNEL,
-            source_url="https://example.com/feed1",
+            source_type=SourceType.PLAYLIST,
+            source_url=COLETDJNZ_CHANNEL_VIDEOS,
+            resolved_url=COLETDJNZ_CHANNEL_VIDEOS,
             last_successful_sync=BASE_TIME,
         ),
         Feed(
             id="feed2",
             title="Feed 2",
             is_enabled=False,
-            source_type=SourceType.PLAYLIST,
-            source_url="https://example.com/feed2",
+            source_type=SourceType.SINGLE_VIDEO,
+            source_url=BIG_BUCK_BUNNY_SHORT_URL,
             last_successful_sync=BASE_TIME,
         ),
         Feed(
             id="feed3",
             title="Feed 3 (to remove)",
             is_enabled=True,
-            source_type=SourceType.CHANNEL,
-            source_url="https://example.com/feed3",
+            source_type=SourceType.PLAYLIST,
+            source_url=COLETDJNZ_CHANNEL_VIDEOS,
+            resolved_url=COLETDJNZ_CHANNEL_VIDEOS,
             last_successful_sync=BASE_TIME,
         ),
     ]
@@ -572,7 +587,7 @@ async def test_multiple_feeds_parallel_changes(
     # Config with various changes
     config_feeds = {
         "feed1": FeedConfig(  # No changes
-            url="https://example.com/feed1",
+            url=COLETDJNZ_CHANNEL_VIDEOS,
             schedule=TEST_CRON_SCHEDULE,  # type: ignore
             enabled=True,
             keep_last=None,
@@ -581,7 +596,7 @@ async def test_multiple_feeds_parallel_changes(
             metadata=None,
         ),
         "feed2": FeedConfig(  # Enable
-            url="https://example.com/feed2",
+            url=BIG_BUCK_BUNNY_SHORT_URL,
             schedule=TEST_CRON_SCHEDULE,  # type: ignore
             enabled=True,
             keep_last=None,
@@ -591,7 +606,7 @@ async def test_multiple_feeds_parallel_changes(
         ),
         # feed3 removed
         "feed4": FeedConfig(  # New feed
-            url="https://example.com/feed4",
+            url=BIG_BUCK_BUNNY_SHORT_URL,
             schedule=TEST_CRON_SCHEDULE,  # type: ignore
             enabled=True,
             keep_last=None,

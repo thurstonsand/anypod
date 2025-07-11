@@ -221,138 +221,13 @@ async def test_handle_download_failure_db_error_logged(
         )
 
 
-# --- Tests for _check_and_update_metadata ---
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_check_and_update_metadata_detects_changes(
-    downloader: Downloader,
-    mock_download_db: MagicMock,
-    mock_ytdlp_wrapper: MagicMock,
-    sample_download: Download,
-    sample_feed_config: FeedConfig,
-):
-    """Tests that _check_and_update_metadata detects and updates changed metadata."""
-    updated_download = sample_download.model_copy(
-        update={
-            "title": "Updated Title",
-            "description": "Updated description",
-            "thumbnail": "http://example.com/new_thumb.jpg",
-            "duration": 180,
-        }
-    )
-
-    mock_ytdlp_wrapper.fetch_metadata.return_value = (MOCK_FEED, [updated_download])
-
-    result = await downloader._check_and_update_metadata(
-        sample_download, sample_feed_config
-    )
-
-    mock_ytdlp_wrapper.fetch_metadata.assert_called_once_with(
-        sample_download.feed_id,
-        sample_download.source_url,
-        sample_feed_config.yt_args,
-        cookies_path=None,
-    )
-
-    mock_download_db.upsert_download.assert_awaited_once()
-    updated_in_db = mock_download_db.upsert_download.call_args[0][0]
-    assert updated_in_db.title == updated_download.title
-    assert updated_in_db.description == updated_download.description
-    assert updated_in_db.thumbnail == updated_download.thumbnail
-    assert updated_in_db.duration == updated_download.duration
-
-    # Verify the returned download has updated values
-    assert result.title == updated_download.title
-    assert result.description == updated_download.description
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_check_and_update_metadata_no_changes(
-    downloader: Downloader,
-    mock_download_db: MagicMock,
-    mock_ytdlp_wrapper: MagicMock,
-    sample_download: Download,
-    sample_feed_config: FeedConfig,
-):
-    """Tests that _check_and_update_metadata doesn't update DB when no changes detected."""
-    # Mock the fetch to return the same download (no changes)
-    mock_ytdlp_wrapper.fetch_metadata.return_value = (MOCK_FEED, [sample_download])
-
-    result = await downloader._check_and_update_metadata(
-        sample_download, sample_feed_config
-    )
-
-    # Verify metadata was fetched
-    mock_ytdlp_wrapper.fetch_metadata.assert_called_once()
-
-    # Verify the database was NOT updated since nothing changed
-    mock_download_db.upsert_download.assert_not_called()
-
-    # Verify the returned download is unchanged
-    assert result == sample_download
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_check_and_update_metadata_fetch_fails_returns_original(
-    downloader: Downloader,
-    mock_download_db: MagicMock,
-    mock_ytdlp_wrapper: MagicMock,
-    sample_download: Download,
-    sample_feed_config: FeedConfig,
-):
-    """Tests that _check_and_update_metadata returns original on fetch failure."""
-    # Mock the fetch to fail
-    mock_ytdlp_wrapper.fetch_metadata.side_effect = YtdlpApiError("Fetch failed")
-
-    result = await downloader._check_and_update_metadata(
-        sample_download, sample_feed_config
-    )
-
-    # Verify the database was NOT updated
-    mock_download_db.upsert_download.assert_not_called()
-
-    # Verify the original download is returned
-    assert result == sample_download
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_check_and_update_metadata_no_matching_download_returns_original(
-    downloader: Downloader,
-    mock_download_db: MagicMock,
-    mock_ytdlp_wrapper: MagicMock,
-    sample_download: Download,
-    sample_feed_config: FeedConfig,
-):
-    """Tests that _check_and_update_metadata returns original when no matching download found."""
-    # Mock the fetch to return a different download ID
-    different_download = sample_download.model_copy(update={"id": "different_id"})
-    mock_ytdlp_wrapper.fetch_metadata.return_value = (MOCK_FEED, [different_download])
-
-    result = await downloader._check_and_update_metadata(
-        sample_download, sample_feed_config
-    )
-
-    # Verify the database was NOT updated
-    mock_download_db.upsert_download.assert_not_called()
-
-    # Verify the original download is returned
-    assert result == sample_download
-
-
 # --- Tests for _process_single_download ---
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
 @patch.object(Downloader, "_handle_download_success", new_callable=AsyncMock)
-@patch.object(Downloader, "_check_and_update_metadata", new_callable=AsyncMock)
 async def test_process_single_download_success_flow(
-    mock_check_metadata: AsyncMock,
     mock_handle_success: AsyncMock,
     downloader: Downloader,
     mock_ytdlp_wrapper: MagicMock,
@@ -362,13 +237,8 @@ async def test_process_single_download_success_flow(
     """Tests the success path of _process_single_download."""
     downloaded_path = Path("/final/video.mp4")
     mock_ytdlp_wrapper.download_media_to_file.return_value = downloaded_path
-    mock_check_metadata.return_value = sample_download  # Return unchanged
 
     await downloader._process_single_download(sample_download, sample_feed_config)
-
-    mock_check_metadata.assert_called_once_with(
-        sample_download, sample_feed_config, None
-    )
 
     mock_ytdlp_wrapper.download_media_to_file.assert_called_once_with(
         sample_download,
@@ -380,9 +250,7 @@ async def test_process_single_download_success_flow(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-@patch.object(Downloader, "_check_and_update_metadata", new_callable=AsyncMock)
 async def test_process_single_download_ytdlp_failure_raises_downloader_error(
-    mock_check_metadata: AsyncMock,
     downloader: Downloader,
     mock_ytdlp_wrapper: MagicMock,
     sample_download: Download,
@@ -393,7 +261,6 @@ async def test_process_single_download_ytdlp_failure_raises_downloader_error(
         "yt-dlp failed", feed_id="test_feed", download_id="test_dl_id_1"
     )
     mock_ytdlp_wrapper.download_media_to_file.side_effect = original_ytdlp_error
-    mock_check_metadata.return_value = sample_download  # Return unchanged
 
     with pytest.raises(DownloadError) as exc_info:
         await downloader._process_single_download(sample_download, sample_feed_config)
@@ -401,41 +268,6 @@ async def test_process_single_download_ytdlp_failure_raises_downloader_error(
     assert exc_info.value.feed_id == sample_download.feed_id
     assert exc_info.value.download_id == sample_download.id
     assert exc_info.value.__cause__ is original_ytdlp_error
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-@patch.object(Downloader, "_handle_download_success", new_callable=AsyncMock)
-@patch.object(Downloader, "_check_and_update_metadata", new_callable=AsyncMock)
-async def test_process_single_download_calls_check_metadata(
-    mock_check_metadata: AsyncMock,
-    mock_handle_success: AsyncMock,
-    downloader: Downloader,
-    mock_ytdlp_wrapper: MagicMock,
-    sample_download: Download,
-    sample_feed_config: FeedConfig,
-):
-    """Tests that _process_single_download calls _check_and_update_metadata before downloading."""
-    # Setup mocks
-    updated_download = sample_download.model_copy(update={"title": "Updated Title"})
-    downloaded_path = Path("/final/video.mp4")
-    mock_ytdlp_wrapper.download_media_to_file.return_value = downloaded_path
-    mock_check_metadata.return_value = updated_download
-
-    await downloader._process_single_download(sample_download, sample_feed_config)
-
-    # Verify metadata check was called first
-    mock_check_metadata.assert_called_once_with(
-        sample_download, sample_feed_config, None
-    )
-
-    # Verify download was called with the updated download
-    mock_ytdlp_wrapper.download_media_to_file.assert_called_once_with(
-        updated_download,
-        sample_feed_config.yt_args,
-        cookies_path=None,
-    )
-    mock_handle_success.assert_called_once_with(updated_download, downloaded_path)
 
 
 # --- Tests for download_queued ---

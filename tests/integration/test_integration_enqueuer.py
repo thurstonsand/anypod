@@ -39,19 +39,28 @@ MAX_ERRORS = 3
 
 # Same CC-BY licensed URLs as YtdlpWrapper tests for consistency
 TEST_URLS_SINGLE_AND_PLAYLIST = [
-    ("video_short_link", BIG_BUCK_BUNNY_SHORT_URL),
+    ("video_short_link", BIG_BUCK_BUNNY_SHORT_URL, SourceType.SINGLE_VIDEO, None),
     (
         "video_in_playlist_link",
         f"{BIG_BUCK_BUNNY_URL}&list=PLt5yu3-wZAlSLRHmI1qNm0wjyVNWw1pCU",
+        SourceType.PLAYLIST,
+        None,
     ),
 ]
 
 TEST_URLS_PARAMS = [
     *TEST_URLS_SINGLE_AND_PLAYLIST,
-    ("channel_videos_tab", COLETDJNZ_CHANNEL_VIDEOS),
+    (
+        "channel_videos_tab",
+        COLETDJNZ_CHANNEL_VIDEOS,
+        SourceType.PLAYLIST,
+        COLETDJNZ_CHANNEL_VIDEOS,
+    ),
     (
         "playlist",
         "https://youtube.com/playlist?list=PLt5yu3-wZAlSLRHmI1qNm0wjyVNWw1pCU",
+        SourceType.PLAYLIST,
+        None,
     ),
 ]
 
@@ -66,13 +75,20 @@ SAMPLE_FEED_CONFIG = FeedConfig(
 )
 
 
-async def create_test_feed(feed_db: FeedDatabase, feed_id: str, url: str) -> Feed:
-    """Create a test feed in the database."""
+async def create_test_feed(
+    feed_db: FeedDatabase,
+    feed_id: str,
+    url: str,
+    source_type: SourceType,
+    resolved_url: str | None = None,
+) -> Feed:
+    """Create a test feed in the database with specified properties."""
     feed = Feed(
         id=feed_id,
         is_enabled=True,
-        source_type=SourceType.UNKNOWN,  # Will be determined by ytdlp
-        source_url="https://example.com/test",
+        source_type=source_type,
+        source_url=url,
+        resolved_url=resolved_url,
         last_successful_sync=datetime.min.replace(tzinfo=UTC),
         title=f"Test Feed {feed_id}",
     )
@@ -82,13 +98,15 @@ async def create_test_feed(feed_db: FeedDatabase, feed_id: str, url: str) -> Fee
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-@pytest.mark.parametrize("url_type, url", TEST_URLS_PARAMS)
+@pytest.mark.parametrize("url_type, url, source_type, resolved_url", TEST_URLS_PARAMS)
 async def test_enqueue_new_downloads_success(
     enqueuer: Enqueuer,
     feed_db: FeedDatabase,
     download_db: DownloadDatabase,
     url_type: str,
     url: str,
+    source_type: SourceType,
+    resolved_url: str | None,
     cookies_path: Path | None,
 ):
     """Tests successful enqueueing of new downloads for various URL types.
@@ -99,7 +117,7 @@ async def test_enqueue_new_downloads_success(
     feed_id = f"test_feed_{url_type}"
 
     # Create feed in database
-    await create_test_feed(feed_db, feed_id, url)
+    await create_test_feed(feed_db, feed_id, url, source_type, resolved_url)
 
     feed_config = FeedConfig(
         url=url,
@@ -171,7 +189,7 @@ async def test_enqueue_new_downloads_success(
         assert updated_feed.title == "cole-dlp-test-acc - Videos"
         assert updated_feed.author == "cole-dlp-test-acc"
         assert updated_feed.description == "test description"
-        assert updated_feed.image_url is None
+        assert updated_feed.image_url is not None
         assert updated_feed.subtitle is None
         assert updated_feed.language is None
         assert updated_feed.category is None
@@ -182,7 +200,7 @@ async def test_enqueue_new_downloads_success(
         assert updated_feed.title == "single video playlist"
         assert updated_feed.author == "cole-dlp-test-acc"
         assert updated_feed.description == ""
-        assert updated_feed.image_url is None
+        assert updated_feed.image_url is not None
         assert updated_feed.subtitle is None
         assert updated_feed.language is None
         assert updated_feed.category is None
@@ -190,21 +208,33 @@ async def test_enqueue_new_downloads_success(
 
     # Common assertions for all URL types
     assert updated_feed.is_enabled is True
-    assert (
-        updated_feed.source_type == SourceType.UNKNOWN
-    )  # This is expected since source_type is not being set by the enqueuer
+    if url_type == "video_short_link":
+        assert updated_feed.source_type == SourceType.SINGLE_VIDEO
+    else:
+        assert updated_feed.source_type == SourceType.PLAYLIST
 
 
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_enqueue_new_downloads_invalid_url(
-    enqueuer: Enqueuer, feed_db: FeedDatabase, cookies_path: Path | None
+    enqueuer: Enqueuer,
+    feed_db: FeedDatabase,
+    cookies_path: Path | None,
 ):
     """Tests that enqueueing fails gracefully for invalid URLs."""
     feed_id = "test_invalid_feed"
 
-    # Create feed in database
-    await create_test_feed(feed_db, feed_id, INVALID_VIDEO_URL)
+    # Create feed in database with invalid URL
+    feed = Feed(
+        id=feed_id,
+        is_enabled=True,
+        source_type=SourceType.UNKNOWN,
+        source_url=INVALID_VIDEO_URL,
+        resolved_url=INVALID_VIDEO_URL,
+        last_successful_sync=datetime.min.replace(tzinfo=UTC),
+        title=f"Test Feed {feed_id}",
+    )
+    await feed_db.upsert_feed(feed)
 
     feed_config = FeedConfig(
         url=INVALID_VIDEO_URL,
@@ -243,7 +273,13 @@ async def test_enqueue_new_downloads_with_date_filter(
     feed_id = "test_date_filter"
 
     # Create feed in database
-    await create_test_feed(feed_db, feed_id, COLETDJNZ_CHANNEL_VIDEOS)
+    await create_test_feed(
+        feed_db,
+        feed_id,
+        COLETDJNZ_CHANNEL_VIDEOS,
+        SourceType.PLAYLIST,
+        COLETDJNZ_CHANNEL_VIDEOS,
+    )
 
     feed_config = FeedConfig(
         url=COLETDJNZ_CHANNEL_VIDEOS,
@@ -287,7 +323,9 @@ async def test_enqueue_handles_existing_upcoming_downloads(
     feed_id = "test_upcoming_feed"
 
     # Create feed in database
-    await create_test_feed(feed_db, feed_id, SAMPLE_FEED_CONFIG.url)
+    await create_test_feed(
+        feed_db, feed_id, SAMPLE_FEED_CONFIG.url, SourceType.SINGLE_VIDEO, None
+    )
 
     feed_config = SAMPLE_FEED_CONFIG
 
@@ -361,7 +399,9 @@ async def test_enqueue_handles_existing_downloaded_items(
     feed_id = "test_downloaded_ignored_feed"
 
     # Create feed in database
-    await create_test_feed(feed_db, feed_id, SAMPLE_FEED_CONFIG.url)
+    await create_test_feed(
+        feed_db, feed_id, SAMPLE_FEED_CONFIG.url, SourceType.SINGLE_VIDEO, None
+    )
 
     feed_config = SAMPLE_FEED_CONFIG
 
@@ -423,7 +463,9 @@ async def test_enqueue_multiple_runs_idempotent(
     feed_id = "test_idempotent_feed"
 
     # Create feed in database
-    await create_test_feed(feed_db, feed_id, SAMPLE_FEED_CONFIG.url)
+    await create_test_feed(
+        feed_db, feed_id, SAMPLE_FEED_CONFIG.url, SourceType.SINGLE_VIDEO, None
+    )
 
     feed_config = SAMPLE_FEED_CONFIG
     fetch_since_date = datetime.min.replace(tzinfo=UTC)
@@ -476,7 +518,9 @@ async def test_enqueue_with_impossible_filter(
     feed_id = "test_impossible_filter"
 
     # Create feed in database
-    await create_test_feed(feed_db, feed_id, BIG_BUCK_BUNNY_SHORT_URL)
+    await create_test_feed(
+        feed_db, feed_id, BIG_BUCK_BUNNY_SHORT_URL, SourceType.SINGLE_VIDEO, None
+    )
 
     feed_config = FeedConfig(
         url=BIG_BUCK_BUNNY_SHORT_URL,
@@ -520,7 +564,9 @@ async def test_enqueue_feed_metadata_synchronization_with_overrides(
     feed_id = "test_metadata_sync"
 
     # Create feed in database
-    await create_test_feed(feed_db, feed_id, BIG_BUCK_BUNNY_SHORT_URL)
+    await create_test_feed(
+        feed_db, feed_id, BIG_BUCK_BUNNY_SHORT_URL, SourceType.SINGLE_VIDEO, None
+    )
 
     # Create feed config with metadata overrides
     metadata_overrides = FeedMetadataOverrides(  # type: ignore # quirk of pydantic
@@ -587,7 +633,9 @@ async def test_enqueue_feed_metadata_partial_overrides(
     feed_id = "test_partial_metadata_sync"
 
     # Create feed in database
-    await create_test_feed(feed_db, feed_id, BIG_BUCK_BUNNY_SHORT_URL)
+    await create_test_feed(
+        feed_db, feed_id, BIG_BUCK_BUNNY_SHORT_URL, SourceType.SINGLE_VIDEO, None
+    )
 
     # Create feed config with only some metadata overrides
     metadata_overrides = FeedMetadataOverrides(  # type: ignore # quirk of pydantic

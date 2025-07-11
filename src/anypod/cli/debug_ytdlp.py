@@ -1,229 +1,143 @@
 """Debug mode for testing yt-dlp functionality directly.
 
-This module provides functionality to test yt-dlp operations in isolation,
-loading configuration from a YAML file and fetching metadata or downloading
-media based on the configuration.
+This module provides functionality to test yt-dlp operations in isolation.
 """
 
 import logging
-from pathlib import Path
-import sys
 
-import yaml
-
+from ..config import AppSettings
 from ..db.types import DownloadStatus
 from ..exceptions import YtdlpApiError
 from ..path_manager import PathManager
 from ..ytdlp_wrapper import YtdlpWrapper
 
-# Import Download for potential type hinting if we pretty print, though not strictly needed if just printing raw output.
-# from ..db import Download
-
 logger = logging.getLogger(__name__)
 
 
-async def run_debug_ytdlp_mode(debug_yaml_path: Path, paths: PathManager) -> None:
-    """Load feed URLs from YAML and fetch metadata using yt-dlp.
+async def run_debug_ytdlp_mode(settings: AppSettings, paths: PathManager) -> None:
+    """Process feeds in yt-dlp debug mode to test metadata fetching and downloading.
 
-    Loads feed URLs and yt-dlp CLI args from a YAML file and fetches metadata.
-    Optionally downloads media if enabled in the configuration.
+    Tests yt-dlp metadata fetching and downloading for each configured feed.
 
     Args:
-        debug_yaml_path: Path to the YAML configuration file.
+        settings: Application settings containing feed configurations.
         paths: PathManager instance containing data and temporary directories.
     """
-    logger.debug(
-        "Entered yt-dlp debug mode execution.",
-        extra={"debug_yaml_path": str(debug_yaml_path)},
-    )
-
-    if not debug_yaml_path.exists():
-        logger.critical(
-            "Debug YAML file not found at specified path, cannot proceed with debug mode. Exiting.",
-            extra={"config_path": str(debug_yaml_path)},
-        )
-        sys.exit(1)
-
-    try:
-        with debug_yaml_path.open("r") as f:
-            config = yaml.safe_load(f)
-    except Exception:
-        logger.critical(
-            "Failed to load or parse debug YAML file.",
-            exc_info=True,
-            extra={"config_path": str(debug_yaml_path)},
-        )
-        sys.exit(1)
-
-    if config is None:  # Handle case where YAML is valid but empty or only comments
-        logger.critical(
-            "Debug YAML file is empty or invalid (parsed as None). Cannot proceed.",
-            extra={"config_path": str(debug_yaml_path)},
-        )
-        sys.exit(1)
-
-    cli_args: list[str] = config.get("cli_args", [])
-    feed_urls_dict: dict[str, str] = config.get("feeds", [])
-    should_download: bool = config.get("download", False)
-
-    if not feed_urls_dict:
-        logger.info(
-            "No feed URLs found in debug configuration. Nothing to process.",
-            extra={"config_path": str(debug_yaml_path)},
-        )
-        return
-
-    ytdlp_wrapper = YtdlpWrapper(paths)
-    logger.debug("YtdlpWrapper initialized for debug mode.")
-
     logger.info(
         "Processing feeds in yt-dlp debug mode.",
         extra={
-            "feed_count": len(feed_urls_dict),
-            "cli_args_used": cli_args if cli_args else "default_wrapper_options",
-            "config_path": str(debug_yaml_path),
+            "feed_count": len(settings.feeds),
+            "config_path": str(settings.config_file),
         },
     )
 
-    # Define download directory relative to project root (assuming script is run from root or similar)
-    project_root = (
-        Path(__file__).resolve().parents[3]
-    )  # Adjust index based on actual structure
-    download_dir = project_root / "debug_downloads"
+    ytdlp_wrapper = YtdlpWrapper(paths)
 
-    if should_download:
-        try:
-            download_dir.mkdir(parents=True, exist_ok=True)
-            logger.info(
-                "Downloading is enabled.",
-                extra={"download_directory": str(download_dir)},
-            )
-        except OSError:
-            logger.critical(
-                "Failed to create download directory.",
-                exc_info=True,
-                extra={"directory_path": str(download_dir)},
-            )
-            sys.exit(1)
-    else:
-        logger.info("Downloading is disabled. Fetching metadata only.")
-
-    for feed_id, url in feed_urls_dict.items():
-        # Create a simple feed name for context. This is not a stored feed_id from a DB.
+    for feed_id, feed_config in settings.feeds.items():
         logger.info(
             "Fetching metadata for feed.",
-            extra={"feed_url": url, "feed_id": feed_id},
+            extra={"feed_url": feed_config.url, "feed_id": feed_id},
         )
         try:
             logger.debug(
                 "Calling YtdlpWrapper.fetch_metadata.",
                 extra={
                     "feed_id": feed_id,
-                    "feed_url": url,
-                    "yt_cli_args": cli_args,
+                    "feed_url": feed_config.url,
+                    "yt_cli_args": feed_config.yt_args,
                 },
             )
+            source_type, resolved_url = await ytdlp_wrapper.discover_feed_properties(
+                feed_id, feed_config.url, cookies_path=settings.cookies_path
+            )
+
             feed, downloads = await ytdlp_wrapper.fetch_metadata(
                 feed_id=feed_id,
-                url=url,
-                user_yt_cli_args=cli_args,
+                source_type=source_type,
+                source_url=feed_config.url,
+                resolved_url=resolved_url,
+                user_yt_cli_args=feed_config.yt_args,
+                fetch_since_date=feed_config.since,
+                keep_last=feed_config.keep_last,
+                cookies_path=settings.cookies_path,
             )
 
             if downloads:
                 logger.info(
-                    "Successfully fetched downloads for feed.",
+                    "Metadata fetch successful.",
                     extra={
-                        "download_count": len(downloads),
-                        "feed_url": url,
+                        "feed_id": feed_id,
                         "feed_title": feed.title,
-                        "feed_author": feed.author,
+                        "download_count": len(downloads),
                     },
                 )
-                for download in downloads:
-                    if should_download:
-                        # Only attempt to download if the download is actually downloadable (not upcoming/live)
-                        if download.status == DownloadStatus.QUEUED:
-                            logger.info(
-                                "Attempting to download.",
-                                extra={
-                                    "feed_url": url,
-                                    "feed_id": feed_id,
-                                    "download_title": download.title,
-                                    "download_id": download.id,
-                                },
+
+                downloadable_count = 0
+                for i, download in enumerate(downloads[:5]):  # Limit to first 5
+                    status_str = (
+                        "VOD (ready to download)"
+                        if download.status == DownloadStatus.QUEUED
+                        else "Live/Upcoming"
+                    )
+                    logger.info(
+                        f"  {i + 1}. ID: {download.id}, Title: {download.title}, "
+                        f"Status: {status_str}, Ext: {download.ext}, "
+                        f"Duration: {download.duration}s, Published: {download.published.isoformat()}"
+                    )
+
+                    # Try to download if it's ready (VOD)
+                    if download.status == DownloadStatus.QUEUED:
+                        try:
+                            logger.info(f"Attempting to download: {download.title}")
+                            download_path = await ytdlp_wrapper.download_media_to_file(
+                                download,
+                                feed_config.yt_args,
+                                cookies_path=settings.cookies_path,
                             )
-                            try:
-                                file_path = await ytdlp_wrapper.download_media_to_file(
-                                    download=download,
-                                    user_yt_cli_args=cli_args,
-                                )
-                                logger.info(
-                                    "Successfully downloaded.",
-                                    extra={
-                                        "feed_url": url,
-                                        "feed_id": feed_id,
-                                        "download_title": download.title,
-                                        "download_id": download.id,
-                                        "file_path": file_path,
-                                    },
-                                )
-                            except YtdlpApiError as e:
-                                logger.error(
-                                    "Failed to download.",
-                                    exc_info=e,
-                                    extra={
-                                        "feed_url": url,
-                                        "feed_id": feed_id,
-                                        "download_title": download.title,
-                                        "download_id": download.id,
-                                    },
-                                )
-                        else:
-                            logger.info(
-                                "Skipping download due to status.",
-                                extra={
-                                    "feed_url": url,
-                                    "feed_id": feed_id,
-                                    "download_title": download.title,
-                                    "download_id": download.id,
-                                    "download_status": download.status,
-                                },
+                            logger.info(f"Download successful: {download_path}")
+                            downloadable_count += 1
+                        except YtdlpApiError as download_error:
+                            logger.warning(
+                                f"Download failed for {download.title}: {download_error}",
+                                extra={"download_id": download.id},
                             )
-                    else:
-                        logger.info(
-                            "Fetched download details.",
-                            extra={
-                                "feed_url": url,
-                                "feed_id": feed_id,
-                                "download_title": download.title,
-                                "download_id": download.id,
-                                "download_source_url": download.source_url,
-                                "download_published": download.published.isoformat()
-                                if download.published
-                                else "N/A",
-                                "download_duration_s": download.duration,
-                                "download_ext": download.ext,
-                                "download_thumbnail": download.thumbnail or "N/A",
-                                "download_status": download.status,
-                                "download_quality_info": download.quality_info or "N/A",
-                            },
-                        )
-            else:
+                        except Exception as download_error:
+                            logger.warning(
+                                f"Unexpected download error for {download.title}: {download_error}",
+                                extra={"download_id": download.id},
+                            )
+
+                if len(downloads) > 5:
+                    logger.info(f"  ... and {len(downloads) - 5} more downloads.")
+
                 logger.info(
-                    "No downloads found or parsed for feed.",
-                    extra={"feed_url": url, "feed_id": feed_id},
+                    f"Successfully downloaded {downloadable_count} out of {min(5, len(downloads))} attempted downloads."
                 )
-        except RuntimeError:
+
+            else:
+                logger.warning(
+                    "No downloads found in feed metadata.",
+                    extra={"feed_id": feed_id},
+                )
+
+        except YtdlpApiError as e:
             logger.error(
-                "Error processing feed. See application logs for details.",
-                exc_info=True,
-                extra={"feed_url": url, "feed_id": feed_id},
+                "yt-dlp failed to extract metadata for feed.",
+                extra={
+                    "feed_id": feed_id,
+                    "feed_url": feed_config.url,
+                    "yt_cli_args": feed_config.yt_args,
+                },
+                exc_info=e,
             )
-        except Exception:
+        except Exception as e:
             logger.error(
                 "Unexpected error processing feed. See application logs for details.",
-                exc_info=True,
-                extra={"feed_url": url, "feed_id": feed_id},
+                exc_info=e,
+                extra={
+                    "feed_url": feed_config.url,
+                    "feed_id": feed_id,
+                },
             )
 
     logger.info("Debug mode processing complete.")

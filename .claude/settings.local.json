@@ -19,7 +19,8 @@
       "mcp__ide__getDiagnostics",
       "Bash(sqlite3:*)",
       "Bash(alembic:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(jq:*)"
     ],
     "deny": []
   }

@@ -77,7 +77,10 @@ async def _init(
     # Run state reconciliation
     logger.debug("Running state reconciliation.")
     state_reconciler = StateReconciler(
-        feed_db=feed_db, download_db=download_db, pruner=pruner
+        feed_db=feed_db,
+        download_db=download_db,
+        ytdlp_wrapper=ytdlp_wrapper,
+        pruner=pruner,
     )
 
     try:

@@ -10,25 +10,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Protocol
 
-from ..db.types import Download, Feed
-from .core import YtdlpArgs, YtdlpInfo
-
-
-class ReferenceType(Enum):
-    """Represent the type of reference being requested.
-
-    Indicates whether the URL points to a single item, a collection
-    of items, or an unknown reference type that requires special handling.
-    """
-
-    SINGLE = "single"
-    CHANNEL = "channel"  # For channel videos tab or main channel pages
-    COLLECTION = "collection"  # For playlists, other channel tabs, etc.
-    UNKNOWN_RESOLVED_URL = "unknown_resolved_url"
-    UNKNOWN_DIRECT_FETCH = "unknown_direct_fetch"
-
-    def __str__(self) -> str:
-        return self.value
+from ..db.types import Download, Feed, SourceType
+from .core import YtdlpInfo
 
 
 class FetchPurpose(Enum):
@@ -38,7 +21,6 @@ class FetchPurpose(Enum):
     types of yt-dlp operations.
     """
 
-    DISCOVERY = "discovery"
     METADATA_FETCH = "metadata_fetch"
     MEDIA_DOWNLOAD = "media_download"
 
@@ -54,26 +36,12 @@ class SourceHandlerBase(Protocol):
     and metadata parsing into Download objects.
     """
 
-    def set_source_specific_ytdlp_options(
-        self, args: YtdlpArgs, purpose: FetchPurpose
-    ) -> YtdlpArgs:
-        """Apply source-specific CLI options to yt-dlp arguments.
-
-        Args:
-            args: YtdlpArgs object to modify with source-specific options.
-            purpose: The purpose of the fetch operation.
-
-        Returns:
-            Modified YtdlpArgs object with source-specific options applied.
-        """
-        ...
-
     async def determine_fetch_strategy(
         self,
         feed_id: str,
         initial_url: str,
         cookies_path: Path | None = None,
-    ) -> tuple[str | None, ReferenceType]:
+    ) -> tuple[str | None, SourceType]:
         """Classify the initial URL and determine the final URL to fetch downloads from.
 
         Args:
@@ -82,7 +50,7 @@ class SourceHandlerBase(Protocol):
             cookies_path: Path to cookies.txt file for authentication, or None if not needed.
 
         Returns:
-            Tuple of (final_url, reference_type).
+            Tuple of (final_url, source_type).
         """
         ...
 
@@ -90,7 +58,7 @@ class SourceHandlerBase(Protocol):
         self,
         feed_id: str,
         ytdlp_info: YtdlpInfo,
-        ref_type: ReferenceType,
+        source_type: SourceType,
         source_url: str,
         fetch_until_date: datetime | None = None,
     ) -> Feed:
@@ -99,7 +67,7 @@ class SourceHandlerBase(Protocol):
         Args:
             feed_id: The feed identifier.
             ytdlp_info: The yt-dlp metadata information.
-            ref_type: The type of reference being parsed.
+            source_type: The type of source being parsed.
             source_url: The original source URL for this feed.
             fetch_until_date: The upper bound date for the fetch operation, used for setting last_successful_sync. Optional.
 
@@ -113,7 +81,7 @@ class SourceHandlerBase(Protocol):
         feed_id: str,
         ytdlp_info: YtdlpInfo,
         source_identifier: str,
-        ref_type: ReferenceType,
+        source_type: SourceType,
     ) -> list[Download]:
         """Parse the full metadata dictionary from yt-dlp into Download objects.
 
@@ -121,7 +89,7 @@ class SourceHandlerBase(Protocol):
             feed_id: The feed identifier.
             ytdlp_info: The yt-dlp metadata information.
             source_identifier: Identifier for the source being parsed.
-            ref_type: The type of reference being parsed.
+            source_type: The type of source being parsed.
 
         Returns:
             List of Download objects parsed from the metadata.

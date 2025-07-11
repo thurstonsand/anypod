@@ -6,15 +6,17 @@ processing all configured feeds and reporting on the results.
 
 from datetime import UTC, datetime
 import logging
-from pathlib import Path
 
 from ..config import AppSettings
 from ..data_coordinator.enqueuer import Enqueuer
+from ..data_coordinator.pruner import Pruner
 from ..db import DownloadDatabase, FeedDatabase
 from ..db.sqlalchemy_core import SqlalchemyCore
 from ..db.types import Download, DownloadStatus
-from ..exceptions import DatabaseOperationError, EnqueueError
+from ..exceptions import DatabaseOperationError, EnqueueError, StateReconciliationError
+from ..file_manager import FileManager
 from ..path_manager import PathManager
+from ..state_reconciler import StateReconciler
 from ..ytdlp_wrapper import YtdlpWrapper
 
 logger = logging.getLogger(__name__)
@@ -22,7 +24,6 @@ logger = logging.getLogger(__name__)
 
 async def run_debug_enqueuer_mode(
     settings: AppSettings,
-    debug_db_dir: Path,
     paths: PathManager,
 ) -> None:
     """Run the Enqueuer in debug mode to process feed metadata.
@@ -33,22 +34,25 @@ async def run_debug_enqueuer_mode(
 
     Args:
         settings: Application settings containing feed configurations.
-        debug_db_dir: Path to the database directory.
         paths: PathManager instance containing data and temporary directories.
     """
+    db_dir = await paths.db_dir()
     logger.info(
         "Initializing Anypod in Enqueuer debug mode.",
         extra={
             "config_file": str(settings.config_file),
-            "debug_db_dir": str(debug_db_dir.resolve()),
+            "db_dir": str(db_dir.resolve()),
         },
     )
 
     try:
-        db_core = SqlalchemyCore(debug_db_dir)
+        db_core = SqlalchemyCore(db_dir)
         feed_db = FeedDatabase(db_core)
         download_db = DownloadDatabase(db_core)
+        file_manager = FileManager(paths)
         ytdlp_wrapper = YtdlpWrapper(paths)
+        pruner = Pruner(feed_db, download_db, file_manager)
+        state_reconciler = StateReconciler(feed_db, download_db, ytdlp_wrapper, pruner)
         enqueuer = Enqueuer(feed_db, download_db, ytdlp_wrapper)
     except Exception as e:
         logger.critical(
@@ -60,6 +64,19 @@ async def run_debug_enqueuer_mode(
 
     if not settings.feeds:
         logger.info("No feeds configured. Enqueuer debug mode has nothing to process.")
+        await db_core.close()
+        return
+
+    # Run state reconciliation first to ensure feeds exist in database
+    logger.info("Running state reconciliation to set up feeds in database.")
+    try:
+        ready_feed_ids = await state_reconciler.reconcile_startup_state(settings.feeds)
+        logger.info(
+            f"State reconciliation completed. {len(ready_feed_ids)} feeds ready for processing.",
+            extra={"ready_feed_count": len(ready_feed_ids)},
+        )
+    except StateReconciliationError as e:
+        logger.error("Failed to reconcile state.", exc_info=e)
         await db_core.close()
         return
 

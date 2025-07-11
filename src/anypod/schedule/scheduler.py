@@ -5,6 +5,7 @@ of periodic feed processing jobs using APScheduler with async support,
 graceful error handling, and proper lifecycle management.
 """
 
+import asyncio
 from datetime import datetime
 import logging
 import time
@@ -27,7 +28,11 @@ class FeedScheduler:
 
     Attributes:
         _scheduler: APSchedulerCore instance.
+        _global_feed_semaphore: Global semaphore to limit concurrent feed processing.
     """
+
+    # Global semaphore to ensure only one feed processes at a time across all jobs
+    _global_feed_semaphore = asyncio.Semaphore(1)
 
     def __init__(
         self,
@@ -166,8 +171,15 @@ class FeedScheduler:
             },
         )
 
-        # Execute the main feed processing logic
-        return await data_coordinator.process_feed(feed_id, feed_config)
+        # Execute the main feed processing logic with global rate limiting
+        async with FeedScheduler._global_feed_semaphore:
+            logger.debug(
+                "Acquired global feed processing semaphore.",
+                extra={
+                    "feed_id": feed_id,
+                },
+            )
+            return await data_coordinator.process_feed(feed_id, feed_config)
 
     @staticmethod
     def _job_completed_callback(

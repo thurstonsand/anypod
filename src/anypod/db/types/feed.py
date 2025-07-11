@@ -91,6 +91,7 @@ class Feed(SQLModel, table=True):
 
     source_type: SourceType = Field(sa_column=Column(Enum(SourceType), nullable=False))
     source_url: str
+    resolved_url: str | None = None
 
     # ----------------------------------------------------- time keeping ----
     last_successful_sync: datetime = Field(

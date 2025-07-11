@@ -6,19 +6,14 @@ based on configuration settings.
 """
 
 import logging
-from pathlib import Path
 
 from ..config import AppSettings, DebugMode
-from ..exceptions import DatabaseOperationError
 from ..logging_config import setup_logging
 from ..path_manager import PathManager
 from .debug_downloader import run_debug_downloader_mode
 from .debug_enqueuer import run_debug_enqueuer_mode
 from .debug_ytdlp import run_debug_ytdlp_mode
 from .default import default
-
-DEBUG_DB_DIR = Path.cwd()
-DEBUG_DOWNLOADS_DIR = Path.cwd() / "debug_downloads"
 
 
 async def main_cli():
@@ -57,21 +52,8 @@ async def main_cli():
     # Set up directories and paths based on mode
     match settings.debug_mode:
         case DebugMode.YTDLP | DebugMode.ENQUEUER | DebugMode.DOWNLOADER:
-            # Debug mode: use debug directories
-            try:
-                DEBUG_DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
-            except OSError as e:
-                logger.error(
-                    "Failed to create debug directories.",
-                    extra={"debug_downloads_dir": str(DEBUG_DOWNLOADS_DIR)},
-                    exc_info=e,
-                )
-                raise DatabaseOperationError(
-                    "Failed to create debug directories."
-                ) from e
-
             paths = PathManager(
-                base_data_dir=DEBUG_DOWNLOADS_DIR,
+                base_data_dir=settings.data_dir,
                 base_url=settings.base_url,
             )
 
@@ -83,7 +65,7 @@ async def main_cli():
                         extra={"debug_config_file_path": str(settings.config_file)},
                     )
                     await run_debug_ytdlp_mode(
-                        settings.config_file,
+                        settings,
                         paths,
                     )
                 case DebugMode.ENQUEUER:
@@ -93,7 +75,6 @@ async def main_cli():
                     )
                     await run_debug_enqueuer_mode(
                         settings,
-                        DEBUG_DB_DIR,
                         paths,
                     )
                 case DebugMode.DOWNLOADER:
@@ -103,7 +84,6 @@ async def main_cli():
                     )
                     await run_debug_downloader_mode(
                         settings,
-                        DEBUG_DB_DIR,
                         paths,
                     )
 
