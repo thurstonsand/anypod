@@ -3,21 +3,9 @@ name: Claude Code Review
 on:
   pull_request:
     types: [opened, synchronize]
-    # Optional: Only run on specific file changes
-    # paths:
-    #   - "src/**/*.ts"
-    #   - "src/**/*.tsx"
-    #   - "src/**/*.js"
-    #   - "src/**/*.jsx"
 
 jobs:
   claude-review:
-    # Optional: Filter by PR author
-    # if: |
-    #   github.event.pull_request.user.login == 'external-contributor' ||
-    #   github.event.pull_request.user.login == 'new-developer' ||
-    #   github.event.pull_request.author_association == 'FIRST_TIME_CONTRIBUTOR'
-
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -37,9 +25,6 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 
-          # Optional: Specify model (defaults to Claude Sonnet 4, uncomment for Claude Opus 4)
-          # model: "claude-opus-4-20250514"
-
           # Direct prompt for automated review (no @claude mention needed)
           direct_prompt: |
             Please review this pull request and provide feedback on:
@@ -48,33 +33,12 @@ jobs:
             - Performance considerations
             - Security concerns
             - Test coverage
+            - Documentation (DESIGN_DOC.md, CLAUDE.md, tests/CLAUDE.md), but keep updates at the same level of abstraction as what is currently present in these files -- do NOT add unnecessary or out-of-scope details
 
-            Be constructive and helpful in your feedback.
-            Follow the project's coding standards in CLAUDE.md.
-            For tests, follow the project's testing standards in tests/CLAUDE.md.
-            Use uv run/uvx to run commands.
+            - Be constructive and helpful in your feedback
+            - Follow the project's coding standards in CLAUDE.md
+            - For tests, follow the project's testing standards in tests/CLAUDE.md
+            - Use uv run/uvx to run commands
 
-          # Optional: Use sticky comments to make Claude reuse the same comment on subsequent pushes to the same PR
           use_sticky_comment: true
-
-          # Optional: Customize review based on file types
-          # direct_prompt: |
-          #   Review this PR focusing on:
-          #   - For TypeScript files: Type safety and proper interface usage
-          #   - For API endpoints: Security, input validation, and error handling
-          #   - For React components: Performance, accessibility, and best practices
-          #   - For tests: Coverage, edge cases, and test quality
-
-          # Optional: Different prompts for different authors
-          # direct_prompt: |
-          #   ${{ github.event.pull_request.author_association == 'FIRST_TIME_CONTRIBUTOR' &&
-          #   'Welcome! Please review this PR from a first-time contributor. Be encouraging and provide detailed explanations for any suggestions.' ||
-          #   'Please provide a thorough code review focusing on our coding standards and best practices.' }}
-
-          # Optional: Add specific tools for running tests or linting
           allowed_tools: "Bash(uv run:*),Bash(uvx:*),Bash(rg:*),Bash(grep:*),Bash(sqlite3:*),Bash(alembic:*)"
-
-          # Optional: Skip review for certain conditions
-          # if: |
-          #   !contains(github.event.pull_request.title, '[skip-review]') &&
-          #   !contains(github.event.pull_request.title, '[WIP]')

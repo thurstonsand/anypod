@@ -36,28 +36,13 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 
-          # This is an optional setting that allows Claude to read CI results on PRs
+          # allows Claude to read CI results on PRs
           additional_permissions: |
             actions: read
 
-          # Optional: Specify model (defaults to Claude Sonnet 4, uncomment for Claude Opus 4)
-          # model: "claude-opus-4-20250514"
-
-          # Optional: Customize the trigger phrase (default: @claude)
-          # trigger_phrase: "/claude"
-
-          # Optional: Trigger when specific user is assigned to an issue
-          # assignee_trigger: "claude-bot"
-
-          # Optional: Allow Claude to run specific commands
           allowed_tools: "Bash(uv run:*),Bash(uvx:*),Bash(rg:*),Bash(grep:*),Bash(sqlite3:*),Bash(alembic:*)"
 
-          # Optional: Add custom instructions for Claude to customize its behavior for your project
           custom_instructions: |
-            Follow the project's coding standards in CLAUDE.md.
-            For tests, follow the project's testing standards in tests/CLAUDE.md.
-            Use uv run/uvx to run commands.
-
-          # Optional: Custom environment variables for Claude
-          # claude_env: |
-          #   NODE_ENV: test
+            - Follow the project's coding standards in CLAUDE.md
+            - For tests, follow the project's testing standards in tests/CLAUDE.md
+            - Use uv run/uvx to run commands
