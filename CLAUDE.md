@@ -30,14 +30,15 @@ uv run pyright                                  # Type checking
 uv run pre-commit run --all-files               # All of the above, prefer to use this one when confirming your code is good
 
 # tool use
-uvx yt-dlp # can research/view real data from youtube videos for research. see @example_feeds.yaml for real links
+uvx yt-dlp # Can research/view real data from youtube videos for research. see @example_feeds.yaml for real links
+uvx --from ast-grep-cli sg # Whenever a search requires syntax-aware or structural matching, default to `uvx --from ast-grep-cli sg --lang python -p '<pattern>'` and avoid using text-only tools like `rg` or `grep`
 ```
 
 ## Architecture
 
 ### Core Components
 - **Configuration** (`config/`): Pydantic-based multi-source config (env vars → CLI → YAML)
-- **Database** (`db/`): SQLite with sqlite-utils wrapper `SqliteUtilsCore`, manages download state machine
+- **Database** (`db/`): SQLite with `SQLModel` and `SQLAlchemy`, manages download state machine
 - **Data Coordinator** (`data_coordinator/`): Orchestrates the download lifecycle
   - Enqueuer: Fetches metadata, identifies new items
   - Downloader: Downloads media files, manages success/failure
@@ -52,7 +53,7 @@ Single `downloads` table with status lifecycle: `UPCOMING → QUEUED → DOWNLOA
 - Critical indexes: `idx_feed_status`, `idx_feed_published`
 
 ### State Management
-Download status transitions are implemented as explicit methods, not generic updates. Always use proper state transition methods in `db/db.py`.
+Download status transitions are implemented as explicit methods, not generic updates. Always use proper state transition methods in `db/download_db.py` and `db/feed_db.py`.
 
 ## Development Notes
 
@@ -63,7 +64,7 @@ Download status transitions are implemented as explicit methods, not generic upd
 ### Code Patterns
 - Error handling: Structured exceptions with context (e.g. feed_id, download_id)
 - Logging: Structured JSON logging with proper context propagation
-- Database: Uses sqlite-utils wrapped in `SqliteUtilsCore` class, not raw SQLite
+- Database: Uses `SQLModel` and `SQLAlchemy` with a custom `SqlalchemyCore` class, not raw SQLite.
 - Currently synchronous but designed for future async conversion
 
 ### Tool Configuration
@@ -75,10 +76,11 @@ Download status transitions are implemented as explicit methods, not generic upd
 
 Whenever you add a new file, or notice a file that is missing from this list, proactively document it here.
 
+> [!note]: ignores `__init__.py` files
+
 ```
 anypod/
 ├── src/anypod/
-│   ├── __init__.py
 │   ├── __main__.py              # Entry point
 │   ├── cli/                     # CLI interface and debug modes
 │   │   ├── cli.py               # Main CLI handler
@@ -119,6 +121,11 @@ anypod/
 │   ├── schedule/                # Scheduled feed processing
 │   │   ├── apscheduler_core.py  # Type-safe APScheduler wrapper
 │   │   └── scheduler.py         # Main feed scheduler using APScheduler
+│   ├── server/                  # FastAPI HTTP server
+│   │   ├── app.py               # FastAPI app factory
+│   │   ├── dependencies.py      # FastAPI dependency providers
+│   │   └── routers/             # API routers
+│   │       └── health.py        # Health check endpoint
 │   ├── ytdlp_wrapper/           # `yt-dlp` integration
 │   │   ├── base_handler.py      # Base handler interface for different source types
 │   │   ├── youtube_handler.py   # YouTube source handler
@@ -151,7 +158,7 @@ feeds:
     url: https://www.youtube.com/@example
     yt_args: "-f worst[ext=mp4] --playlist-items 1-3"
     schedule: "0 3 * * *"
-    since: "2022-01-01T00:00:00Z"
+    since: "20220101"
 
   # Feed with full metadata overrides
   premium_podcast:
@@ -185,6 +192,8 @@ BASE_URL=https://podcasts.example.com  # Base URL for feeds/media (default: http
 DATA_DIR=/path/to/data                # Root directory for all application data (default: /data)
 CONFIG_FILE=/path/to/feeds.yaml       # Config file path (default: /config/feeds.yaml)
 COOKIE_PATH=/path/to/cookies.txt      # Optional cookies.txt file for yt-dlp authentication
+SERVER_HOST=0.0.0.0                   # HTTP server host (default: 0.0.0.0)
+SERVER_PORT=8024                      # HTTP server port (default: 8024)
 ```
 
 ## Code Style Guidelines

@@ -9,7 +9,6 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 import logging
-import mimetypes
 from pathlib import Path
 
 from ..db.types import Download, DownloadStatus, Feed, SourceType
@@ -18,13 +17,10 @@ from ..exceptions import (
     YtdlpFieldInvalidError,
     YtdlpFieldMissingError,
 )
+from ..mimetypes import mimetypes
 from .core import YtdlpArgs, YtdlpCore, YtdlpInfo
 
 logger = logging.getLogger(__name__)
-
-# Normalize common audio extensions across platforms
-mimetypes.add_type("audio/mp4", ".m4a")
-mimetypes.add_type("audio/flac", ".flac")
 
 
 class YtdlpYoutubeDataError(YtdlpDataError):

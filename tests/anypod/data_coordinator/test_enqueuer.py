@@ -192,7 +192,7 @@ async def test_synchronize_feed_metadata_handles_removed_overrides(
         author="Source Author",
         image_url="https://example.com/source.jpg",
         category=None,  # No category in source
-        explicit=None,  # No explicit flag in source
+        explicit=PodcastExplicit.NO,  # No explicit flag in source
         is_enabled=True,
         source_type=SourceType.UNKNOWN,
         source_url="https://example.com/test",
@@ -272,7 +272,7 @@ async def test_synchronize_feed_metadata_handles_partial_override_removal(
         author="Source Author",
         image_url="https://example.com/source.jpg",
         category=None,
-        explicit=None,
+        explicit=PodcastExplicit.NO,
         is_enabled=True,
         source_type=SourceType.UNKNOWN,
         source_url="https://example.com/test",
@@ -338,7 +338,7 @@ async def test_synchronize_feed_metadata_preserves_source_type_from_fetched_feed
         author=None,
         image_url=None,
         category=None,
-        explicit=None,
+        explicit=PodcastExplicit.NO,
         is_enabled=True,
         source_type=SourceType.UNKNOWN,
         source_url="https://example.com/test",
@@ -357,7 +357,7 @@ async def test_synchronize_feed_metadata_preserves_source_type_from_fetched_feed
         author="Channel Author from YouTube",
         image_url="https://yt3.googleusercontent.com/channel_image.jpg",
         category=None,
-        explicit=None,
+        explicit=PodcastExplicit.NO,
         is_enabled=True,
         source_type=SourceType.CHANNEL,
         source_url="https://example.com/test",
@@ -434,7 +434,7 @@ async def test_synchronize_feed_metadata_preserves_source_type_with_metadata_ove
         author="Source Author",
         image_url="https://example.com/source.jpg",
         category=None,
-        explicit=None,
+        explicit=PodcastExplicit.NO,
         is_enabled=True,
         source_type=SourceType.CHANNEL,  # Should be preserved
         source_url="https://example.com/test",

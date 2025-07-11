@@ -7,6 +7,7 @@ operations. Notably does not handle file creation, as that is done by yt-dlp.
 
 from collections.abc import AsyncIterator
 import logging
+from pathlib import Path
 
 import aiofiles
 import aiofiles.os
@@ -135,6 +136,7 @@ class FileManager:
                 feed_id=feed,
                 download_id=download_id,
             ) from e
+
         log_params = {
             "feed_id": feed,
             "file_path": str(file_path),
@@ -149,7 +151,16 @@ class FileManager:
             raise FileNotFoundError(
                 f"Download file not found or is not a file: {file_path}"
             )
-        logger.debug("File confirmed, opening for binary read.", extra=log_params)
+
+        return self._stream_file_chunks(file_path, feed, download_id, ext)
+
+    async def _stream_file_chunks(
+        self, file_path: Path, feed: str, download_id: str, ext: str
+    ) -> AsyncIterator[bytes]:
+        """Internal method to stream file chunks.
+
+        This is separated so that validation happens before the iterator is returned.
+        """
         try:
             async with aiofiles.open(file_path, mode="rb") as file:
                 async for chunk in file:

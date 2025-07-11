@@ -135,14 +135,8 @@ async def test_get_download_stream_success(file_manager: FileManager):
 
     save_file(file_manager, feed_id, file_name, file_content)
 
-    read_content = b"".join(
-        [
-            chunk
-            async for chunk in file_manager.get_download_stream(
-                feed_id, download_id, ext
-            )
-        ]
-    )
+    download_stream = await file_manager.get_download_stream(feed_id, download_id, ext)
+    read_content = b"".join([chunk async for chunk in download_stream])
 
     assert read_content == file_content, (
         "Streamed content does not match original content."
@@ -158,7 +152,10 @@ async def test_get_download_stream_file_not_found(file_manager: FileManager):
     ext = "mp3"
 
     with pytest.raises(FileNotFoundError):
-        async for _ in file_manager.get_download_stream(feed_id, download_id, ext):
+        download_stream = await file_manager.get_download_stream(
+            feed_id, download_id, ext
+        )
+        async for _ in download_stream:
             pass
 
 
@@ -178,7 +175,10 @@ async def test_get_download_stream_path_is_directory(
     )
 
     with pytest.raises(FileNotFoundError):
-        async for _ in file_manager.get_download_stream(feed_id, download_id, ext):
+        download_stream = await file_manager.get_download_stream(
+            feed_id, download_id, ext
+        )
+        async for _ in download_stream:
             pass
 
 
@@ -203,7 +203,10 @@ async def test_get_download_stream_file_operation_error(file_manager: FileManage
         patch("aiofiles.open", side_effect=simulated_error),
         pytest.raises(FileOperationError) as exc_info,
     ):
-        async for _ in file_manager.get_download_stream(feed_id, download_id, ext):
+        download_stream = await file_manager.get_download_stream(
+            feed_id, download_id, ext
+        )
+        async for _ in download_stream:
             pass
 
     # Verify the FileOperationError includes correct attributes and cause

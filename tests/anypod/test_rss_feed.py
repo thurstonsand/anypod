@@ -12,6 +12,7 @@ import pytest
 from anypod.config.types import (
     PodcastCategories,
     PodcastExplicit,
+    PodcastType,
 )
 from anypod.db import DownloadDatabase
 from anypod.db.types import Download, DownloadStatus, Feed, SourceType
@@ -55,11 +56,14 @@ def test_feed() -> Feed:
         source_url="https://www.youtube.com/@testchannel",
         last_successful_sync=datetime.min.replace(tzinfo=UTC),
         title=TEST_PODCAST_TITLE,
+        subtitle="A test podcast subtitle",
         description=TEST_PODCAST_DESCRIPTION,
         language="en",
         author=TEST_AUTHOR,
+        author_email="test@example.com",
         image_url="https://example.com/artwork.jpg",
         category=PodcastCategories("Technology"),
+        podcast_type=PodcastType.EPISODIC,
         explicit=PodcastExplicit.NO,
     )
 
@@ -238,6 +242,49 @@ async def test_generated_xml_structure(
     assert itunes_category is not None
     assert itunes_category.get("text") == "Technology"
 
+    itunes_subtitle = channel.find("itunes:subtitle", itunes_ns)
+    assert itunes_subtitle is not None
+    assert itunes_subtitle.text == test_feed.subtitle
+
+    itunes_type = channel.find("itunes:type", itunes_ns)
+    assert itunes_type is not None
+    assert itunes_type.text == test_feed.podcast_type.rss_str()
+
+    itunes_owner = channel.find("itunes:owner", itunes_ns)
+    assert itunes_owner is not None
+    itunes_owner_name = itunes_owner.find("itunes:name", itunes_ns)
+    assert itunes_owner_name is not None
+    assert itunes_owner_name.text == TEST_AUTHOR
+    itunes_owner_email = itunes_owner.find("itunes:email", itunes_ns)
+    assert itunes_owner_email is not None
+    assert itunes_owner_email.text == test_feed.author_email
+
+    # Verify RSS image element exists alongside iTunes image
+    rss_image = channel.find("image")
+    assert rss_image is not None
+    rss_image_url = rss_image.find("url")
+    assert rss_image_url is not None
+    assert rss_image_url.text == test_feed.image_url
+    rss_image_title = rss_image.find("title")
+    assert rss_image_title is not None
+    assert rss_image_title.text == test_feed.title
+    rss_image_link = rss_image.find("link")
+    assert rss_image_link is not None
+    assert rss_image_link.text == test_feed.source_url
+
+    # Verify RSS category exists alongside iTunes category
+    rss_category = channel.find("category")
+    assert rss_category is not None
+    test_feed_category = test_feed.category
+    assert test_feed_category is not None
+    assert rss_category.text == str(test_feed_category)
+
+    # Verify channel publication date is set to newest episode date
+    pubdate = channel.find("pubDate")
+    assert pubdate is not None and pubdate.text is not None
+    # Should be the publication date of the newest episode (video1)
+    assert "15 Jan 2023" in pubdate.text
+
     # Verify items (episodes)
     items = channel.findall("item")
     assert len(items) == 2
@@ -260,7 +307,12 @@ async def test_generated_xml_structure(
     # Verify iTunes duration
     itunes_duration = first_item.find("itunes:duration", itunes_ns)
     assert itunes_duration is not None
-    assert itunes_duration.text == "300"
+    assert itunes_duration.text == "00:05:00"  # 300 seconds = 5 minutes
+
+    # Verify iTunes episode type
+    itunes_episode_type = first_item.find("itunes:episodeType", itunes_ns)
+    assert itunes_episode_type is not None
+    assert itunes_episode_type.text == "full"
 
 
 @pytest.mark.unit
@@ -423,3 +475,54 @@ def test_feed_config_without_metadata_fails():
         FeedgenCore(paths, TEST_FEED_ID, feed_without_metadata)
 
     assert "Feed title is required when creating an RSS feed" in str(exc_info.value)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_channel_publication_date_set_to_newest_episode(
+    rss_generator: RSSFeedGenerator,
+    mock_download_db: MagicMock,
+    test_feed: Feed,
+    sample_downloads: list[Download],
+):
+    """Test that channel pubDate is set to the newest episode date."""
+    feed_id = TEST_FEED_ID
+    mock_download_db.get_downloads_by_status.return_value = sample_downloads
+
+    await rss_generator.update_feed(feed_id, test_feed)
+    xml_bytes = rss_generator.get_feed_xml(feed_id)
+
+    root = ET.fromstring(xml_bytes)
+    channel = root.find("channel")
+    assert channel is not None
+
+    # Check that pubDate is set
+    pubdate = channel.find("pubDate")
+    assert pubdate is not None
+    assert pubdate.text is not None
+    # Should be the publication date of the newest episode (video1 - Jan 15, 2023)
+    assert "15 Jan 2023" in pubdate.text
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_channel_publication_date_absent_when_no_episodes(
+    rss_generator: RSSFeedGenerator,
+    mock_download_db: MagicMock,
+    test_feed: Feed,
+):
+    """Test that channel pubDate is not set when there are no episodes."""
+    feed_id = TEST_FEED_ID
+    mock_download_db.get_downloads_by_status.return_value = []  # No episodes
+
+    await rss_generator.update_feed(feed_id, test_feed)
+    xml_bytes = rss_generator.get_feed_xml(feed_id)
+
+    root = ET.fromstring(xml_bytes)
+    channel = root.find("channel")
+    assert channel is not None
+
+    # Check that pubDate is not set when there are no episodes
+    pubdate = channel.find("pubDate")
+    # When no episodes, feedgen does not set pubDate at all
+    assert pubdate is None

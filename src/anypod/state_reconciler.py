@@ -10,6 +10,7 @@ import logging
 from typing import Any
 
 from .config import FeedConfig
+from .config.types import PodcastExplicit, PodcastType
 from .data_coordinator import Pruner
 from .db import DownloadDatabase
 from .db.feed_db import FeedDatabase
@@ -71,9 +72,13 @@ class StateReconciler:
         description = metadata.description if metadata else None
         language = metadata.language if metadata else None
         author = metadata.author if metadata else None
+        author_email = metadata.author_email if metadata else None
         image_url = metadata.image_url if metadata else None
         category = metadata.categories if metadata and metadata.categories else None
-        explicit = metadata.explicit if metadata and metadata.explicit else None
+        podcast_type = metadata.podcast_type if metadata else PodcastType.EPISODIC
+        explicit = (
+            metadata.explicit if metadata and metadata.explicit else PodcastExplicit.NO
+        )
 
         # Set initial sync timestamp to 'since' if provided, otherwise datetime.min
         initial_sync = (
@@ -119,8 +124,10 @@ class StateReconciler:
             description=description,
             language=language,
             author=author,
+            author_email=author_email,
             image_url=image_url,
             category=category,
+            podcast_type=podcast_type,
             explicit=explicit,
         )
         try:
@@ -447,11 +454,17 @@ class StateReconciler:
             if metadata.author != db_feed.author:
                 updated_feed.author = metadata.author
 
+            if metadata.author_email != db_feed.author_email:
+                updated_feed.author_email = metadata.author_email
+
             if metadata.image_url != db_feed.image_url:
                 updated_feed.image_url = metadata.image_url
 
             if metadata.categories != db_feed.category:
                 updated_feed.category = metadata.categories
+
+            if metadata.podcast_type != db_feed.podcast_type:
+                updated_feed.podcast_type = metadata.podcast_type
 
             if metadata.explicit != db_feed.explicit:
                 updated_feed.explicit = metadata.explicit
