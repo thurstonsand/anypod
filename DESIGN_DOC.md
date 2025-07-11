@@ -130,7 +130,9 @@ feeds:
       description: "A daily podcast about technology and culture" # Feed description
       language: "en"                                  # Language code (e.g., 'en', 'es', 'fr')
       author: "John Doe"                             # Podcast author
+      author_email: "john@example.com"               # Podcast author email
       image_url: "https://example.com/podcast-art.jpg" # Podcast artwork (min 1400x1400px)
+      podcast_type: "episodic"                       # Podcast type: "episodic" or "serial"
       explicit: "no"                                 # Explicit content: "yes", "no", or "clean"
       categories:                                    # Apple Podcasts categories (max 2)
         - "Technology"                               # Main category only
@@ -236,9 +238,11 @@ CREATE TABLE feeds (
   description               TEXT,
   language                  TEXT,
   author                    TEXT,
+  author_email              TEXT,
   image_url                 TEXT,
-  category                  TEXT,                    -- Stored as string, parsed into PodcastCategories
-  explicit                  TEXT                     -- Stored as string, parsed into PodcastExplicit
+  category                  TEXT NOT NULL DEFAULT 'TV & Film',    -- Stored as string, parsed into PodcastCategories
+  podcast_type              TEXT NOT NULL DEFAULT 'episodic',     -- Stored as string, parsed into PodcastType
+  explicit                  TEXT NOT NULL DEFAULT 'NO'           -- Stored as string, parsed into PodcastExplicit
 );
 ```
 

@@ -170,7 +170,9 @@ feeds:
       description: "A daily podcast about technology and culture" # Feed description
       language: "en"                                  # Language code (e.g., 'en', 'es', 'fr')
       author: "John Doe"                             # Podcast author
+      author_email: "john@example.com"               # Podcast author email
       image_url: "https://example.com/podcast-art.jpg" # Podcast artwork (min 1400x1400px)
+      podcast_type: "episodic"                       # Podcast type: "episodic" or "serial"
       explicit: "no"                                 # Explicit content: "yes", "no", or "clean"
       categories:                                    # Apple Podcasts categories (max 2)
         - "Technology"                               # Main category only

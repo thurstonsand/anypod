@@ -147,6 +147,11 @@ class PodcastCategories:
         collapsed = " ".join(unescaped.strip().split())
         return collapsed.lower()
 
+    @classmethod
+    def default(cls) -> "PodcastCategories":
+        """Return the default category."""
+        return cls("TV & Film")
+
     @staticmethod
     def _validate_single_category(
         main: str, sub: str | None = None

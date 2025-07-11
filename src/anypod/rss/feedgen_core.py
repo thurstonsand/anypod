@@ -63,11 +63,10 @@ class FeedgenCore:
         fg.language(feed.language or "en")  # type: ignore
 
         # Handle optional fields with null checks
-        if feed.category:
-            fg.category(feed.category.rss_list())  # type: ignore
-            fg.podcast.itunes_category(  # type: ignore
-                feed.category.itunes_rss_list()
-            )
+        fg.category(feed.category.rss_list())  # type: ignore
+        fg.podcast.itunes_category(  # type: ignore
+            feed.category.itunes_rss_list()
+        )
         fg.podcast.itunes_type(feed.podcast_type.rss_str())  # type: ignore
         fg.podcast.itunes_explicit(feed.explicit.rss_str())  # type: ignore
         if feed.image_url:

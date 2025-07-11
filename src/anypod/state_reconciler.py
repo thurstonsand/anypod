@@ -10,7 +10,6 @@ import logging
 from typing import Any
 
 from .config import FeedConfig
-from .config.types import PodcastExplicit, PodcastType
 from .data_coordinator import Pruner
 from .db import DownloadDatabase
 from .db.feed_db import FeedDatabase
@@ -67,18 +66,28 @@ class StateReconciler:
         logger.info("Processing new feed.", extra=log_params)
 
         metadata = feed_config.metadata
-        title = metadata.title if metadata else None
-        subtitle = metadata.subtitle if metadata else None
-        description = metadata.description if metadata else None
-        language = metadata.language if metadata else None
-        author = metadata.author if metadata else None
-        author_email = metadata.author_email if metadata else None
-        image_url = metadata.image_url if metadata else None
-        category = metadata.categories if metadata and metadata.categories else None
-        podcast_type = metadata.podcast_type if metadata else PodcastType.EPISODIC
-        explicit = (
-            metadata.explicit if metadata and metadata.explicit else PodcastExplicit.NO
-        )
+        metadata_overrides: dict[str, Any] = {}
+        if metadata:
+            if metadata.title:
+                metadata_overrides["title"] = metadata.title
+            if metadata.subtitle:
+                metadata_overrides["subtitle"] = metadata.subtitle
+            if metadata.description:
+                metadata_overrides["description"] = metadata.description
+            if metadata.language:
+                metadata_overrides["language"] = metadata.language
+            if metadata.author:
+                metadata_overrides["author"] = metadata.author
+            if metadata.author_email:
+                metadata_overrides["author_email"] = metadata.author_email
+            if metadata.image_url:
+                metadata_overrides["image_url"] = metadata.image_url
+            if metadata.categories:
+                metadata_overrides["category"] = metadata.categories
+            if metadata.podcast_type:
+                metadata_overrides["podcast_type"] = metadata.podcast_type
+            if metadata.explicit:
+                metadata_overrides["explicit"] = metadata.explicit
 
         # Set initial sync timestamp to 'since' if provided, otherwise datetime.min
         initial_sync = (
@@ -119,16 +128,7 @@ class StateReconciler:
             since=feed_config.since,
             keep_last=feed_config.keep_last,
             # Feed metadata
-            title=title,
-            subtitle=subtitle,
-            description=description,
-            language=language,
-            author=author,
-            author_email=author_email,
-            image_url=image_url,
-            category=category,
-            podcast_type=podcast_type,
-            explicit=explicit,
+            **metadata_overrides,
         )
         try:
             await self._feed_db.upsert_feed(new_feed)
@@ -460,13 +460,13 @@ class StateReconciler:
             if metadata.image_url != db_feed.image_url:
                 updated_feed.image_url = metadata.image_url
 
-            if metadata.categories != db_feed.category:
+            if metadata.categories and metadata.categories != db_feed.category:
                 updated_feed.category = metadata.categories
 
-            if metadata.podcast_type != db_feed.podcast_type:
+            if metadata.podcast_type and metadata.podcast_type != db_feed.podcast_type:
                 updated_feed.podcast_type = metadata.podcast_type
 
-            if metadata.explicit != db_feed.explicit:
+            if metadata.explicit and metadata.explicit != db_feed.explicit:
                 updated_feed.explicit = metadata.explicit
 
         # Update retention policies

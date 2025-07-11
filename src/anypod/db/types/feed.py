@@ -40,7 +40,10 @@ class PodcastCategoriesType(TypeDecorator[PodcastCategories]):
         self, value: str | None, dialect: Any
     ) -> PodcastCategories | None:
         """Convert string back to PodcastCategories."""
-        return PodcastCategories(value) if value is not None else None
+        if value is None:
+            # Return default if somehow None is returned from database
+            return PodcastCategories("TV & Film")
+        return PodcastCategories(value)
 
 
 class Feed(SQLModel, table=True):
@@ -75,8 +78,10 @@ class Feed(SQLModel, table=True):
             description: Feed description.
             language: Feed language code.
             author: Feed author.
+            author_email: Feed author email.
             image_url: URL to feed image.
             category: List of podcast categories.
+            podcast_type: Podcast type.
             explicit: Explicit content flag.
 
     Relationships:
@@ -160,8 +165,13 @@ class Feed(SQLModel, table=True):
     author: str | None = None
     author_email: str | None = None
     image_url: str | None = None
-    category: PodcastCategories | None = Field(
-        default=None, sa_column=Column(PodcastCategoriesType)
+    category: PodcastCategories = Field(
+        default_factory=lambda: PodcastCategories("TV & Film"),
+        sa_column=Column(
+            PodcastCategoriesType,
+            nullable=False,
+            server_default="TV & Film",
+        ),
     )
     podcast_type: PodcastType = Field(
         default=PodcastType.EPISODIC,
