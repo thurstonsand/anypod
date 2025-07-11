@@ -23,6 +23,7 @@ jobs:
       pull-requests: read
       issues: read
       id-token: write
+      actions: read # Required for Claude to read CI results on PRs
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -33,5 +34,15 @@ jobs:
         id: claude
         uses: anthropics/claude-code-action@beta
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 
+          # allows Claude to read CI results on PRs
+          additional_permissions: |
+            actions: read
+
+          allowed_tools: "Bash(uv run:*),Bash(uvx:*),Bash(rg:*),Bash(grep:*),Bash(sqlite3:*),Bash(alembic:*)"
+
+          custom_instructions: |
+            - Follow the project's coding standards in CLAUDE.md
+            - For tests, follow the project's testing standards in tests/CLAUDE.md
+            - Use uv run/uvx to run commands

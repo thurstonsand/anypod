@@ -1,0 +1,44 @@
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  claude-review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run Claude Code Review
+        id: claude-review
+        uses: anthropics/claude-code-action@beta
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+          # Direct prompt for automated review (no @claude mention needed)
+          direct_prompt: |
+            Please review this pull request and provide feedback on:
+            - Code quality and best practices
+            - Potential bugs or issues
+            - Performance considerations
+            - Security concerns
+            - Test coverage
+            - Documentation (DESIGN_DOC.md, CLAUDE.md, tests/CLAUDE.md), but keep updates at the same level of abstraction as what is currently present in these files -- do NOT add unnecessary or out-of-scope details
+
+            - Be constructive and helpful in your feedback
+            - Follow the project's coding standards in CLAUDE.md
+            - For tests, follow the project's testing standards in tests/CLAUDE.md
+            - Use uv run/uvx to run commands
+
+          use_sticky_comment: true
+          allowed_tools: "Bash(uv run:*),Bash(uvx:*),Bash(rg:*),Bash(grep:*),Bash(sqlite3:*),Bash(alembic:*)"
