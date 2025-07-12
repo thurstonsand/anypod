@@ -4,6 +4,17 @@
 
 Anypod converts yt-dlp-supported sources (YouTube channels, playlists) into RSS podcast feeds. It runs as a long-lived service that periodically fetches metadata, downloads media files, and generates podcast-consumable RSS feeds.
 
+### Project Scope & Intent
+This is a **self-hosted, small-scale solution** designed for personal use or small groups (typically 1-5 users). Key characteristics:
+
+- **Self-hosted only**: Not intended for public cloud deployment or multi-tenant use
+- **Limited scale**: Optimized for dozens of feeds, not hundreds or thousands
+- **Private admin**: Configuration and management interfaces are not designed for public web exposure
+- **RSS-only public access**: Only the RSS feeds and media files are intended to be publicly accessible
+- **No authentication**: RSS feeds inherently cannot use authentication, and admin functions assume trusted local access
+
+This design prioritizes simplicity, reliability, and ease of self-hosting over scalability or multi-tenancy.
+
 see @DESIGN_DOC.md for in depth design doc.
 
 ## Commands
@@ -18,10 +29,21 @@ uv sync
 timeout 30 ./scripts/run_dev.sh        # Run full application with fresh database (recommended)
 timeout 30 ./scripts/run_dev.sh --keep # Run application keeping existing database
 
-# Debug modes for testing components
-DEBUG_MODE=ytdlp uv run anypod --config-file debug.yaml               # Test yt-dlp operations
-DEBUG_MODE=enqueuer uv run anypod --config-file example_feeds.yaml    # Test metadata fetching
-DEBUG_MODE=downloader uv run anypod --config-file example_feeds.yaml  # Test download operations
+# Running the application
+./scripts/run_dev.sh [--keep] # Run full anypod service (scheduler + HTTP server)
+# - Default: Creates fresh database and cleans all downloaded files
+# - --keep: Preserves existing database and downloaded files
+# - Uses example_feeds.yaml config, tmpdata/ directory, US/Eastern timezone
+# - This is a long-running process that will not end automatically
+
+# Debug modes for testing individual components
+./scripts/run_debug.sh <debug_mode> [--keep]
+# - Same --keep and config/directory behavior as run_dev.sh
+# - Runs single component in isolation instead of full service
+
+# debug_mode options: ytdlp, enqueuer, or downloader
+# See src/anypod/cli/debug_<debug_mode>.py for implementation details
+
 
 # Linting and type checking
 uv run ruff check                               # Lint code
@@ -124,8 +146,10 @@ anypod/
 │   ├── server/                  # FastAPI HTTP server
 │   │   ├── app.py               # FastAPI app factory
 │   │   ├── dependencies.py      # FastAPI dependency providers
+│   │   ├── server.py            # HTTP server configuration
 │   │   └── routers/             # API routers
-│   │       └── health.py        # Health check endpoint
+│   │       ├── health.py        # Health check endpoint
+│   │       └── static.py        # Static file serving and directory browsing
 │   ├── ytdlp_wrapper/           # `yt-dlp` integration
 │   │   ├── base_handler.py      # Base handler interface for different source types
 │   │   ├── youtube_handler.py   # YouTube source handler

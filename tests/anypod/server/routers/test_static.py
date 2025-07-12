@@ -2,16 +2,67 @@
 
 """Tests for the static file serving router."""
 
+from datetime import UTC, datetime
+from html.parser import HTMLParser
 from unittest.mock import Mock
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import pytest
 
+from anypod.db import DownloadDatabase, FeedDatabase
+from anypod.db.types import Download, DownloadStatus, Feed, SourceType
 from anypod.exceptions import FileOperationError, RSSGenerationError
 from anypod.file_manager import FileManager
 from anypod.rss import RSSFeedGenerator
 from anypod.server.routers.static import router
+
+
+class DirectoryListingParser(HTMLParser):
+    """HTML parser to extract links from directory listing pages."""
+
+    def __init__(self):
+        super().__init__()
+        self.links: list[tuple[str, str]] = []  # (href, text) pairs
+        self.title = ""
+        self._current_tag = ""
+        self._current_href = ""
+        self._collecting_text = False
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        """Handle opening HTML tags."""
+        self._current_tag = tag
+        if tag == "a":
+            for name, value in attrs:
+                if name == "href" and value is not None:
+                    self._current_href = value
+                    self._collecting_text = True
+        elif tag == "title":
+            self._collecting_text = True
+
+    def handle_endtag(self, tag: str) -> None:
+        """Handle closing HTML tags."""
+        if tag == "a" and self._current_href:
+            self._collecting_text = False
+            self._current_href = ""
+        elif tag == "title":
+            self._collecting_text = False
+        self._current_tag = ""
+
+    def handle_data(self, data: str) -> None:
+        """Handle text content within HTML tags."""
+        if self._collecting_text:
+            if self._current_tag == "a" and self._current_href:
+                self.links.append((self._current_href, data.strip()))
+            elif self._current_tag == "title":
+                self.title = data.strip()
+
+
+def parse_directory_listing(html_content: str) -> DirectoryListingParser:
+    """Parse HTML directory listing and return structured data."""
+    parser = DirectoryListingParser()
+    parser.feed(html_content)
+    return parser
 
 
 @pytest.fixture
@@ -27,7 +78,24 @@ def mock_rss_generator() -> Mock:
 
 
 @pytest.fixture
-def app(mock_file_manager: Mock, mock_rss_generator: Mock) -> FastAPI:
+def mock_feed_database() -> Mock:
+    """Create a mock FeedDatabase for testing."""
+    return Mock(spec=FeedDatabase)
+
+
+@pytest.fixture
+def mock_download_database() -> Mock:
+    """Create a mock DownloadDatabase for testing."""
+    return Mock(spec=DownloadDatabase)
+
+
+@pytest.fixture
+def app(
+    mock_file_manager: Mock,
+    mock_rss_generator: Mock,
+    mock_feed_database: Mock,
+    mock_download_database: Mock,
+) -> FastAPI:
     """Create a FastAPI app with the static router and mocked dependencies."""
     app = FastAPI()
     app.include_router(router)
@@ -35,6 +103,8 @@ def app(mock_file_manager: Mock, mock_rss_generator: Mock) -> FastAPI:
     # Attach mocked dependencies to app state
     app.state.file_manager = mock_file_manager
     app.state.rss_generator = mock_rss_generator
+    app.state.feed_database = mock_feed_database
+    app.state.download_database = mock_download_database
 
     return app
 
@@ -158,3 +228,326 @@ def test_serve_media_content_type_guessing(
     mock_file_manager.get_download_stream.assert_called_once_with(
         "test_feed", filename, ext
     )
+
+
+# --- Tests for feed browser endpoint ---
+
+
+@pytest.mark.unit
+def test_browse_feeds_success(client: TestClient, mock_feed_database: Mock):
+    """Test successful feed directory browsing."""
+    # Mock feed database to return test feeds
+    mock_feeds = [
+        Feed(
+            id="feed1",
+            is_enabled=True,
+            source_type=SourceType.CHANNEL,
+            source_url="https://example.com/feed1",
+            last_successful_sync=datetime(2024, 1, 1, tzinfo=UTC),
+        ),
+        Feed(
+            id="feed2",
+            is_enabled=True,
+            source_type=SourceType.CHANNEL,
+            source_url="https://example.com/feed2",
+            last_successful_sync=datetime(2024, 1, 1, tzinfo=UTC),
+        ),
+    ]
+    mock_feed_database.get_feeds.return_value = mock_feeds
+
+    response = client.get("/feeds")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "text/html; charset=utf-8"
+
+    # Parse HTML semantically
+    parsed = parse_directory_listing(response.text)
+
+    # Check page title
+    assert parsed.title == "Index of /feeds"
+
+    # Extract all links
+    links_by_href = dict(parsed.links)
+
+    # Should NOT have parent directory link for top-level directory
+    assert "../" not in links_by_href
+
+    # Should have feed links
+    assert "/feeds/feed1.xml" in links_by_href
+    assert "/feeds/feed2.xml" in links_by_href
+    assert links_by_href["/feeds/feed1.xml"] == "feed1.xml"
+    assert links_by_href["/feeds/feed2.xml"] == "feed2.xml"
+
+    # Should have exactly 2 links (2 feeds, no parent)
+    assert len(parsed.links) == 2
+
+    mock_feed_database.get_feeds.assert_called_once_with(enabled=True)
+
+
+@pytest.mark.unit
+def test_browse_feeds_empty(client: TestClient, mock_feed_database: Mock):
+    """Test feed directory browsing with no feeds."""
+    mock_feed_database.get_feeds.return_value = []
+
+    response = client.get("/feeds")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "text/html; charset=utf-8"
+
+    # Parse HTML semantically
+    parsed = parse_directory_listing(response.text)
+
+    # Check page title
+    assert parsed.title == "Index of /feeds"
+
+    # Should have no links (no parent link for top-level, no feeds)
+    assert len(parsed.links) == 0
+
+
+@pytest.mark.unit
+def test_browse_feeds_database_error(client: TestClient, mock_feed_database: Mock):
+    """Test feed directory browsing when database fails."""
+    mock_feed_database.get_feeds.side_effect = Exception("Database error")
+
+    response = client.get("/feeds")
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "Internal server error"
+
+
+# --- Tests for media browser endpoint ---
+
+
+@pytest.mark.unit
+def test_browse_media_success(client: TestClient, mock_feed_database: Mock):
+    """Test successful media directory browsing."""
+    from datetime import UTC, datetime
+
+    # Mock feed database to return test feeds
+    mock_feeds = [
+        Feed(
+            id="podcast1",
+            is_enabled=True,
+            source_type=SourceType.CHANNEL,
+            source_url="https://example.com/podcast1",
+            last_successful_sync=datetime(2024, 1, 1, tzinfo=UTC),
+        ),
+        Feed(
+            id="podcast2",
+            is_enabled=True,
+            source_type=SourceType.CHANNEL,
+            source_url="https://example.com/podcast2",
+            last_successful_sync=datetime(2024, 1, 1, tzinfo=UTC),
+        ),
+    ]
+    mock_feed_database.get_feeds.return_value = mock_feeds
+
+    response = client.get("/media")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "text/html; charset=utf-8"
+
+    # Parse HTML semantically
+    parsed = parse_directory_listing(response.text)
+
+    # Check page title
+    assert parsed.title == "Index of /media"
+
+    # Extract all links
+    links_by_href = dict(parsed.links)
+
+    # Should NOT have parent directory link for top-level directory
+    assert "../" not in links_by_href
+
+    # Should have feed directory links
+    assert "/media/podcast1/" in links_by_href
+    assert "/media/podcast2/" in links_by_href
+    assert links_by_href["/media/podcast1/"] == "podcast1/"
+    assert links_by_href["/media/podcast2/"] == "podcast2/"
+
+    # Should have exactly 2 links (2 feeds, no parent)
+    assert len(parsed.links) == 2
+
+    mock_feed_database.get_feeds.assert_called_once_with(enabled=True)
+
+
+@pytest.mark.unit
+def test_browse_media_empty(client: TestClient, mock_feed_database: Mock):
+    """Test media directory browsing with no feeds."""
+    mock_feed_database.get_feeds.return_value = []
+
+    response = client.get("/media")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "text/html; charset=utf-8"
+
+    # Parse HTML semantically
+    parsed = parse_directory_listing(response.text)
+
+    # Check page title
+    assert parsed.title == "Index of /media"
+
+    # Should have no links (no parent link for top-level, no feeds)
+    assert len(parsed.links) == 0
+
+
+# --- Tests for media feed browser endpoint ---
+
+
+@pytest.mark.unit
+def test_browse_media_feed_success(client: TestClient, mock_download_database: Mock):
+    """Test successful media feed directory browsing."""
+    from datetime import UTC, datetime
+
+    # Mock download database to return test downloads
+    mock_downloads = [
+        Download(
+            feed_id="test_feed",
+            id="video1",
+            source_url="https://example.com/video1",
+            title="Test Video 1",
+            published=datetime(2024, 1, 1, tzinfo=UTC),
+            ext="mp4",
+            mime_type="video/mp4",
+            filesize=1000000,
+            duration=600,
+            status=DownloadStatus.DOWNLOADED,
+            discovered_at=datetime(2024, 1, 1, tzinfo=UTC),
+            updated_at=datetime(2024, 1, 1, tzinfo=UTC),
+        ),
+        Download(
+            feed_id="test_feed",
+            id="audio1",
+            source_url="https://example.com/audio1",
+            title="Test Audio 1",
+            published=datetime(2024, 1, 2, tzinfo=UTC),
+            ext="m4a",
+            mime_type="audio/mp4",
+            filesize=500000,
+            duration=300,
+            status=DownloadStatus.DOWNLOADED,
+            discovered_at=datetime(2024, 1, 2, tzinfo=UTC),
+            updated_at=datetime(2024, 1, 2, tzinfo=UTC),
+        ),
+    ]
+    mock_download_database.get_downloads_by_status.return_value = mock_downloads
+
+    response = client.get("/media/test_feed")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "text/html; charset=utf-8"
+
+    # Parse HTML semantically
+    parsed = parse_directory_listing(response.text)
+
+    # Check page title
+    assert parsed.title == "Index of /media/test_feed"
+
+    # Extract all links
+    links_by_href = dict(parsed.links)
+
+    # Should have parent directory link pointing to /media
+    assert "/media" in links_by_href
+    assert links_by_href["/media"] == "../"
+
+    # Should have media file links
+    assert "/media/test_feed/video1.mp4" in links_by_href
+    assert "/media/test_feed/audio1.m4a" in links_by_href
+    assert links_by_href["/media/test_feed/video1.mp4"] == "video1.mp4"
+    assert links_by_href["/media/test_feed/audio1.m4a"] == "audio1.m4a"
+
+    # Should have exactly 3 links (parent + 2 media files)
+    assert len(parsed.links) == 3
+
+    mock_download_database.get_downloads_by_status.assert_called_once_with(
+        DownloadStatus.DOWNLOADED, feed_id="test_feed"
+    )
+
+
+@pytest.mark.unit
+def test_browse_media_feed_empty(client: TestClient, mock_download_database: Mock):
+    """Test media feed directory browsing with no downloads."""
+    mock_download_database.get_downloads_by_status.return_value = []
+
+    response = client.get("/media/empty_feed")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "text/html; charset=utf-8"
+
+    # Parse HTML semantically
+    parsed = parse_directory_listing(response.text)
+
+    # Check page title
+    assert parsed.title == "Index of /media/empty_feed"
+
+    # Extract all links
+    links_by_href = dict(parsed.links)
+
+    # Should have parent directory link pointing to /media
+    assert "/media" in links_by_href
+    assert links_by_href["/media"] == "../"
+
+    # Should have exactly 1 link (just parent, no media files)
+    assert len(parsed.links) == 1
+
+
+@pytest.mark.unit
+def test_browse_media_feed_database_error(
+    client: TestClient, mock_download_database: Mock
+):
+    """Test media feed directory browsing when database fails."""
+    mock_download_database.get_downloads_by_status.side_effect = Exception(
+        "Database error"
+    )
+
+    response = client.get("/media/error_feed")
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "Internal server error"
+
+
+@pytest.mark.unit
+def test_browse_media_feed_html_escaping(
+    client: TestClient, mock_download_database: Mock
+):
+    """Test that HTML content is properly escaped in directory listings."""
+    from datetime import UTC, datetime
+
+    # Create download with special characters that need escaping
+    mock_downloads = [
+        Download(
+            feed_id="test_feed",
+            id="video<script>alert('xss')</script>",
+            source_url="https://example.com/video1",
+            title="Test Video with <special> chars & symbols",
+            published=datetime(2024, 1, 1, tzinfo=UTC),
+            ext="mp4",
+            mime_type="video/mp4",
+            filesize=1000000,
+            duration=600,
+            status=DownloadStatus.DOWNLOADED,
+            discovered_at=datetime(2024, 1, 1, tzinfo=UTC),
+            updated_at=datetime(2024, 1, 1, tzinfo=UTC),
+        ),
+    ]
+    mock_download_database.get_downloads_by_status.return_value = mock_downloads
+
+    response = client.get("/media/test_feed")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "text/html; charset=utf-8"
+
+    # Parse HTML semantically
+    parsed = parse_directory_listing(response.text)
+
+    # Check page title
+    assert parsed.title == "Index of /media/test_feed"
+
+    # Verify HTML escaping in the raw HTML (before parsing)
+    raw_html = response.text
+    assert "&lt;script&gt;" in raw_html  # Script tags should be escaped in raw HTML
+    assert "alert(&#x27;xss&#x27;)" in raw_html  # Single quotes should be escaped
+
+    # The parser correctly unescapes HTML entities, so parsed text contains original characters
+    link_texts = [text for _, text in parsed.links]
+    assert "video<script>alert('xss')</script>.mp4" in link_texts

@@ -448,7 +448,10 @@ The `RSSFeedGenerator` module maintains a **write-once/read-many-locked in-memor
 ## HTTP Endpoints
 | Path | Description |
 |------|-------------|
+| `/feeds` | HTML directory listing of available feeds |
 | `/feeds/{feed}.xml` | Podcast RSS |
+| `/media` | HTML directory listing of feed directories |
+| `/media/{feed}` | HTML directory listing of media files for feed |
 | `/media/{feed}/{file}` | MP4 / M4A enclosure |
 | `/errors` | JSON list of failed downloads |
 | `/health` | 200 OK |

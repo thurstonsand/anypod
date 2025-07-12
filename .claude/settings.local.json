@@ -13,6 +13,7 @@
       "Bash(rg:*)",
       "Bash(cat:*)",
       "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(uvx yt-dlp:*)",
       "Bash(tree:*)",
       "Bash(ls:*)",

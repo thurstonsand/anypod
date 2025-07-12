@@ -9,6 +9,8 @@ import logging
 import uvicorn
 
 from ..config import AppSettings
+from ..db.download_db import DownloadDatabase
+from ..db.feed_db import FeedDatabase
 from ..file_manager import FileManager
 from ..rss import RSSFeedGenerator
 from .app import create_app
@@ -20,6 +22,8 @@ def create_server(
     settings: AppSettings,
     rss_generator: RSSFeedGenerator,
     file_manager: FileManager,
+    feed_database: FeedDatabase,
+    download_database: DownloadDatabase,
 ) -> uvicorn.Server:
     """Create and configure a uvicorn HTTP server with FastAPI app.
 
@@ -27,12 +31,19 @@ def create_server(
         settings: Application settings containing server configuration.
         rss_generator: The RSS feed generator instance.
         file_manager: The file manager instance.
+        feed_database: The feed database instance.
+        download_database: The download database instance.
 
     Returns:
         Configured uvicorn server ready to run.
     """
     logger.debug("Creating FastAPI application.")
-    app = create_app(rss_generator=rss_generator, file_manager=file_manager)
+    app = create_app(
+        rss_generator=rss_generator,
+        file_manager=file_manager,
+        feed_database=feed_database,
+        download_database=download_database,
+    )
 
     config = uvicorn.Config(
         app=app,

@@ -12,6 +12,8 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.requests import Request
 from starlette.responses import Response
 
+from ..db.download_db import DownloadDatabase
+from ..db.feed_db import FeedDatabase
 from ..file_manager import FileManager
 from ..rss import RSSFeedGenerator
 from .routers import health, static
@@ -60,6 +62,8 @@ class LoggingMiddleware(BaseHTTPMiddleware):
 def create_app(
     rss_generator: RSSFeedGenerator,
     file_manager: FileManager,
+    feed_database: FeedDatabase,
+    download_database: DownloadDatabase,
 ) -> FastAPI:
     """Create and configure a FastAPI application instance.
 
@@ -69,7 +73,8 @@ def create_app(
     Args:
         rss_generator: The RSS feed generator instance.
         file_manager: The file manager instance.
-        **kwargs: Additional arguments passed to the FastAPI constructor.
+        feed_database: The feed database instance.
+        download_database: The download database instance.
 
     Returns:
         Configured FastAPI application instance.
@@ -96,6 +101,8 @@ def create_app(
     # Attach dependencies to app state
     app.state.rss_generator = rss_generator
     app.state.file_manager = file_manager
+    app.state.feed_database = feed_database
+    app.state.download_database = download_database
 
     # Include routers
     app.include_router(health.router, tags=["health"])

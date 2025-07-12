@@ -448,8 +448,7 @@ This section details the components that manage the lifecycle of downloads, from
   - [x] `app.py` - FastAPI application factory
   - [x] `dependencies.py` - Dependency injection setup
   - [ ] `models/` - Pydantic request/response models
-  - [ ] `routers/` - API route handlers organized by domain
-  - [ ] `middleware.py` - CORS, logging, error handling middleware
+  - [x] `routers/` - API route handlers organized by domain
 
 ### 6.2 FastAPI Application Setup
 - [x] Add `fastapi`, `uvicorn` to dependencies in pyproject.toml
@@ -487,13 +486,13 @@ This section details the components that manage the lifecycle of downloads, from
 - [ ] `stats.py` - Statistics and monitoring endpoints
   - [ ] `GET    /api/feeds/{feed_id}/stats` - Detailed feed statistics
   - [ ] `GET    /api/stats/summary`         - System-wide statistics summary including storage
-- [ ] `health.py` - Health check endpoints
-  - [ ] `GET    /api/health` - Application health check
+- [x] `health.py` - Health check endpoints
+  - [x] `GET    /api/health` - Application health check
 - [ ] `static.py` - Content delivery endpoints
-  - [ ] `GET    /feeds`                                  - List all rss feeds in directory
+  - [x] `GET    /feeds`                                  - List all rss feeds in directory
   - [x] `GET    /feeds/{feed_id}.xml`                    - RSS feed XML
-  - [ ] `GET    /media`                                  - List all feeds in directory
-  - [ ] `GET    /media/{feed_id}`                        - List all files for a feed in directory
+  - [x] `GET    /media`                                  - List all feeds in directory
+  - [x] `GET    /media/{feed_id}`                        - List all files for a feed in directory
   - [x] `GET    /media/{feed_id}/{filename}.{ext}`       - Media file download
   - [ ] `GET    /thumbnails`                             - List all feeds in directory
   - [ ] `GET    /thumbnails/{feed_id}`                   - List all thumbnails for a feed in directory

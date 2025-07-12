@@ -96,6 +96,8 @@ async def _init(
         settings=settings,
         rss_generator=rss_generator,
         file_manager=file_manager,
+        feed_database=feed_db,
+        download_database=download_db,
     )
 
     return scheduler, server
