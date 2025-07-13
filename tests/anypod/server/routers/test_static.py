@@ -4,6 +4,7 @@
 
 from datetime import UTC, datetime
 from html.parser import HTMLParser
+from pathlib import Path
 from unittest.mock import Mock
 
 from fastapi import FastAPI
@@ -149,23 +150,25 @@ def test_serve_feed_not_found(client: TestClient, mock_rss_generator: Mock):
 
 
 @pytest.mark.unit
-def test_serve_media_success(client: TestClient, mock_file_manager: Mock):
+def test_serve_media_success(
+    client: TestClient, mock_file_manager: Mock, tmp_path: Path
+):
     """Test successful media file serving."""
-
-    # Mock file manager to return an async iterator
-    async def mock_stream():
-        yield b"chunk1"
-        yield b"chunk2"
-
-    mock_file_manager.get_download_stream.return_value = mock_stream()
+    # Create a real test file
+    test_content = b"fake video content"
+    test_file_path = tmp_path / "test_video.mp4"
+    test_file_path.write_bytes(test_content)
+    mock_file_manager.get_download_file_path.return_value = test_file_path
 
     response = client.get("/media/test_feed/test_video.mp4")
 
     assert response.status_code == 200
     assert response.headers["content-type"] == "video/mp4"
-    assert response.content == b"chunk1chunk2"
+    assert "cache-control" in response.headers
+    assert response.headers["cache-control"] == "public, max-age=86400"
+    assert response.content == test_content
 
-    mock_file_manager.get_download_stream.assert_called_once_with(
+    mock_file_manager.get_download_file_path.assert_called_once_with(
         "test_feed", "test_video", "mp4"
     )
 
@@ -173,7 +176,7 @@ def test_serve_media_success(client: TestClient, mock_file_manager: Mock):
 @pytest.mark.unit
 def test_serve_media_file_not_found(client: TestClient, mock_file_manager: Mock):
     """Test media file serving when file doesn't exist."""
-    mock_file_manager.get_download_stream.side_effect = FileNotFoundError(
+    mock_file_manager.get_download_file_path.side_effect = FileNotFoundError(
         "File not found"
     )
 
@@ -186,7 +189,7 @@ def test_serve_media_file_not_found(client: TestClient, mock_file_manager: Mock)
 @pytest.mark.unit
 def test_serve_media_file_operation_error(client: TestClient, mock_file_manager: Mock):
     """Test media file serving when file operation fails."""
-    mock_file_manager.get_download_stream.side_effect = FileOperationError(
+    mock_file_manager.get_download_file_path.side_effect = FileOperationError(
         "File operation failed"
     )
 
@@ -208,24 +211,26 @@ def test_serve_media_file_operation_error(client: TestClient, mock_file_manager:
 def test_serve_media_content_type_guessing(
     client: TestClient,
     mock_file_manager: Mock,
+    tmp_path: Path,
     filename: str,
     ext: str,
     expected_content_type: str,
 ):
     """Test that media content type is correctly guessed from extension."""
-
-    async def mock_stream():
-        yield b"fake content"
-
-    mock_file_manager.get_download_stream.return_value = mock_stream()
+    # Create a real test file
+    test_content = b"fake content"
+    test_file_path = tmp_path / f"{filename}.{ext}"
+    test_file_path.write_bytes(test_content)
+    mock_file_manager.get_download_file_path.return_value = test_file_path
 
     response = client.get(f"/media/test_feed/{filename}.{ext}")
 
     assert response.status_code == 200
     assert response.headers["content-type"] == expected_content_type
+    assert response.content == test_content
 
     # Verify the correct parameters were passed
-    mock_file_manager.get_download_stream.assert_called_once_with(
+    mock_file_manager.get_download_file_path.assert_called_once_with(
         "test_feed", filename, ext
     )
 

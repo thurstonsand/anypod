@@ -18,6 +18,7 @@ from anypod.config.types import (
     FeedMetadataOverrides,
     PodcastCategories,
     PodcastExplicit,
+    PodcastType,
 )
 from anypod.data_coordinator.pruner import Pruner
 from anypod.db import DownloadDatabase
@@ -193,6 +194,7 @@ def feed_config_with_metadata() -> FeedConfig:
             author_email="test@example.com",
             image_url="https://example.com/image.jpg",
             categories=PodcastCategories("Technology"),
+            podcast_type=PodcastType.EPISODIC,
             explicit=PodcastExplicit.NO,
         ),
     )

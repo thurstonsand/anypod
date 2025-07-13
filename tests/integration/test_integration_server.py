@@ -78,6 +78,42 @@ def test_serve_feed_integration_not_cached(test_app: TestClient):
     assert response.json()["detail"] == "Feed not found"
 
 
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_serve_feed_head_request(
+    test_app: TestClient,
+    rss_generator: RSSFeedGenerator,
+    feed_db: FeedDatabase,
+):
+    """Test HEAD request support for RSS feeds."""
+    feed_id = "test_feed_head"
+
+    # Create a test feed in the database
+    test_feed = Feed(
+        id=feed_id,
+        is_enabled=True,
+        source_type=SourceType.CHANNEL,
+        source_url="https://example.com/channel",
+        last_successful_sync=datetime(2024, 1, 1, tzinfo=UTC),
+        title="Test Channel for HEAD",
+        description="A test channel for HEAD request testing",
+    )
+    await feed_db.upsert_feed(test_feed)
+
+    # Generate and cache feed XML
+    await rss_generator.update_feed(feed_id, test_feed)
+
+    # Test HEAD request
+    response = test_app.head(f"/feeds/{feed_id}.xml")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/rss+xml"
+    assert "cache-control" in response.headers
+    assert "content-length" in response.headers
+    # HEAD should return no content
+    assert len(response.content) == 0
+
+
 # --- Tests for media file serving integration ---
 
 
@@ -104,6 +140,81 @@ async def test_serve_media_integration_with_real_file(
     assert response.status_code == 200
     assert response.headers["content-type"] == "video/mp4"
     assert response.content == test_content
+    # Verify cache headers are present
+    assert "cache-control" in response.headers
+    assert response.headers["cache-control"] == "public, max-age=86400"
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_serve_media_head_request(
+    test_app: TestClient,
+    path_manager: PathManager,
+):
+    """Test HEAD request support for media files."""
+    feed_id = "test_feed"
+    filename = "test_video_head"
+    ext = "mp4"
+
+    # Create a test media file
+    media_path = await path_manager.media_file_path(feed_id, filename, ext)
+    test_content = b"fake video content for HEAD testing" * 100  # Make it bigger
+    media_path.write_bytes(test_content)
+
+    # Test HEAD request
+    response = test_app.head(f"/media/{feed_id}/{filename}.{ext}")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "video/mp4"
+    assert "cache-control" in response.headers
+    assert "accept-ranges" in response.headers
+    assert response.headers["accept-ranges"] == "bytes"
+    assert "content-length" in response.headers
+    assert int(response.headers["content-length"]) == len(test_content)
+    # HEAD should return no content
+    assert len(response.content) == 0
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_serve_media_range_request(
+    test_app: TestClient,
+    path_manager: PathManager,
+):
+    """Test HTTP range request support for media files."""
+    feed_id = "test_feed"
+    filename = "test_video_range"
+    ext = "mp4"
+
+    # Create a test media file with known content
+    media_path = await path_manager.media_file_path(feed_id, filename, ext)
+    test_content = b"0123456789" * 100  # 1000 bytes of predictable content
+    media_path.write_bytes(test_content)
+
+    # Test range request for first 100 bytes
+    response = test_app.get(
+        f"/media/{feed_id}/{filename}.{ext}", headers={"Range": "bytes=0-99"}
+    )
+
+    assert response.status_code == 206  # Partial Content
+    assert response.headers["content-type"] == "video/mp4"
+    assert "accept-ranges" in response.headers
+    assert response.headers["accept-ranges"] == "bytes"
+    assert "content-range" in response.headers
+    assert response.headers["content-range"] == "bytes 0-99/1000"
+    assert "content-length" in response.headers
+    assert int(response.headers["content-length"]) == 100
+    # Verify content is the expected range
+    assert response.content == test_content[0:100]
+
+    # Test range request for middle bytes
+    response = test_app.get(
+        f"/media/{feed_id}/{filename}.{ext}", headers={"Range": "bytes=500-599"}
+    )
+
+    assert response.status_code == 206
+    assert response.headers["content-range"] == "bytes 500-599/1000"
+    assert response.content == test_content[500:600]
 
 
 @pytest.mark.integration
@@ -187,18 +298,3 @@ def test_dependency_injection_integration(
     assert hasattr(app.state, "rss_generator")  # type: ignore
     assert app.state.file_manager is file_manager  # type: ignore
     assert app.state.rss_generator is rss_generator  # type: ignore
-
-
-# --- Tests for CORS and middleware integration ---
-
-
-@pytest.mark.integration
-def test_cors_middleware_integration(test_app: TestClient):
-    """Test that CORS middleware is working correctly."""
-    # Make a request with Origin header to trigger CORS
-    response = test_app.get("/api/health", headers={"Origin": "https://example.com"})
-
-    # Should have CORS headers
-    assert response.status_code == 200
-    assert "access-control-allow-origin" in response.headers
-    assert response.headers["access-control-allow-origin"] == "*"

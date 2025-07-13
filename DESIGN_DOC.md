@@ -455,7 +455,7 @@ The `RSSFeedGenerator` module maintains a **write-once/read-many-locked in-memor
 | `/media/{feed}` | HTML directory listing of media files for feed |
 | `/media/{feed}/{file}` | MP4 / M4A enclosure |
 | `/errors` | JSON list of failed downloads |
-| `/health` | 200 OK |
+| `/api/health` | Health check endpoint returning service status, timestamp, and version |
 
 ---
 
@@ -579,3 +579,4 @@ yt-dlp's `daterange` parameter only supports YYYYMMDD format, not hour/minute/se
 * Support "generic source" after looking at overlap from a few sources
 * crop thumbnails so they are the right ratio; also consider converting from webp to png/jpg
 * configurable channel tab selection: allow users to specify which tab (videos, shorts, live, etc.) to use when discovering channel URLs, with /videos as default
+* just store rss feeds in the db, don't keep them in-memory (fixes race condition on boot)

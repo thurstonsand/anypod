@@ -4,7 +4,7 @@ import html
 import logging
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import FileResponse, Response
 
 from ...db.types import DownloadStatus
 from ...exceptions import FileOperationError, RSSGenerationError
@@ -79,7 +79,7 @@ def _generate_directory_listing(
 </html>"""
 
 
-@router.get("/feeds/{feed_id}.xml")
+@router.api_route("/feeds/{feed_id}.xml", methods=["GET", "HEAD"])
 async def serve_feed(
     feed_id: str,
     request: Request,
@@ -222,21 +222,19 @@ async def browse_media_feed(
     return Response(content=html_content, media_type="text/html")
 
 
-@router.get("/media/{feed_id}/{filename}.{ext}")
+@router.api_route("/media/{feed_id}/{filename}.{ext}", methods=["GET", "HEAD"])
 async def serve_media(
     feed_id: str,
     filename: str,
     ext: str,
-    request: Request,
     file_manager: FileManagerDep,
-) -> StreamingResponse:
+) -> FileResponse:
     """Serve media file for a specific feed and filename.
 
     Args:
         feed_id: The unique identifier for the feed.
         filename: The media filename to serve.
         ext: The file extension of the media file.
-        request: The FastAPI request object.
         file_manager: The file manager dependency.
 
     Returns:
@@ -250,14 +248,16 @@ async def serve_media(
         extra={"feed_id": feed_id, "filename": filename, "ext": ext},
     )
     try:
-        download_stream = await file_manager.get_download_stream(feed_id, filename, ext)
+        file_path = await file_manager.get_download_file_path(feed_id, filename, ext)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail="File not found") from e
     except FileOperationError as e:
         raise HTTPException(status_code=500, detail="Internal server error") from e
 
-    return StreamingResponse(
-        download_stream,
-        status_code=200,
+    return FileResponse(
+        path=file_path,
         media_type=mimetypes.guess_type(f"file.{ext}")[0],
+        headers={
+            "Cache-Control": "public, max-age=86400",  # Cache for 24 hours
+        },
     )

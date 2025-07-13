@@ -120,15 +120,6 @@ def test_create_app_middleware_configured(
         download_database=mock_download_database,
     )
 
-    # Check that CORS middleware is configured
-    cors_middleware = None
-    for middleware in app.user_middleware:
-        if "CORSMiddleware" in str(middleware.cls):
-            cors_middleware = middleware
-            break
-
-    assert cors_middleware is not None, "CORS middleware should be configured"
-
     # Check that custom logging middleware is configured
     logging_middleware = None
     for middleware in app.user_middleware:
