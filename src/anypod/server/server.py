@@ -45,6 +45,10 @@ def create_server(
         download_database=download_database,
     )
 
+    # Configure proxy settings based on trusted_proxies
+    proxy_headers = settings.trusted_proxies is not None
+    forwarded_allow_ips = settings.trusted_proxies or ["*"] if proxy_headers else None
+
     config = uvicorn.Config(
         app=app,
         host=settings.server_host,
@@ -53,10 +57,8 @@ def create_server(
         access_log=False,  # We have our own logging middleware
         ws="none",  # We don't need websockets
         lifespan="off",  # We don't need a lifespan
-        # TODO: make this configurable
-        # proxy_headers=True,  # Honor X-Forwarded-For, X-Forwarded-Proto, etc.
-        # forwarded_allow_ips=[],  # Allow requests from reverse proxy
-        workers=2,  # We can run multiple workers to handle requests in parallel
+        proxy_headers=proxy_headers,  # Honor X-Forwarded-For, X-Forwarded-Proto, etc.
+        forwarded_allow_ips=forwarded_allow_ips,  # Allow requests from reverse proxy
     )
     server = uvicorn.Server(config)
 

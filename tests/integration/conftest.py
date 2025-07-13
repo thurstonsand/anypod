@@ -173,6 +173,8 @@ def rss_generator(
 def test_app(
     file_manager: FileManager,
     rss_generator: RSSFeedGenerator,
+    feed_db: FeedDatabase,
+    download_db: DownloadDatabase,
 ) -> TestClient:
     """Create a FastAPI test client with real dependencies.
 
@@ -182,5 +184,7 @@ def test_app(
     app = create_app(
         file_manager=file_manager,
         rss_generator=rss_generator,
+        feed_database=feed_db,
+        download_database=download_db,
     )
     return TestClient(app)

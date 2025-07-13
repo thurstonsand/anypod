@@ -7,7 +7,8 @@ the FastAPI application instance with all necessary middleware and routers.
 import logging
 
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+
+# from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import Response
@@ -86,14 +87,14 @@ def create_app(
     )
 
     # Add CORS middleware with permissive settings for development
-    # TODO: Tighten CORS settings for production
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    # TODO: Enable CORS middleware when admin dashboard API is implemented
+    # app.add_middleware(
+    #     CORSMiddleware,
+    #     allow_origins=["http://localhost:3000"],  # Local admin dashboard only
+    #     allow_credentials=False,
+    #     allow_methods=["GET", "POST", "PUT", "DELETE"],
+    #     allow_headers=["Accept", "Accept-Language", "Content-Type"],
+    # )
 
     # Add custom logging middleware
     app.add_middleware(LoggingMiddleware)

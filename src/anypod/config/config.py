@@ -225,6 +225,11 @@ class AppSettings(BaseSettings):
         validation_alias="SERVER_PORT",
         description="Port number for the HTTP server to listen on.",
     )
+    trusted_proxies: list[str] | None = Field(
+        default=None,
+        validation_alias="TRUSTED_PROXIES",
+        description="List of trusted proxy IP addresses or networks. When set, enables proxy header processing. Set to null/empty to trust all proxies. Format: ['192.168.1.0/24', '10.0.0.1'].",
+    )
     tz: ZoneInfo | None = Field(
         default=None,
         validation_alias="TZ",

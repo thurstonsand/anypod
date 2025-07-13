@@ -151,6 +151,7 @@ CONFIG_FILE=/path/to/feeds.yaml       # Config file path (default: /config/feeds
 TZ=America/New_York                    # Timezone for date parsing (default: system timezone)
 SERVER_HOST=0.0.0.0                   # HTTP server host (default: 0.0.0.0)
 SERVER_PORT=8024                      # HTTP server port (default: 8024)
+TRUSTED_PROXIES=["192.168.1.0/24"]    # Trusted proxy IPs/networks for reverse proxy support (default: None)
 ```
 
 *The `yt_args` field is parsed using shell-like syntax and converted to yt-dlp options dictionary, not passed verbatim.*
