@@ -4,9 +4,9 @@ This module provides the default execution mode that initializes all components,
 runs state reconciliation, starts the scheduler, and manages the application lifecycle.
 """
 
-import asyncio
 import logging
-import signal
+
+import uvicorn
 
 from ..config import AppSettings
 from ..data_coordinator import DataCoordinator, Downloader, Enqueuer, Pruner
@@ -20,26 +20,11 @@ from ..file_manager import FileManager
 from ..path_manager import PathManager
 from ..rss import RSSFeedGenerator
 from ..schedule import FeedScheduler
+from ..server import create_server
 from ..state_reconciler import StateReconciler
 from ..ytdlp_wrapper import YtdlpWrapper
 
 logger = logging.getLogger(__name__)
-
-
-def setup_graceful_shutdown() -> asyncio.Event:
-    """Set up signal handlers for graceful shutdown.
-
-    Returns:
-        Event that will be set when a shutdown signal is received.
-    """
-    shutdown_event = asyncio.Event()
-    loop = asyncio.get_running_loop()
-
-    # Register signal handlers for graceful shutdown using asyncio
-    loop.add_signal_handler(signal.SIGINT, shutdown_event.set)  # type: ignore # this is in fact defined
-    loop.add_signal_handler(signal.SIGTERM, shutdown_event.set)  # type: ignore # this is in fact defined
-
-    return shutdown_event
 
 
 async def _init(
@@ -47,7 +32,7 @@ async def _init(
     feed_db: FeedDatabase,
     download_db: DownloadDatabase,
     path_manager: PathManager,
-) -> FeedScheduler:
+) -> tuple[FeedScheduler, uvicorn.Server]:
     file_manager = FileManager(path_manager)
     ytdlp_wrapper = YtdlpWrapper(paths=path_manager)
     rss_generator = RSSFeedGenerator(download_db=download_db, paths=path_manager)
@@ -100,11 +85,22 @@ async def _init(
     logger.debug(
         "Initializing feed scheduler.", extra={"ready_feeds": len(ready_feeds)}
     )
-    return FeedScheduler(
+    scheduler = FeedScheduler(
         ready_feed_ids=ready_feeds,
         feed_configs=settings.feeds,
         data_coordinator=data_coordinator,
     )
+
+    # Create HTTP server
+    server = create_server(
+        settings=settings,
+        rss_generator=rss_generator,
+        file_manager=file_manager,
+        feed_database=feed_db,
+        download_database=download_db,
+    )
+
+    return scheduler, server
 
 
 async def default(settings: AppSettings) -> None:
@@ -147,20 +143,20 @@ async def default(settings: AppSettings) -> None:
 
     scheduler = None
     try:
-        scheduler = await _init(settings, feed_db, download_db, path_manager)
-
-        await scheduler.start()
+        scheduler, server = await _init(settings, feed_db, download_db, path_manager)
 
         logger.info(
-            "Anypod is running. Press Ctrl+C to shutdown.",
+            "Starting scheduler and HTTP server...",
             extra={
                 "scheduled_feeds": scheduler.get_scheduled_feed_ids(),
+                "server_host": settings.server_host,
+                "server_port": settings.server_port,
             },
         )
 
-        # Setup graceful shutdown and wait for signal
-        shutdown_event = setup_graceful_shutdown()
-        await shutdown_event.wait()
+        await scheduler.start()
+        await server.serve()  # This will block until SIGINT/SIGTERM
+
         logger.info("Shutdown signal received.")
 
     finally:

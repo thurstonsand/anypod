@@ -35,7 +35,7 @@ jobs:
             - Test coverage
             - Documentation (DESIGN_DOC.md, CLAUDE.md, tests/CLAUDE.md), but keep updates at the same level of abstraction as what is currently present in these files -- do NOT add unnecessary or out-of-scope details
 
-            - Be constructive and helpful in your feedback
+            - Be constructive and helpful in your feedback, but be concise; primarily comment on issues and potential improvements
             - Follow the project's coding standards in CLAUDE.md
             - For tests, follow the project's testing standards in tests/CLAUDE.md
             - Use uv run/uvx to run commands

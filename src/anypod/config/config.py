@@ -174,6 +174,8 @@ class AppSettings(BaseSettings):
         log_include_stacktrace: Include full stack traces in error logs.
         base_url: Base URL for RSS feeds and media files.
         data_dir: Root directory for all application data.
+        server_host: Host address for the HTTP server to bind to.
+        server_port: Port number for the HTTP server to listen on.
         tz: Timezone for date parsing in config files.
         config_file: Path to the YAML config file.
         cookies_path: Path to the cookies.txt file for yt-dlp authentication.
@@ -210,6 +212,23 @@ class AppSettings(BaseSettings):
         default=Path("/data"),
         validation_alias="DATA_DIR",
         description="Root directory for all application data (database, media files, temp files).",
+    )
+
+    # Server configuration
+    server_host: str = Field(
+        default="0.0.0.0",
+        validation_alias="SERVER_HOST",
+        description="Host address for the HTTP server to bind to (e.g., '0.0.0.0' for all interfaces, '127.0.0.1' for localhost only).",
+    )
+    server_port: int = Field(
+        default=8024,
+        validation_alias="SERVER_PORT",
+        description="Port number for the HTTP server to listen on.",
+    )
+    trusted_proxies: list[str] | None = Field(
+        default=None,
+        validation_alias="TRUSTED_PROXIES",
+        description="List of trusted proxy IP addresses or networks. When set, enables proxy header processing. Set to null/empty to trust all proxies. Format: ['192.168.1.0/24', '10.0.0.1'].",
     )
     tz: ZoneInfo | None = Field(
         default=None,

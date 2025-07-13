@@ -15,7 +15,7 @@ from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col, select
 
-from ..config.types import PodcastCategories, PodcastExplicit
+from ..config.types import PodcastCategories, PodcastExplicit, PodcastType
 from ..exceptions import FeedNotFoundError, NotFoundError
 from .decorators import handle_db_errors, handle_feed_db_errors
 from .sqlalchemy_core import SqlalchemyCore
@@ -264,8 +264,10 @@ class FeedDatabase:
         description: str | None = None,
         language: str | None = None,
         author: str | None = None,
+        author_email: str | None = None,
         image_url: str | None = None,
         category: PodcastCategories | None = None,
+        podcast_type: PodcastType | None = None,
         explicit: PodcastExplicit | None = None,
         since: datetime | None = None,
         keep_last: int | None = None,
@@ -280,8 +282,10 @@ class FeedDatabase:
             description: Optional new description.
             language: Optional new language.
             author: Optional new author.
+            author_email: Optional new author email.
             image_url: Optional new image URL.
             category: Optional new category.
+            podcast_type: Optional new podcast type.
             explicit: Optional new explicit flag.
             since: Optional new since date.
             keep_last: Optional new keep_last value.
@@ -304,10 +308,14 @@ class FeedDatabase:
             updates["language"] = language
         if author is not None:
             updates["author"] = author
+        if author_email is not None:
+            updates["author_email"] = author_email
         if image_url is not None:
             updates["image_url"] = image_url
         if category is not None:
             updates["category"] = category
+        if podcast_type is not None:
+            updates["podcast_type"] = podcast_type
         if explicit is not None:
             updates["explicit"] = explicit
         if since is not None:

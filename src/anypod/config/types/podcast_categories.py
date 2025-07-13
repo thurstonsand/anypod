@@ -147,6 +147,11 @@ class PodcastCategories:
         collapsed = " ".join(unescaped.strip().split())
         return collapsed.lower()
 
+    @classmethod
+    def default(cls) -> "PodcastCategories":
+        """Return the default category."""
+        return cls("TV & Film")
+
     @staticmethod
     def _validate_single_category(
         main: str, sub: str | None = None
@@ -307,16 +312,25 @@ class PodcastCategories:
                 category_strings.append(main)
         return ", ".join(category_strings)
 
-    def rss_list(self) -> list[dict[str, str]]:
-        """Convert to list of dictionaries for RSS generation.
+    def itunes_rss_list(self) -> list[dict[str, str]]:
+        """Convert to list of dictionaries for iTunes RSS generation.
 
         Returns:
-            List of dictionaries in format expected by feedgen library.
+            List of dictionaries in format expected by feedgen library for iTunes categories.
         """
         return [
             {"cat": main, "sub": sub} if sub else {"cat": main}
             for main, sub in sorted(self._categories)
         ]
+
+    def rss_list(self) -> list[dict[str, str]]:
+        """Convert to list of dictionaries for standard RSS generation.
+
+        Returns:
+            List of dictionaries in format expected by feedgen library for standard RSS categories.
+            Uses only the main category as the 'term' field.
+        """
+        return [{"term": main} for main, _ in sorted(self._categories)]
 
     @classmethod
     def __get_pydantic_core_schema__(

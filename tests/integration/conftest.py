@@ -3,6 +3,7 @@
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
+from fastapi.testclient import TestClient
 from helpers.alembic import run_migrations
 import pytest
 import pytest_asyncio
@@ -16,6 +17,7 @@ from anypod.db.sqlalchemy_core import SqlalchemyCore
 from anypod.file_manager import FileManager
 from anypod.path_manager import PathManager
 from anypod.rss.rss_feed import RSSFeedGenerator
+from anypod.server.app import create_app
 from anypod.ytdlp_wrapper.ytdlp_wrapper import YtdlpWrapper
 
 
@@ -165,3 +167,24 @@ def rss_generator(
         RSSFeedGenerator instance configured with test components.
     """
     return RSSFeedGenerator(download_db, path_manager)
+
+
+@pytest.fixture
+def test_app(
+    file_manager: FileManager,
+    rss_generator: RSSFeedGenerator,
+    feed_db: FeedDatabase,
+    download_db: DownloadDatabase,
+) -> TestClient:
+    """Create a FastAPI test client with real dependencies.
+
+    Returns:
+        TestClient configured with real FileManager and RSSFeedGenerator.
+    """
+    app = create_app(
+        file_manager=file_manager,
+        rss_generator=rss_generator,
+        feed_database=feed_db,
+        download_database=download_db,
+    )
+    return TestClient(app)

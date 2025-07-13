@@ -444,17 +444,17 @@ This section details the components that manage the lifecycle of downloads, from
 
 ### 6.1 Project Structure Setup
 - [ ] Create new HTTP server module at `src/anypod/server/`
-  - [ ] `__init__.py` - Server module exports
-  - [ ] `app.py` - FastAPI application factory
-  - [ ] `dependencies.py` - Dependency injection setup
+  - [x] `__init__.py` - Server module exports
+  - [x] `app.py` - FastAPI application factory
+  - [x] `dependencies.py` - Dependency injection setup
   - [ ] `models/` - Pydantic request/response models
-  - [ ] `routers/` - API route handlers organized by domain
-  - [ ] `middleware.py` - CORS, logging, error handling middleware
+  - [x] `routers/` - API route handlers organized by domain
 
 ### 6.2 FastAPI Application Setup
-- [ ] Add `fastapi`, `uvicorn` to dependencies in pyproject.toml
-- [ ] Create FastAPI app factory with proper dependency injection
-- [ ] Set up CORS, logging, and error handling middleware
+- [x] Add `fastapi`, `uvicorn` to dependencies in pyproject.toml
+- [x] Create FastAPI app factory with proper dependency injection
+- [x] Set up CORS, logging, and error handling middleware
+  - Ensure logging also includes contextvar
 - [ ] Configure OpenAPI documentation with proper metadata
 
 ### 6.3 API Models (Pydantic)
@@ -486,25 +486,26 @@ This section details the components that manage the lifecycle of downloads, from
 - [ ] `stats.py` - Statistics and monitoring endpoints
   - [ ] `GET    /api/feeds/{feed_id}/stats` - Detailed feed statistics
   - [ ] `GET    /api/stats/summary`         - System-wide statistics summary including storage
-- [ ] `health.py` - Health check endpoints
-  - [ ] `GET    /api/health` - Application health check
+- [x] `health.py` - Health check endpoints
+  - [x] `GET    /api/health` - Application health check
 - [ ] `static.py` - Content delivery endpoints
-  - [ ] `GET    /feeds`                           - List all rss feeds in directory
-  - [ ] `GET    /feeds/{feed_id}.xml`             - RSS feed XML
-  - [ ] `GET    /media`                           - List all feeds in directory
-  - [ ] `GET    /media/{feed_id}`                 - List all files for a feed in directory
-  - [ ] `GET    /media/{feed_id}/{filename}`      - Media file download
-  - [ ] `GET    /thumbnails`                      - List all feeds in directory
-  - [ ] `GET    /thumbnails/{feed_id}`            - List all thumbnails for a feed in directory
-  - [ ] `GET    /thumbnails/{feed_id}/{filename}` - Thumbnail images
-- [ ] Unit tests with `httpx` for all API endpoints
+  - [x] `GET    /feeds`                                  - List all rss feeds in directory
+  - [x] `GET    /feeds/{feed_id}.xml`                    - RSS feed XML
+  - [x] `GET    /media`                                  - List all feeds in directory
+  - [x] `GET    /media/{feed_id}`                        - List all files for a feed in directory
+  - [x] `GET    /media/{feed_id}/{filename}.{ext}`       - Media file download
+  - [ ] `GET    /thumbnails`                             - List all feeds in directory
+  - [ ] `GET    /thumbnails/{feed_id}`                   - List all thumbnails for a feed in directory
+  - [ ] `GET    /thumbnails/{feed_id}/{filename}.{ext}`  - Thumbnail images
+- [ ] Unit tests with `TestClient` for all API endpoints
 - [ ] Integration tests with actual database operations
+- [ ] maybe enforce feed id must align with same regex as is in validation.py
 
 ### 6.5 Integration with Existing Components
 - [ ] Create service layer to bridge HTTP API with existing DataCoordinator
 - [ ] Extend FeedDatabase/DownloadDatabase with new query methods for API needs
 - [ ] Add config file read/write utilities for feed CRUD operations
-- [ ] Implement proper error mapping from domain exceptions to HTTP responses
+- [x] Implement proper error mapping from domain exceptions to HTTP responses
 
 ### 6.6 Key Features Implementation
 - [ ] **Pagination**: Implement cursor-based or offset-based pagination
@@ -514,10 +515,9 @@ This section details the components that manage the lifecycle of downloads, from
 - [ ] **Error Handling**: Consistent error responses with proper HTTP status codes
 
 ### 6.7 CLI Integration
-- [ ] Add new `--serve` flag to CLI for running HTTP server mode
-- [ ] Configure server host/port via environment variables
-- [ ] Ensure proper graceful shutdown handling
-- [ ] Entry in `default.py` to start `uvicorn`
+- [x] Configure server host/port via environment variables
+- [x] Ensure proper graceful shutdown handling
+- [x] Entry in `default.py` to start `uvicorn`
 
 ### 6.8 Documentation
 - [ ] Comprehensive OpenAPI documentation

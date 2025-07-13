@@ -8,7 +8,7 @@ description: Create a git commit
 - Current git diff (staged changes only): !`git diff --cached`
 - Current branch: !`git branch --show-current`
 - Recent commits: !`git log --oneline -10`
-- `pre-commit` hooks will trigger on commit. If they error, the commit will fail; address any issues and try the commit again
+- `pre-commit` hooks will trigger on commit. If they error, the commit will fail; address any issues, stage the changed files, and try the commit again
 - Do not stage any additional files (ignore anything unstaged)
 
 ## Your task

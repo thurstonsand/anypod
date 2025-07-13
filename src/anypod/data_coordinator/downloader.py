@@ -148,7 +148,7 @@ class Downloader:
             "feed_id": download_to_process.feed_id,
             "download_id": download_to_process.id,
         }
-        logger.info("Processing single download.", extra=log_params)
+        logger.debug("Processing single download.", extra=log_params)
 
         try:
             downloaded_file_path = await self.ytdlp_wrapper.download_media_to_file(

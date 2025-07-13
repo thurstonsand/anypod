@@ -181,8 +181,8 @@ async def test_enqueue_new_downloads_success(
         )
         assert updated_feed.subtitle is None
         assert updated_feed.language is None
-        assert updated_feed.category is None
-        assert updated_feed.explicit is None
+        assert updated_feed.category == PodcastCategories("TV & Film")
+        assert updated_feed.explicit is PodcastExplicit.NO
 
     elif url_type == "channel_videos_tab":
         # cole-dlp-test-acc channel metadata
@@ -192,8 +192,8 @@ async def test_enqueue_new_downloads_success(
         assert updated_feed.image_url is not None
         assert updated_feed.subtitle is None
         assert updated_feed.language is None
-        assert updated_feed.category is None
-        assert updated_feed.explicit is None
+        assert updated_feed.category == PodcastCategories("TV & Film")
+        assert updated_feed.explicit is PodcastExplicit.NO
 
     elif url_type in ["video_in_playlist_link", "playlist"]:
         # single video playlist metadata
@@ -203,8 +203,8 @@ async def test_enqueue_new_downloads_success(
         assert updated_feed.image_url is not None
         assert updated_feed.subtitle is None
         assert updated_feed.language is None
-        assert updated_feed.category is None
-        assert updated_feed.explicit is None
+        assert updated_feed.category == PodcastCategories("TV & Film")
+        assert updated_feed.explicit is PodcastExplicit.NO
 
     # Common assertions for all URL types
     assert updated_feed.is_enabled is True
@@ -687,5 +687,5 @@ async def test_enqueue_feed_metadata_partial_overrides(
     # These should remain None since not overridden and not in extracted metadata
     assert updated_feed.subtitle is None
     assert updated_feed.language is None
-    assert updated_feed.category is None
-    assert updated_feed.explicit is None
+    assert updated_feed.category == PodcastCategories("TV & Film")
+    assert updated_feed.explicit is PodcastExplicit.NO

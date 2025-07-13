@@ -50,8 +50,8 @@ def upgrade() -> None:
     sa.Column('language', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column('author', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column('image_url', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-    sa.Column('category', anypod.db.types.feed.PodcastCategoriesType(), nullable=True),
-    sa.Column('explicit', sa.Enum('YES', 'NO', 'CLEAN', name='podcastexplicit'), nullable=True),
+    sa.Column('category', anypod.db.types.feed.PodcastCategoriesType(), server_default='TV & Film', nullable=False),
+    sa.Column('explicit', sa.Enum('YES', 'NO', 'CLEAN', name='podcastexplicit'), server_default='NO', nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_feed_is_enabled'), 'feed', ['is_enabled'], unique=False)

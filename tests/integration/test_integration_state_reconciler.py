@@ -15,6 +15,7 @@ from anypod.config.types import (
     FeedMetadataOverrides,
     PodcastCategories,
     PodcastExplicit,
+    PodcastType,
 )
 from anypod.data_coordinator.pruner import Pruner
 from anypod.db import DownloadDatabase, FeedDatabase
@@ -103,8 +104,10 @@ async def test_new_feed_addition(
                 description="A brand new feed",
                 language="en-US",
                 author="Test Author",
+                author_email=None,
                 image_url="https://example.com/image.jpg",
                 categories=PodcastCategories("Technology > Tech News"),
+                podcast_type=PodcastType.EPISODIC,
                 explicit=PodcastExplicit.CLEAN,
             ),
         )
@@ -520,8 +523,10 @@ async def test_metadata_updates(
                 description="New Description",
                 language="es",
                 author="New Author",
+                author_email=None,
                 image_url="https://example.com/new_image.jpg",
                 categories=PodcastCategories("Arts > Design"),
+                podcast_type=PodcastType.EPISODIC,
                 explicit=PodcastExplicit.NO,
             ),
         )

@@ -54,6 +54,8 @@ class FeedgenCore:
             ) from e
 
         fg.title(feed.title)  # type: ignore
+        if feed.subtitle:
+            fg.podcast.itunes_subtitle(feed.subtitle)  # type: ignore
         fg.link(href=feed_self_url, rel="self")  # type: ignore
         fg.link(href=feed.source_url, rel="alternate")  # type: ignore
         fg.description(feed.description)  # type: ignore
@@ -61,27 +63,27 @@ class FeedgenCore:
         fg.language(feed.language or "en")  # type: ignore
 
         # Handle optional fields with null checks
-        if feed.category:
-            fg.podcast.itunes_category(  # type: ignore
-                feed.category.rss_list()
-            )
-        if feed.explicit:
-            fg.podcast.itunes_explicit(feed.explicit.rss_str())  # type: ignore
+        fg.category(feed.category.rss_list())  # type: ignore
+        fg.podcast.itunes_category(  # type: ignore
+            feed.category.itunes_rss_list()
+        )
+        fg.podcast.itunes_type(feed.podcast_type.rss_str())  # type: ignore
+        fg.podcast.itunes_explicit(feed.explicit.rss_str())  # type: ignore
         if feed.image_url:
-            try:
-                fg.podcast.itunes_image(feed.image_url)  # type: ignore
-            except ValueError as e:
-                logger.warning(
-                    f"Invalid feed image URL format: {e}",
-                    extra={
-                        "feed_id": feed_id,
-                    },
-                )
+            fg.podcast.itunes_image(feed.image_url)  # type: ignore
+            fg.image(  # type: ignore
+                url=feed.image_url,
+                title=feed.title,
+                link=feed.source_url,
+                description=f"Artwork for {feed.title}",
+            )
         if feed.author:
             fg.podcast.itunes_author(feed.author)  # type: ignore
+            if feed.author_email:
+                fg.podcast.itunes_owner(  # type: ignore
+                    name=feed.author, email=feed.author_email
+                )
 
-        # always prevent this feed from appearing in the podcast directory
-        fg.podcast.itunes_block("yes")  # type: ignore
         fg.lastBuildDate(None)  # type: ignore # None == now()
         fg.generator(  # type: ignore
             "AnyPod: https://github.com/thurstonsan/anypod"
@@ -103,6 +105,10 @@ class FeedgenCore:
         Returns:
             Self for method chaining.
         """
+        # Set feed publication date to the newest episode date
+        if downloads:
+            self._fg.pubDate(downloads[0].published)  # type: ignore
+
         for download in downloads:
             fe = self._fg.add_entry(order="append")  # type: ignore
 
@@ -115,6 +121,8 @@ class FeedgenCore:
             # Use description from download if available
             description = download.description or download.title
             fe.description(description)  # type: ignore
+            # TODO: Consider removing itunes:summary as it's redundant with description
+            # Apple Podcasts documentation indicates description is sufficient for episodes
             fe.podcast.itunes_summary(description)  # type: ignore
 
             if download.thumbnail:
@@ -153,11 +161,27 @@ class FeedgenCore:
                 url=self._feed.source_url,
                 title=self._feed.title,
             )
-            fe.podcast.itunes_duration(download.duration)  # type: ignore
-            # always prevent this entry from appearing in the podcast directory
-            fe.podcast.itunes_block("yes")  # type: ignore
+            fe.podcast.itunes_duration(self._format_duration(download.duration))  # type: ignore
+            # Always set episode type to full for now
+            fe.podcast.itunes_episode_type("full")  # type: ignore
 
         return self
+
+    def _format_duration(self, seconds: int) -> str:
+        """Convert seconds to HH:MM:SS format for iTunes duration.
+
+        Args:
+            seconds: Duration in seconds.
+
+        Returns:
+            Duration in HH:MM:SS format.
+        """
+        if seconds < 0:
+            seconds = 0  # Duration must be a positive value
+
+        mins, sec = divmod(seconds, 60)
+        hr, mins = divmod(mins, 60)
+        return f"{int(hr):02d}:{int(mins):02d}:{int(sec):02d}"
 
     def xml(self) -> bytes:
         """Generate RSS XML output.

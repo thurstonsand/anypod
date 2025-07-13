@@ -18,6 +18,7 @@ from anypod.config.types import (
     FeedMetadataOverrides,
     PodcastCategories,
     PodcastExplicit,
+    PodcastType,
 )
 from anypod.data_coordinator.pruner import Pruner
 from anypod.db import DownloadDatabase
@@ -48,6 +49,7 @@ MOCK_FEED = Feed(
     description=None,
     language=None,
     author=None,
+    author_email=None,
     image_url=None,
     is_enabled=True,
     source_type=SourceType.UNKNOWN,
@@ -64,6 +66,7 @@ MOCK_DISABLED_FEED = Feed(
     description=None,
     language=None,
     author=None,
+    author_email=None,
     image_url=None,
     is_enabled=True,
     source_type=SourceType.UNKNOWN,
@@ -188,8 +191,10 @@ def feed_config_with_metadata() -> FeedConfig:
             description="Custom Description",
             language="en",
             author="Test Author",
+            author_email="test@example.com",
             image_url="https://example.com/image.jpg",
             categories=PodcastCategories("Technology"),
+            podcast_type=PodcastType.EPISODIC,
             explicit=PodcastExplicit.NO,
         ),
     )

@@ -94,7 +94,7 @@ graph TD
 | **`AppSettings` (config/)**         | Parse & validate YAML into strongly‑typed models.                                                                | Environment‑variable overrides; default value injection; early failure on schema mismatch.           |
 | **`StateReconciler`**               | Synchronize YAML configuration with database state on startup and config changes.                               | Handles feed creation/removal/updates; manages retention policy changes; preserves download history. |
 | **`Scheduler`**                     | Trigger periodic `DataCoordinator.process_feed` jobs per‑feed cron schedule.                                     | Async scheduler; cron expressions validated at startup; stateless job store.                         |
-| **Database Classes**                | Persistent metadata store (status, retries, paths, etc.). Specialized classes for downloads and feeds.          | `DownloadDatabase` + `FeedDatabase` + `SqliteUtilsCore`; proper state transitions.                 |
+| **Database Classes**                | Persistent metadata store (status, retries, paths, etc.). Specialized classes for downloads and feeds.          | `DownloadDatabase` + `FeedDatabase` + `SqlalchemyCore`; proper state transitions.                  |
 | **`FileManager`**                   | All filesystem interaction: save/read/delete media, atomic RSS writes, directory hygiene, free‑space checks.     | Centralized path management; future back‑ends (S3/GCS) become plug‑ins.                             |
 | **`YtdlpWrapper`**                  | Thin wrapper around `yt-dlp` for fetching media metadata and downloading media content.                          | Handler-based system; abstracts `yt-dlp` specifics; provides `fetch_metadata` and `download_media`. |
 | **`FeedGen`** (rss/)**              | Generates RSS XML feed files based on current download metadata.                                                 | Manages in-memory feed cache with read/write locks; uses database classes & `FileManager`.          |
@@ -103,7 +103,7 @@ graph TD
 |   ↳ **`Enqueuer`**                  | Fetches media metadata in two phases—(1) re-poll existing 'upcoming' entries to transition them to 'queued' when VOD; (2) fetch latest feed media and insert new 'queued' or 'upcoming' entries. | Uses `YtdlpWrapper` for metadata, database classes for DB writes.                                    |
 |   ↳ **`Downloader`**                | Processes queued downloads: triggers downloads via `YtdlpWrapper`, saves files, and updates database records.        | Uses `YtdlpWrapper`, `FileManager`, database classes. Handles download success/failure.             |
 |   ↳ **`Pruner`**                    | Implements retention policies by identifying and removing old/stale downloads and their files.                   | Uses database classes for selection, `FileManager` for deletion.                                     |
-| **HTTP (FastAPI)**                  | Serve static RSS & media and expose health/error JSON.                                                           | Delegates look‑ups to `DataCoordinator` or relevant services; zero business logic.                   |
+| **HTTP (FastAPI)**                  | Serve RSS feeds, media files, and API endpoints.                                                                 | Delegates look-ups to underlying components; zero business logic.                                                             |
 
 ---
 
@@ -114,7 +114,7 @@ feeds:
     url: https://www.youtube.com/@example
     yt_args: "-f worst[ext=mp4] --playlist-items 1-3"
     schedule: "0 3 * * *"
-    since: "2022-01-01T00:00:00Z"
+    since: "20220101"                 # Downloads older than this date are ignored
     keep_last: 100                 # prune policy (optional)
     max_errors: 5                  # maximum download attempts (default: 3)
     enabled: true                  # whether feed is processed (default: true)
@@ -130,7 +130,9 @@ feeds:
       description: "A daily podcast about technology and culture" # Feed description
       language: "en"                                  # Language code (e.g., 'en', 'es', 'fr')
       author: "John Doe"                             # Podcast author
+      author_email: "john@example.com"               # Podcast author email
       image_url: "https://example.com/podcast-art.jpg" # Podcast artwork (min 1400x1400px)
+      podcast_type: "episodic"                       # Podcast type: "episodic" or "serial"
       explicit: "no"                                 # Explicit content: "yes", "no", or "clean"
       categories:                                    # Apple Podcasts categories (max 2)
         - "Technology"                               # Main category only
@@ -147,6 +149,9 @@ LOG_INCLUDE_STACKTRACE=true           # Include stack traces in logs (default: f
 BASE_URL=https://podcasts.example.com  # Base URL for feeds/media (default: http://localhost:8024)
 CONFIG_FILE=/path/to/feeds.yaml       # Config file path (default: /config/feeds.yaml)
 TZ=America/New_York                    # Timezone for date parsing (default: system timezone)
+SERVER_HOST=0.0.0.0                   # HTTP server host (default: 0.0.0.0)
+SERVER_PORT=8024                      # HTTP server port (default: 8024)
+TRUSTED_PROXIES=["192.168.1.0/24"]    # Trusted proxy IPs/networks for reverse proxy support (default: None)
 ```
 
 *The `yt_args` field is parsed using shell-like syntax and converted to yt-dlp options dictionary, not passed verbatim.*
@@ -208,6 +213,7 @@ CREATE TABLE feeds (
   is_enabled                INTEGER NOT NULL,        -- boolean as integer
   source_type               TEXT NOT NULL,           -- channel | playlist | single_video | unknown
   source_url                TEXT NOT NULL,
+  resolved_url              TEXT,                    -- resolved URL for fetching, e.g., a channel's /videos tab URL
 
   -- Time keeping
   last_successful_sync      TEXT NOT NULL,                                                   -- ISO 8601 datetime string
@@ -221,8 +227,7 @@ CREATE TABLE feeds (
   last_error                TEXT,
 
   -- Download tracking
-  total_downloads           INTEGER NOT NULL DEFAULT 0,
-  downloads_since_last_rss  INTEGER NOT NULL DEFAULT 0,
+  total_downloads           INTEGER NOT NULL DEFAULT 0, -- Computed: count of downloads with status DOWNLOADED
 
   -- Retention policies
   since                     TEXT,                    -- ISO 8601 datetime string
@@ -234,9 +239,11 @@ CREATE TABLE feeds (
   description               TEXT,
   language                  TEXT,
   author                    TEXT,
+  author_email              TEXT,
   image_url                 TEXT,
-  category                  TEXT,                    -- PodcastCategories as string
-  explicit                  TEXT                     -- PodcastExplicit as string
+  category                  TEXT NOT NULL DEFAULT 'TV & Film',    -- Stored as string, parsed into PodcastCategories
+  podcast_type              TEXT NOT NULL DEFAULT 'episodic',     -- Stored as string, parsed into PodcastType
+  explicit                  TEXT NOT NULL DEFAULT 'NO'           -- Stored as string, parsed into PodcastExplicit
 );
 ```
 
@@ -442,10 +449,13 @@ The `RSSFeedGenerator` module maintains a **write-once/read-many-locked in-memor
 ## HTTP Endpoints
 | Path | Description |
 |------|-------------|
+| `/feeds` | HTML directory listing of available feeds |
 | `/feeds/{feed}.xml` | Podcast RSS |
+| `/media` | HTML directory listing of feed directories |
+| `/media/{feed}` | HTML directory listing of media files for feed |
 | `/media/{feed}/{file}` | MP4 / M4A enclosure |
 | `/errors` | JSON list of failed downloads |
-| `/healthz` | 200 OK |
+| `/api/health` | Health check endpoint returning service status, timestamp, and version |
 
 ---
 
@@ -505,7 +515,7 @@ All CLI flags can alternatively be set via environment variables using uppercase
 
 ## Dependencies & Tooling
 * **Package Management:** **uv** with `pyproject.toml` + `uv.lock` for reproducible builds
-* **Core Dependencies:** pydantic, sqlite-utils, feedgen, yt-dlp (pinned to minimum version), APScheduler
+* **Core Dependencies:** pydantic, SQLModel, SQLAlchemy, feedgen, yt-dlp (pinned to minimum version), APScheduler
 * **Development Tools:** ruff (linting/formatting), pyright (type checking), pytest ecosystem (testing), pre-commit (git hooks)
 
 ---
@@ -523,10 +533,6 @@ yt-dlp's `daterange` parameter only supports YYYYMMDD format, not hour/minute/se
 ---
 
 ## Implementation Status & Future Work
-
-### Critical Missing Components (Production Blockers)
-* **HTTP Server** - FastAPI implementation for serving RSS feeds and media files
-* **Production CLI Mode** - Long-running daemon mode beyond current debug modes
 
 ### Database Optimizations
 * **Additional Indexes** - Analyze query patterns and add indexes as needed for performance
@@ -569,6 +575,8 @@ yt-dlp's `daterange` parameter only supports YYYYMMDD format, not hour/minute/se
 * Chapter support for podcasts: extract chapter information from source videos and include in RSS feeds using podcast namespace standards.
 * Think about ways to incorporate LLMs into the interface
 * Support Patreon
+* Add automatic podcast category mapping using yt-dlp metadata: map YouTube categories to Apple Podcasts categories, enhance with tag and description analysis, and support channel-specific overrides. Implement priority-based logic in `ytdlp_wrapper/category_mapper.py` to select the best category based on YouTube category, tags, description keywords, and known channel mappings, with a fallback if no match is found.
 * Support "generic source" after looking at overlap from a few sources
 * crop thumbnails so they are the right ratio; also consider converting from webp to png/jpg
 * configurable channel tab selection: allow users to specify which tab (videos, shorts, live, etc.) to use when discovering channel URLs, with /videos as default
+* just store rss feeds in the db, don't keep them in-memory (fixes race condition on boot)

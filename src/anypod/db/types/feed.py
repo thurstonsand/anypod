@@ -16,7 +16,7 @@ from sqlalchemy import (
 from sqlalchemy.sql.schema import FetchedValue
 from sqlmodel import Field, Relationship, SQLModel
 
-from ...config.types import PodcastCategories, PodcastExplicit
+from ...config.types import PodcastCategories, PodcastExplicit, PodcastType
 from .source_type import SourceType
 from .timezone_aware_datetime import SQLITE_DATETIME_NOW, TimezoneAwareDatetime
 
@@ -40,7 +40,10 @@ class PodcastCategoriesType(TypeDecorator[PodcastCategories]):
         self, value: str | None, dialect: Any
     ) -> PodcastCategories | None:
         """Convert string back to PodcastCategories."""
-        return PodcastCategories(value) if value is not None else None
+        if value is None:
+            # Return default if somehow None is returned from database
+            return PodcastCategories("TV & Film")
+        return PodcastCategories(value)
 
 
 class Feed(SQLModel, table=True):
@@ -75,8 +78,10 @@ class Feed(SQLModel, table=True):
             description: Feed description.
             language: Feed language code.
             author: Feed author.
+            author_email: Feed author email.
             image_url: URL to feed image.
             category: List of podcast categories.
+            podcast_type: Podcast type.
             explicit: Explicit content flag.
 
     Relationships:
@@ -158,12 +163,29 @@ class Feed(SQLModel, table=True):
     description: str | None = None
     language: str | None = None
     author: str | None = None
+    author_email: str | None = None
     image_url: str | None = None
-    category: PodcastCategories | None = Field(
-        default=None, sa_column=Column(PodcastCategoriesType)
+    category: PodcastCategories = Field(
+        default_factory=lambda: PodcastCategories("TV & Film"),
+        sa_column=Column(
+            PodcastCategoriesType,
+            nullable=False,
+            server_default="TV & Film",
+        ),
     )
-    explicit: PodcastExplicit | None = Field(
-        default=None, sa_column=Column(Enum(PodcastExplicit))
+    podcast_type: PodcastType = Field(
+        default=PodcastType.EPISODIC,
+        sa_column=Column(
+            Enum(PodcastType), nullable=False, server_default=PodcastType.EPISODIC.value
+        ),
+    )
+    explicit: PodcastExplicit = Field(
+        default=PodcastExplicit.NO,
+        sa_column=Column(
+            Enum(PodcastExplicit),
+            nullable=False,
+            server_default=PodcastExplicit.NO.value,
+        ),
     )
 
     # ---------------------------------------------------- relationships

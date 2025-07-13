@@ -352,7 +352,6 @@ class YtdlpWrapper:
         url_to_download = download.source_url
 
         try:
-            # TODO: maybe we can get the filepath from here?
             await YtdlpCore.download(download_opts, url_to_download)
         except YtdlpApiError as e:
             logger.error(

@@ -175,7 +175,7 @@ async def test_synchronize_feed_metadata_handles_removed_overrides(
         author="Override Author",
         image_url="https://example.com/override.jpg",
         category=PodcastCategories(["Technology", "Science"]),
-        explicit=PodcastExplicit.NO,
+        explicit=PodcastExplicit.YES,
         is_enabled=True,
         source_type=SourceType.UNKNOWN,
         source_url="https://example.com/test",
@@ -191,8 +191,8 @@ async def test_synchronize_feed_metadata_handles_removed_overrides(
         language=None,  # No language in source
         author="Source Author",
         image_url="https://example.com/source.jpg",
-        category=None,  # No category in source
-        explicit=None,  # No explicit flag in source
+        category=PodcastCategories("TV & Film"),  # No category in source, use default
+        explicit=PodcastExplicit.NO,  # No explicit flag in source
         is_enabled=True,
         source_type=SourceType.UNKNOWN,
         source_url="https://example.com/test",
@@ -229,8 +229,8 @@ async def test_synchronize_feed_metadata_handles_removed_overrides(
         "language": None,  # Override -> None (cleared)
         "author": "Source Author",  # Override -> Source value
         "image_url": "https://example.com/source.jpg",  # Override -> Source value
-        "category": None,  # Override -> None (cleared)
-        "explicit": None,  # Override -> None (cleared)
+        "category": PodcastCategories("TV & Film"),  # Override -> default (cleared)
+        "explicit": PodcastExplicit.NO,  # Override -> default (cleared)
     }
 
     assert call_args[0][0] == FEED_ID  # First positional arg is feed_id
@@ -271,8 +271,8 @@ async def test_synchronize_feed_metadata_handles_partial_override_removal(
         language=None,
         author="Source Author",
         image_url="https://example.com/source.jpg",
-        category=None,
-        explicit=None,
+        category=PodcastCategories("TV & Film"),
+        explicit=PodcastExplicit.NO,
         is_enabled=True,
         source_type=SourceType.UNKNOWN,
         source_url="https://example.com/test",
@@ -311,8 +311,10 @@ async def test_synchronize_feed_metadata_handles_partial_override_removal(
         "language": None,  # Cleared (was override, now source has None)
         "author": "Keep Override Author",  # Still overridden
         "image_url": "https://example.com/source.jpg",  # Now from source
-        "category": None,  # Cleared (was override, now source has None)
-        "explicit": None,  # Cleared (was override, now source has None)
+        "category": PodcastCategories(
+            "TV & Film"
+        ),  # Cleared (was override, now source has default)
+        "explicit": PodcastExplicit.NO,  # Cleared (was override, now source has value)
     }
 
     assert call_args[0][0] == FEED_ID
@@ -337,8 +339,8 @@ async def test_synchronize_feed_metadata_preserves_source_type_from_fetched_feed
         language=None,
         author=None,
         image_url=None,
-        category=None,
-        explicit=None,
+        category=PodcastCategories("TV & Film"),
+        explicit=PodcastExplicit.NO,
         is_enabled=True,
         source_type=SourceType.UNKNOWN,
         source_url="https://example.com/test",
@@ -356,8 +358,8 @@ async def test_synchronize_feed_metadata_preserves_source_type_from_fetched_feed
         language=None,
         author="Channel Author from YouTube",
         image_url="https://yt3.googleusercontent.com/channel_image.jpg",
-        category=None,
-        explicit=None,
+        category=PodcastCategories("TV & Film"),
+        explicit=PodcastExplicit.NO,
         is_enabled=True,
         source_type=SourceType.CHANNEL,
         source_url="https://example.com/test",
@@ -433,8 +435,8 @@ async def test_synchronize_feed_metadata_preserves_source_type_with_metadata_ove
         language=None,
         author="Source Author",
         image_url="https://example.com/source.jpg",
-        category=None,
-        explicit=None,
+        category=PodcastCategories("TV & Film"),
+        explicit=PodcastExplicit.NO,
         is_enabled=True,
         source_type=SourceType.CHANNEL,  # Should be preserved
         source_url="https://example.com/test",
@@ -476,8 +478,8 @@ async def test_synchronize_feed_metadata_preserves_source_type_with_metadata_ove
         "language": None,
         "author": fetched_feed.author,
         "image_url": fetched_feed.image_url,
-        "category": None,
-        "explicit": None,
+        "category": PodcastCategories("TV & Film"),
+        "explicit": PodcastExplicit.NO,
         "since": feed_config_with_overrides.since,
         "keep_last": feed_config_with_overrides.keep_last,
     }

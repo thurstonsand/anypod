@@ -582,9 +582,10 @@ async def test_download_queued_file_properties(
 
     # File should be readable - get_download_stream returns an async iterator
     stream_data = b""
-    async for chunk in file_manager.get_download_stream(
+    download_stream = await file_manager.get_download_stream(
         feed_id, download.id, download.ext
-    ):
+    )
+    async for chunk in download_stream:
         stream_data += chunk
         break  # Just check that we can read at least one chunk
     assert len(stream_data) > 0
