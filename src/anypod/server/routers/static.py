@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, Response
 
 from ...db.types import DownloadStatus
-from ...exceptions import FileOperationError, RSSGenerationError
+from ...exceptions import DatabaseOperationError, FileOperationError, RSSGenerationError
 from ...mimetypes import mimetypes
 from ..dependencies import (
     DownloadDatabaseDep,
@@ -15,6 +15,7 @@ from ..dependencies import (
     FileManagerDep,
     RSSFeedGeneratorDep,
 )
+from ..validation import ValidatedExtension, ValidatedFeedId, ValidatedFilename
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +82,7 @@ def _generate_directory_listing(
 
 @router.api_route("/feeds/{feed_id}.xml", methods=["GET", "HEAD"])
 async def serve_feed(
-    feed_id: str,
+    feed_id: ValidatedFeedId,
     request: Request,
     rss_generator: RSSFeedGeneratorDep,
 ) -> Response:
@@ -133,7 +134,8 @@ async def browse_feeds(
 
     try:
         feeds = await feed_db.get_feeds(enabled=True)
-    except Exception as e:
+    except DatabaseOperationError as e:
+        logger.error("Database error while retrieving feeds", exc_info=e)
         raise HTTPException(status_code=500, detail="Internal server error") from e
 
     # Generate links for each feed
@@ -167,7 +169,10 @@ async def browse_media(
 
     try:
         feeds = await feed_db.get_feeds(enabled=True)
-    except Exception as e:
+    except DatabaseOperationError as e:
+        logger.error(
+            "Database error while retrieving feeds for media browsing", exc_info=e
+        )
         raise HTTPException(status_code=500, detail="Internal server error") from e
 
     # Generate links for each feed directory
@@ -184,7 +189,7 @@ async def browse_media(
 
 @router.get("/media/{feed_id}")
 async def browse_media_feed(
-    feed_id: str,
+    feed_id: ValidatedFeedId,
     download_db: DownloadDatabaseDep,
 ) -> Response:
     """Browse media files for a specific feed as a file system directory listing.
@@ -205,7 +210,12 @@ async def browse_media_feed(
         downloads = await download_db.get_downloads_by_status(
             DownloadStatus.DOWNLOADED, feed_id=feed_id
         )
-    except Exception as e:
+    except DatabaseOperationError as e:
+        logger.error(
+            "Database error while retrieving downloads for feed",
+            extra={"feed_id": feed_id},
+            exc_info=e,
+        )
         raise HTTPException(status_code=500, detail="Internal server error") from e
 
     # Generate links for each media file
@@ -224,9 +234,9 @@ async def browse_media_feed(
 
 @router.api_route("/media/{feed_id}/{filename}.{ext}", methods=["GET", "HEAD"])
 async def serve_media(
-    feed_id: str,
-    filename: str,
-    ext: str,
+    feed_id: ValidatedFeedId,
+    filename: ValidatedFilename,
+    ext: ValidatedExtension,
     file_manager: FileManagerDep,
 ) -> FileResponse:
     """Serve media file for a specific feed and filename.

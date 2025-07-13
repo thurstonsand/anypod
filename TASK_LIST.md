@@ -499,6 +499,7 @@ This section details the components that manage the lifecycle of downloads, from
   - [ ] `GET    /thumbnails/{feed_id}/{filename}.{ext}`  - Thumbnail images
 - [ ] Unit tests with `TestClient` for all API endpoints
 - [ ] Integration tests with actual database operations
+- [ ] maybe enforce feed id must align with same regex as is in validation.py
 
 ### 6.5 Integration with Existing Components
 - [ ] Create service layer to bridge HTTP API with existing DataCoordinator

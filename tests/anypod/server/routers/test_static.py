@@ -13,7 +13,11 @@ import pytest
 
 from anypod.db import DownloadDatabase, FeedDatabase
 from anypod.db.types import Download, DownloadStatus, Feed, SourceType
-from anypod.exceptions import FileOperationError, RSSGenerationError
+from anypod.exceptions import (
+    DatabaseOperationError,
+    FileOperationError,
+    RSSGenerationError,
+)
 from anypod.file_manager import FileManager
 from anypod.rss import RSSFeedGenerator
 from anypod.server.routers.static import router
@@ -312,7 +316,7 @@ def test_browse_feeds_empty(client: TestClient, mock_feed_database: Mock):
 @pytest.mark.unit
 def test_browse_feeds_database_error(client: TestClient, mock_feed_database: Mock):
     """Test feed directory browsing when database fails."""
-    mock_feed_database.get_feeds.side_effect = Exception("Database error")
+    mock_feed_database.get_feeds.side_effect = DatabaseOperationError("Database error")
 
     response = client.get("/feeds")
 
@@ -501,7 +505,7 @@ def test_browse_media_feed_database_error(
     client: TestClient, mock_download_database: Mock
 ):
     """Test media feed directory browsing when database fails."""
-    mock_download_database.get_downloads_by_status.side_effect = Exception(
+    mock_download_database.get_downloads_by_status.side_effect = DatabaseOperationError(
         "Database error"
     )
 
@@ -556,3 +560,168 @@ def test_browse_media_feed_html_escaping(
     # The parser correctly unescapes HTML entities, so parsed text contains original characters
     link_texts = [text for _, text in parsed.links]
     assert "video<script>alert('xss')</script>.mp4" in link_texts
+
+
+# --- Security Tests ---
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "feed_id",
+    [
+        "valid_feed",  # Valid but feed not found
+        "feed123",
+        "feed_name",
+        "feed-name",
+        "a",  # Minimum length
+        "a" * 255,  # Maximum length
+    ],
+)
+def test_serve_feed_valid_ids_reach_handler(
+    client: TestClient, mock_rss_generator: Mock, feed_id: str
+):
+    """Test that valid feed IDs pass validation and reach the RSS generator."""
+    # Valid IDs should reach the RSS generator
+    mock_rss_generator.get_feed_xml.side_effect = RSSGenerationError("Feed not found")
+
+    response = client.get(f"/feeds/{feed_id}.xml")
+    assert response.status_code == 404  # Feed not found
+
+    # Should have called the RSS generator
+    mock_rss_generator.get_feed_xml.assert_called_once_with(feed_id)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "feed_id,expected_status",
+    [
+        # Invalid feed IDs (FastAPI returns 422 for validation errors)
+        ("feed$", 422),
+        ("feed<script>", 422),
+        ("feed with spaces", 422),
+        ("feed.with.dots", 422),
+        ("a" * 256, 422),  # Too long
+        # Path traversal attempts (routing returns 404)
+        ("../../../etc/passwd", 404),  # Contains slashes, routing returns 404
+        (
+            "feed/../../../etc",
+            404,
+        ),  # Contains slashes, routing resolves to different path
+        ("feed%2e%2e%2f", 404),  # URL encoded ../, routing sees as different path
+    ],
+)
+def test_serve_feed_invalid_ids_rejected(
+    client: TestClient, mock_rss_generator: Mock, feed_id: str, expected_status: int
+):
+    """Test that invalid feed IDs are rejected before reaching the RSS generator."""
+    # Invalid IDs should not reach the RSS generator
+    mock_rss_generator.get_feed_xml.side_effect = Exception("Should not be called")
+
+    response = client.get(f"/feeds/{feed_id}.xml")
+    assert response.status_code == expected_status
+
+    # Should not have called the RSS generator
+    mock_rss_generator.get_feed_xml.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "feed_id,expected_status",
+    [
+        # Valid feed IDs
+        ("valid_feed", 200),
+        ("feed123", 200),
+        ("feed-name", 200),
+        # Basic security cases
+        ("../../../etc/passwd", 404),  # Contains slashes, routing returns 404
+        ("feed$", 422),  # Invalid characters
+        ("feed with spaces", 422),  # Spaces not allowed
+    ],
+)
+def test_browse_media_feed_validation(
+    client: TestClient, mock_download_database: Mock, feed_id: str, expected_status: int
+):
+    """Test media browse endpoint validation for feed IDs."""
+    mock_download_database.get_downloads_by_status.return_value = []
+    response = client.get(f"/media/{feed_id}")
+    assert response.status_code == expected_status
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "filename,expected_status",
+    [
+        # Valid filenames
+        ("valid_file", 404),  # Valid but file not found
+        ("file.with.dots", 404),  # Dots allowed in filename
+        # Basic security cases
+        ("../../../etc/passwd", 404),  # Contains slashes, routing returns 404
+        ("file$", 422),  # Invalid characters
+        (".", 400),  # Path traversal attempt
+        ("..", 400),  # Path traversal attempt
+    ],
+)
+def test_serve_media_filename_validation(
+    client: TestClient, mock_file_manager: Mock, filename: str, expected_status: int
+):
+    """Test media serve endpoint filename validation."""
+    if expected_status == 404:
+        mock_file_manager.get_download_file_path.side_effect = FileNotFoundError(
+            "File not found"
+        )
+
+    response = client.get(f"/media/valid_feed/{filename}.mp4")
+    assert response.status_code == expected_status
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "ext,expected_status",
+    [
+        # Valid extensions
+        ("mp4", 404),  # Valid but file not found
+        ("m4a", 404),
+        # Basic security cases
+        ("../../../etc", 200),  # Path traversal - routing redirects to browse route
+        ("mp4$", 422),  # Invalid characters
+    ],
+)
+def test_serve_media_extension_validation(
+    client: TestClient,
+    mock_file_manager: Mock,
+    mock_download_database: Mock,
+    ext: str,
+    expected_status: int,
+):
+    """Test media serve endpoint extension validation."""
+    if expected_status in (404, 200):
+        # For file not found (normal case) and path traversal that gets routed to browse
+        mock_file_manager.get_download_file_path.side_effect = FileNotFoundError(
+            "File not found"
+        )
+        mock_download_database.get_downloads_by_status.return_value = []
+
+    response = client.get(f"/media/valid_feed/valid_filename.{ext}")
+    assert response.status_code == expected_status
+
+
+@pytest.mark.unit
+def test_serve_media_path_traversal_basic(client: TestClient):
+    """Test basic path traversal protection."""
+    # FastAPI routing should reject these before they reach our handlers
+    response = client.get("/media/../../../etc/passwd/file.mp4")
+    assert response.status_code in [422, 404]
+
+
+@pytest.mark.unit
+def test_serve_media_security_validation(client: TestClient, mock_file_manager: Mock):
+    """Test that security validation prevents path traversal."""
+    # Mock should never be called for malicious input
+    mock_file_manager.get_download_file_path.side_effect = Exception(
+        "Should not be called"
+    )
+
+    # Test the dependency validation catches . and ..
+    response = client.get("/media/valid_feed/...mp4")
+    assert response.status_code == 400
+    mock_file_manager.get_download_file_path.assert_not_called()

@@ -45,4 +45,5 @@ uv run pytest --cov-report=xml
 - Avoid string checks on error messages
 - Keep tests fast and independent
 - Aim for meaningful coverage, not 100% blindly
+- Include security tests for input validation when testing HTTP endpoints
 - Perform a full confirmation run (`uv run pytest --integration`) to ensure all tests pass after you finish writing and verifying.
