@@ -72,6 +72,23 @@ def set_context_id(context_id: str) -> None:
     _context_id_var.set(context_id)
 
 
+class ColorMessageFilter(logging.Filter):
+    """A logging filter that removes uvicorn's color_message field."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        """Remove color_message field from the log record.
+
+        Args:
+            record: The log record to modify.
+
+        Returns:
+            Always True to allow the record to be processed.
+        """
+        if hasattr(record, "color_message"):
+            delattr(record, "color_message")
+        return True
+
+
 class ContextIdFilter(logging.Filter):
     """A logging filter that injects the current context_id into log records.
 
@@ -241,6 +258,9 @@ LOGGING_CONFIG: dict[str, Any] = {
         "context_id_filter": {
             "()": ContextIdFilter,
         },
+        "color_message_filter": {
+            "()": ColorMessageFilter,
+        },
     },
     "formatters": {
         "human_readable_formatter": {
@@ -266,16 +286,18 @@ LOGGING_CONFIG: dict[str, Any] = {
             "level": "INFO",
             "propagate": False,
         },
-        # "uvicorn.access": {
-        #     "handlers": ["console_handler"],
-        #     "level": "INFO",
-        #     "propagate": False,
-        # },
-        # "uvicorn.error": {
-        #     "handlers": ["console_handler"],
-        #     "level": "INFO",
-        #     "propagate": False,
-        # },
+        "uvicorn.access": {
+            "handlers": ["console_handler"],
+            "level": "INFO",
+            "propagate": False,
+            "filters": ["color_message_filter"],
+        },
+        "uvicorn.error": {
+            "handlers": ["console_handler"],
+            "level": "INFO",
+            "propagate": False,
+            "filters": ["color_message_filter"],
+        },
     },
     "root": {
         "handlers": ["console_handler"],

@@ -70,7 +70,9 @@ async def run_debug_enqueuer_mode(
     # Run state reconciliation first to ensure feeds exist in database
     logger.info("Running state reconciliation to set up feeds in database.")
     try:
-        ready_feed_ids = await state_reconciler.reconcile_startup_state(settings.feeds)
+        ready_feed_ids = await state_reconciler.reconcile_startup_state(
+            settings.feeds, settings.cookies_path
+        )
         logger.info(
             f"State reconciliation completed. {len(ready_feed_ids)} feeds ready for processing.",
             extra={"ready_feed_count": len(ready_feed_ids)},

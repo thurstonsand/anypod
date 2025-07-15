@@ -54,6 +54,7 @@ class Feed(SQLModel, table=True):
         is_enabled: Whether the feed is enabled for processing.
         source_type: Type of source (e.g., channel, playlist, single_video).
         source_url: The original source URL for this feed.
+        resolved_url: The URL after any redirects.
 
         Time Keeping:
             last_successful_sync: Last time a successful sync occurred (UTC).

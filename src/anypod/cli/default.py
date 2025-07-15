@@ -6,8 +6,6 @@ runs state reconciliation, starts the scheduler, and manages the application lif
 
 import logging
 
-import uvicorn
-
 from ..config import AppSettings
 from ..data_coordinator import DataCoordinator, Downloader, Enqueuer, Pruner
 from ..db import DownloadDatabase, FeedDatabase
@@ -27,13 +25,76 @@ from ..ytdlp_wrapper import YtdlpWrapper
 logger = logging.getLogger(__name__)
 
 
+async def graceful_shutdown(
+    scheduler: FeedScheduler | None,
+    db_core: SqlalchemyCore | None,
+) -> None:
+    """Perform graceful shutdown of all components in correct order.
+
+    Args:
+        scheduler: The feed scheduler instance to shutdown.
+        db_core: The database core instance to close.
+    """
+    logger.info("Shutdown signal received.")
+
+    # Step 1: Stop scheduler (finish current jobs, no new ones)
+    if scheduler:
+        try:
+            await scheduler.stop(wait_for_jobs=True)
+            logger.info("Scheduler shutdown completed.")
+        except Exception as e:
+            logger.error("Error shutting down scheduler.", exc_info=e)
+
+    # Step 2: Close database connections
+    if db_core:
+        try:
+            await db_core.close()
+            logger.info("Database connections closed.")
+        except Exception as e:
+            logger.error("Error closing database connections.", exc_info=e)
+
+    logger.info("Anypod shutdown completed.")
+
+
 async def _init(
     settings: AppSettings,
-    feed_db: FeedDatabase,
-    download_db: DownloadDatabase,
-    path_manager: PathManager,
-) -> tuple[FeedScheduler, uvicorn.Server]:
+) -> tuple[
+    SqlalchemyCore,
+    FileManager,
+    RSSFeedGenerator,
+    FeedDatabase,
+    DownloadDatabase,
+    FeedScheduler,
+]:
+    # Initialize path manager
+    path_manager = PathManager(
+        base_data_dir=settings.data_dir,
+        base_url=settings.base_url,
+    )
+
+    # Ensure data directory exists before database initialization
+    try:
+        settings.data_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        logger.error(
+            "Failed to create data directory.",
+            extra={"data_dir": str(settings.data_dir)},
+            exc_info=e,
+        )
+        raise DatabaseOperationError("Failed to create data directory.") from e
+
+    logger.debug("Initializing database components.")
+
+    # Initialize low-level components
+    db_dir = await path_manager.db_dir()
+    db_core = SqlalchemyCore(db_dir)
     file_manager = FileManager(path_manager)
+
+    # Initialize database layers
+    feed_db = FeedDatabase(db_core)
+    download_db = DownloadDatabase(db_core)
+
+    # Initialize application components
     ytdlp_wrapper = YtdlpWrapper(paths=path_manager)
     rss_generator = RSSFeedGenerator(download_db=download_db, paths=path_manager)
 
@@ -69,7 +130,9 @@ async def _init(
     )
 
     try:
-        ready_feeds = await state_reconciler.reconcile_startup_state(settings.feeds)
+        ready_feeds = await state_reconciler.reconcile_startup_state(
+            settings.feeds, settings.cookies_path
+        )
     except StateReconciliationError as e:
         logger.error("State reconciliation failed, cannot continue.", exc_info=e)
         raise
@@ -91,16 +154,7 @@ async def _init(
         data_coordinator=data_coordinator,
     )
 
-    # Create HTTP server
-    server = create_server(
-        settings=settings,
-        rss_generator=rss_generator,
-        file_manager=file_manager,
-        feed_database=feed_db,
-        download_database=download_db,
-    )
-
-    return scheduler, server
+    return db_core, file_manager, rss_generator, feed_db, download_db, scheduler
 
 
 async def default(settings: AppSettings) -> None:
@@ -117,33 +171,27 @@ async def default(settings: AppSettings) -> None:
         extra={"config_file": str(settings.config_file)},
     )
 
-    # Initialize components
-    path_manager = PathManager(
-        base_data_dir=settings.data_dir,
-        base_url=settings.base_url,
-    )
-
-    # Ensure data directory exists before database initialization
+    db_core: SqlalchemyCore | None = None
+    scheduler: FeedScheduler | None = None
     try:
-        settings.data_dir.mkdir(parents=True, exist_ok=True)
-    except OSError as e:
-        logger.error(
-            "Failed to create data directory.",
-            extra={"data_dir": str(settings.data_dir)},
-            exc_info=e,
+        (
+            db_core,
+            file_manager,
+            rss_generator,
+            feed_db,
+            download_db,
+            scheduler,
+        ) = await _init(settings)
+
+        # Create HTTP server with shutdown callback
+        server = create_server(
+            settings=settings,
+            rss_generator=rss_generator,
+            file_manager=file_manager,
+            feed_database=feed_db,
+            download_database=download_db,
+            shutdown_callback=lambda: graceful_shutdown(scheduler, db_core),
         )
-        raise DatabaseOperationError("Failed to create data directory.") from e
-
-    logger.debug("Initializing database components.")
-
-    db_dir = await path_manager.db_dir()
-    db_core = SqlalchemyCore(db_dir)
-    feed_db = FeedDatabase(db_core)
-    download_db = DownloadDatabase(db_core)
-
-    scheduler = None
-    try:
-        scheduler, server = await _init(settings, feed_db, download_db, path_manager)
 
         logger.info(
             "Starting scheduler and HTTP server...",
@@ -155,23 +203,10 @@ async def default(settings: AppSettings) -> None:
         )
 
         await scheduler.start()
-        await server.serve()  # This will block until SIGINT/SIGTERM
 
-        logger.info("Shutdown signal received.")
-
-    finally:
-        # Cleanup scheduler and database connections
-        try:
-            if scheduler:
-                await scheduler.stop(wait_for_jobs=True)
-                logger.info("Scheduler shutdown completed.")
-        except Exception as e:
-            logger.error("Error shutting down scheduler.", exc_info=e)
-
-        try:
-            await db_core.close()
-            logger.info("Database connections closed.")
-        except Exception as e:
-            logger.error("Error closing database connections.", exc_info=e)
-
-        logger.info("Anypod shutdown completed.")
+        # Will gracefully shutdown on SIGINT/SIGTERM
+        await server.serve()
+    except Exception as e:
+        logger.error("Unexpected error during startup.", exc_info=e)
+        await graceful_shutdown(scheduler, db_core)
+        raise

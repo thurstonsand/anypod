@@ -1,0 +1,42 @@
+# Docker-specific ignores (items from .gitignore are already excluded by default)
+
+# Git repository
+.git/
+.gitignore
+
+# Development and testing
+tests/
+coverage_html_report/
+.pytest_cache/
+
+# Development tools and configs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Development environment
+.venv/
+.env
+.env.local
+
+# Documentation and examples (keep README.md)
+DESIGN_DOC.md
+TASK_LIST.md
+AGENTS.md
+
+# Scripts (development only)
+scripts/
+
+# Pre-commit hooks
+.pre-commit-config.yaml
+
+# Type checking and linting configs
+pyrightconfig.json
+.ruff.toml
+
+# Container-specific excludes
+Dockerfile*
+docker-compose*.yml
+docker-compose*.yaml
+.dockerignore

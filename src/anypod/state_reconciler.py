@@ -7,6 +7,7 @@ when configuration changes are detected.
 
 from datetime import UTC, datetime
 import logging
+from pathlib import Path
 from typing import Any
 
 from .config import FeedConfig
@@ -20,9 +21,12 @@ from .exceptions import (
     StateReconciliationError,
     YtdlpApiError,
 )
+from .metadata import merge_feed_metadata
 from .ytdlp_wrapper import YtdlpWrapper
 
 logger = logging.getLogger(__name__)
+# YouTube's founding year
+MIN_SYNC_DATE = datetime(2005, 1, 1, tzinfo=UTC)
 
 
 class StateReconciler:
@@ -52,12 +56,15 @@ class StateReconciler:
         self._pruner = pruner
         logger.debug("StateReconciler initialized.")
 
-    async def _handle_new_feed(self, feed_id: str, feed_config: FeedConfig) -> None:
+    async def _handle_new_feed(
+        self, feed_id: str, feed_config: FeedConfig, cookies_path: Path | None = None
+    ) -> None:
         """Handle a new feed by inserting it into the database.
 
         Args:
             feed_id: The feed identifier.
             feed_config: The FeedConfig from YAML.
+            cookies_path: Optional path to cookies file for yt-dlp authentication.
 
         Raises:
             StateReconciliationError: If database operations fail.
@@ -65,34 +72,8 @@ class StateReconciler:
         log_params = {"feed_id": feed_id, "feed_url": feed_config.url}
         logger.info("Processing new feed.", extra=log_params)
 
-        metadata = feed_config.metadata
-        metadata_overrides: dict[str, Any] = {}
-        if metadata:
-            if metadata.title:
-                metadata_overrides["title"] = metadata.title
-            if metadata.subtitle:
-                metadata_overrides["subtitle"] = metadata.subtitle
-            if metadata.description:
-                metadata_overrides["description"] = metadata.description
-            if metadata.language:
-                metadata_overrides["language"] = metadata.language
-            if metadata.author:
-                metadata_overrides["author"] = metadata.author
-            if metadata.author_email:
-                metadata_overrides["author_email"] = metadata.author_email
-            if metadata.image_url:
-                metadata_overrides["image_url"] = metadata.image_url
-            if metadata.categories:
-                metadata_overrides["category"] = metadata.categories
-            if metadata.podcast_type:
-                metadata_overrides["podcast_type"] = metadata.podcast_type
-            if metadata.explicit:
-                metadata_overrides["explicit"] = metadata.explicit
-
-        # Set initial sync timestamp to 'since' if provided, otherwise datetime.min
-        initial_sync = (
-            feed_config.since if feed_config.since else datetime.min.replace(tzinfo=UTC)
-        )
+        # Set initial sync timestamp to 'since' if provided, otherwise use min
+        initial_sync = feed_config.since if feed_config.since else MIN_SYNC_DATE
 
         # Discover feed properties (source type and resolved URL)
         try:
@@ -117,18 +98,37 @@ class StateReconciler:
                 },
             )
 
+        # Fetch and merge feed metadata
+        try:
+            fetched_feed, _ = await self._ytdlp_wrapper.fetch_metadata(
+                feed_id=feed_id,
+                source_type=source_type,
+                source_url=feed_config.url,
+                resolved_url=resolved_url,
+                user_yt_cli_args=feed_config.yt_args,
+                fetch_since_date=feed_config.since,
+                fetch_until_date=None,
+                keep_last=feed_config.keep_last,
+                cookies_path=cookies_path,
+                metadata_only=True,
+            )
+        except YtdlpApiError as e:
+            raise StateReconciliationError(
+                "Failed to fetch and merge feed metadata during feed creation.",
+                feed_id=feed_id,
+            ) from e
+
+        merged_metadata = merge_feed_metadata(fetched_feed, feed_config)
         new_feed = Feed(
             id=feed_id,
             is_enabled=feed_config.enabled,
-            source_type=source_type,
+            source_type=fetched_feed.source_type,
             source_url=feed_config.url,
             resolved_url=resolved_url,
             last_successful_sync=initial_sync,
-            # Retention policies
             since=feed_config.since,
             keep_last=feed_config.keep_last,
-            # Feed metadata
-            **metadata_overrides,
+            **merged_metadata,
         )
         try:
             await self._feed_db.upsert_feed(new_feed)
@@ -332,7 +332,11 @@ class StateReconciler:
         return True
 
     async def _handle_existing_feed(
-        self, feed_id: str, feed_config: FeedConfig, db_feed: Feed
+        self,
+        feed_id: str,
+        feed_config: FeedConfig,
+        db_feed: Feed,
+        cookies_path: Path | None = None,
     ) -> bool:
         """Handle an existing feed by applying configuration changes.
 
@@ -340,6 +344,7 @@ class StateReconciler:
             feed_id: The feed identifier.
             feed_config: The FeedConfig from YAML.
             db_feed: The existing Feed from database.
+            cookies_path: Path to cookies.txt file for yt-dlp authentication.
 
         Returns:
             True if any changes were applied.
@@ -349,131 +354,81 @@ class StateReconciler:
         """
         log_params = {"feed_id": feed_id}
 
-        # Collect all changes to apply in a single update
         updated_feed = db_feed.model_copy()
 
-        match db_feed.is_enabled, feed_config.enabled:
-            # Feed has been enabled
-            case (False, True):
-                logger.info(
-                    "Feed has been enabled.",
-                    extra=log_params,
-                )
-                updated_feed.is_enabled = feed_config.enabled
-                updated_feed.consecutive_failures = 0
-                updated_feed.last_failed_sync = None
-                updated_feed.last_successful_sync = datetime.min.replace(tzinfo=UTC)
-
-                # Re-discover feed properties when re-enabling (in case anything changed)
+        match db_feed, feed_config:
+            # Feed is being re-enabled or URL has changed, re-discover feed properties, reset stats
+            case (
+                Feed(is_enabled=old_enabled, source_url=old_url),
+                FeedConfig(enabled=new_enabled, url=new_url),
+            ) if (not old_enabled and new_enabled) or (old_url != new_url):
+                if not old_enabled and new_enabled:
+                    logger.info(
+                        "Feed has been enabled.",
+                        extra=log_params,
+                    )
+                elif old_url != new_url:
+                    logger.info(
+                        "Feed URL has changed.",
+                        extra=log_params,
+                    )
                 try:
                     (
-                        source_type,
-                        resolved_url,
+                        updated_source_type,
+                        updated_resolved_url,
                     ) = await self._ytdlp_wrapper.discover_feed_properties(
-                        feed_id, feed_config.url
+                        feed_id, new_url
                     )
                 except YtdlpApiError as e:
                     raise StateReconciliationError(
                         "Failed to re-discover feed properties when re-enabling feed.",
                         feed_id=feed_id,
                     ) from e
-                else:
-                    updated_feed.source_type = source_type
-                    updated_feed.resolved_url = resolved_url
-                    logger.debug(
-                        "Feed re-discovery completed for re-enabled feed.",
-                        extra={
-                            **log_params,
-                            "discovered_source_type": source_type.value,
-                            "discovered_resolved_url": resolved_url,
-                        },
-                    )
+                updated_feed.is_enabled = new_enabled
+                updated_feed.source_type = updated_source_type
+                updated_feed.source_url = new_url
+                updated_feed.resolved_url = updated_resolved_url
+                updated_feed.last_successful_sync = MIN_SYNC_DATE
+                updated_feed.last_failed_sync = None
+                updated_feed.consecutive_failures = 0
             # Feed has been disabled
-            case (True, False):
+            case (Feed(is_enabled=True), FeedConfig(enabled=False)):
                 logger.info(
                     "Feed has been disabled.",
                     extra=log_params,
                 )
-                updated_feed.is_enabled = feed_config.enabled
+                updated_feed.is_enabled = False
             # Feed status has not changed
             case _:
                 pass
 
-        # Check URL changes
-        if feed_config.url != db_feed.source_url:
-            logger.info(
-                "Feed URL changed, updating and resetting error state.",
-                extra={
-                    **log_params,
-                    "old_url": db_feed.source_url,
-                    "new_url": feed_config.url,
-                },
+        try:
+            fetched_feed, _ = await self._ytdlp_wrapper.fetch_metadata(
+                feed_id=feed_id,
+                source_type=updated_feed.source_type,
+                source_url=feed_config.url,
+                resolved_url=updated_feed.resolved_url,
+                user_yt_cli_args=feed_config.yt_args,
+                fetch_since_date=feed_config.since,
+                fetch_until_date=None,
+                keep_last=feed_config.keep_last,
+                cookies_path=cookies_path,
+                metadata_only=True,
             )
-            updated_feed.source_url = feed_config.url
-            updated_feed.consecutive_failures = 0
-            updated_feed.last_failed_sync = None
+        except YtdlpApiError as e:
+            raise StateReconciliationError(
+                "Failed to fetch fresh metadata for existing feed.",
+                feed_id=feed_id,
+            ) from e
 
-            # Re-discover feed properties when URL changes
-            try:
-                (
-                    source_type,
-                    resolved_url,
-                ) = await self._ytdlp_wrapper.discover_feed_properties(
-                    feed_id, feed_config.url
-                )
-            except YtdlpApiError as e:
-                raise StateReconciliationError(
-                    "Failed to re-discover feed properties when URL changed.",
-                    feed_id=feed_id,
-                ) from e
-            else:
-                updated_feed.source_type = source_type
-                updated_feed.resolved_url = resolved_url
-                logger.debug(
-                    "Feed re-discovery completed for URL change.",
-                    extra={
-                        **log_params,
-                        "discovered_source_type": source_type.value,
-                        "discovered_resolved_url": resolved_url,
-                    },
-                )
-        # Check metadata changes
-        if metadata := feed_config.metadata:
-            if metadata.title != db_feed.title:
-                updated_feed.title = metadata.title
-
-            if metadata.subtitle != db_feed.subtitle:
-                updated_feed.subtitle = metadata.subtitle
-
-            if metadata.description != db_feed.description:
-                updated_feed.description = metadata.description
-
-            if metadata.language != db_feed.language:
-                updated_feed.language = metadata.language
-
-            if metadata.author != db_feed.author:
-                updated_feed.author = metadata.author
-
-            if metadata.author_email != db_feed.author_email:
-                updated_feed.author_email = metadata.author_email
-
-            if metadata.image_url != db_feed.image_url:
-                updated_feed.image_url = metadata.image_url
-
-            if metadata.categories and metadata.categories != db_feed.category:
-                updated_feed.category = metadata.categories
-
-            if metadata.podcast_type and metadata.podcast_type != db_feed.podcast_type:
-                updated_feed.podcast_type = metadata.podcast_type
-
-            if metadata.explicit and metadata.explicit != db_feed.explicit:
-                updated_feed.explicit = metadata.explicit
-
-        # Update retention policies
-        if feed_config.since != db_feed.since:
-            updated_feed.since = feed_config.since
-        if feed_config.keep_last != db_feed.keep_last:
-            updated_feed.keep_last = feed_config.keep_last
+        merged_metadata = merge_feed_metadata(fetched_feed, feed_config)
+        updated_feed = updated_feed.model_copy(
+            update={
+                **merged_metadata,
+                "since": feed_config.since,
+                "keep_last": feed_config.keep_last,
+            }
+        )
 
         await self._handle_pruning_changes(
             feed_id, feed_config.since, feed_config.keep_last, db_feed, log_params
@@ -512,7 +467,7 @@ class StateReconciler:
             ) from e
 
     async def reconcile_startup_state(
-        self, config_feeds: dict[str, FeedConfig]
+        self, config_feeds: dict[str, FeedConfig], cookies_path: Path | None = None
     ) -> list[str]:
         """Reconcile configuration feeds with database state on startup.
 
@@ -525,6 +480,7 @@ class StateReconciler:
 
         Args:
             config_feeds: Dictionary mapping feed_id to FeedConfig from YAML.
+            cookies_path: Optional path to cookies file for yt-dlp authentication.
 
         Returns:
             List of feed IDs that are ready for scheduling (enabled and valid).
@@ -559,7 +515,7 @@ class StateReconciler:
             if db_feed is None:
                 # New feed - add to database
                 try:
-                    await self._handle_new_feed(feed_id, feed_config)
+                    await self._handle_new_feed(feed_id, feed_config, cookies_path)
                 except StateReconciliationError as e:
                     logger.warning(
                         "Failed to add new feed, continuing with others.",
@@ -573,7 +529,9 @@ class StateReconciler:
             else:
                 # Existing feed - check for changes
                 try:
-                    if await self._handle_existing_feed(feed_id, feed_config, db_feed):
+                    if await self._handle_existing_feed(
+                        feed_id, feed_config, db_feed, cookies_path
+                    ):
                         changed_count += 1
                 except StateReconciliationError as e:
                     logger.warning(

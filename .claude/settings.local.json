@@ -24,7 +24,8 @@
       "Bash(sqlite3:*)",
       "Bash(alembic:*)",
       "Bash(python3:*)",
-      "Bash(jq:*)"
+      "Bash(jq:*)",
+      "Bash(docker build:*)"
     ],
     "deny": []
   }

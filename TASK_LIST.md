@@ -534,8 +534,8 @@ This section details the components that manage the lifecycle of downloads, from
   - look up some well established open source projects and follow their documentation style
 
 ## 8  Docker & Dev Flow
-- [ ] `Dockerfile` (python:3.13-slim, default root, overridable UID/GID).
-- [ ] `.dockerignore` to exclude tests, .git, caches.
+- [x] `Dockerfile` (debian:bookworm-slim, default root, overridable UID/GID).
+- [x] `.dockerignore` to exclude tests, .git, caches.
 - [ ] set up a dev env with containers.
 
 ## 9  Release Automation

@@ -575,7 +575,7 @@ async def test_enqueue_feed_metadata_synchronization_with_overrides(
         description="Custom description that overrides extracted one",
         language="en-US",
         author="Custom Author",
-        categories=PodcastCategories(["Technology", "Science"]),
+        category=PodcastCategories(["Technology", "Science"]),
         explicit=PodcastExplicit.NO,
     )
 

@@ -106,7 +106,7 @@ async def test_new_feed_addition(
                 author="Test Author",
                 author_email=None,
                 image_url="https://example.com/image.jpg",
-                categories=PodcastCategories("Technology > Tech News"),
+                category=PodcastCategories("Technology > Tech News"),
                 podcast_type=PodcastType.EPISODIC,
                 explicit=PodcastExplicit.CLEAN,
             ),
@@ -142,7 +142,7 @@ async def test_new_feed_addition(
     assert db_feed.author == metadata.author
     assert db_feed.image_url == metadata.image_url
     assert db_feed.category is not None
-    assert db_feed.category == metadata.categories
+    assert db_feed.category == metadata.category
     assert db_feed.explicit == metadata.explicit
 
 
@@ -164,7 +164,7 @@ async def test_reconciliation_is_idempotent(
             metadata=FeedMetadataOverrides(  # type: ignore # this is a quirk of Pydantic
                 title="Test Feed",
                 language="en",
-                categories=PodcastCategories("Technology"),
+                category=PodcastCategories("Technology"),
             ),
         )
     }
@@ -525,7 +525,7 @@ async def test_metadata_updates(
                 author="New Author",
                 author_email=None,
                 image_url="https://example.com/new_image.jpg",
-                categories=PodcastCategories("Arts > Design"),
+                category=PodcastCategories("Arts > Design"),
                 podcast_type=PodcastType.EPISODIC,
                 explicit=PodcastExplicit.NO,
             ),
@@ -545,7 +545,7 @@ async def test_metadata_updates(
     assert db_feed.author == metadata.author
     assert db_feed.image_url == metadata.image_url
     assert db_feed.category is not None
-    assert db_feed.category == metadata.categories
+    assert db_feed.category == metadata.category
     assert db_feed.explicit == metadata.explicit
 
 
