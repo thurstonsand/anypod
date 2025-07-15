@@ -515,6 +515,7 @@ All CLI flags can alternatively be set via environment variables using uppercase
 | **Volumes** | `/config`, `/data`, `/cookies` |
 | **Port** | 8024 |
 | **Health Check** | `curl -f http://localhost:8024/api/health` |
+| **CI/CD** | GitHub Actions auto-publishes to GHCR on main branch pushes and version tags |
 
 ---
 

@@ -67,6 +67,18 @@ uvx --from ast-grep-cli sg # Syntax-aware code search for exploring codebase str
 # Use for EXPLORATION of code structure, not changes. Prefer over text tools for finding call sites, instantiations, and syntax patterns.
 ```
 
+### Docker Deployment Commands
+```bash
+# Build Docker image locally
+docker build -t anypod:local .
+
+# Run with docker-compose (recommended for production)
+docker-compose up -d
+
+# Run standalone container
+docker run -d -p 8024:8024 -v ./config:/config -v ./data:/data -v ./cookies:/cookies ghcr.io/thurstonsand/anypod:latest
+```
+
 ## Architecture
 
 ### Core Components

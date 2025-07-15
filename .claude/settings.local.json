@@ -25,7 +25,8 @@
       "Bash(alembic:*)",
       "Bash(python3:*)",
       "Bash(jq:*)",
-      "Bash(docker build:*)"
+      "Bash(docker build:*)",
+      "Bash(gh run view:*)"
     ],
     "deny": []
   }

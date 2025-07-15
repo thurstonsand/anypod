@@ -1,0 +1,40 @@
+services:
+  anypod:
+    image: ghcr.io/thurstonsand/anypod:latest
+    container_name: anypod
+    restart: unless-stopped
+
+    ports:
+      - "8024:8024"
+
+    volumes:
+      # Configuration file
+      - ./config:/config
+
+      # Data directory for database and media files
+      - ./data:/data
+
+      # Optional: cookies.txt for authentication
+      - ./cookies:/cookies:ro
+
+      # System timezone
+      - /etc/localtime:/etc/localtime:ro
+
+    environment:
+      # User/Group configuration for non-root execution
+      PUID: 1000
+      PGID: 1000
+
+      # Logging configuration
+      LOG_FORMAT: json
+      LOG_LEVEL: INFO
+      LOG_INCLUDE_STACKTRACE: true
+
+      # Server configuration
+      SERVER_PORT: 8024
+
+      # Optional: Base URL for RSS feeds (useful for reverse proxy)
+      # BASE_URL: https://podcasts.example.com
+
+      # Optional: Trusted proxy networks for reverse proxy support
+      # TRUSTED_PROXIES: '["192.168.1.0/24", "172.16.0.0/16"]'
