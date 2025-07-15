@@ -30,13 +30,8 @@ see @DESIGN_DOC.md for in depth design doc.
 # Install dependencies and setup
 uv sync
 
-# Run application (dev)
-# Needs timeout because it will run forever
-timeout 30 ./scripts/run_dev.sh        # Run full application with fresh database (recommended)
-timeout 30 ./scripts/run_dev.sh --keep # Run application keeping existing database
-
-# Running the application
-./scripts/run_dev.sh [--keep] # Run full anypod service (scheduler + HTTP server)
+# Running the application (dev)
+timeout 30 ./scripts/run_dev.sh [--keep] # Run full anypod service (scheduler + HTTP server)
 # - Default: Creates fresh database and cleans all downloaded files
 # - --keep: Preserves existing database and downloaded files
 # - Uses example_feeds.yaml config, tmpdata/ directory, US/Eastern timezone
@@ -59,7 +54,29 @@ uv run pre-commit run --all-files               # All of the above, prefer to us
 
 # tool use
 uvx yt-dlp # Can research/view real data from youtube videos for research. see @example_feeds.yaml for real links
-uvx --from ast-grep-cli sg # Whenever a search requires syntax-aware or structural matching, default to `uvx --from ast-grep-cli sg --lang python -p '<pattern>'` and avoid using text-only tools like `rg` or `grep`
+uvx --from ast-grep-cli sg # Syntax-aware code search for exploring codebase structure
+
+# Key patterns for codebase exploration:
+# - Function calls: `sg -p 'function_name($$$ARGS)' -l python src/`
+# - Class instantiations: `sg -p 'ClassName($$$ARGS)' -l python src/`
+# - Method calls: `sg -p '$OBJ.method_name($$$ARGS)' -l python src/`
+# - Import statements: `sg -p 'from $MODULE import $ITEM' -l python src/`
+# - Exception handling: `sg -p 'raise $EXCEPTION($$$ARGS)' -l python src/`
+
+# Pattern syntax: `$VAR` = single node, `$$$ARGS` = multiple nodes
+# Use for EXPLORATION of code structure, not changes. Prefer over text tools for finding call sites, instantiations, and syntax patterns.
+```
+
+### Docker Deployment Commands
+```bash
+# Build Docker image locally
+docker build -t anypod:local .
+
+# Run with docker-compose (recommended for production)
+docker-compose up -d
+
+# Run standalone container
+docker run -d -p 8024:8024 -v ./config:/config -v ./data:/data -v ./cookies:/cookies ghcr.io/thurstonsand/anypod:latest
 ```
 
 ## Architecture
@@ -169,6 +186,7 @@ anypod/
 │   ├── exceptions.py            # Custom exceptions
 │   ├── file_manager.py          # File operations abstraction
 │   ├── logging_config.py        # Logging configuration
+│   ├── metadata.py              # Metadata utility functions
 │   ├── path_manager.py          # Path resolution logic
 │   └── state_reconciler.py      # State reconciliation between config and database
 ├── pyproject.toml               # Package configuration
@@ -196,18 +214,18 @@ feeds:
     url: https://www.youtube.com/@premium/videos
     schedule: "0 6 * * *"
     metadata:
-      title: "My Premium Podcast"                     # Override feed title
-      subtitle: "Daily insights and discussions"       # Feed subtitle
+      title: "My Premium Podcast"                                 # Override feed title
+      subtitle: "Daily insights and discussions"                  # Feed subtitle
       description: "A daily podcast about technology and culture" # Feed description
-      language: "en"                                  # Language code (e.g., 'en', 'es', 'fr')
-      author: "John Doe"                             # Podcast author
-      author_email: "john@example.com"               # Podcast author email
-      image_url: "https://example.com/podcast-art.jpg" # Podcast artwork (min 1400x1400px)
-      podcast_type: "episodic"                       # Podcast type: "episodic" or "serial"
-      explicit: "no"                                 # Explicit content: "yes", "no", or "clean"
-      categories:                                    # Apple Podcasts categories (max 2)
-        - "Technology"                               # Main category only
-        - "Business > Entrepreneurship"              # Main > Sub category
+      language: "en"                                              # Language code (e.g., 'en', 'es', 'fr')
+      author: "John Doe"                                          # Podcast author
+      author_email: "john@example.com"                            # Podcast author email
+      image_url: "https://example.com/podcast-art.jpg"            # Podcast artwork (min 1400x1400px)
+      podcast_type: "episodic"                                    # Podcast type: "episodic" or "serial"
+      explicit: "no"                                              # Explicit content: "yes", "no", or "clean"
+      category:                                                   # Apple Podcasts categories (max 2)
+        - "Technology"                                            # Main category only
+        - "Business > Entrepreneurship"                           # Main > Sub category
         # Alternative formats:
         # - {"main": "Technology"}
         # - {"main": "Business", "sub": "Entrepreneurship"}

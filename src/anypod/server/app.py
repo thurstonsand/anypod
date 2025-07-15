@@ -4,6 +4,8 @@ This module provides the factory function for creating and configuring
 the FastAPI application instance with all necessary middleware and routers.
 """
 
+from collections.abc import AsyncGenerator, Awaitable, Callable
+from contextlib import asynccontextmanager
 import logging
 
 from fastapi import FastAPI
@@ -65,6 +67,7 @@ def create_app(
     file_manager: FileManager,
     feed_database: FeedDatabase,
     download_database: DownloadDatabase,
+    shutdown_callback: Callable[[], Awaitable[None]] | None = None,
 ) -> FastAPI:
     """Create and configure a FastAPI application instance.
 
@@ -76,14 +79,26 @@ def create_app(
         file_manager: The file manager instance.
         feed_database: The feed database instance.
         download_database: The download database instance.
+        shutdown_callback: Optional callback function for graceful shutdown.
 
     Returns:
         Configured FastAPI application instance.
     """
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
+        """Handle application lifespan events."""
+        try:
+            yield
+        finally:
+            if shutdown_callback:
+                await shutdown_callback()
+
     app = FastAPI(
         title="Anypod",
         description="Thin yt-dlp -> podcast solution",
         version="0.1.0",
+        lifespan=lifespan,
     )
 
     # Add CORS middleware with permissive settings for development

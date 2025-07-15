@@ -114,29 +114,29 @@ feeds:
     url: https://www.youtube.com/@example
     yt_args: "-f worst[ext=mp4] --playlist-items 1-3"
     schedule: "0 3 * * *"
-    since: "20220101"                 # Downloads older than this date are ignored
-    keep_last: 100                 # prune policy (optional)
-    max_errors: 5                  # maximum download attempts (default: 3)
-    enabled: true                  # whether feed is processed (default: true)
+    since: "20220101"
 
   # Feed with full metadata overrides
   premium_podcast:
     url: https://www.youtube.com/@premium/videos
-    yt_args: "-f best[ext=mp4]/best/best"
     schedule: "0 6 * * *"
     metadata:
-      title: "My Premium Podcast"                     # Override feed title
-      subtitle: "Daily insights and discussions"       # Feed subtitle
+      title: "My Premium Podcast"                                 # Override feed title
+      subtitle: "Daily insights and discussions"                  # Feed subtitle
       description: "A daily podcast about technology and culture" # Feed description
-      language: "en"                                  # Language code (e.g., 'en', 'es', 'fr')
-      author: "John Doe"                             # Podcast author
-      author_email: "john@example.com"               # Podcast author email
-      image_url: "https://example.com/podcast-art.jpg" # Podcast artwork (min 1400x1400px)
-      podcast_type: "episodic"                       # Podcast type: "episodic" or "serial"
-      explicit: "no"                                 # Explicit content: "yes", "no", or "clean"
-      categories:                                    # Apple Podcasts categories (max 2)
-        - "Technology"                               # Main category only
-        - "Business > Entrepreneurship"              # Main > Sub category
+      language: "en"                                              # Language code (e.g., 'en', 'es', 'fr')
+      author: "John Doe"                                          # Podcast author
+      author_email: "john@example.com"                            # Podcast author email
+      image_url: "https://example.com/podcast-art.jpg"            # Podcast artwork (min 1400x1400px)
+      podcast_type: "episodic"                                    # Podcast type: "episodic" or "serial"
+      explicit: "no"                                              # Explicit content: "yes", "no", or "clean"
+      category:                                                   # Apple Podcasts categories (max 2)
+        - "Technology"                                            # Main category only
+        - "Business > Entrepreneurship"                           # Main > Sub category
+        # Alternative formats:
+        # - {"main": "Technology"}
+        # - {"main": "Business", "sub": "Entrepreneurship"}
+        # Or as comma-separated string: "Technology, Business > Entrepreneurship"
 ```
 
 ### Environment Variables
@@ -148,10 +148,14 @@ LOG_LEVEL=DEBUG                        # Log level: DEBUG, INFO, WARNING, ERROR 
 LOG_INCLUDE_STACKTRACE=true           # Include stack traces in logs (default: false)
 BASE_URL=https://podcasts.example.com  # Base URL for feeds/media (default: http://localhost:8024)
 CONFIG_FILE=/path/to/feeds.yaml       # Config file path (default: /config/feeds.yaml)
+DATA_DIR=/path/to/data                # Root directory for all application data (default: /data)
+COOKIE_PATH=/path/to/cookies.txt      # Optional cookies.txt file for yt-dlp authentication
 TZ=America/New_York                    # Timezone for date parsing (default: system timezone)
 SERVER_HOST=0.0.0.0                   # HTTP server host (default: 0.0.0.0)
 SERVER_PORT=8024                      # HTTP server port (default: 8024)
 TRUSTED_PROXIES=["192.168.1.0/24"]    # Trusted proxy IPs/networks for reverse proxy support (default: None)
+PUID=1000                             # User ID for non-root execution (Docker only)
+PGID=1000                             # Group ID for non-root execution (Docker only)
 ```
 
 *The `yt_args` field is parsed using shell-like syntax and converted to yt-dlp options dictionary, not passed verbatim.*
@@ -506,10 +510,12 @@ All CLI flags can alternatively be set via environment variables using uppercase
 | Aspect | Setting |
 |--------|---------|
 | **Image** | `ghcr.io/thurstonsand/anypod:latest` |
-| **Base** | `python:3.13-slim` |
-| **User** | Runs as **root (UID 0)** by default; override via `user: "#{UID}:{GID}"` in docker-compose |
+| **Base** | `debian:bookworm-slim` with uv-managed Python 3.13 |
+| **User** | Runs as **root (UID 0)** by default; automatically switches to non-root user (PUID/PGID) if specified |
 | **Volumes** | `/config`, `/data`, `/cookies` |
 | **Port** | 8024 |
+| **Health Check** | `curl -f http://localhost:8024/api/health` |
+| **CI/CD** | GitHub Actions auto-publishes to GHCR on main branch pushes and version tags |
 
 ---
 

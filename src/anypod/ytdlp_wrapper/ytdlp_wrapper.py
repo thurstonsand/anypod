@@ -123,6 +123,7 @@ class YtdlpWrapper:
         download_data_dir: Path | None = None,
         download_id: str | None = None,
         cookies_path: Path | None = None,
+        metadata_only: bool = False,
     ) -> YtdlpArgs:
         log_params: dict[str, Any] = {
             "purpose": purpose,
@@ -134,21 +135,31 @@ class YtdlpWrapper:
         # Add base options
         args.quiet().no_warnings().convert_thumbnails("jpg")
 
-        # Add date filtering and playlist limits (only for non-SINGLE references)
-        if source_type != SourceType.SINGLE_VIDEO:
-            if fetch_since_date:
-                args.dateafter(fetch_since_date)
-                log_params["fetch_since_date_day_aligned"] = fetch_since_date.strftime(
-                    "%Y%m%d"
+        # Add metadata-only optimizations
+        if metadata_only:
+            if purpose == FetchPurpose.MEDIA_DOWNLOAD:
+                raise YtdlpApiError(
+                    message="Metadata-only fetches are not supported for media downloads.",
+                    download_id=download_id,
                 )
-            if fetch_until_date:
-                args.datebefore(fetch_until_date)
-                log_params["fetch_until_date_day_aligned"] = fetch_until_date.strftime(
-                    "%Y%m%d"
-                )
-            if keep_last:
-                args.playlist_limit(keep_last)
-                log_params["keep_last"] = keep_last
+            args.flat_playlist()
+            log_params["flat_playlist"] = True
+        else:
+            # Add date filtering and playlist limits (only for non-SINGLE references, non-flat-playlist)
+            if source_type != SourceType.SINGLE_VIDEO:
+                if keep_last:
+                    args.playlist_limit(keep_last)
+                    log_params["keep_last"] = keep_last
+                if fetch_since_date:
+                    args.dateafter(fetch_since_date)
+                    log_params["fetch_since_date_day_aligned"] = (
+                        fetch_since_date.strftime("%Y%m%d")
+                    )
+                if fetch_until_date:
+                    args.datebefore(fetch_until_date)
+                    log_params["fetch_until_date_day_aligned"] = (
+                        fetch_until_date.strftime("%Y%m%d")
+                    )
 
         # Add purpose-specific options
         match purpose:
@@ -193,6 +204,7 @@ class YtdlpWrapper:
         fetch_until_date: datetime | None = None,
         keep_last: int | None = None,
         cookies_path: Path | None = None,
+        metadata_only: bool = False,
     ) -> tuple[Feed, list[Download]]:
         """Fetches metadata for a given feed using yt-dlp.
 
@@ -218,10 +230,13 @@ class YtdlpWrapper:
             keep_last: Maximum number of recent playlist items to fetch, or None for no limit.
                 Uses `playlist_items` to get the first N items
             cookies_path: Path to cookies.txt file for authentication, or None if not needed.
+            metadata_only: If True, only fetch feed-level metadata without individual downloads.
+                Uses --flat-playlist to make the operation much faster by skipping video details.
 
         Returns:
             A tuple of (feed, downloads) where feed is a Feed object with extracted
-            metadata and downloads is a list of Download objects.
+            metadata and downloads is a list of Download objects. When metadata_only=True,
+            the downloads list will be empty.
 
         Raises:
             YtdlpApiError: If no information is extracted.
@@ -249,6 +264,7 @@ class YtdlpWrapper:
             fetch_until_date=fetch_until_date,
             keep_last=keep_last,
             cookies_path=cookies_path,
+            metadata_only=metadata_only,
         )
 
         logger.debug(
@@ -277,22 +293,36 @@ class YtdlpWrapper:
             fetch_until_date,
         )
 
-        parsed_downloads = self._source_handler.parse_metadata_to_downloads(
-            feed_id,
-            ytdlp_info,
-            source_identifier=feed_id,
-            source_type=source_type,
-        )
+        if metadata_only:
+            # Skip download parsing for metadata-only fetches
+            parsed_downloads = []
+            logger.debug(
+                "Successfully processed feed metadata (metadata_only=True).",
+                extra={
+                    "feed_id": feed_id,
+                    "fetch_url": resolved_url,
+                    "source_url": source_url,
+                    "metadata_only": True,
+                },
+            )
+        else:
+            parsed_downloads = self._source_handler.parse_metadata_to_downloads(
+                feed_id,
+                ytdlp_info,
+                source_identifier=feed_id,
+                source_type=source_type,
+            )
+            logger.debug(
+                "Successfully processed metadata.",
+                extra={
+                    "feed_id": feed_id,
+                    "fetch_url": resolved_url,
+                    "source_url": source_url,
+                    "metadata_only": False,
+                    "num_downloads_identified": len(parsed_downloads),
+                },
+            )
 
-        logger.debug(
-            "Successfully processed metadata.",
-            extra={
-                "feed_id": feed_id,
-                "fetch_url": resolved_url,
-                "source_url": source_url,
-                "num_downloads_identified": len(parsed_downloads),
-            },
-        )
         return extracted_feed, parsed_downloads
 
     async def download_media_to_file(

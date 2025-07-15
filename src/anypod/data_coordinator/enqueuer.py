@@ -21,6 +21,7 @@ from ..exceptions import (
     FeedNotFoundError,
     YtdlpApiError,
 )
+from ..metadata import merge_feed_metadata
 from ..ytdlp_wrapper import YtdlpWrapper
 
 logger = logging.getLogger(__name__)
@@ -423,66 +424,19 @@ class Enqueuer:
         async with self._feed_db.session() as session:
             # Current metadata in database
             current_metadata = {
-                "source_type": current_feed.source_type,
                 "title": current_feed.title,
                 "subtitle": current_feed.subtitle,
                 "description": current_feed.description,
                 "language": current_feed.language,
                 "author": current_feed.author,
+                "author_email": current_feed.author_email,
                 "image_url": current_feed.image_url,
                 "category": current_feed.category,
+                "podcast_type": current_feed.podcast_type,
                 "explicit": current_feed.explicit,
-                "since": current_feed.since,
-                "keep_last": current_feed.keep_last,
             }
 
-            # Start with override metadata if present
-            metadata_overrides = feed_config.metadata
-            if metadata_overrides:
-                candidate_metadata: dict[str, Any] = {
-                    "title": metadata_overrides.title,
-                    "subtitle": metadata_overrides.subtitle,
-                    "description": metadata_overrides.description,
-                    "language": metadata_overrides.language,
-                    "author": metadata_overrides.author,
-                    "image_url": metadata_overrides.image_url,
-                    "category": metadata_overrides.categories,
-                    "explicit": metadata_overrides.explicit,
-                }
-            else:
-                candidate_metadata: dict[str, Any] = {}
-
-            # Always use source_type and config-based fields from authoritative sources
-            # (these should not be compared to their counterparts)
-            candidate_metadata["source_type"] = fetched_feed.source_type
-            candidate_metadata["since"] = feed_config.since
-            candidate_metadata["keep_last"] = feed_config.keep_last
-
-            # Fill in missing values from fetched feed
-            candidate_metadata["title"] = (
-                candidate_metadata.get("title") or fetched_feed.title
-            )
-            candidate_metadata["subtitle"] = (
-                candidate_metadata.get("subtitle") or fetched_feed.subtitle
-            )
-            candidate_metadata["description"] = (
-                candidate_metadata.get("description") or fetched_feed.description
-            )
-            candidate_metadata["language"] = (
-                candidate_metadata.get("language") or fetched_feed.language
-            )
-            candidate_metadata["author"] = (
-                candidate_metadata.get("author") or fetched_feed.author
-            )
-            candidate_metadata["image_url"] = (
-                candidate_metadata.get("image_url") or fetched_feed.image_url
-            )
-            candidate_metadata["category"] = (
-                candidate_metadata.get("category") or fetched_feed.category
-            )
-            candidate_metadata["explicit"] = (
-                candidate_metadata.get("explicit") or fetched_feed.explicit
-            )
+            candidate_metadata = merge_feed_metadata(fetched_feed, feed_config)
 
             # Find fields that need updating
             updates_needed = {

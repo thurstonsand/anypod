@@ -1,0 +1,8 @@
+# Trivy ignore file for suppressing false positives
+# Format: <rule-id> <file-path-pattern>
+
+# yt-dlp package false positives - this third-party dependency contains
+# example/test credentials and tokens in extractors, not actual secrets
+# from our codebase.
+aws-access-key-id **/site-packages/yt_dlp/**
+jwt-token **/site-packages/yt_dlp/**

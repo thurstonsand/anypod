@@ -553,3 +553,49 @@ async def test_fetch_metadata_with_keep_last_none_vs_limit(
     assert downloads_limited[0].id == downloads_unlimited[0].id, (
         "The most recent download should be the same in both limited and unlimited cases"
     )
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "url_type, url, expected_source_type, expected_title_contains, expected_resolved_url",
+    TEST_URLS_PARAMS,
+)
+async def test_fetch_metadata_only_flag(
+    ytdlp_wrapper: YtdlpWrapper,
+    url_type: str,
+    url: str,
+    expected_source_type: SourceType,
+    expected_title_contains: str,
+    expected_resolved_url: str,
+    cookies_path: Path | None,
+):
+    """Tests metadata_only=True returns empty downloads list but populated Feed."""
+    feed_id = f"test_metadata_only_{url_type}"
+
+    # Test with metadata_only=True
+    feed, downloads = await ytdlp_wrapper.fetch_metadata(
+        feed_id=feed_id,
+        source_type=expected_source_type,
+        source_url=url,
+        resolved_url=expected_resolved_url,
+        user_yt_cli_args=YT_DLP_MINIMAL_ARGS,
+        keep_last=1,
+        cookies_path=cookies_path,
+        metadata_only=True,
+    )
+
+    # Should return empty downloads list when metadata_only=True
+    assert len(downloads) == 0, (
+        f"Expected 0 downloads with metadata_only=True, got {len(downloads)} for {url_type}"
+    )
+
+    # Feed metadata should still be populated correctly
+    assert feed.id == feed_id, f"Feed ID should match input for {url_type}"
+    assert feed.is_enabled is True, f"Feed should be enabled for {url_type}"
+    assert feed.source_type == expected_source_type, (
+        f"Feed source_type should be {expected_source_type} for {url_type}, got {feed.source_type}"
+    )
+    assert feed.title and expected_title_contains.lower() in feed.title.lower(), (
+        f"Feed title should contain '{expected_title_contains}' for {url_type}, got '{feed.title}'"
+    )

@@ -118,7 +118,9 @@ def ytdlp_wrapper(path_manager: PathManager) -> YtdlpWrapper:
 
 @pytest.fixture
 def enqueuer(
-    feed_db: FeedDatabase, download_db: DownloadDatabase, ytdlp_wrapper: YtdlpWrapper
+    feed_db: FeedDatabase,
+    download_db: DownloadDatabase,
+    ytdlp_wrapper: YtdlpWrapper,
 ) -> Enqueuer:
     """Provide an Enqueuer instance for the tests.
 

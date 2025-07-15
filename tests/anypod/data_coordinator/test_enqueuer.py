@@ -71,8 +71,23 @@ def mock_download_db() -> MagicMock:
 @pytest.fixture
 def mock_ytdlp_wrapper() -> MagicMock:
     """Provides a MagicMock for YtdlpWrapper."""
+    mock_feed = Feed(
+        id=FEED_ID,
+        title="Extracted Feed Title",
+        subtitle=None,
+        description="Extracted description",
+        language="en",
+        author="Extracted Author",
+        author_email=None,
+        image_url=None,
+        is_enabled=True,
+        source_type=SourceType.UNKNOWN,
+        source_url=FEED_URL,
+        last_successful_sync=datetime.min.replace(tzinfo=UTC),
+    )
+
     mock = MagicMock(spec=YtdlpWrapper)
-    mock.fetch_metadata = AsyncMock()
+    mock.fetch_metadata = AsyncMock(return_value=(mock_feed, []))
     return mock
 
 
@@ -224,9 +239,7 @@ async def test_synchronize_feed_metadata_handles_removed_overrides(
     # Should update to source values, clearing override fields that have no source equivalent
     expected_updates = {
         "title": "Source Title",  # Override -> Source value
-        "subtitle": None,  # Override -> None (cleared)
         "description": "Source description",  # Override -> Source value
-        "language": None,  # Override -> None (cleared)
         "author": "Source Author",  # Override -> Source value
         "image_url": "https://example.com/source.jpg",  # Override -> Source value
         "category": PodcastCategories("TV & Film"),  # Override -> default (cleared)
@@ -306,9 +319,7 @@ async def test_synchronize_feed_metadata_handles_partial_override_removal(
 
     expected_updates = {
         "title": "Keep Override Title",  # Still overridden
-        "subtitle": None,  # Cleared (was override, now source has None)
         "description": "Source description",  # Now from source
-        "language": None,  # Cleared (was override, now source has None)
         "author": "Keep Override Author",  # Still overridden
         "image_url": "https://example.com/source.jpg",  # Now from source
         "category": PodcastCategories(
@@ -388,7 +399,6 @@ async def test_synchronize_feed_metadata_preserves_source_type_from_fetched_feed
     call_args = mock_feed_db.update_feed_metadata.call_args
 
     expected_updates = {
-        "source_type": fetched_feed.source_type,
         "title": fetched_feed.title,
         "description": fetched_feed.description,
         "author": fetched_feed.author,
@@ -471,17 +481,12 @@ async def test_synchronize_feed_metadata_preserves_source_type_with_metadata_ove
 
     # Only fields that changed from current state should be included
     expected_updates = {
-        "source_type": fetched_feed.source_type,
         "title": metadata_overrides.title,
-        "subtitle": None,
         "description": metadata_overrides.description,
-        "language": None,
         "author": fetched_feed.author,
         "image_url": fetched_feed.image_url,
         "category": PodcastCategories("TV & Film"),
         "explicit": PodcastExplicit.NO,
-        "since": feed_config_with_overrides.since,
-        "keep_last": feed_config_with_overrides.keep_last,
     }
 
     assert call_args[0][0] == FEED_ID

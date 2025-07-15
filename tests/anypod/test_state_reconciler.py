@@ -143,7 +143,7 @@ def mock_pruner() -> MagicMock:
 def mock_ytdlp_wrapper() -> MagicMock:
     """Provides a MagicMock for YtdlpWrapper."""
     mock = MagicMock(spec=YtdlpWrapper)
-    # Configure discover_feed_properties to return a valid tuple
+    mock.fetch_metadata = AsyncMock(return_value=(MOCK_FEED, []))
     mock.discover_feed_properties = AsyncMock(return_value=(SourceType.UNKNOWN, None))
     return mock
 
@@ -157,7 +157,10 @@ def state_reconciler(
 ) -> StateReconciler:
     """Provides a StateReconciler instance with mocked dependencies."""
     return StateReconciler(
-        mock_feed_db, mock_download_db, mock_ytdlp_wrapper, mock_pruner
+        mock_feed_db,
+        mock_download_db,
+        mock_ytdlp_wrapper,
+        mock_pruner,
     )
 
 
@@ -193,7 +196,7 @@ def feed_config_with_metadata() -> FeedConfig:
             author="Test Author",
             author_email="test@example.com",
             image_url="https://example.com/image.jpg",
-            categories=PodcastCategories("Technology"),
+            category=PodcastCategories("Technology"),
             podcast_type=PodcastType.EPISODIC,
             explicit=PodcastExplicit.NO,
         ),
@@ -245,7 +248,7 @@ async def test_handle_new_feed_with_metadata(
     assert inserted_feed.language == metadata.language
     assert inserted_feed.author == metadata.author
     assert inserted_feed.image_url == metadata.image_url
-    assert inserted_feed.category == metadata.categories
+    assert inserted_feed.category == metadata.category
     assert inserted_feed.explicit == metadata.explicit
 
 
