@@ -29,7 +29,7 @@ from anypod.exceptions import (
     PruneError,
     StateReconciliationError,
 )
-from anypod.state_reconciler import StateReconciler
+from anypod.state_reconciler import MIN_SYNC_DATE, StateReconciler
 from anypod.ytdlp_wrapper import YtdlpWrapper
 
 # Test constants
@@ -441,6 +441,40 @@ async def test_handle_existing_feed_metadata_changes(
     assert updated_feed.language == metadata.language
     assert updated_feed.author == metadata.author
     assert updated_feed.image_url == metadata.image_url
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_handle_existing_feed_since_removal_resets_sync_timestamp(
+    state_reconciler: StateReconciler,
+    mock_feed_db: MagicMock,
+    mock_download_db: MagicMock,
+    base_feed_config: FeedConfig,
+) -> None:
+    """Removing 'since' filter resets last_successful_sync to allow re-fetching all videos."""
+    # Setup existing feed with a 'since' filter
+    existing_feed = deepcopy(MOCK_FEED)
+    existing_feed.since = datetime(2024, 6, 1, tzinfo=UTC)
+    existing_feed.last_successful_sync = datetime(2024, 6, 1, tzinfo=UTC)
+
+    # Config removes the 'since' filter
+    config = deepcopy(base_feed_config)
+    config.since = None
+
+    # Mock no archived downloads to restore
+    mock_download_db.get_downloads_by_status.return_value = []
+
+    result = await state_reconciler._handle_existing_feed(
+        FEED_ID, config, existing_feed
+    )
+
+    assert result is True
+    mock_feed_db.upsert_feed.assert_called_once()
+    updated_feed = mock_feed_db.upsert_feed.call_args[0][0]
+
+    # Verify that last_successful_sync was reset to MIN_SYNC_DATE
+    assert updated_feed.last_successful_sync == MIN_SYNC_DATE
+    assert updated_feed.since is None
 
 
 # --- Tests for StateReconciler._handle_pruning_changes ---

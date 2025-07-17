@@ -430,6 +430,15 @@ class StateReconciler:
             }
         )
 
+        # Reset last_successful_sync to MIN_SYNC_DATE when 'since' filter is removed
+        # This ensures the enqueuer will fetch all videos from the beginning of time
+        if db_feed.since is not None and feed_config.since is None:
+            logger.info(
+                f"'since' filter removed (was {db_feed.since}), resetting last_successful_sync to allow re-fetching all videos.",
+                extra={**log_params, "old_since": db_feed.since, "new_since": None},
+            )
+            updated_feed.last_successful_sync = MIN_SYNC_DATE
+
         await self._handle_pruning_changes(
             feed_id, feed_config.since, feed_config.keep_last, db_feed, log_params
         )
@@ -506,6 +515,7 @@ class StateReconciler:
         new_count = 0
         changed_count = 0
         processed_feed_ids: set[str] = set()
+        failed_feeds: dict[str, str] = {}  # Track feeds that failed with error summary
 
         # Process all feeds from configuration
         for feed_id, feed_config in config_feeds.items():
@@ -517,6 +527,8 @@ class StateReconciler:
                 try:
                     await self._handle_new_feed(feed_id, feed_config, cookies_path)
                 except StateReconciliationError as e:
+                    error_summary = str(e)
+                    failed_feeds[feed_id] = error_summary
                     logger.warning(
                         "Failed to add new feed, continuing with others.",
                         extra={"feed_id": feed_id},
@@ -534,6 +546,8 @@ class StateReconciler:
                     ):
                         changed_count += 1
                 except StateReconciliationError as e:
+                    error_summary = str(e)
+                    failed_feeds[feed_id] = error_summary
                     logger.warning(
                         "Failed to update existing feed, continuing with others.",
                         extra={"feed_id": feed_id},
@@ -566,7 +580,18 @@ class StateReconciler:
                 "removed_feeds": removed_count,
                 "changed_feeds": changed_count,
                 "ready_feeds": len(ready_feeds),
+                "failed_feeds": len(failed_feeds),
             },
         )
+
+        # If we have configured feeds but none are ready, include error details
+        if config_feeds and not ready_feeds and failed_feeds:
+            logger.error(
+                "All configured feeds failed during reconciliation.",
+                extra={
+                    "configured_feeds": len(config_feeds),
+                    "failed_feeds": failed_feeds,
+                },
+            )
 
         return ready_feeds

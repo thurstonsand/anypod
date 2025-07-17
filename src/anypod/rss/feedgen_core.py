@@ -39,7 +39,7 @@ class FeedgenCore:
         # Check if required metadata is available
         if not feed.title:
             raise ValueError("Feed title is required when creating an RSS feed.")
-        if not feed.description:
+        if feed.description is None:
             raise ValueError("Feed description is required when creating an RSS feed.")
 
         fg = FeedGenerator()  # type: ignore
@@ -58,8 +58,10 @@ class FeedgenCore:
             fg.podcast.itunes_subtitle(feed.subtitle)  # type: ignore
         fg.link(href=feed_self_url, rel="self")  # type: ignore
         fg.link(href=feed.source_url, rel="alternate")  # type: ignore
-        fg.description(feed.description)  # type: ignore
-        fg.podcast.itunes_summary(feed.description)  # type: ignore
+        # Use a default description if "" to satisfy feedgen requirements
+        description = feed.description or "No description available"
+        fg.description(description)  # type: ignore
+        fg.podcast.itunes_summary(description)  # type: ignore
         fg.language(feed.language or "en")  # type: ignore
 
         # Handle optional fields with null checks

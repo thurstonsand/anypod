@@ -26,6 +26,7 @@
       "Bash(python3:*)",
       "Bash(jq:*)",
       "Bash(docker build:*)",
+      "Bash(docker compose logs:*)",
       "Bash(gh run view:*)",
       "Bash(gh run list:*)"
     ],

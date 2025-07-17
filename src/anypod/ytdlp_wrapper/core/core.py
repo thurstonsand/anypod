@@ -2,10 +2,13 @@
 
 import asyncio
 import json
+import logging
 
 from ...exceptions import YtdlpApiError
 from .args import YtdlpArgs
 from .info import YtdlpInfo
+
+logger = logging.getLogger(__name__)
 
 
 class YtdlpCore:
@@ -35,6 +38,8 @@ class YtdlpCore:
         # Build subprocess command
         cli_args = args.dump_single_json().no_download().to_list()
         cmd = ["yt-dlp", *cli_args, url]
+
+        logger.debug("Running yt-dlp for metadata extraction", extra={"cmd": cmd})
 
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -89,6 +94,8 @@ class YtdlpCore:
         """
         # Build subprocess command: yt-dlp + args + url
         cmd = ["yt-dlp", *args.to_list(), url]
+
+        logger.debug("Running yt-dlp for download", extra={"cmd": cmd})
 
         try:
             proc = await asyncio.create_subprocess_exec(

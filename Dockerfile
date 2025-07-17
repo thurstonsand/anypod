@@ -31,10 +31,12 @@ FROM debian:bookworm-slim
 
 # Install curl for health check, ca-certificates for SSL verification, and gosu for user switching
 RUN apt-get update && \
+    apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
         curl \
         ca-certificates \
-        gosu && \
+        gosu \
+        ffmpeg && \
     rm -rf /var/lib/apt/lists/*
 
 # Set working directory

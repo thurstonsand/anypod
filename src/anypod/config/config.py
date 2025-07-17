@@ -243,7 +243,7 @@ class AppSettings(BaseSettings):
         description="Path to the YAML config file.",
     )
     cookies_path: Path | None = Field(
-        default=None,
+        default=Path("/cookies/cookies.txt"),
         validation_alias="COOKIES_PATH",
         description="Optional path to the cookies.txt file for yt-dlp authentication.",
     )

@@ -149,7 +149,7 @@ LOG_INCLUDE_STACKTRACE=true           # Include stack traces in logs (default: f
 BASE_URL=https://podcasts.example.com  # Base URL for feeds/media (default: http://localhost:8024)
 CONFIG_FILE=/path/to/feeds.yaml       # Config file path (default: /config/feeds.yaml)
 DATA_DIR=/path/to/data                # Root directory for all application data (default: /data)
-COOKIE_PATH=/path/to/cookies.txt      # Optional cookies.txt file for yt-dlp authentication
+COOKIES_PATH=/path/to/cookies.txt     # Optional cookies.txt file for yt-dlp authentication (default: /cookies/cookies.txt)
 TZ=America/New_York                    # Timezone for date parsing (default: system timezone)
 SERVER_HOST=0.0.0.0                   # HTTP server host (default: 0.0.0.0)
 SERVER_PORT=8024                      # HTTP server port (default: 8024)
@@ -509,7 +509,7 @@ All CLI flags can alternatively be set via environment variables using uppercase
 ## Deployment
 | Aspect | Setting |
 |--------|---------|
-| **Image** | `ghcr.io/thurstonsand/anypod:latest` |
+| **Image** | `ghcr.io/thurstonsand/anypod:nightly` |
 | **Base** | `debian:bookworm-slim` with uv-managed Python 3.13 |
 | **User** | Runs as **root (UID 0)** by default; automatically switches to non-root user (PUID/PGID) if specified |
 | **Volumes** | `/config`, `/data`, `/cookies` |

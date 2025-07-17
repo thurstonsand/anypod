@@ -34,7 +34,7 @@ uv sync
 timeout 30 ./scripts/run_dev.sh [--keep] # Run full anypod service (scheduler + HTTP server)
 # - Default: Creates fresh database and cleans all downloaded files
 # - --keep: Preserves existing database and downloaded files
-# - Uses example_feeds.yaml config, tmpdata/ directory, US/Eastern timezone
+# - Uses local_feeds.yaml config, tmpdata/ directory, cookies.txt file, US/Eastern timezone
 # - This is a long-running process that will not end automatically
 
 # Debug modes for testing individual components
@@ -73,10 +73,10 @@ uvx --from ast-grep-cli sg # Syntax-aware code search for exploring codebase str
 docker build -t anypod:local .
 
 # Run with docker-compose (recommended for production)
-docker-compose up -d
+docker compose up -d
 
 # Run standalone container
-docker run -d -p 8024:8024 -v ./config:/config -v ./data:/data -v ./cookies:/cookies ghcr.io/thurstonsand/anypod:latest
+docker run -d -p 8024:8024 -v ./config:/config -v ./data:/data -v ./cookies:/cookies ghcr.io/thurstonsand/anypod:nightly
 ```
 
 ## Architecture
@@ -93,7 +93,10 @@ docker run -d -p 8024:8024 -v ./config:/config -v ./data:/data -v ./cookies:/coo
 - **RSS Generation** (`rss/`): feedgen-based RSS feed creation
 
 ### Database Schema
-Single `downloads` table with status lifecycle: `UPCOMING → QUEUED → DOWNLOADED/ERROR → ARCHIVED`
+- **Tables**:
+  - `feed`: Stores feed metadata
+  - `download`: Stores download information and status
+- Single `downloads` table with status lifecycle: `UPCOMING → QUEUED → DOWNLOADED/ERROR → ARCHIVED`
 - Composite primary key: `(feed, id)`
 - Critical indexes: `idx_feed_status`, `idx_feed_published`
 
@@ -242,7 +245,7 @@ LOG_INCLUDE_STACKTRACE=true           # Include stack traces in logs (default: f
 BASE_URL=https://podcasts.example.com  # Base URL for feeds/media (default: http://localhost:8024)
 DATA_DIR=/path/to/data                # Root directory for all application data (default: /data)
 CONFIG_FILE=/path/to/feeds.yaml       # Config file path (default: /config/feeds.yaml)
-COOKIE_PATH=/path/to/cookies.txt      # Optional cookies.txt file for yt-dlp authentication
+COOKIES_PATH=/path/to/cookies.txt     # Optional cookies.txt file for yt-dlp authentication (default: /cookies/cookies.txt)
 SERVER_HOST=0.0.0.0                   # HTTP server host (default: 0.0.0.0)
 SERVER_PORT=8024                      # HTTP server port (default: 8024)
 TRUSTED_PROXIES=["192.168.1.0/24"]    # Trusted proxy IPs/networks for reverse proxy support (default: None)

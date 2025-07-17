@@ -6,6 +6,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 DATA_DIR="$PROJECT_ROOT/tmpdata"
+CONFIG_FILE="local_feeds.yaml"
+COOKIES_PATH="cookies.txt"
 
 usage() {
     echo "Usage: $0 <debug_mode> [--keep]"
@@ -19,7 +21,7 @@ clean_data_directory() {
     if [ -d "$DATA_DIR" ]; then
         rm -rf "$DATA_DIR"
     fi
-    
+
     # Create fresh directory structure
     mkdir -p "$DATA_DIR/media"
     echo "Created fresh data directory: $DATA_DIR"
@@ -84,4 +86,4 @@ fi
 
 # Set up environment and run the application in debug mode
 echo "Starting anypod in $DEBUG_MODE debug mode..."
-exec env DEBUG_MODE="$DEBUG_MODE" DATA_DIR="$DATA_DIR" TZ="US/Eastern" CONFIG_FILE="example_feeds.yaml" COOKIES_FILE="cookies.txt" uv run anypod
+exec env DEBUG_MODE="$DEBUG_MODE" DATA_DIR="$DATA_DIR" TZ="US/Eastern" CONFIG_FILE="$CONFIG_FILE" COOKIES_PATH="$COOKIES_PATH" uv run anypod

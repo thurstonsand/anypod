@@ -13,6 +13,8 @@ from logging.config import dictConfig
 import sys
 from typing import Any, Literal
 
+from pythonjsonlogger.json import JsonFormatter
+
 _original_log_record_factory = logging.getLogRecordFactory()
 
 
@@ -156,7 +158,7 @@ class HumanReadableExtrasFormatter(logging.Formatter):
 
         ctx_id = getattr(record, "context_id", None)
         if ctx_id is not None:
-            prefix_parts.append(f"CtxID:{ctx_id}")
+            prefix_parts.append(f"ctx_id:{ctx_id}")
 
         log_string_parts: list[str] = [" ".join(prefix_parts)]
 
@@ -251,6 +253,46 @@ class HumanReadableExtrasFormatter(logging.Formatter):
         return final_log_string
 
 
+class CustomJsonFormatter(JsonFormatter):
+    """A custom JSON formatter that respects stacktrace settings and includes semantic trace.
+
+    Extends the default JsonFormatter to conditionally include exception information
+    based on the global _should_include_stacktrace setting and properly handle
+    semantic_trace and exc_custom_attrs fields.
+    """
+
+    def add_fields(
+        self,
+        log_record: dict[str, Any],
+        record: logging.LogRecord,
+        message_dict: dict[str, Any],
+    ) -> None:
+        """Add fields to the log record, respecting stacktrace settings.
+
+        Args:
+            log_record: The dictionary that will be logged as JSON.
+            record: The original LogRecord.
+            message_dict: Additional message fields.
+        """
+        super().add_fields(log_record, record, message_dict)
+
+        # Always include semantic_trace if available
+        semantic_trace = getattr(record, "semantic_trace", None)
+        if semantic_trace:
+            log_record["semantic_trace"] = semantic_trace
+
+        # Always include exc_custom_attrs if available
+        exc_custom_attrs = getattr(record, "exc_custom_attrs", None)
+        if exc_custom_attrs:
+            log_record["exc_custom_attrs"] = exc_custom_attrs
+
+        # Only include exc_info if stacktrace should be included
+        if record.exc_info and not _should_include_stacktrace:
+            # Remove exc_info from the log record to suppress the stacktrace
+            log_record.pop("exc_info", None)
+            log_record.pop("exc_text", None)
+
+
 LOGGING_CONFIG: dict[str, Any] = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -268,7 +310,7 @@ LOGGING_CONFIG: dict[str, Any] = {
             "datefmt": "%Y-%m-%d %H:%M:%S",
         },
         "json_formatter": {
-            "()": "pythonjsonlogger.json.JsonFormatter",
+            "()": CustomJsonFormatter,
             "format": "%(asctime)s %(levelname)s %(name)s %(message)s",
         },
     },

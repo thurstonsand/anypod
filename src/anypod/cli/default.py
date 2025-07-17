@@ -142,7 +142,11 @@ async def _init(
             "No enabled feeds found after reconciliation, exiting.",
             extra={"configured_feeds": len(settings.feeds)},
         )
-        raise RuntimeError("No enabled feeds found in config")
+        raise RuntimeError(
+            f"No enabled feeds ready after reconciliation. "
+            f"Configured {len(settings.feeds)} feed(s), but all failed during setup. "
+            f"Check the logs above for specific errors (e.g., yt-dlp, network, or configuration issues)."
+        )
 
     # Initialize and start scheduler
     logger.debug(
@@ -207,6 +211,5 @@ async def default(settings: AppSettings) -> None:
         # Will gracefully shutdown on SIGINT/SIGTERM
         await server.serve()
     except Exception as e:
-        logger.error("Unexpected error during startup.", exc_info=e)
+        logger.error("Unexpected error during execution.", exc_info=e)
         await graceful_shutdown(scheduler, db_core)
-        raise
