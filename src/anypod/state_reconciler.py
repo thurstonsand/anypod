@@ -100,17 +100,13 @@ class StateReconciler:
 
         # Fetch and merge feed metadata
         try:
-            fetched_feed, _ = await self._ytdlp_wrapper.fetch_metadata(
+            fetched_feed = await self._ytdlp_wrapper.fetch_playlist_metadata(
                 feed_id=feed_id,
                 source_type=source_type,
                 source_url=feed_config.url,
                 resolved_url=resolved_url,
                 user_yt_cli_args=feed_config.yt_args,
-                fetch_since_date=feed_config.since,
-                fetch_until_date=None,
-                keep_last=feed_config.keep_last,
                 cookies_path=cookies_path,
-                metadata_only=True,
             )
         except YtdlpApiError as e:
             raise StateReconciliationError(
@@ -388,7 +384,9 @@ class StateReconciler:
                 updated_feed.source_type = updated_source_type
                 updated_feed.source_url = new_url
                 updated_feed.resolved_url = updated_resolved_url
-                updated_feed.last_successful_sync = MIN_SYNC_DATE
+                updated_feed.last_successful_sync = (
+                    feed_config.since if feed_config.since else MIN_SYNC_DATE
+                )
                 updated_feed.last_failed_sync = None
                 updated_feed.consecutive_failures = 0
             # Feed has been disabled
@@ -403,17 +401,14 @@ class StateReconciler:
                 pass
 
         try:
-            fetched_feed, _ = await self._ytdlp_wrapper.fetch_metadata(
+            # Get playlist metadata for existing feed
+            fetched_feed = await self._ytdlp_wrapper.fetch_playlist_metadata(
                 feed_id=feed_id,
                 source_type=updated_feed.source_type,
                 source_url=feed_config.url,
                 resolved_url=updated_feed.resolved_url,
                 user_yt_cli_args=feed_config.yt_args,
-                fetch_since_date=feed_config.since,
-                fetch_until_date=None,
-                keep_last=feed_config.keep_last,
                 cookies_path=cookies_path,
-                metadata_only=True,
             )
         except YtdlpApiError as e:
             raise StateReconciliationError(

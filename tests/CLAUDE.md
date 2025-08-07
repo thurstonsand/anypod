@@ -19,6 +19,7 @@
 - Test both success and failure paths
 - Add descriptive messages to non-obvious assertions
 - If a constant is used in multiple places, consolidate it into a variable and reference it instead of copy-pasting it everywhere
+- Set mock values to variables that are then referenced in assertions rather than hard-coding the same value multiple times
 - Do not assert check for the string content of an exception, as this is fragile
 
 ### Test Execution

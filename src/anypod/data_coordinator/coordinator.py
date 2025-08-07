@@ -113,7 +113,6 @@ class DataCoordinator:
         feed_id: str,
         feed_config: FeedConfig,
         fetch_since_date: datetime,
-        fetch_until_date: datetime,
     ) -> PhaseResult:
         """Execute the enqueue phase of feed processing.
 
@@ -121,7 +120,6 @@ class DataCoordinator:
             feed_id: The feed identifier.
             feed_config: The feed configuration.
             fetch_since_date: Date to use for filtering new downloads (from last_successful_sync).
-            fetch_until_date: Upper bound date for filtering new downloads (current time).
 
         Returns:
             PhaseResult with enqueue phase results.
@@ -130,11 +128,13 @@ class DataCoordinator:
         log_params = {"feed_id": feed_id, "phase": "enqueue"}
 
         try:
-            enqueued_count = await self._enqueuer.enqueue_new_downloads(
+            (
+                enqueued_count,
+                last_successful_sync,
+            ) = await self._enqueuer.enqueue_new_downloads(
                 feed_id,
                 feed_config,
                 fetch_since_date,
-                fetch_until_date,
                 self._cookies_path,
             )
         except EnqueueError as e:
@@ -145,10 +145,26 @@ class DataCoordinator:
                 exc_info=e,
             )
 
+            # Mark sync failure when enqueue fails
+            errors: list[Exception] = [e]
+            try:
+                await self._feed_db.mark_sync_failure(feed_id)
+                logger.info(
+                    "Feed sync marked as failure due to enqueue phase failure.",
+                    extra={"feed_id": feed_id},
+                )
+            except (FeedNotFoundError, DatabaseOperationError) as db_e:
+                logger.warning(
+                    "Failed to update feed sync failure status.",
+                    extra={"feed_id": feed_id},
+                    exc_info=db_e,
+                )
+                errors.append(db_e)
+
             return PhaseResult(
                 success=False,
                 count=0,
-                errors=[e],
+                errors=errors,
                 duration_seconds=duration,
             )
         else:
@@ -161,6 +177,29 @@ class DataCoordinator:
                     "duration_seconds": duration,
                 },
             )
+
+            # Mark sync success when enqueue succeeds
+            try:
+                await self._feed_db.mark_sync_success(feed_id, last_successful_sync)
+                logger.debug(
+                    "Feed sync status updated to success.",
+                    extra={
+                        "feed_id": feed_id,
+                        "sync_time": last_successful_sync.isoformat(),
+                    },
+                )
+            except (FeedNotFoundError, DatabaseOperationError) as db_e:
+                logger.error(
+                    "Failed to update feed sync success status.",
+                    extra={"feed_id": feed_id},
+                    exc_info=db_e,
+                )
+                return PhaseResult(
+                    success=False,
+                    count=0,
+                    errors=[db_e],
+                    duration_seconds=duration,
+                )
 
             return PhaseResult(
                 success=True,
@@ -328,48 +367,6 @@ class DataCoordinator:
                 duration_seconds=duration,
             )
 
-    async def _update_feed_sync_status(
-        self,
-        feed_id: str,
-        results: ProcessingResults,
-        fetch_until_date: datetime,
-    ) -> bool:
-        """Update the feed's sync status in the database.
-
-        Args:
-            feed_id: The feed identifier.
-            results: The results of the feed processing.
-            fetch_until_date: The upper bound date used during fetch. Used as new sync time if successful.
-
-        Returns:
-            True if the database update was successful.
-        """
-        log_params = {"feed_id": feed_id, "sync_success": results.overall_success}
-
-        try:
-            if results.overall_success:
-                await self._feed_db.mark_sync_success(feed_id, fetch_until_date)
-                logger.debug(
-                    "Feed sync status updated to success.",
-                    extra={**log_params, "sync_time": fetch_until_date.isoformat()},
-                )
-            else:
-                await self._feed_db.mark_sync_failure(feed_id)
-                logger.info(
-                    "Feed sync unsuccessful.",
-                    extra=log_params,
-                    exc_info=results.fatal_error,
-                )
-        except (FeedNotFoundError, DatabaseOperationError) as e:
-            logger.error(
-                "Failed to update feed sync status.",
-                extra=log_params,
-                exc_info=e,
-            )
-            return False
-        else:
-            return True
-
     async def process_feed(
         self, feed_id: str, feed_config: FeedConfig
     ) -> ProcessingResults:
@@ -405,16 +402,16 @@ class DataCoordinator:
             start_time=start_time,
         )
 
-        # Calculate fetch dates (used in finally block too)
-        fetch_until_date = datetime.now(UTC)
-
         try:
             fetch_since_date = await self._calculate_fetch_since_date(feed_id)
 
             # Phase 1: Enqueue new downloads
             results.enqueue_result = await self._execute_enqueue_phase(
-                feed_id, feed_config, fetch_since_date, fetch_until_date
+                feed_id, feed_config, fetch_since_date
             )
+
+            # Track if feed sync was updated successfully
+            results.feed_sync_updated = results.enqueue_result.success
 
             # Phase 2: Download queued media (always attempt, even if enqueue failed)
             results.download_result = await self._execute_download_phase(
@@ -457,11 +454,6 @@ class DataCoordinator:
             # Calculate total duration
             end_time = datetime.now(UTC)
             results.total_duration_seconds = (end_time - start_time).total_seconds()
-
-            # Update feed sync status
-            results.feed_sync_updated = await self._update_feed_sync_status(
-                feed_id, results, fetch_until_date
-            )
 
             # Log final results
             logger.info(

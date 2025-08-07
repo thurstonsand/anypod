@@ -12,15 +12,12 @@ from pathlib import Path
 import pytest
 
 from anypod.config import FeedConfig
-from anypod.data_coordinator import DataCoordinator
-from anypod.data_coordinator.downloader import Downloader
-from anypod.data_coordinator.enqueuer import Enqueuer
-from anypod.data_coordinator.pruner import Pruner
-from anypod.db import DownloadDatabase
-from anypod.db.feed_db import FeedDatabase
+from anypod.data_coordinator import DataCoordinator, Downloader, Enqueuer, Pruner
+from anypod.db import DownloadDatabase, FeedDatabase
 from anypod.db.types import Download, DownloadStatus, Feed, SourceType
 from anypod.file_manager import FileManager
 from anypod.rss import RSSFeedGenerator
+from anypod.state_reconciler import MIN_SYNC_DATE
 
 # Test constants - same as other integration tests for consistency
 BIG_BUCK_BUNNY_VIDEO_ID = "aqz-KE-bpKQ"
@@ -74,8 +71,9 @@ async def create_test_feed(
         source_type=source_type,
         source_url=source_url,
         resolved_url=resolved_url,
-        last_successful_sync=datetime.min.replace(tzinfo=UTC),
+        last_successful_sync=MIN_SYNC_DATE,
         title=f"Test Feed {feed_id}",
+        description=f"Test description for {feed_id}",  # Required for RSS generation
     )
     await feed_db.upsert_feed(feed)
     return feed

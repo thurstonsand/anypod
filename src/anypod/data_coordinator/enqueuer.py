@@ -21,7 +21,6 @@ from ..exceptions import (
     FeedNotFoundError,
     YtdlpApiError,
 )
-from ..metadata import merge_feed_metadata
 from ..ytdlp_wrapper import YtdlpWrapper
 
 logger = logging.getLogger(__name__)
@@ -273,14 +272,16 @@ class Enqueuer:
             "Re-checking status for upcoming download.", extra=download_log_params
         )
 
-        fetched_downloads: list[Download] | None = None
         try:
-            _, fetched_downloads = await self._ytdlp_wrapper.fetch_metadata(
+            # Re-fetch single video metadata to check if it's now available
+            fetched_downloads = await self._ytdlp_wrapper.fetch_new_downloads_metadata(
                 feed.id,
                 SourceType.SINGLE_VIDEO,
                 db_download.source_url,
-                None,
+                None,  # No resolved URL needed for single video
                 feed_config.yt_args,
+                None,  # No date filtering for single video
+                None,  # No keep_last for single video
                 cookies_path=cookies_path,
             )
         except YtdlpApiError as e:
@@ -292,6 +293,21 @@ class Enqueuer:
                     "cli_args": feed_config.yt_args,
                 },
                 exc_info=e,
+            )
+            await self._try_bump_retries_and_log(
+                feed.id,
+                db_download.id,
+                error_message,
+                feed_config.max_errors,
+                download_log_params,
+            )
+            return False
+
+        if not fetched_downloads:
+            error_message = "No metadata returned for upcoming download re-fetch."
+            logger.warning(
+                error_message,
+                extra=download_log_params,
             )
             await self._try_bump_retries_and_log(
                 feed.id,
@@ -327,149 +343,6 @@ class Enqueuer:
         )
 
     # --- Helpers for _fetch_and_process_feed_downloads ---
-
-    async def _fetch_all_metadata_for_feed_url(
-        self,
-        feed: Feed,
-        feed_config: FeedConfig,
-        fetch_since_date: datetime,
-        fetch_until_date: datetime,
-        log_params: dict[str, Any],
-        cookies_path: Path | None = None,
-    ) -> tuple[Feed, list[Download]]:
-        """Fetch all media metadata for the feed URL with date filtering.
-
-        Args:
-            feed: The Feed object from the database.
-            feed_config: The feed configuration object.
-            fetch_since_date: Only fetch downloads published after this date.
-            fetch_until_date: Only fetch downloads published before this date.
-            log_params: Relevant logging parameters.
-            cookies_path: Path to cookies.txt file for yt-dlp authentication.
-
-        Returns:
-            Tuple of (Feed, list[Download]) containing extracted feed metadata
-            and list of Download objects fetched from the feed.
-
-        Raises:
-            EnqueueError: If the main ytdlp fetch fails.
-        """
-        # Use user-configured yt_args directly (date filtering handled by wrapper)
-        user_yt_cli_args = list(feed_config.yt_args)  # Make a copy
-        logger.debug(
-            "Fetching feed downloads.",
-            extra={
-                **log_params,
-                "fetch_since_date": fetch_since_date.isoformat(),
-                "fetch_until_date": fetch_until_date.isoformat(),
-            },
-        )
-
-        try:
-            (
-                fetched_feed,
-                all_fetched_downloads,
-            ) = await self._ytdlp_wrapper.fetch_metadata(
-                feed.id,
-                feed.source_type,
-                feed.source_url,
-                feed.resolved_url,
-                user_yt_cli_args,
-                fetch_since_date,
-                fetch_until_date,
-                feed_config.keep_last,
-                cookies_path,
-            )
-        except YtdlpApiError as e:
-            raise EnqueueError(
-                "Could not fetch main feed metadata.",
-                feed_id=feed.id,
-                feed_url=feed_config.url,
-            ) from e
-
-        if not all_fetched_downloads:
-            logger.debug(
-                "No downloads returned from feed metadata fetch (may be filtered or empty).",
-                extra=log_params,
-            )
-        else:
-            logger.debug(
-                f"Fetched {len(all_fetched_downloads)} downloads from feed URL.",
-                extra=log_params,
-            )
-        return fetched_feed, all_fetched_downloads
-
-    async def _synchronize_feed_metadata(
-        self,
-        current_feed: Feed,
-        fetched_feed: Feed,
-        feed_config: FeedConfig,
-        log_params: dict[str, Any],
-    ) -> Feed:
-        """Synchronize feed metadata from ytdlp extraction with database record.
-
-        Compares config overrides with extracted metadata and updates database
-        only if fields have changed. Config overrides take precedence over
-        extracted values.
-
-        Args:
-            current_feed: The Feed object from the database.
-            fetched_feed: Feed metadata extracted from ytdlp.
-            feed_config: Feed configuration with potential overrides.
-            log_params: Logging parameters for context.
-
-        Raises:
-            EnqueueError: If feed is not found or update fails.
-        """
-        async with self._feed_db.session() as session:
-            # Current metadata in database
-            current_metadata = {
-                "title": current_feed.title,
-                "subtitle": current_feed.subtitle,
-                "description": current_feed.description,
-                "language": current_feed.language,
-                "author": current_feed.author,
-                "author_email": current_feed.author_email,
-                "image_url": current_feed.image_url,
-                "category": current_feed.category,
-                "podcast_type": current_feed.podcast_type,
-                "explicit": current_feed.explicit,
-            }
-
-            candidate_metadata = merge_feed_metadata(fetched_feed, feed_config)
-
-            # Find fields that need updating
-            updates_needed = {
-                key: val
-                for key, val in candidate_metadata.items()
-                if current_metadata[key] != val
-            }
-
-            if not updates_needed:
-                logger.debug(
-                    "No feed metadata changes detected, skipping update.",
-                    extra=log_params,
-                )
-                return current_feed
-
-            logger.debug(
-                "Feed metadata changes detected, updating database.",
-                extra={**log_params, "changed_fields": list(updates_needed.keys())},
-            )
-
-            # Update metadata
-            try:
-                await self._feed_db.update_feed_metadata(
-                    current_feed.id, **updates_needed
-                )
-                await session.commit()
-            except (FeedNotFoundError, DatabaseOperationError) as e:
-                raise EnqueueError(
-                    "Could not update feed metadata in database.",
-                    feed_id=current_feed.id,
-                ) from e
-
-            return current_feed.model_copy(update=updates_needed)
 
     # TODO: if this fails, download is potentially lost forever
     async def _handle_newly_fetched_download(
@@ -721,15 +594,14 @@ class Enqueuer:
 
         return queued_count
 
-    async def _fetch_and_process_feed_and_new_downloads(
+    async def _fetch_and_process_new_downloads(
         self,
         feed: Feed,
         feed_config: FeedConfig,
         fetch_since_date: datetime,
-        fetch_until_date: datetime,
         cookies_path: Path | None = None,
-    ) -> tuple[Feed, int]:
-        """Fetch all media metadata for the feed URL within the given date range.
+    ) -> tuple[int, datetime]:
+        """Fetch download metadata for the feed URL within the given date range.
 
         For each download:
         - If new: inserts with status QUEUED (if VOD) or UPCOMING (if live/scheduled).
@@ -738,11 +610,10 @@ class Enqueuer:
             feed: The Feed object from the database.
             feed_config: The configuration object for the feed.
             fetch_since_date: Fetches downloads published after this date.
-            fetch_until_date: Fetches downloads published before this date.
             cookies_path: Path to cookies.txt file for yt-dlp authentication.
 
         Returns:
-            A tuple of (updated feed, count of downloads newly set to QUEUED status)
+            A tuple of (count of downloads newly set to QUEUED status, sync timestamp)
         """
         feed_log_params = {"feed_id": feed.id, "feed_url": feed_config.url}
         logger.debug(
@@ -750,22 +621,49 @@ class Enqueuer:
             extra=feed_log_params,
         )
 
-        (
-            fetched_feed,
-            all_fetched_downloads,
-        ) = await self._fetch_all_metadata_for_feed_url(
-            feed,
-            feed_config,
-            fetch_since_date,
-            fetch_until_date,
-            feed_log_params,
-            cookies_path,
+        # Use user-configured yt_args directly (date filtering handled by wrapper)
+        user_yt_cli_args = list(feed_config.yt_args)  # Make a copy
+        logger.debug(
+            "Fetching feed downloads.",
+            extra={
+                **feed_log_params,
+                "fetch_since_date": fetch_since_date.isoformat(),
+            },
         )
 
-        # Synchronize feed metadata with database
-        feed = await self._synchronize_feed_metadata(
-            feed, fetched_feed, feed_config, feed_log_params
-        )
+        # Use this time for last_successful_sync
+        sync_timestamp = datetime.now(UTC)
+        try:
+            # Fetch filtered video metadata for enqueuing
+            all_fetched_downloads = (
+                await self._ytdlp_wrapper.fetch_new_downloads_metadata(
+                    feed.id,
+                    feed.source_type,
+                    feed.source_url,
+                    feed.resolved_url,
+                    user_yt_cli_args,
+                    fetch_since_date,
+                    feed_config.keep_last,
+                    cookies_path,
+                )
+            )
+        except YtdlpApiError as e:
+            raise EnqueueError(
+                "Could not fetch downloads metadata.",
+                feed_id=feed.id,
+                feed_url=feed_config.url,
+            ) from e
+
+        if not all_fetched_downloads:
+            logger.debug(
+                "No downloads returned from feed metadata fetch (may be filtered or empty).",
+                extra=feed_log_params,
+            )
+        else:
+            logger.debug(
+                f"Fetched {len(all_fetched_downloads)} downloads from feed URL.",
+                extra=feed_log_params,
+            )
 
         queued_count = 0
         for fetched_dl in all_fetched_downloads:
@@ -778,23 +676,22 @@ class Enqueuer:
             "Identified downloads as newly QUEUED from main feed processing.",
             extra={**feed_log_params, "queued_count": queued_count},
         )
-        return feed, queued_count
+        return queued_count, sync_timestamp
 
     async def enqueue_new_downloads(
         self,
         feed_id: str,
         feed_config: FeedConfig,
         fetch_since_date: datetime,
-        fetch_until_date: datetime,
         cookies_path: Path | None = None,
-    ) -> int:
+    ) -> tuple[int, datetime]:
         """Fetch media metadata for a feed and enqueue new downloads.
 
         This method performs two main phases:
         1. Re-polls existing database entries with status UPCOMING for the given feed.
            If an UPCOMING download is now a VOD (Video on Demand), its status is updated to QUEUED.
         2. Fetches the latest media metadata from the feed source using YtdlpWrapper,
-           filtered by fetch_since_date and fetch_until_date.
+           filtered by fetch_since_date.
            - For each new download not already in the database:
              - If its parsed status is QUEUED (VOD), it's inserted as QUEUED.
              - If its parsed status is UPCOMING (live/scheduled), it's inserted as UPCOMING.
@@ -805,12 +702,11 @@ class Enqueuer:
             feed_id: The unique identifier for the feed.
             feed_config: The configuration object for the feed, containing URL and yt-dlp arguments.
             fetch_since_date: Fetching will only look for downloads published after this date.
-            fetch_until_date: Fetching will only look for downloads published before this date.
             cookies_path: Path to cookies.txt file for yt-dlp authentication.
 
         Returns:
-            The total count of downloads that were newly set to QUEUED status
-            (either new downloads or UPCOMING downloads that transitioned to QUEUED).
+            Tuple of (total downloads newly set to QUEUED status, last_successful_sync timestamp from yt-dlp).
+
 
         Raises:
             EnqueueError: If a critical, non-recoverable error occurs during the enqueue process.
@@ -837,10 +733,10 @@ class Enqueuer:
 
         # Fetch and process all feed downloads first (includes UPCOMING)
         (
-            feed,
             queued_from_feed_fetch,
-        ) = await self._fetch_and_process_feed_and_new_downloads(
-            feed, feed_config, fetch_since_date, fetch_until_date, cookies_path
+            sync_timestamp,
+        ) = await self._fetch_and_process_new_downloads(
+            feed, feed_config, fetch_since_date, cookies_path
         )
         logger.debug(
             "Downloads processed from feed.",
@@ -866,4 +762,5 @@ class Enqueuer:
                 "queued_count": total_queued_count,
             },
         )
-        return total_queued_count
+
+        return total_queued_count, sync_timestamp

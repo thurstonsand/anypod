@@ -564,7 +564,8 @@ yt-dlp's `daterange` parameter only supports YYYYMMDD format, not hour/minute/se
     | **Weighted eviction**                    | Allow optional `weight:` per feed; compute *effective LRU‑age* = `real_age / weight`. Evict by that metric.                                 | Lets you bias important feeds without hard floors.            | Harder to predict which download will vanish next; extra YAML tuning.                                          |
     | **Quota borrow/return**                  | Each feed gets `quota = max_total/N`. Feeds may borrow unused space from others up to `borrow_limit%`. GC first reclaims borrowed space, then local quota, then uses global LRU. | Self‑balancing; high‑volume feeds thrive while small ones keep minimum. | Most complex to implement; needs periodic re‑balancing pass.                                               |
     | **Archive tier**                         | Move oldest media to a cheap "cold" volume (e.g., S3/Glacier) instead of deleting, while pruning DB rows locally.                           | No data loss; total cap becomes *hot‑tier* only.             | Requires new storage backend; retrieval latency for old episodes.                                          |
-* integrate with sponsorblock -- either skip blocked sections, or add chapters to download
+* integrate with sponsorblock -- either skip blocked sections, or add chapters to download; yt-dlp has options for it already!
+  * in coordination with this, support delaying downloads so that there is time for sponsorblock to be added
 * add per-source rate limiting
 * issue template include rules on requesting support for new source
 * enable a podcast feed that accepts requests to an endpoint to add individual videos to the feed; basically manually curated
@@ -586,3 +587,6 @@ yt-dlp's `daterange` parameter only supports YYYYMMDD format, not hour/minute/se
 * crop thumbnails so they are the right ratio; also consider converting from webp to png/jpg
 * configurable channel tab selection: allow users to specify which tab (videos, shorts, live, etc.) to use when discovering channel URLs, with /videos as default
 * just store rss feeds in the db, don't keep them in-memory (fixes race condition on boot)
+* Enable conditional conversion of file format to allow for more flexible selectors
+* handle the scenario where adding a new feed with a restrictive filter that doesn't pick up any videos (`since` too recent); in this case, it will error out because it won't have metadata to generate the rss feed. in this case, it should error, but continue generating as normal
+* combine enqueuer and downloader into 1 call -- should be possible by using something like `--no-simulate`

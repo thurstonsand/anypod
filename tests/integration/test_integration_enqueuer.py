@@ -6,16 +6,12 @@ from pathlib import Path
 import pytest
 
 from anypod.config import FeedConfig
-from anypod.config.types import (
-    FeedMetadataOverrides,
-    PodcastCategories,
-    PodcastExplicit,
-)
-from anypod.data_coordinator.enqueuer import Enqueuer
-from anypod.db import DownloadDatabase
-from anypod.db.feed_db import FeedDatabase
+from anypod.config.types import FeedMetadataOverrides
+from anypod.data_coordinator import Enqueuer
+from anypod.db import DownloadDatabase, FeedDatabase
 from anypod.db.types import Download, DownloadStatus, Feed, SourceType
 from anypod.exceptions import EnqueueError
+from anypod.state_reconciler import MIN_SYNC_DATE
 
 # Test constants
 BIG_BUCK_BUNNY_VIDEO_ID = "aqz-KE-bpKQ"
@@ -89,7 +85,7 @@ async def create_test_feed(
         source_type=source_type,
         source_url=url,
         resolved_url=resolved_url,
-        last_successful_sync=datetime.min.replace(tzinfo=UTC),
+        last_successful_sync=MIN_SYNC_DATE,
         title=f"Test Feed {feed_id}",
     )
     await feed_db.upsert_feed(feed)
@@ -127,15 +123,13 @@ async def test_enqueue_new_downloads_success(
         since=None,
         max_errors=MAX_ERRORS,
     )
-    fetch_since_date = datetime.min.replace(tzinfo=UTC)
+    fetch_since_date = MIN_SYNC_DATE
 
     # Enqueue new downloads
-    fetch_until_date = datetime.now(UTC)
-    queued_count = await enqueuer.enqueue_new_downloads(
+    queued_count, _ = await enqueuer.enqueue_new_downloads(
         feed_id=feed_id,
         feed_config=feed_config,
         fetch_since_date=fetch_since_date,
-        fetch_until_date=fetch_until_date,
         cookies_path=cookies_path,
     )
 
@@ -160,59 +154,6 @@ async def test_enqueue_new_downloads_success(
     assert download.duration > 0, f"Download duration should be > 0 for {url_type}"
     assert download.status == DownloadStatus.QUEUED
 
-    # Verify feed metadata was updated from extracted metadata
-    updated_feed = await feed_db.get_feed_by_id(feed_id)
-
-    # Verify specific extracted values based on URL type
-    if url_type == "video_short_link":
-        # Big Buck Bunny video metadata
-        assert (
-            updated_feed.title
-            == "Big Buck Bunny 60fps 4K - Official Blender Foundation Short Film"
-        )
-        assert updated_feed.author == "Blender"
-        assert (
-            updated_feed.description
-            and "UHD High Frame rate version" in updated_feed.description
-        )
-        assert (
-            updated_feed.image_url
-            == "https://i.ytimg.com/vi/aqz-KE-bpKQ/maxresdefault.jpg"
-        )
-        assert updated_feed.subtitle is None
-        assert updated_feed.language is None
-        assert updated_feed.category == PodcastCategories("TV & Film")
-        assert updated_feed.explicit is PodcastExplicit.NO
-
-    elif url_type == "channel_videos_tab":
-        # cole-dlp-test-acc channel metadata
-        assert updated_feed.title == "cole-dlp-test-acc - Videos"
-        assert updated_feed.author == "cole-dlp-test-acc"
-        assert updated_feed.description == "test description"
-        assert updated_feed.image_url is not None
-        assert updated_feed.subtitle is None
-        assert updated_feed.language is None
-        assert updated_feed.category == PodcastCategories("TV & Film")
-        assert updated_feed.explicit is PodcastExplicit.NO
-
-    elif url_type in ["video_in_playlist_link", "playlist"]:
-        # single video playlist metadata
-        assert updated_feed.title == "single video playlist"
-        assert updated_feed.author == "cole-dlp-test-acc"
-        assert updated_feed.description == ""
-        assert updated_feed.image_url is not None
-        assert updated_feed.subtitle is None
-        assert updated_feed.language is None
-        assert updated_feed.category == PodcastCategories("TV & Film")
-        assert updated_feed.explicit is PodcastExplicit.NO
-
-    # Common assertions for all URL types
-    assert updated_feed.is_enabled is True
-    if url_type == "video_short_link":
-        assert updated_feed.source_type == SourceType.SINGLE_VIDEO
-    else:
-        assert updated_feed.source_type == SourceType.PLAYLIST
-
 
 @pytest.mark.integration
 @pytest.mark.asyncio
@@ -231,7 +172,7 @@ async def test_enqueue_new_downloads_invalid_url(
         source_type=SourceType.UNKNOWN,
         source_url=INVALID_VIDEO_URL,
         resolved_url=INVALID_VIDEO_URL,
-        last_successful_sync=datetime.min.replace(tzinfo=UTC),
+        last_successful_sync=MIN_SYNC_DATE,
         title=f"Test Feed {feed_id}",
     )
     await feed_db.upsert_feed(feed)
@@ -244,19 +185,17 @@ async def test_enqueue_new_downloads_invalid_url(
         since=None,
         max_errors=MAX_ERRORS,
     )
-    fetch_since_date = datetime.min.replace(tzinfo=UTC)
+    fetch_since_date = MIN_SYNC_DATE
 
     with pytest.raises(EnqueueError) as excinfo:
-        fetch_until_date = datetime.now(UTC)
-        await enqueuer.enqueue_new_downloads(
+        _, _ = await enqueuer.enqueue_new_downloads(
             feed_id=feed_id,
             feed_config=feed_config,
             fetch_since_date=fetch_since_date,
-            fetch_until_date=fetch_until_date,
             cookies_path=cookies_path,
         )
 
-    assert "Could not fetch main feed metadata" in str(excinfo.value)
+    assert "Could not fetch downloads metadata" in str(excinfo.value)
     assert excinfo.value.feed_id == feed_id
     assert excinfo.value.feed_url == INVALID_VIDEO_URL
 
@@ -292,12 +231,10 @@ async def test_enqueue_new_downloads_with_date_filter(
     # Use a very recent date to potentially filter out older content
     fetch_since_date = datetime(2025, 1, 1, tzinfo=UTC)
 
-    fetch_until_date = datetime.now(UTC)
-    queued_count = await enqueuer.enqueue_new_downloads(
+    queued_count, _ = await enqueuer.enqueue_new_downloads(
         feed_id=feed_id,
         feed_config=feed_config,
         fetch_since_date=fetch_since_date,
-        fetch_until_date=fetch_until_date,
         cookies_path=cookies_path,
     )
 
@@ -355,12 +292,10 @@ async def test_enqueue_handles_existing_upcoming_downloads(
     assert upcoming_downloads[0].status == DownloadStatus.UPCOMING
 
     # Run enqueuer - should transition UPCOMING to QUEUED since Big Buck Bunny is a VOD
-    fetch_until_date = datetime.now(UTC)
-    queued_count = await enqueuer.enqueue_new_downloads(
+    queued_count, _ = await enqueuer.enqueue_new_downloads(
         feed_id=feed_id,
         feed_config=feed_config,
-        fetch_since_date=datetime.min.replace(tzinfo=UTC),
-        fetch_until_date=fetch_until_date,
+        fetch_since_date=MIN_SYNC_DATE,
         cookies_path=cookies_path,
     )
 
@@ -424,12 +359,10 @@ async def test_enqueue_handles_existing_downloaded_items(
     await download_db.upsert_download(downloaded_item)
 
     # Run enqueuer
-    fetch_until_date = datetime.now(UTC)
-    queued_count = await enqueuer.enqueue_new_downloads(
+    queued_count, _ = await enqueuer.enqueue_new_downloads(
         feed_id=feed_id,
         feed_config=feed_config,
-        fetch_since_date=datetime.min.replace(tzinfo=UTC),
-        fetch_until_date=fetch_until_date,
+        fetch_since_date=MIN_SYNC_DATE,
         cookies_path=cookies_path,
     )
 
@@ -468,15 +401,13 @@ async def test_enqueue_multiple_runs_idempotent(
     )
 
     feed_config = SAMPLE_FEED_CONFIG
-    fetch_since_date = datetime.min.replace(tzinfo=UTC)
+    fetch_since_date = MIN_SYNC_DATE
 
     # First run
-    fetch_until_date = datetime.now(UTC)
-    first_queued_count = await enqueuer.enqueue_new_downloads(
+    first_queued_count, _ = await enqueuer.enqueue_new_downloads(
         feed_id=feed_id,
         feed_config=feed_config,
         fetch_since_date=fetch_since_date,
-        fetch_until_date=fetch_until_date,
         cookies_path=cookies_path,
     )
     assert first_queued_count >= 1
@@ -487,12 +418,10 @@ async def test_enqueue_multiple_runs_idempotent(
     )
 
     # Second run - should not queue new items (they already exist)
-    fetch_until_date = datetime.now(UTC)
-    second_queued_count = await enqueuer.enqueue_new_downloads(
+    second_queued_count, _ = await enqueuer.enqueue_new_downloads(
         feed_id=feed_id,
         feed_config=feed_config,
         fetch_since_date=fetch_since_date,
-        fetch_until_date=fetch_until_date,
         cookies_path=cookies_path,
     )
 
@@ -530,15 +459,13 @@ async def test_enqueue_with_impossible_filter(
         since=None,
         max_errors=MAX_ERRORS,
     )
-    fetch_since_date = datetime.min.replace(tzinfo=UTC)
+    fetch_since_date = MIN_SYNC_DATE
 
     # The filter applies to download, not metadata fetch, so downloads are still created
-    fetch_until_date = datetime.now(UTC)
-    queued_count = await enqueuer.enqueue_new_downloads(
+    queued_count, _ = await enqueuer.enqueue_new_downloads(
         feed_id=feed_id,
         feed_config=feed_config,
         fetch_since_date=fetch_since_date,
-        fetch_until_date=fetch_until_date,
         cookies_path=cookies_path,
     )
 
@@ -550,75 +477,6 @@ async def test_enqueue_with_impossible_filter(
         DownloadStatus.QUEUED, feed_id=feed_id
     )
     assert len(queued_downloads) == 0
-
-
-@pytest.mark.integration
-@pytest.mark.asyncio
-async def test_enqueue_feed_metadata_synchronization_with_overrides(
-    enqueuer: Enqueuer,
-    feed_db: FeedDatabase,
-    download_db: DownloadDatabase,
-    cookies_path: Path | None,
-):
-    """Tests that feed metadata synchronization works correctly with config overrides."""
-    feed_id = "test_metadata_sync"
-
-    # Create feed in database
-    await create_test_feed(
-        feed_db, feed_id, BIG_BUCK_BUNNY_SHORT_URL, SourceType.SINGLE_VIDEO, None
-    )
-
-    # Create feed config with metadata overrides
-    metadata_overrides = FeedMetadataOverrides(  # type: ignore # quirk of pydantic
-        title="Custom Podcast Title",
-        subtitle="Custom Subtitle",
-        description="Custom description that overrides extracted one",
-        language="en-US",
-        author="Custom Author",
-        category=PodcastCategories(["Technology", "Science"]),
-        explicit=PodcastExplicit.NO,
-    )
-
-    feed_config = FeedConfig(
-        url=BIG_BUCK_BUNNY_SHORT_URL,
-        yt_args=YT_DLP_MINIMAL_ARGS_STR,  # type: ignore
-        schedule=TEST_CRON_SCHEDULE,  # type: ignore
-        keep_last=None,
-        since=None,
-        max_errors=MAX_ERRORS,
-        metadata=metadata_overrides,
-    )
-    fetch_since_date = datetime.min.replace(tzinfo=UTC)
-
-    # Enqueue new downloads
-    fetch_until_date = datetime.now(UTC)
-    queued_count = await enqueuer.enqueue_new_downloads(
-        feed_id=feed_id,
-        feed_config=feed_config,
-        fetch_since_date=fetch_since_date,
-        fetch_until_date=fetch_until_date,
-        cookies_path=cookies_path,
-    )
-
-    # Verify downloads were processed
-    assert queued_count >= 1
-
-    # Verify feed metadata uses overrides where provided and extracted values as fallback
-    updated_feed = await feed_db.get_feed_by_id(feed_id)
-
-    # These should come from overrides
-    assert updated_feed.title == "Custom Podcast Title"
-    assert updated_feed.subtitle == "Custom Subtitle"
-    assert updated_feed.description == "Custom description that overrides extracted one"
-    assert updated_feed.language == "en-US"
-    assert updated_feed.author == "Custom Author"
-    assert updated_feed.category == PodcastCategories(["Technology", "Science"])
-    assert updated_feed.explicit == PodcastExplicit.NO
-
-    # Image URL should come from extracted metadata since not overridden
-    assert (
-        updated_feed.image_url == "https://i.ytimg.com/vi/aqz-KE-bpKQ/maxresdefault.jpg"
-    )
 
 
 @pytest.mark.integration
@@ -653,39 +511,28 @@ async def test_enqueue_feed_metadata_partial_overrides(
         max_errors=MAX_ERRORS,
         metadata=metadata_overrides,
     )
-    fetch_since_date = datetime.min.replace(tzinfo=UTC)
+    fetch_since_date = MIN_SYNC_DATE
 
     # Enqueue new downloads
-    fetch_until_date = datetime.now(UTC)
-    queued_count = await enqueuer.enqueue_new_downloads(
+    queued_count, _ = await enqueuer.enqueue_new_downloads(
         feed_id=feed_id,
         feed_config=feed_config,
         fetch_since_date=fetch_since_date,
-        fetch_until_date=fetch_until_date,
         cookies_path=cookies_path,
     )
 
     # Verify downloads were processed
     assert queued_count >= 1
 
-    # Verify feed metadata combines overrides and extracted values
-    updated_feed = await feed_db.get_feed_by_id(feed_id)
-
-    # These should come from overrides
-    assert updated_feed.title == "Custom Title Only"
-    assert updated_feed.author == "Custom Author Only"
-
-    # These should come from extracted metadata
-    assert (
-        updated_feed.description
-        and "UHD High Frame rate version" in updated_feed.description
+    # Verify downloads in database match what was reported
+    queued_downloads = await download_db.get_downloads_by_status(
+        DownloadStatus.QUEUED, feed_id=feed_id
     )
-    assert (
-        updated_feed.image_url == "https://i.ytimg.com/vi/aqz-KE-bpKQ/maxresdefault.jpg"
-    )
+    assert len(queued_downloads) == queued_count
 
-    # These should remain None since not overridden and not in extracted metadata
-    assert updated_feed.subtitle is None
-    assert updated_feed.language is None
-    assert updated_feed.category == PodcastCategories("TV & Film")
-    assert updated_feed.explicit is PodcastExplicit.NO
+    # Verify at least one download has proper metadata
+    assert queued_downloads[0].title is not None
+    assert queued_downloads[0].source_url is not None
+
+    # Note: Feed metadata synchronization is handled by StateReconciler,
+    # not Enqueuer, so this test focuses on download enqueuing functionality

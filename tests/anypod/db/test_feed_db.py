@@ -580,7 +580,7 @@ async def test_total_downloads_property(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_total_downloads_property_no_downloads(
+async def test_total_downloads_property_skip_downloads(
     feed_db: FeedDatabase, sample_feed: Feed
 ):
     """Test that the total_downloads property returns 0 when no downloads exist."""

@@ -1,5 +1,4 @@
 {
-  "includeCoAuthoredBy": false,
   "permissions": {
     "allow": [
       "Bash(find:*)",
@@ -28,7 +27,9 @@
       "Bash(docker build:*)",
       "Bash(docker compose logs:*)",
       "Bash(gh run view:*)",
-      "Bash(gh run list:*)"
+      "Bash(gh run list:*)",
+      "Bash(ffprobe:*)",
+      "Bash(echo:*)"
     ],
     "deny": []
   }

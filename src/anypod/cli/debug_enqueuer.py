@@ -92,14 +92,10 @@ async def run_debug_enqueuer_mode(
             # this is not normally how this field is used, but for debug mode, let's reuse this field
             fetch_since_date = feed_config.since or datetime.min.replace(tzinfo=UTC)
 
-            # Use current time as fetch_until_date for day-aligned yt-dlp precision
-            fetch_until_date = datetime.now(UTC)
-
-            newly_queued_count = await enqueuer.enqueue_new_downloads(
+            newly_queued_count, _ = await enqueuer.enqueue_new_downloads(
                 feed_id=feed_id,
                 feed_config=feed_config,
                 fetch_since_date=fetch_since_date,
-                fetch_until_date=fetch_until_date,
                 cookies_path=settings.cookies_path,
             )
             total_newly_queued_count += newly_queued_count

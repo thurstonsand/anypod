@@ -5,27 +5,11 @@ implementing source-specific strategies for yt-dlp operations, including
 fetch strategy determination and metadata parsing.
 """
 
-from datetime import datetime
-from enum import Enum
 from pathlib import Path
 from typing import Protocol
 
 from ..db.types import Download, Feed, SourceType
 from .core import YtdlpInfo
-
-
-class FetchPurpose(Enum):
-    """Indicate the purpose of the yt-dlp fetch operation.
-
-    Used to determine appropriate options and behavior for different
-    types of yt-dlp operations.
-    """
-
-    METADATA_FETCH = "metadata_fetch"
-    MEDIA_DOWNLOAD = "media_download"
-
-    def __str__(self) -> str:
-        return self.value
 
 
 class SourceHandlerBase(Protocol):
@@ -60,7 +44,6 @@ class SourceHandlerBase(Protocol):
         ytdlp_info: YtdlpInfo,
         source_type: SourceType,
         source_url: str,
-        fetch_until_date: datetime | None = None,
     ) -> Feed:
         """Extract feed-level metadata from yt-dlp response.
 
@@ -69,29 +52,24 @@ class SourceHandlerBase(Protocol):
             ytdlp_info: The yt-dlp metadata information.
             source_type: The type of source being parsed.
             source_url: The original source URL for this feed.
-            fetch_until_date: The upper bound date for the fetch operation, used for setting last_successful_sync. Optional.
 
         Returns:
             Feed object with extracted metadata populated.
         """
         ...
 
-    def parse_metadata_to_downloads(
+    def extract_download_metadata(
         self,
         feed_id: str,
         ytdlp_info: YtdlpInfo,
-        source_identifier: str,
-        source_type: SourceType,
-    ) -> list[Download]:
-        """Parse the full metadata dictionary from yt-dlp into Download objects.
+    ) -> Download:
+        """Extract metadata from a single yt-dlp video entry into a Download object.
 
         Args:
             feed_id: The feed identifier.
-            ytdlp_info: The yt-dlp metadata information.
-            source_identifier: Identifier for the source being parsed.
-            source_type: The type of source being parsed.
+            ytdlp_info: The yt-dlp metadata for a single video.
 
         Returns:
-            List of Download objects parsed from the metadata.
+            A Download object parsed from the metadata.
         """
         ...

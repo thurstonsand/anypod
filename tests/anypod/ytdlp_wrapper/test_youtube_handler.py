@@ -4,7 +4,7 @@
 
 from datetime import UTC, datetime
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -39,6 +39,7 @@ def valid_video_entry_data() -> dict[str, Any]:
         "webpage_url": "https://www.youtube.com/watch?v=video123",
         "thumbnail": "https://example.com/thumb.jpg",
         "description": "This is a test video description",
+        "epoch": 1678886400,  # yt-dlp request timestamp
     }
 
 
@@ -116,6 +117,7 @@ def test_extract_feed_metadata_minimal_data(
     minimal_data = {
         "id": "minimal_video_id",
         "title": "Minimal Video Title",
+        "epoch": 1678886400,  # yt-dlp request timestamp
     }
     ytdlp_info = YtdlpInfo(minimal_data)
     ref_type = SourceType.UNKNOWN
@@ -135,26 +137,29 @@ def test_extract_feed_metadata_minimal_data(
     assert extracted_feed.image_url is None
 
 
-# --- Tests for YoutubeHandler._parse_single_video_entry ---
+# --- Tests for YoutubeHandler.extract_download_metadata (formerly _parse_single_video_entry) ---
 
 
 @pytest.mark.unit
 def test_parse_single_video_entry_success_basic(
-    youtube_handler: YoutubeHandler, valid_video_entry: YoutubeEntry
+    youtube_handler: YoutubeHandler, valid_video_entry_data: dict[str, Any]
 ):
     """Tests successful parsing of a basic, valid video entry."""
-    download = youtube_handler._parse_single_video_entry(valid_video_entry, FEED_ID)
+    ytdlp_info = YtdlpInfo(valid_video_entry_data)
+    download = youtube_handler.extract_download_metadata(FEED_ID, ytdlp_info)
 
     assert isinstance(download, Download)
-    assert download.id == valid_video_entry.download_id
-    assert download.title == valid_video_entry.title
-    assert download.published == valid_video_entry.timestamp
-    assert download.ext == valid_video_entry.ext
-    assert download.duration == valid_video_entry.duration
-    assert download.source_url == valid_video_entry.webpage_url
+    assert download.id == valid_video_entry_data["id"]
+    assert download.title == valid_video_entry_data["title"]
+    assert download.published == datetime.fromtimestamp(
+        valid_video_entry_data["timestamp"], UTC
+    )
+    assert download.ext == valid_video_entry_data["ext"]
+    assert download.duration == valid_video_entry_data["duration"]
+    assert download.source_url == valid_video_entry_data["webpage_url"]
     assert download.status == DownloadStatus.QUEUED
-    assert download.thumbnail == valid_video_entry.thumbnail
-    assert download.description == valid_video_entry.description
+    assert download.thumbnail == valid_video_entry_data["thumbnail"]
+    assert download.description == valid_video_entry_data["description"]
     assert download.mime_type == "video/mp4"  # Based on ext="mp4"
     assert download.filesize == 0  # Default for QUEUED status
     assert download.feed_id == FEED_ID
@@ -162,12 +167,13 @@ def test_parse_single_video_entry_success_basic(
 
 @pytest.mark.unit
 def test_parse_single_video_entry_success_no_description(
-    youtube_handler: YoutubeHandler, valid_video_entry: YoutubeEntry
+    youtube_handler: YoutubeHandler, valid_video_entry_data: dict[str, Any]
 ):
     """Tests successful parsing when description is missing."""
-    del valid_video_entry._ytdlp_info._info_dict["description"]
+    del valid_video_entry_data["description"]
+    ytdlp_info = YtdlpInfo(valid_video_entry_data)
 
-    download = youtube_handler._parse_single_video_entry(valid_video_entry, FEED_ID)
+    download = youtube_handler.extract_download_metadata(FEED_ID, ytdlp_info)
 
     assert download.description is None
 
@@ -192,14 +198,15 @@ def test_parse_single_video_entry_success_no_description(
 )
 def test_parse_single_video_entry_mime_type_mapping(
     youtube_handler: YoutubeHandler,
-    valid_video_entry: YoutubeEntry,
+    valid_video_entry_data: dict[str, Any],
     ext: str,
     expected_mime: str,
 ):
     """Tests that MIME type is correctly determined from file extension."""
-    valid_video_entry._ytdlp_info._info_dict["ext"] = ext
+    valid_video_entry_data["ext"] = ext
+    ytdlp_info = YtdlpInfo(valid_video_entry_data)
 
-    download = youtube_handler._parse_single_video_entry(valid_video_entry, FEED_ID)
+    download = youtube_handler.extract_download_metadata(FEED_ID, ytdlp_info)
 
     assert download.mime_type == expected_mime
 
@@ -208,15 +215,15 @@ def test_parse_single_video_entry_mime_type_mapping(
 def test_parse_single_video_entry_mime_type_unknown_type(
     youtube_handler: YoutubeHandler, valid_video_entry_data: dict[str, Any]
 ):
-    """Tests YoutubeEntry.mime_type property raises error for unknown extensions."""
+    """Tests error for unknown extensions."""
     valid_video_entry_data["ext"] = "totallyfakeext"
-    entry = YoutubeEntry(YtdlpInfo(valid_video_entry_data), "test_feed")
+    ytdlp_info = YtdlpInfo(valid_video_entry_data)
 
     with pytest.raises(YtdlpYoutubeDataError) as exc_info:
-        _ = youtube_handler._parse_single_video_entry(entry, FEED_ID).mime_type
+        youtube_handler.extract_download_metadata(FEED_ID, ytdlp_info)
 
     assert exc_info.value.feed_id == FEED_ID
-    assert exc_info.value.download_id == entry.download_id
+    assert exc_info.value.download_id == valid_video_entry_data["id"]
 
     assert valid_video_entry_data["ext"] in str(exc_info.value)
 
@@ -224,16 +231,15 @@ def test_parse_single_video_entry_mime_type_unknown_type(
 @pytest.mark.unit
 def test_parse_single_video_entry_success_with_upload_date(
     youtube_handler: YoutubeHandler,
-    valid_video_entry: YoutubeEntry,
+    valid_video_entry_data: dict[str, Any],
 ):
     """Tests successful parsing when 'timestamp' is missing but 'upload_date' is present."""
-    del valid_video_entry._ytdlp_info._info_dict["timestamp"]
+    del valid_video_entry_data["timestamp"]
     expected_published = datetime(2023, 3, 15, 0, 0, 0, tzinfo=UTC)
-    valid_video_entry._ytdlp_info._info_dict["upload_date"] = (
-        expected_published.strftime("%Y%m%d")
-    )
+    valid_video_entry_data["upload_date"] = expected_published.strftime("%Y%m%d")
+    ytdlp_info = YtdlpInfo(valid_video_entry_data)
 
-    download = youtube_handler._parse_single_video_entry(valid_video_entry, FEED_ID)
+    download = youtube_handler.extract_download_metadata(FEED_ID, ytdlp_info)
 
     assert download.published == expected_published
 
@@ -241,16 +247,15 @@ def test_parse_single_video_entry_success_with_upload_date(
 @pytest.mark.unit
 def test_parse_single_video_entry_success_with_release_timestamp(
     youtube_handler: YoutubeHandler,
-    valid_video_entry: YoutubeEntry,
+    valid_video_entry_data: dict[str, Any],
 ):
     """Tests successful parsing when only 'release_timestamp' is present."""
-    del valid_video_entry._ytdlp_info._info_dict["timestamp"]
+    del valid_video_entry_data["timestamp"]
     expected_published = datetime(2023, 3, 15, 12, 0, 0, tzinfo=UTC)
-    valid_video_entry._ytdlp_info._info_dict["release_timestamp"] = (
-        expected_published.timestamp()
-    )
+    valid_video_entry_data["release_timestamp"] = expected_published.timestamp()
+    ytdlp_info = YtdlpInfo(valid_video_entry_data)
 
-    download = youtube_handler._parse_single_video_entry(valid_video_entry, FEED_ID)
+    download = youtube_handler.extract_download_metadata(FEED_ID, ytdlp_info)
 
     assert download.published == expected_published
 
@@ -258,13 +263,14 @@ def test_parse_single_video_entry_success_with_release_timestamp(
 @pytest.mark.unit
 def test_parse_single_video_entry_live_upcoming_video(
     youtube_handler: YoutubeHandler,
-    valid_video_entry: YoutubeEntry,
+    valid_video_entry_data: dict[str, Any],
 ):
     """Tests parsing for a live/upcoming video."""
-    valid_video_entry._ytdlp_info._info_dict["is_live"] = True
-    valid_video_entry._ytdlp_info._info_dict["live_status"] = "is_upcoming"
+    valid_video_entry_data["is_live"] = True
+    valid_video_entry_data["live_status"] = "is_upcoming"
+    ytdlp_info = YtdlpInfo(valid_video_entry_data)
 
-    download = youtube_handler._parse_single_video_entry(valid_video_entry, FEED_ID)
+    download = youtube_handler.extract_download_metadata(FEED_ID, ytdlp_info)
 
     assert download.status == DownloadStatus.UPCOMING
     assert download.ext == "live"
@@ -284,20 +290,20 @@ def test_parse_single_video_entry_source_url_priority(
 
     # Case 1: webpage_url present
     entry1_data = {**entry_base_data, "webpage_url": "https://webpage.url"}
-    yt_entry1 = YoutubeEntry(YtdlpInfo(entry1_data), FEED_ID)
-    download1 = youtube_handler._parse_single_video_entry(yt_entry1, FEED_ID)
+    ytdlp_info1 = YtdlpInfo(entry1_data)
+    download1 = youtube_handler.extract_download_metadata(FEED_ID, ytdlp_info1)
     assert download1.source_url == "https://webpage.url"
 
     # Case 2: original_url present, webpage_url missing
     entry2_data = {**entry_base_data, "original_url": "https://original.url"}
-    yt_entry2 = YoutubeEntry(YtdlpInfo(entry2_data), FEED_ID)
-    download2 = youtube_handler._parse_single_video_entry(yt_entry2, FEED_ID)
+    ytdlp_info2 = YtdlpInfo(entry2_data)
+    download2 = youtube_handler.extract_download_metadata(FEED_ID, ytdlp_info2)
     assert download2.source_url == "https://original.url"
 
     # Case 3: Both missing, defaults to youtube watch URL
     entry3_data = entry_base_data.copy()
-    yt_entry3 = YoutubeEntry(YtdlpInfo(entry3_data), FEED_ID)
-    download3 = youtube_handler._parse_single_video_entry(yt_entry3, FEED_ID)
+    ytdlp_info3 = YtdlpInfo(entry3_data)
+    download3 = youtube_handler.extract_download_metadata(FEED_ID, ytdlp_info3)
     assert (
         download3.source_url == f"https://www.youtube.com/watch?v={entry3_data['id']}"
     )
@@ -305,14 +311,13 @@ def test_parse_single_video_entry_source_url_priority(
 
 @pytest.mark.unit
 def test_parse_single_video_entry_duration_as_int(
-    youtube_handler: YoutubeHandler, valid_video_entry: YoutubeEntry
+    youtube_handler: YoutubeHandler, valid_video_entry_data: dict[str, Any]
 ):
     """Tests parsing when duration is an integer."""
-    valid_video_entry._ytdlp_info._info_dict["duration"] = 120
-    download = youtube_handler._parse_single_video_entry(valid_video_entry, FEED_ID)
-    assert download.duration == int(
-        valid_video_entry._ytdlp_info._info_dict["duration"]
-    )
+    valid_video_entry_data["duration"] = 120
+    ytdlp_info = YtdlpInfo(valid_video_entry_data)
+    download = youtube_handler.extract_download_metadata(FEED_ID, ytdlp_info)
+    assert download.duration == 120
 
 
 @pytest.mark.unit
@@ -331,15 +336,16 @@ def test_parse_single_video_entry_error_missing_id(
 @pytest.mark.unit
 def test_parse_single_video_entry_error_video_filtered_out(
     youtube_handler: YoutubeHandler,
-    valid_video_entry: YoutubeEntry,
+    valid_video_entry_data: dict[str, Any],
 ):
     """Tests YtdlpYoutubeVideoFilteredOutError when video is filtered out (no ext/url/format_id)."""
-    del valid_video_entry._ytdlp_info._info_dict["ext"]
+    del valid_video_entry_data["ext"]
+    ytdlp_info = YtdlpInfo(valid_video_entry_data)
 
     with pytest.raises(YtdlpYoutubeVideoFilteredOutError) as e:
-        youtube_handler._parse_single_video_entry(valid_video_entry, FEED_ID)
+        youtube_handler.extract_download_metadata(FEED_ID, ytdlp_info)
     assert e.value.feed_id == FEED_ID
-    assert e.value.download_id == valid_video_entry.download_id
+    assert e.value.download_id == valid_video_entry_data["id"]
 
 
 @pytest.mark.unit
@@ -350,14 +356,15 @@ def test_parse_single_video_entry_error_video_filtered_out(
 def test_parse_single_video_entry_error_invalid_title(
     youtube_handler: YoutubeHandler,
     bad_title: str | None,
-    valid_video_entry: YoutubeEntry,
+    valid_video_entry_data: dict[str, Any],
 ):
     """Tests YtdlpYoutubeDataError for missing or invalid titles."""
-    entry_id = valid_video_entry.download_id
-    valid_video_entry._ytdlp_info._info_dict["title"] = bad_title
+    entry_id = valid_video_entry_data["id"]
+    valid_video_entry_data["title"] = bad_title
+    ytdlp_info = YtdlpInfo(valid_video_entry_data)
 
     with pytest.raises(YtdlpYoutubeDataError) as e:
-        youtube_handler._parse_single_video_entry(valid_video_entry, FEED_ID)
+        youtube_handler.extract_download_metadata(FEED_ID, ytdlp_info)
 
     if bad_title is None:
         assert "Failed to parse YouTube entry." in str(e.value)
@@ -369,13 +376,14 @@ def test_parse_single_video_entry_error_invalid_title(
 @pytest.mark.unit
 def test_parse_single_video_entry_error_missing_all_dts(
     youtube_handler: YoutubeHandler,
-    valid_video_entry: YoutubeEntry,
+    valid_video_entry_data: dict[str, Any],
 ):
     """Tests YtdlpYoutubeDataError when all date/timestamp fields are missing."""
-    del valid_video_entry._ytdlp_info._info_dict["timestamp"]
+    del valid_video_entry_data["timestamp"]
+    ytdlp_info = YtdlpInfo(valid_video_entry_data)
 
     with pytest.raises(YtdlpYoutubeDataError) as e:
-        youtube_handler._parse_single_video_entry(valid_video_entry, FEED_ID)
+        youtube_handler.extract_download_metadata(FEED_ID, ytdlp_info)
     assert "Missing published datetime" in str(e.value)
 
 
@@ -394,30 +402,32 @@ def test_parse_single_video_entry_error_invalid_date_formats_for_dts(
     key: str,
     bad_value: Any,
     expected_msg_part: str,
-    valid_video_entry: YoutubeEntry,
+    valid_video_entry_data: dict[str, Any],
 ):
     """Tests YtdlpYoutubeDataError for various invalid date/timestamp formats."""
-    del valid_video_entry._ytdlp_info._info_dict["timestamp"]
-    valid_video_entry._ytdlp_info._info_dict[key] = bad_value
+    del valid_video_entry_data["timestamp"]
+    valid_video_entry_data[key] = bad_value
+    ytdlp_info = YtdlpInfo(valid_video_entry_data)
 
     with pytest.raises(YtdlpYoutubeDataError) as e:
-        youtube_handler._parse_single_video_entry(valid_video_entry, FEED_ID)
+        youtube_handler.extract_download_metadata(FEED_ID, ytdlp_info)
     assert expected_msg_part in str(e.value)
-    assert e.value.download_id == valid_video_entry.download_id
+    assert e.value.download_id == valid_video_entry_data["id"]
 
 
 @pytest.mark.unit
 def test_parse_single_video_entry_error_missing_extension(
     youtube_handler: YoutubeHandler,
-    valid_video_entry: YoutubeEntry,
+    valid_video_entry_data: dict[str, Any],
 ):
     """Tests YtdlpYoutubeVideoFilteredOutError if 'ext' is missing (filtered out by yt-dlp)."""
-    del valid_video_entry._ytdlp_info._info_dict["ext"]
+    del valid_video_entry_data["ext"]
+    ytdlp_info = YtdlpInfo(valid_video_entry_data)
 
     with pytest.raises(YtdlpYoutubeVideoFilteredOutError) as e:
-        youtube_handler._parse_single_video_entry(valid_video_entry, FEED_ID)
+        youtube_handler.extract_download_metadata(FEED_ID, ytdlp_info)
     assert e.value.feed_id == FEED_ID
-    assert e.value.download_id == valid_video_entry.download_id
+    assert e.value.download_id == valid_video_entry_data["id"]
 
 
 @pytest.mark.unit
@@ -434,13 +444,14 @@ def test_parse_single_video_entry_error_invalid_duration(
     youtube_handler: YoutubeHandler,
     bad_duration: Any,
     expected_msg_part: str,
-    valid_video_entry: YoutubeEntry,
+    valid_video_entry_data: dict[str, Any],
 ):
     """Tests YtdlpYoutubeDataError for invalid or unparsable duration values."""
-    valid_video_entry._ytdlp_info._info_dict["duration"] = bad_duration
+    valid_video_entry_data["duration"] = bad_duration
+    ytdlp_info = YtdlpInfo(valid_video_entry_data)
 
     with pytest.raises(YtdlpYoutubeDataError) as e:
-        youtube_handler._parse_single_video_entry(valid_video_entry, FEED_ID)
+        youtube_handler.extract_download_metadata(FEED_ID, ytdlp_info)
     assert expected_msg_part in str(e.value)
 
 
@@ -449,9 +460,9 @@ def test_parse_single_video_entry_error_invalid_duration(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-@patch.object(YtdlpCore, "extract_info", new_callable=AsyncMock)
+@patch.object(YtdlpCore, "extract_playlist_info", new_callable=AsyncMock)
 async def test_determine_fetch_strategy_single_video(
-    mock_extract_info: AsyncMock, youtube_handler: YoutubeHandler
+    mock_extract_playlist_info: AsyncMock, youtube_handler: YoutubeHandler
 ):
     """Tests strategy determination for a single YouTube video URL."""
     initial_url = "https://www.youtube.com/watch?v=video123"
@@ -463,28 +474,28 @@ async def test_determine_fetch_strategy_single_video(
         }
     )
 
-    mock_extract_info.return_value = mock_extract_info_return
+    mock_extract_playlist_info.return_value = mock_extract_info_return
 
     fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
         FEED_ID, initial_url
     )
 
-    mock_extract_info.assert_called_once()
+    mock_extract_playlist_info.assert_called_once()
     assert fetch_url == initial_url
     assert ref_type == SourceType.SINGLE_VIDEO
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-@patch.object(YtdlpCore, "extract_info")
+@patch.object(YtdlpCore, "extract_playlist_info")
 async def test_determine_fetch_strategy_channel_main_page_finds_videos_tab(
-    mock_extract_info: AsyncMock,
+    mock_extract_playlist_info: AsyncMock,
     youtube_handler: YoutubeHandler,
 ):
     """Tests strategy for a main channel page, successfully finding the 'Videos' tab."""
     initial_url = "https://www.youtube.com/@channelhandle"
     videos_tab_url = "https://www.youtube.com/@channelhandle/videos"
-    mock_extract_info.return_value = YtdlpInfo(
+    mock_extract_playlist_info.return_value = YtdlpInfo(
         {
             "extractor": "youtube:tab",
             "_type": "playlist",
@@ -514,16 +525,16 @@ async def test_determine_fetch_strategy_channel_main_page_finds_videos_tab(
         FEED_ID, initial_url
     )
 
-    mock_extract_info.assert_called_once()
+    mock_extract_playlist_info.assert_called_once()
     assert fetch_url == videos_tab_url
     assert ref_type == SourceType.CHANNEL
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-@patch.object(YtdlpCore, "extract_info")
+@patch.object(YtdlpCore, "extract_playlist_info")
 async def test_determine_fetch_strategy_channel_main_page_no_videos_tab(
-    mock_extract_info: AsyncMock,
+    mock_extract_playlist_info: AsyncMock,
     youtube_handler: YoutubeHandler,
 ):
     """Tests strategy for a main channel page where 'Videos' tab is not found, defaulting to the resolved URL."""
@@ -531,7 +542,7 @@ async def test_determine_fetch_strategy_channel_main_page_no_videos_tab(
     resolved_channel_url = (
         "https://www.youtube.com/channel/UCxxxx/resolved"  # Mock a resolved URL
     )
-    mock_extract_info.return_value = YtdlpInfo(
+    mock_extract_playlist_info.return_value = YtdlpInfo(
         {
             "extractor": "youtube:tab",
             "_type": "playlist",
@@ -558,14 +569,14 @@ async def test_determine_fetch_strategy_channel_main_page_no_videos_tab(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-@patch("anypod.ytdlp_wrapper.youtube_handler.YtdlpCore.extract_info")
+@patch("anypod.ytdlp_wrapper.youtube_handler.YtdlpCore.extract_playlist_info")
 async def test_determine_fetch_strategy_channel_videos_tab_direct(
-    mock_extract_info: AsyncMock,
+    mock_extract_playlist_info: AsyncMock,
     youtube_handler: YoutubeHandler,
 ):
     """Tests strategy for a direct URL to a channel's 'Videos' tab."""
     initial_url = "https://www.youtube.com/@channelhandle/videos"
-    mock_extract_info.return_value = YtdlpInfo(
+    mock_extract_playlist_info.return_value = YtdlpInfo(
         {
             "extractor": "youtube:tab",
             "_type": "playlist",
@@ -598,29 +609,29 @@ async def test_determine_fetch_strategy_playlist_url(youtube_handler: YoutubeHan
     )
 
     with patch.object(
-        YtdlpCore, "extract_info", new_callable=AsyncMock
-    ) as mock_extract_info:
-        mock_extract_info.return_value = mock_extract_info_return
+        YtdlpCore, "extract_playlist_info", new_callable=AsyncMock
+    ) as mock_extract_playlist_info:
+        mock_extract_playlist_info.return_value = mock_extract_info_return
 
         fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
             FEED_ID, initial_url
         )
 
-        mock_extract_info.assert_called_once()
+        mock_extract_playlist_info.assert_called_once()
         assert fetch_url == initial_url
         assert ref_type == SourceType.PLAYLIST
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-@patch("anypod.ytdlp_wrapper.youtube_handler.YtdlpCore.extract_info")
+@patch("anypod.ytdlp_wrapper.youtube_handler.YtdlpCore.extract_playlist_info")
 async def test_determine_fetch_strategy_playlists_tab_error(
-    mock_extract_info: AsyncMock,
+    mock_extract_playlist_info: AsyncMock,
     youtube_handler: YoutubeHandler,
 ):
     """Tests that a 'playlists' tab URL raises YtdlpYoutubeDataError."""
     initial_url = "https://www.youtube.com/@channelhandle/playlists"
-    mock_extract_info.return_value = YtdlpInfo(
+    mock_extract_playlist_info.return_value = YtdlpInfo(
         {
             "extractor": "youtube:tab",
             "webpage_url": initial_url,
@@ -633,14 +644,14 @@ async def test_determine_fetch_strategy_playlists_tab_error(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-@patch.object(YtdlpCore, "extract_info")
+@patch.object(YtdlpCore, "extract_playlist_info")
 async def test_determine_fetch_strategy_discovery_fails(
-    mock_extract_info: AsyncMock,
+    mock_extract_playlist_info: AsyncMock,
     youtube_handler: YoutubeHandler,
 ):
     """Tests strategy when discovery (ydl_caller) returns None."""
     initial_url = "https://www.youtube.com/some_unresolvable_url"
-    mock_extract_info.return_value = None
+    mock_extract_playlist_info.return_value = None
 
     fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
         FEED_ID, initial_url
@@ -652,15 +663,15 @@ async def test_determine_fetch_strategy_discovery_fails(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-@patch.object(YtdlpCore, "extract_info")
+@patch.object(YtdlpCore, "extract_playlist_info")
 async def test_determine_fetch_strategy_unknown_extractor(
-    mock_extract_info: AsyncMock,
+    mock_extract_playlist_info: AsyncMock,
     youtube_handler: YoutubeHandler,
 ):
     """Tests strategy for an unhandled extractor type."""
     initial_url = "https://some.other.video.site/video1"
     resolved_url_from_yt_dlp = "https://resolved.other.site/video1"
-    mock_extract_info.return_value = YtdlpInfo(
+    mock_extract_playlist_info.return_value = YtdlpInfo(
         {
             "extractor": "someother:extractor",
             "webpage_url": resolved_url_from_yt_dlp,
@@ -678,15 +689,15 @@ async def test_determine_fetch_strategy_unknown_extractor(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-@patch.object(YtdlpCore, "extract_info")
+@patch.object(YtdlpCore, "extract_playlist_info")
 async def test_determine_fetch_strategy_channel_with_no_videos_but_has_entries(
-    mock_extract_info: AsyncMock,
+    mock_extract_playlist_info: AsyncMock,
     youtube_handler: YoutubeHandler,
 ):
     """Tests channel identification when entries exist but Videos tab is not found."""
     initial_url = "https://www.youtube.com/@newchannel"
     resolved_channel_url = "https://www.youtube.com/@newchannel/featured"
-    mock_extract_info.return_value = YtdlpInfo(
+    mock_extract_playlist_info.return_value = YtdlpInfo(
         {
             "extractor": "youtube:tab",
             "_type": "playlist",
@@ -719,15 +730,15 @@ async def test_determine_fetch_strategy_channel_with_no_videos_but_has_entries(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-@patch.object(YtdlpCore, "extract_info")
+@patch.object(YtdlpCore, "extract_playlist_info")
 async def test_determine_fetch_strategy_channel_with_empty_entries(
-    mock_extract_info: AsyncMock,
+    mock_extract_playlist_info: AsyncMock,
     youtube_handler: YoutubeHandler,
 ):
     """Tests channel identification when channel has no entries (empty/new channel)."""
     initial_url = "https://www.youtube.com/@emptychannel"
     resolved_channel_url = "https://www.youtube.com/@emptychannel/featured"
-    mock_extract_info.return_value = YtdlpInfo(
+    mock_extract_playlist_info.return_value = YtdlpInfo(
         {
             "extractor": "youtube:tab",
             "_type": "playlist",
@@ -748,14 +759,14 @@ async def test_determine_fetch_strategy_channel_with_empty_entries(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-@patch.object(YtdlpCore, "extract_info")
+@patch.object(YtdlpCore, "extract_playlist_info")
 async def test_determine_fetch_strategy_existing_channel_tab_not_main_page(
-    mock_extract_info: AsyncMock,
+    mock_extract_playlist_info: AsyncMock,
     youtube_handler: YoutubeHandler,
 ):
     """Tests that existing channel tabs are not treated as main channel pages."""
     initial_url = "https://www.youtube.com/@channel/shorts"
-    mock_extract_info.return_value = YtdlpInfo(
+    mock_extract_playlist_info.return_value = YtdlpInfo(
         {
             "extractor": "youtube:tab",
             "_type": "playlist",
@@ -779,9 +790,9 @@ async def test_determine_fetch_strategy_existing_channel_tab_not_main_page(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-@patch.object(YtdlpCore, "extract_info")
+@patch.object(YtdlpCore, "extract_playlist_info")
 async def test_determine_fetch_strategy_preserves_channel_classification(
-    mock_extract_info: AsyncMock,
+    mock_extract_playlist_info: AsyncMock,
     youtube_handler: YoutubeHandler,
 ):
     """Test that channel classification is properly preserved through the discovery process.
@@ -793,7 +804,7 @@ async def test_determine_fetch_strategy_preserves_channel_classification(
     videos_tab_url = "https://www.youtube.com/@testchannel/videos"
 
     # Mock yt-dlp discovery response for a channel with videos tab
-    mock_extract_info.return_value = YtdlpInfo(
+    mock_extract_playlist_info.return_value = YtdlpInfo(
         {
             "extractor": "youtube:tab",
             "_type": "playlist",
@@ -803,6 +814,7 @@ async def test_determine_fetch_strategy_preserves_channel_classification(
             "description": "A test channel description",
             "uploader": "Test Channel Creator",
             "thumbnail": "https://yt3.googleusercontent.com/testchannel_image",
+            "epoch": 1678886400,  # yt-dlp request timestamp
             "entries": [
                 {
                     "_type": "playlist",
@@ -830,7 +842,7 @@ async def test_determine_fetch_strategy_preserves_channel_classification(
 
     # Verify that if we extract feed metadata from this discovery result,
     # the source_type is correctly set to CHANNEL
-    discovery_result = mock_extract_info.return_value
+    discovery_result = mock_extract_playlist_info.return_value
     extracted_feed = youtube_handler.extract_feed_metadata(
         FEED_ID, discovery_result, ref_type, initial_url
     )
@@ -848,9 +860,9 @@ async def test_determine_fetch_strategy_preserves_channel_classification(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-@patch.object(YtdlpCore, "extract_info")
+@patch.object(YtdlpCore, "extract_playlist_info")
 async def test_determine_fetch_strategy_channel_without_videos_tab_still_classified_correctly(
-    mock_extract_info: AsyncMock,
+    mock_extract_playlist_info: AsyncMock,
     youtube_handler: YoutubeHandler,
 ):
     """Test that channels without explicit videos tab are still classified as CHANNEL."""
@@ -858,7 +870,7 @@ async def test_determine_fetch_strategy_channel_without_videos_tab_still_classif
     resolved_channel_url = "https://www.youtube.com/@newchannel/featured"
 
     # Mock yt-dlp discovery response for a channel with no videos tab but still channel-like
-    mock_extract_info.return_value = YtdlpInfo(
+    mock_extract_playlist_info.return_value = YtdlpInfo(
         {
             "extractor": "youtube:tab",
             "_type": "playlist",
@@ -868,6 +880,7 @@ async def test_determine_fetch_strategy_channel_without_videos_tab_still_classif
             "description": "A new channel with no videos yet",
             "uploader": "New Channel Creator",
             "thumbnail": "https://yt3.googleusercontent.com/newchannel_default",
+            "epoch": 1678886400,  # yt-dlp request timestamp
             "entries": [
                 {
                     "_type": "playlist",
@@ -889,7 +902,7 @@ async def test_determine_fetch_strategy_channel_without_videos_tab_still_classif
     assert ref_type == SourceType.CHANNEL
 
     # Extract feed metadata and verify source_type preservation
-    discovery_result = mock_extract_info.return_value
+    discovery_result = mock_extract_playlist_info.return_value
     extracted_feed = youtube_handler.extract_feed_metadata(
         FEED_ID, discovery_result, ref_type, initial_url
     )
@@ -915,6 +928,7 @@ def test_extract_feed_metadata_channel_specific_fields():
         "uploader_id": "UCamazingtech123",
         "channel_id": "UCamazingtech123",
         "webpage_url": "https://www.youtube.com/@amazingtech",
+        "epoch": 1678886400,  # yt-dlp request timestamp
     }
 
     youtube_handler = YoutubeHandler()
@@ -942,244 +956,3 @@ def test_extract_feed_metadata_channel_specific_fields():
     assert extracted_feed.language is None  # Not available from yt-dlp
     assert extracted_feed.id == feed_id
     assert extracted_feed.is_enabled is True
-
-
-# --- Tests for YoutubeHandler.parse_metadata_to_downloads ---
-
-
-@pytest.mark.unit
-def test_parse_metadata_to_downloads_incomplete_info_dict(
-    youtube_handler: YoutubeHandler,
-):
-    """Tests that an incomplete info_dict results in an empty list of downloads."""
-    incomplete_data = {"id": "id_for_init"}
-    downloads = youtube_handler.parse_metadata_to_downloads(
-        FEED_ID, YtdlpInfo(incomplete_data), FEED_ID, SourceType.SINGLE_VIDEO
-    )
-    assert downloads == []
-
-
-@pytest.mark.unit
-@patch.object(YoutubeHandler, "_parse_single_video_entry")
-def test_parse_metadata_to_downloads_single_success(
-    mock_parse_single: MagicMock, youtube_handler: YoutubeHandler
-):
-    """Tests parsing for SourceType.SINGLE_VIDEO with successful single entry parsing."""
-    mock_download = MagicMock(spec=Download)
-    mock_parse_single.return_value = mock_download
-    info_dict = {"id": "video1", "title": "Single Video"}
-    ytdlp_info = YtdlpInfo(info_dict)
-
-    downloads = youtube_handler.parse_metadata_to_downloads(
-        FEED_ID, ytdlp_info, FEED_ID, SourceType.SINGLE_VIDEO
-    )
-
-    assert downloads == [mock_download]
-    expected_yt_entry = YoutubeEntry(ytdlp_info, FEED_ID)
-    mock_parse_single.assert_called_once_with(expected_yt_entry, FEED_ID)
-
-
-@pytest.mark.unit
-@patch.object(YoutubeHandler, "_parse_single_video_entry")
-def test_parse_metadata_to_downloads_single_parse_error(
-    mock_parse_single: MagicMock,
-    youtube_handler: YoutubeHandler,
-):
-    """Tests SourceType.SINGLE_VIDEO when _parse_single_video_entry raises YtdlpYoutubeDataError."""
-    feed_id = "feed_single_err"
-    download_id = "video_err"
-    mock_parse_single.side_effect = YtdlpYoutubeDataError(
-        message="Parsing failed", feed_id=feed_id, download_id=download_id
-    )
-    info_dict = {"id": download_id, "title": "Problem Video"}
-    ytdlp_info = YtdlpInfo(info_dict)
-
-    downloads = youtube_handler.parse_metadata_to_downloads(
-        feed_id, ytdlp_info, feed_id, SourceType.SINGLE_VIDEO
-    )
-
-    assert downloads == []
-    expected_yt_entry = YoutubeEntry(ytdlp_info, feed_id)
-    mock_parse_single.assert_called_once_with(expected_yt_entry, feed_id)
-
-
-@pytest.mark.unit
-@patch.object(YoutubeHandler, "_parse_single_video_entry")
-def test_parse_metadata_to_downloads_single_filtered_out(
-    mock_parse_single: MagicMock,
-    youtube_handler: YoutubeHandler,
-):
-    """Tests SourceType.SINGLE_VIDEO when _parse_single_video_entry raises YtdlpYoutubeVideoFilteredOutError."""
-    feed_id = "feed_single_filter"
-    download_id = "video_filter"
-    mock_parse_single.side_effect = YtdlpYoutubeVideoFilteredOutError(
-        feed_id=feed_id, download_id=download_id
-    )
-    info_dict = {"id": download_id, "title": "Filtered Video"}
-    ytdlp_info = YtdlpInfo(info_dict)
-
-    downloads = youtube_handler.parse_metadata_to_downloads(
-        feed_id, ytdlp_info, feed_id, SourceType.SINGLE_VIDEO
-    )
-
-    assert downloads == []
-    expected_yt_entry = YoutubeEntry(ytdlp_info, feed_id)
-    mock_parse_single.assert_called_once_with(expected_yt_entry, feed_id)
-
-
-@pytest.mark.unit
-@patch.object(YoutubeHandler, "_parse_single_video_entry")
-def test_parse_metadata_to_downloads_collection_success(
-    mock_parse_single: MagicMock, youtube_handler: YoutubeHandler
-):
-    """Tests parsing for SourceType.PLAYLIST with multiple successful entries."""
-    mock_download1 = MagicMock(spec=Download)
-    mock_download2 = MagicMock(spec=Download)
-    entry1_data = {"id": "v1", "title": "Video 1"}
-    entry2_data = {"id": "v2", "title": "Video 2"}
-    mock_parse_single.side_effect = [mock_download1, mock_download2]
-
-    info_dict = {
-        "id": "playlist123",
-        "entries": [entry1_data, entry2_data],
-    }
-    ytdlp_info = YtdlpInfo(info_dict)
-    source_id = "feed_collection"
-
-    downloads = youtube_handler.parse_metadata_to_downloads(
-        source_id, ytdlp_info, source_id, SourceType.PLAYLIST
-    )
-
-    assert downloads == [mock_download1, mock_download2]
-    assert mock_parse_single.call_count == 2
-
-    expected_yt_entry1 = YoutubeEntry(YtdlpInfo(entry1_data), source_id)
-    expected_yt_entry2 = YoutubeEntry(YtdlpInfo(entry2_data), source_id)
-
-    mock_parse_single.assert_any_call(expected_yt_entry1, source_id)
-    mock_parse_single.assert_any_call(expected_yt_entry2, source_id)
-
-
-@pytest.mark.unit
-@patch.object(YoutubeHandler, "_parse_single_video_entry")
-def test_parse_metadata_to_downloads_collection_with_errors(
-    mock_parse_single: MagicMock,
-    youtube_handler: YoutubeHandler,
-):
-    """Tests SourceType.PLAYLIST where some entries parse successfully and others fail."""
-    mock_download1 = MagicMock(spec=Download)
-    feed_id = "feed_coll_err"
-    entry1_data = {"id": "v1", "title": "Video 1"}
-    entry2_data_bad = {"id": "v2_bad", "title": "Bad Video"}
-
-    yt_entry1 = YoutubeEntry(YtdlpInfo(entry1_data), feed_id)
-    yt_entry2_bad = YoutubeEntry(YtdlpInfo(entry2_data_bad), feed_id)
-
-    mock_parse_single.side_effect = [
-        mock_download1,  # Corresponds to call with yt_entry1
-        YtdlpYoutubeDataError(  # Corresponds to call with yt_entry2_bad
-            message="Parse failed", feed_id=feed_id, download_id=entry2_data_bad["id"]
-        ),
-    ]
-    info_dict = {
-        "id": "playlist_err_coll_id",
-        "entries": [entry1_data, entry2_data_bad],
-    }
-    ytdlp_info_collection = YtdlpInfo(info_dict)
-
-    downloads = youtube_handler.parse_metadata_to_downloads(
-        feed_id, ytdlp_info_collection, feed_id, SourceType.PLAYLIST
-    )
-
-    assert downloads == [mock_download1]
-    assert mock_parse_single.call_count == 2
-    mock_parse_single.assert_any_call(yt_entry1, feed_id)
-    mock_parse_single.assert_any_call(yt_entry2_bad, feed_id)
-
-
-@pytest.mark.unit
-def test_parse_metadata_to_downloads_collection_no_entries_list(
-    youtube_handler: YoutubeHandler,
-):
-    """Tests SourceType.PLAYLIST when 'entries' is missing or not a list."""
-    feed_id = "feed_no_entries"
-    info_dict = {
-        "id": "playlist_no_entries_id",
-        "title": "Playlist Title",
-    }
-    ytdlp_info_no_entries = YtdlpInfo(info_dict)
-
-    downloads_no_entries = youtube_handler.parse_metadata_to_downloads(
-        feed_id, ytdlp_info_no_entries, feed_id, SourceType.PLAYLIST
-    )
-    assert downloads_no_entries == []
-
-
-@pytest.mark.unit
-@patch.object(YoutubeHandler, "_parse_single_video_entry")
-@pytest.mark.parametrize(
-    "unknown_ref_type",
-    [SourceType.UNKNOWN, SourceType.UNKNOWN],
-)
-def test_parse_metadata_to_downloads_unknown_type_behaves_as_single(
-    mock_parse_single: MagicMock,
-    youtube_handler: YoutubeHandler,
-    unknown_ref_type: SourceType,
-):
-    """Tests that UNKNOWN reference types are parsed as if they were SINGLE, and logs a warning."""
-    mock_download = MagicMock(spec=Download)
-    mock_parse_single.return_value = mock_download
-    info_dict = {"id": "unknown_video", "title": "Unknown Type Video"}
-    ytdlp_info = YtdlpInfo(info_dict)
-    source_id = "feed_unknown"
-
-    downloads = youtube_handler.parse_metadata_to_downloads(
-        source_id, ytdlp_info, source_id, unknown_ref_type
-    )
-
-    assert downloads == [mock_download]
-    expected_yt_entry = YoutubeEntry(ytdlp_info, source_id)
-    mock_parse_single.assert_called_once_with(expected_yt_entry, source_id)
-
-
-@pytest.mark.unit
-@patch.object(YoutubeHandler, "_parse_single_video_entry")
-@pytest.mark.parametrize(
-    "unknown_ref_type",
-    [SourceType.UNKNOWN, SourceType.UNKNOWN],
-)
-def test_parse_metadata_to_downloads_unknown_type_with_playlist_shape_data(
-    mock_parse_single: MagicMock,
-    youtube_handler: YoutubeHandler,
-    unknown_ref_type: SourceType,
-):
-    """Tests that UNKNOWN ref type with playlist-like data (has 'entries').
-
-    results in an attempt to parse as a single download, which fails,
-    returning an empty list and logging appropriate messages.
-    """
-    feed_id = "feed_unknown_playlist_shape"
-    top_level_id = "top_level_playlist_id_for_unknown"
-    info_dict_playlist_shape_data = {
-        "id": top_level_id,
-        "webpage_url": "http://example.com/some_resolved_url_that_is_a_playlist",
-        "entries": [
-            {"id": "v1", "title": "Video 1 from playlist"},
-            {"id": "v2", "title": "Video 2 from playlist"},
-        ],
-    }
-    ytdlp_info_playlist_shape = YtdlpInfo(info_dict_playlist_shape_data)
-
-    mock_parse_single.side_effect = YtdlpYoutubeDataError(
-        message="Cannot parse playlist as single video",
-        feed_id=feed_id,
-        download_id=top_level_id,
-    )
-
-    downloads = youtube_handler.parse_metadata_to_downloads(
-        feed_id, ytdlp_info_playlist_shape, feed_id, unknown_ref_type
-    )
-
-    assert downloads == []
-    expected_yt_entry = YoutubeEntry(ytdlp_info_playlist_shape, feed_id)
-    mock_parse_single.assert_called_once_with(expected_yt_entry, feed_id)

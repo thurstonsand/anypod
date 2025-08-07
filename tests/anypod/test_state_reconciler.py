@@ -143,7 +143,7 @@ def mock_pruner() -> MagicMock:
 def mock_ytdlp_wrapper() -> MagicMock:
     """Provides a MagicMock for YtdlpWrapper."""
     mock = MagicMock(spec=YtdlpWrapper)
-    mock.fetch_metadata = AsyncMock(return_value=(MOCK_FEED, []))
+    mock.fetch_playlist_metadata = AsyncMock(return_value=MOCK_FEED)
     mock.discover_feed_properties = AsyncMock(return_value=(SourceType.UNKNOWN, None))
     return mock
 
@@ -475,6 +475,41 @@ async def test_handle_existing_feed_since_removal_resets_sync_timestamp(
     # Verify that last_successful_sync was reset to MIN_SYNC_DATE
     assert updated_feed.last_successful_sync == MIN_SYNC_DATE
     assert updated_feed.since is None
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_handle_existing_feed_enable_with_since(
+    state_reconciler: StateReconciler,
+    mock_feed_db: MagicMock,
+    base_feed_config: FeedConfig,
+) -> None:
+    """Enabling a disabled feed with 'since' config respects that date for sync timestamp."""
+    disabled_feed = deepcopy(MOCK_FEED)
+    disabled_feed.is_enabled = False
+    disabled_feed.consecutive_failures = 3
+    disabled_feed.last_failed_sync = datetime.now(UTC)
+
+    # Create config with 'since' date
+    since_date = datetime(2023, 6, 1, tzinfo=UTC)
+    config = deepcopy(base_feed_config)
+    config.enabled = True
+    config.since = since_date
+
+    result = await state_reconciler._handle_existing_feed(
+        FEED_ID, config, disabled_feed
+    )
+
+    assert result is True
+    mock_feed_db.upsert_feed.assert_called_once()
+    updated_feed = mock_feed_db.upsert_feed.call_args[0][0]
+
+    # Verify that last_successful_sync was set to the 'since' date, not MIN_SYNC_DATE
+    assert updated_feed.last_successful_sync == since_date
+    assert updated_feed.since == since_date
+    assert updated_feed.is_enabled is True
+    assert updated_feed.consecutive_failures == 0
+    assert updated_feed.last_failed_sync is None
 
 
 # --- Tests for StateReconciler._handle_pruning_changes ---

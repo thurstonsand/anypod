@@ -15,9 +15,13 @@ import aiofiles.os
 from ..db.types import Download, Feed, SourceType
 from ..exceptions import FileOperationError, YtdlpApiError
 from ..path_manager import PathManager
-from .base_handler import FetchPurpose, SourceHandlerBase
+from .base_handler import SourceHandlerBase
 from .core import YtdlpArgs, YtdlpCore
-from .youtube_handler import YoutubeHandler
+from .youtube_handler import (
+    YoutubeHandler,
+    YtdlpYoutubeDataError,
+    YtdlpYoutubeVideoFilteredOutError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -111,111 +115,28 @@ class YtdlpWrapper:
 
         return feed_temp_path, feed_data_path
 
-    def _prepare_ytdlp_options(
-        self,
-        args: YtdlpArgs,
-        purpose: FetchPurpose,
-        source_type: SourceType | None = None,
-        fetch_since_date: datetime | None = None,
-        fetch_until_date: datetime | None = None,
-        keep_last: int | None = None,
-        download_temp_dir: Path | None = None,
-        download_data_dir: Path | None = None,
-        download_id: str | None = None,
-        cookies_path: Path | None = None,
-        metadata_only: bool = False,
-    ) -> YtdlpArgs:
-        log_params: dict[str, Any] = {
-            "purpose": purpose,
-            "num_user_provided_opts": args.additional_args_count,
-            "source_type": source_type,
-        }
-        logger.debug("Preparing yt-dlp options.", extra=log_params)
+    def _match_filter_since_date(self, since_date: datetime) -> str:
+        """Create break-match-filters expression for date filtering.
 
-        # Add base options
-        args.quiet().no_warnings().convert_thumbnails("jpg")
+        Args:
+            since_date: The datetime to filter from.
 
-        # Add metadata-only optimizations
-        if metadata_only:
-            if purpose == FetchPurpose.MEDIA_DOWNLOAD:
-                raise YtdlpApiError(
-                    message="Metadata-only fetches are not supported for media downloads.",
-                    download_id=download_id,
-                )
-            args.flat_playlist()
-            log_params["flat_playlist"] = True
-        else:
-            # Add date filtering and playlist limits (only for non-SINGLE references, non-flat-playlist)
-            if source_type != SourceType.SINGLE_VIDEO:
-                if keep_last:
-                    args.playlist_limit(keep_last)
-                    log_params["keep_last"] = keep_last
-                if fetch_since_date:
-                    args.dateafter(fetch_since_date)
-                    log_params["fetch_since_date_day_aligned"] = (
-                        fetch_since_date.strftime("%Y%m%d")
-                    )
-                if fetch_until_date:
-                    args.datebefore(fetch_until_date)
-                    log_params["fetch_until_date_day_aligned"] = (
-                        fetch_until_date.strftime("%Y%m%d")
-                    )
+        Returns:
+            Filter expression in the format "upload_date > YYYYMMDD".
+        """
+        date_str = since_date.strftime("%Y%m%d")
+        return f"upload_date > {date_str}"
 
-        # Add purpose-specific options
-        match purpose:
-            case FetchPurpose.METADATA_FETCH:
-                args.skip_download()
-            case FetchPurpose.MEDIA_DOWNLOAD:
-                if (
-                    download_temp_dir is None
-                    or download_data_dir is None
-                    or download_id is None
-                ):
-                    raise YtdlpApiError(
-                        message="download_temp_dir, download_data_dir, and download_id are required for MEDIA_DOWNLOAD purpose",
-                        download_id=download_id,
-                    )
-                args.output(f"{download_id}.%(ext)s").paths_temp(
-                    download_temp_dir
-                ).paths_home(download_data_dir)
-
-        # Add cookies if provided
-        if cookies_path is not None:
-            args.cookies(cookies_path)
-
-        logger.debug(
-            f"Prepared {purpose!s} options.",
-            extra={
-                **log_params,
-                "final_cli_args_count": len(args.to_list()),
-                "cookies_provided": cookies_path is not None,
-            },
-        )
-        return args
-
-    async def fetch_metadata(
+    async def fetch_playlist_metadata(
         self,
         feed_id: str,
         source_type: SourceType,
         source_url: str,
         resolved_url: str | None,
         user_yt_cli_args: list[str],
-        fetch_since_date: datetime | None = None,
-        fetch_until_date: datetime | None = None,
-        keep_last: int | None = None,
         cookies_path: Path | None = None,
-        metadata_only: bool = False,
-    ) -> tuple[Feed, list[Download]]:
-        """Fetches metadata for a given feed using yt-dlp.
-
-        Uses the pre-discovered source type and resolved URL to fetch metadata.
-
-        Date filtering uses yt-dlp's day-level precision: both fetch_since_date and
-        fetch_until_date are converted to YYYYMMDD format before being passed to yt-dlp.
-        This means overlapping date windows that fall on the same day will use identical
-        date ranges in yt-dlp, potentially returning duplicate results that are handled
-        by the deduplication logic in the Enqueuer. NOTE: This only applies to playlists
-        and channels, not single videos.
+    ) -> Feed:
+        """Get playlist metadata from yt-dlp. Does not retrieve download metadata.
 
         Args:
             feed_id: The identifier for the feed.
@@ -223,25 +144,14 @@ class YtdlpWrapper:
             source_url: The original source URL from configuration.
             resolved_url: The resolved URL to fetch from.
             user_yt_cli_args: User-configured command-line arguments for yt-dlp.
-            fetch_since_date: The lower bound date for the fetch operation (inclusive).
-                Converted to YYYYMMDD format for yt-dlp compatibility.
-            fetch_until_date: The upper bound date for the fetch operation (exclusive).
-                Converted to YYYYMMDD format for yt-dlp compatibility.
-            keep_last: Maximum number of recent playlist items to fetch, or None for no limit.
-                Uses `playlist_items` to get the first N items
             cookies_path: Path to cookies.txt file for authentication, or None if not needed.
-            metadata_only: If True, only fetch feed-level metadata without individual downloads.
-                Uses --flat-playlist to make the operation much faster by skipping video details.
 
         Returns:
-            A tuple of (feed, downloads) where feed is a Feed object with extracted
-            metadata and downloads is a list of Download objects. When metadata_only=True,
-            the downloads list will be empty.
+            A Feed object with extracted metadata.
 
         Raises:
-            YtdlpApiError: If no information is extracted.
+            YtdlpApiError: If yt-dlp fails to execute or encounters an error.
         """
-        # fallback to source_url if no resolved_url is provided
         resolved_url = resolved_url or source_url
         log_config: dict[str, Any] = {
             "feed_id": feed_id,
@@ -250,80 +160,141 @@ class YtdlpWrapper:
             "num_user_yt_cli_args": len(user_yt_cli_args),
         }
 
-        logger.debug("Fetching metadata for feed.", extra=log_config)
+        logger.debug("Fetching playlist metadata for feed.", extra=log_config)
 
-        # Prepare CLI args with date filtering and source-specific options
-        metadata_fetch_args = YtdlpArgs(user_yt_cli_args)
-
-        # Apply metadata fetch options
-        metadata_fetch_args = self._prepare_ytdlp_options(
-            args=metadata_fetch_args,
-            purpose=FetchPurpose.METADATA_FETCH,
-            source_type=source_type,
-            fetch_since_date=fetch_since_date,
-            fetch_until_date=fetch_until_date,
-            keep_last=keep_last,
-            cookies_path=cookies_path,
-            metadata_only=metadata_only,
-        )
+        args = YtdlpArgs(user_yt_cli_args).convert_thumbnails("jpg")
+        if cookies_path:
+            args.cookies(cookies_path)
 
         logger.debug(
-            "Acquiring metadata.",
-            extra={
-                "feed_id": feed_id,
-                "fetch_url": resolved_url,
-                "source_url": source_url,
-                "source_type": source_type.name,
-            },
+            "Acquiring playlist metadata.",
+            extra=log_config,
         )
 
-        ytdlp_info = await YtdlpCore.extract_info(metadata_fetch_args, resolved_url)
-        if ytdlp_info is None:
-            raise YtdlpApiError(
-                message="No information extracted by yt-dlp. This might be due to filters or content unavailability.",
-                feed_id=feed_id,
-                url=resolved_url,
-            )
+        ytdlp_info = await YtdlpCore.extract_playlist_info(args, resolved_url)
 
         extracted_feed = self._source_handler.extract_feed_metadata(
             feed_id,
             ytdlp_info,
             source_type,
             source_url,
-            fetch_until_date,
         )
 
-        if metadata_only:
-            # Skip download parsing for metadata-only fetches
-            parsed_downloads = []
-            logger.debug(
-                "Successfully processed feed metadata (metadata_only=True).",
-                extra={
-                    "feed_id": feed_id,
-                    "fetch_url": resolved_url,
-                    "source_url": source_url,
-                    "metadata_only": True,
-                },
-            )
-        else:
-            parsed_downloads = self._source_handler.parse_metadata_to_downloads(
-                feed_id,
-                ytdlp_info,
-                source_identifier=feed_id,
-                source_type=source_type,
-            )
-            logger.debug(
-                "Successfully processed metadata.",
-                extra={
-                    "feed_id": feed_id,
-                    "fetch_url": resolved_url,
-                    "source_url": source_url,
-                    "metadata_only": False,
-                    "num_downloads_identified": len(parsed_downloads),
-                },
-            )
+        logger.debug(
+            "Successfully processed playlist metadata.",
+            extra=log_config,
+        )
 
-        return extracted_feed, parsed_downloads
+        return extracted_feed
+
+    async def fetch_new_downloads_metadata(
+        self,
+        feed_id: str,
+        source_type: SourceType,
+        source_url: str,
+        resolved_url: str | None,
+        user_yt_cli_args: list[str],
+        fetch_since_date: datetime | None = None,
+        keep_last: int | None = None,
+        cookies_path: Path | None = None,
+    ) -> list[Download]:
+        """Get download metadata for enqueuing. Does not retrieve playlist metadata.
+
+        Args:
+            feed_id: The identifier for the feed.
+            source_type: The source type of the feed.
+            source_url: The original source URL from configuration.
+            resolved_url: The resolved URL to fetch from.
+            user_yt_cli_args: User-configured command-line arguments for yt-dlp.
+            fetch_since_date: The cutoff date for fetching videos (inclusive).
+            keep_last: Maximum number of recent playlist items to fetch.
+            cookies_path: Path to cookies.txt file for authentication.
+
+        Returns:
+            A list of Download objects. Empty list if no downloads are found.
+
+        Raises:
+            YtdlpApiError: If yt-dlp fails to execute or encounters an error.
+        """
+        resolved_url = resolved_url or source_url
+        log_config: dict[str, Any] = {
+            "feed_id": feed_id,
+            "source_url": source_url,
+            "source_type": str(source_type),
+            "num_user_yt_cli_args": len(user_yt_cli_args),
+        }
+
+        logger.debug("Fetching new downloads metadata for feed.", extra=log_config)
+
+        args = YtdlpArgs(user_yt_cli_args).convert_thumbnails("jpg")
+
+        # Apply filtering for playlists/channels
+        if source_type != SourceType.SINGLE_VIDEO:
+            if keep_last:
+                args.playlist_limit(keep_last)
+                log_config["keep_last"] = keep_last
+            if fetch_since_date:
+                # Use lazy_playlist with break_match_filters for early termination
+                args.lazy_playlist()
+                date_filter_expr = self._match_filter_since_date(fetch_since_date)
+                args.break_match_filters(date_filter_expr)
+                log_config["fetch_since_date_day_aligned"] = fetch_since_date.strftime(
+                    "%Y%m%d"
+                )
+
+        if cookies_path:
+            args.cookies(cookies_path)
+
+        logger.debug(
+            "Acquiring downloads metadata.",
+            extra=log_config,
+        )
+
+        ytdlp_infos = await YtdlpCore.extract_downloads_info(args, resolved_url)
+
+        if not ytdlp_infos:
+            logger.debug(
+                "No new downloads found.",
+                extra=log_config,
+            )
+            return []
+
+        # Parse all downloads from individual video infos
+        parsed_downloads: list[Download] = []
+        for ytdlp_info in ytdlp_infos:
+            try:
+                download = self._source_handler.extract_download_metadata(
+                    feed_id,
+                    ytdlp_info,
+                )
+            except YtdlpYoutubeVideoFilteredOutError:
+                # Video was filtered out by yt-dlp, skip it
+                logger.debug(
+                    "Video filtered out by yt-dlp, skipping.",
+                    extra={"feed_id": feed_id},
+                )
+            except YtdlpYoutubeDataError as e:
+                # Critical: Required metadata is missing, this shouldn't happen
+                logger.error(
+                    "Failed to extract required metadata from video.",
+                    exc_info=e,
+                    extra={"feed_id": feed_id},
+                )
+                raise
+            else:
+                parsed_downloads.append(download)
+
+        logger.debug(
+            "Successfully processed downloads metadata.",
+            extra={
+                "feed_id": feed_id,
+                "fetch_url": resolved_url,
+                "source_url": source_url,
+                "num_downloads_identified": len(parsed_downloads),
+            },
+        )
+
+        return parsed_downloads
 
     async def download_media_to_file(
         self,
@@ -361,23 +332,17 @@ class YtdlpWrapper:
             },
         )
 
-        try:
-            # Create download args
-            download_opts = YtdlpArgs(user_yt_cli_args)
+        # Inline download options
+        download_opts = (
+            YtdlpArgs(user_yt_cli_args)
+            .convert_thumbnails("jpg")
+            .output(f"{download.id}.%(ext)s")
+            .paths_temp(download_temp_dir)
+            .paths_home(download_data_dir)
+        )
 
-            # Apply download-specific options
-            download_opts = self._prepare_ytdlp_options(
-                args=download_opts,
-                purpose=FetchPurpose.MEDIA_DOWNLOAD,
-                download_temp_dir=download_temp_dir,
-                download_data_dir=download_data_dir,
-                download_id=download.id,
-                cookies_path=cookies_path,
-            )
-        except YtdlpApiError as e:
-            e.feed_id = download.feed_id
-            e.url = download.source_url
-            raise
+        if cookies_path:
+            download_opts.cookies(cookies_path)
 
         url_to_download = download.source_url
 

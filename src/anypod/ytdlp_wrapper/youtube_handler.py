@@ -117,6 +117,13 @@ class YoutubeEntry:
         with self._annotate_exceptions():
             return self._ytdlp_info.get("_type", str)
 
+    @property
+    def epoch(self) -> datetime:
+        """Get the timestamp of the request."""
+        with self._annotate_exceptions():
+            epoch_timestamp = self._ytdlp_info.required("epoch", int)
+            return datetime.fromtimestamp(epoch_timestamp, tz=UTC)
+
     # --- playlist fields ---
 
     @property
@@ -466,7 +473,6 @@ class YoutubeHandler:
         ytdlp_info: YtdlpInfo,
         source_type: SourceType,
         source_url: str,
-        fetch_until_date: datetime | None = None,
     ) -> Feed:
         """Extract feed-level metadata from yt-dlp response.
 
@@ -475,7 +481,6 @@ class YoutubeHandler:
             ytdlp_info: The yt-dlp metadata information.
             source_type: The type of source being parsed.
             source_url: The original source URL for this feed.
-            fetch_until_date: The upper bound date for the fetch operation, used for setting last_successful_sync. Optional.
 
         Returns:
             Feed object with extracted metadata populated.
@@ -496,10 +501,8 @@ class YoutubeHandler:
         description = youtube_info.description
         image_url = youtube_info.thumbnail
 
-        # Use fetch_until_date if provided, otherwise use current time
-        last_successful_sync = (
-            fetch_until_date if fetch_until_date else datetime.now(UTC)
-        )
+        # set to the time the request was made
+        last_successful_sync = youtube_info.epoch
 
         feed = Feed(
             id=feed_id,
@@ -528,92 +531,6 @@ class YoutubeHandler:
         )
 
         return feed
-
-    def _parse_single_video_entry(self, entry: YoutubeEntry, feed_id: str) -> Download:
-        # if a single video is requested, but the match filter excludes it,
-        # yt-dlp will return a partial set of data that excludes the fields
-        # on how to download the video. Check for that here
-        if not entry.ext:
-            raise YtdlpYoutubeVideoFilteredOutError(feed_id, entry.download_id)
-
-        source_url = (
-            entry.webpage_url
-            or entry.original_url
-            or f"https://www.youtube.com/watch?v={entry.download_id}"
-        )
-
-        published_dt = entry.timestamp or entry.upload_date or entry.release_timestamp
-        if published_dt is None:
-            raise YtdlpYoutubeDataError(
-                "Missing published datetime.",
-                feed_id=feed_id,
-                download_id=entry.download_id,
-            )
-
-        logger.debug(
-            "Determined published datetime.",
-            extra={
-                "video_id": entry.download_id,
-                "published_dt": published_dt.isoformat(),
-                "source_field": entry.published_source_field,
-            },
-        )
-        # Determine status: upcoming if live or scheduled, else queued
-        status = (
-            DownloadStatus.UPCOMING
-            if entry.is_live or entry.live_status == "is_upcoming"
-            else DownloadStatus.QUEUED
-        )
-
-        if status == DownloadStatus.UPCOMING:
-            # For live/upcoming entries, these values are not yet available
-            ext = "live"
-            duration = 0
-            mime_type = "application/octet-stream"
-            logger.debug(
-                "Entry is upcoming/live, setting default extension and duration.",
-                extra={
-                    "video_id": entry.download_id,
-                    "extension": ext,
-                    "duration": duration,
-                    "mime_type": mime_type,
-                },
-            )
-        else:
-            if not entry.ext:
-                raise YtdlpYoutubeDataError(
-                    "Missing extension.",
-                    feed_id=feed_id,
-                    download_id=entry.download_id,
-                )
-            ext = entry.ext
-            duration = entry.duration
-            mime_type = entry.mime_type
-
-        parsed_download = Download(
-            feed_id=feed_id,
-            id=entry.download_id,
-            source_url=source_url,
-            title=entry.title,
-            published=published_dt,
-            ext=ext,
-            mime_type=mime_type,
-            filesize=entry.filesize,
-            duration=duration,
-            status=status,
-            thumbnail=entry.thumbnail,
-            description=entry.description,
-            quality_info=entry.quality_info,
-        )
-        logger.debug(
-            "Successfully parsed single video entry.",
-            extra={
-                "download_id": entry.download_id,
-                "title": entry.title,
-                "feed_id": feed_id,
-            },
-        )
-        return parsed_download
 
     async def determine_fetch_strategy(
         self,
@@ -656,7 +573,9 @@ class YoutubeHandler:
             "Performing discovery call.",
             extra={"initial_url": initial_url},
         )
-        discovery_info = await YtdlpCore.extract_info(discovery_args, initial_url)
+        discovery_info = await YtdlpCore.extract_playlist_info(
+            discovery_args, initial_url
+        )
 
         if not discovery_info:
             logger.warning(
@@ -793,140 +712,112 @@ class YoutubeHandler:
         )
         return fetch_url, SourceType.UNKNOWN
 
-    def parse_metadata_to_downloads(
+    def extract_download_metadata(
         self,
         feed_id: str,
         ytdlp_info: YtdlpInfo,
-        source_identifier: str,
-        source_type: SourceType,
-    ) -> list[Download]:
-        """Parse yt-dlp metadata into Download objects.
+    ) -> Download:
+        """Extract metadata from a single yt-dlp video entry into a Download object.
 
         Args:
             feed_id: The feed identifier.
-            ytdlp_info: The yt-dlp metadata information.
-            source_identifier: Identifier for the source being parsed.
-            source_type: The type of source being parsed.
+            ytdlp_info: The yt-dlp metadata for a single video.
 
         Returns:
-            List of successfully parsed Download objects.
+            A Download object parsed from the metadata.
+
+        Raises:
+            YtdlpYoutubeDataError: If required metadata is missing.
+            YtdlpYoutubeVideoFilteredOutError: If video was filtered out.
         """
+        log_config = {
+            "feed_id": feed_id,
+        }
         logger.debug(
-            "Parsing metadata to downloads.",
-            extra={
-                "source_identifier": source_identifier,
-                "source_type": source_type,
-            },
-        )
-        youtube_info = YoutubeEntry(ytdlp_info, feed_id)
-        downloads: list[Download] = []
-        if source_type == SourceType.SINGLE_VIDEO:
-            logger.debug(
-                "Parsing as single download.",
-                extra={"source_identifier": source_identifier},
-            )
-            try:
-                downloads.append(
-                    self._parse_single_video_entry(youtube_info, source_identifier)
-                )
-            except YtdlpYoutubeDataError as e:
-                logger.error(
-                    "Failed to parse single download. Skipping.",
-                    exc_info=e,
-                    extra={"source_identifier": source_identifier},
-                )
-            except YtdlpYoutubeVideoFilteredOutError as e:
-                logger.debug(
-                    "Download filtered out by yt-dlp. Skipping.",
-                    exc_info=e,
-                    extra={"source_identifier": source_identifier},
-                )
-        elif source_type in (SourceType.PLAYLIST, SourceType.CHANNEL):
-            logger.debug(
-                "Parsing as collection.",
-                extra={
-                    "source_identifier": source_identifier,
-                    "num_entries_found": len(youtube_info.entries)
-                    if youtube_info.entries
-                    else "<not present>",
-                },
-            )
-
-            if youtube_info.entries:
-                for i, entry in enumerate(youtube_info.entries):
-                    if entry is None:
-                        logger.warning(
-                            "Entry in collection returned nothing. Skipping.",
-                            extra={
-                                "source_identifier": source_identifier,
-                                "entry_index": i,
-                            },
-                        )
-                        continue
-                    try:
-                        parsed_download = self._parse_single_video_entry(
-                            entry,
-                            source_identifier,
-                        )
-                        downloads.append(parsed_download)
-                    except YtdlpYoutubeDataError as e:
-                        logger.error(
-                            "Failed to parse video entry in collection. Skipping download.",
-                            exc_info=e,
-                            extra={
-                                "source_identifier": source_identifier,
-                                "download_id": entry.download_id,
-                            },
-                        )
-                    except YtdlpYoutubeVideoFilteredOutError as e:
-                        logger.debug(
-                            "Video in collection filtered out by yt-dlp. Skipping download.",
-                            exc_info=e,
-                            extra={
-                                "source_identifier": source_identifier,
-                                "download_id": entry.download_id,
-                            },
-                        )
-            else:
-                logger.warning(
-                    "Expected collection but no 'entries' list found in info_dict.",
-                    extra={
-                        "source_identifier": source_identifier,
-                        "source_type": source_type,
-                    },
-                )
-        else:  # UNKNOWN_RESOLVED_URL or UNKNOWN_DIRECT_FETCH
-            logger.warning(
-                "Parsing with unknown source type, attempting as single download.",
-                extra={
-                    "source_identifier": source_identifier,
-                    "source_type": source_type,
-                },
-            )
-            try:
-                downloads.append(
-                    self._parse_single_video_entry(youtube_info, source_identifier)
-                )
-            except YtdlpYoutubeDataError as e:
-                logger.error(
-                    "Failed to parse entry of unknown type. Skipping.",
-                    exc_info=e,
-                    extra={"source_identifier": source_identifier},
-                )
-            except YtdlpYoutubeVideoFilteredOutError as e:
-                logger.debug(
-                    "Video of unknown type filtered out by yt-dlp. Skipping.",
-                    exc_info=e,
-                    extra={"source_identifier": source_identifier},
-                )
-
-        logger.debug(
-            "Finished parsing metadata.",
-            extra={
-                "source_identifier": source_identifier,
-                "source_type": source_type,
-                "downloads_identified": len(downloads),
-            },
+            "Extracting download metadata from single video.",
+            extra=log_config,
         )
 
-        return downloads
+        entry = YoutubeEntry(ytdlp_info, feed_id)
+        if not entry.ext:
+            raise YtdlpYoutubeVideoFilteredOutError(feed_id, entry.download_id)
+
+        source_url = (
+            entry.webpage_url
+            or entry.original_url
+            or f"https://www.youtube.com/watch?v={entry.download_id}"
+        )
+
+        published_dt = entry.timestamp or entry.upload_date or entry.release_timestamp
+        if published_dt is None:
+            raise YtdlpYoutubeDataError(
+                "Missing published datetime.",
+                feed_id=feed_id,
+                download_id=entry.download_id,
+            )
+
+        logger.debug(
+            "Determined published datetime.",
+            extra={
+                **log_config,
+                "video_id": entry.download_id,
+                "published_dt": published_dt.isoformat(),
+                "source_field": entry.published_source_field,
+            },
+        )
+        # Determine status: upcoming if live or scheduled, else queued
+        status = (
+            DownloadStatus.UPCOMING
+            if entry.is_live or entry.live_status == "is_upcoming"
+            else DownloadStatus.QUEUED
+        )
+
+        if status == DownloadStatus.UPCOMING:
+            # For live/upcoming entries, these values are not yet available
+            ext = "live"
+            duration = 0
+            mime_type = "application/octet-stream"
+            logger.debug(
+                "Entry is upcoming/live, setting default extension and duration.",
+                extra={
+                    "video_id": entry.download_id,
+                    "extension": ext,
+                    "duration": duration,
+                    "mime_type": mime_type,
+                },
+            )
+        else:
+            if not entry.ext:
+                raise YtdlpYoutubeDataError(
+                    "Missing extension.",
+                    feed_id=feed_id,
+                    download_id=entry.download_id,
+                )
+            ext = entry.ext
+            duration = entry.duration
+            mime_type = entry.mime_type
+
+        parsed_download = Download(
+            feed_id=feed_id,
+            id=entry.download_id,
+            source_url=source_url,
+            title=entry.title,
+            published=published_dt,
+            ext=ext,
+            mime_type=mime_type,
+            filesize=entry.filesize,
+            duration=duration,
+            status=status,
+            thumbnail=entry.thumbnail,
+            description=entry.description,
+            quality_info=entry.quality_info,
+        )
+        logger.debug(
+            "Successfully parsed single video entry.",
+            extra={
+                **log_config,
+                "download_id": entry.download_id,
+                "title": entry.title,
+            },
+        )
+        return parsed_download

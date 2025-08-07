@@ -20,20 +20,36 @@ class YtdlpArgs:
 
     def __init__(self, user_args: list[str] | None = None):
         self._additional_args = user_args or []
+
+        # Output control
         self._quiet = False
         self._no_warnings = False
+        self._dump_single_json = False
+        self._dump_json = False
+
+        # Download control
         self._skip_download = False
+
+        # Playlist control
         self._flat_playlist = False
+        self._lazy_playlist = False
         self._playlist_limit: int | None = None
+        self._break_match_filters: str | None = None
+
+        # Date filtering
         self._dateafter: datetime | None = None
         self._datebefore: datetime | None = None
+
+        # Output configuration
         self._output: str | None = None
         self._convert_thumbnails: str | None = None
+
+        # Path configuration
         self._paths_temp: Path | None = None
         self._paths_home: Path | None = None
+
+        # Authentication
         self._cookies: Path | None = None
-        self._dump_single_json = False
-        self._no_download = False
 
     def quiet(self) -> "YtdlpArgs":
         """Enable quiet mode (suppress verbose output)."""
@@ -100,9 +116,23 @@ class YtdlpArgs:
         self._dump_single_json = True
         return self
 
-    def no_download(self) -> "YtdlpArgs":
-        """Don't download the video files."""
-        self._no_download = True
+    def dump_json(self) -> "YtdlpArgs":
+        """Output metadata as JSON for each video without downloading."""
+        self._dump_json = True
+        return self
+
+    def lazy_playlist(self) -> "YtdlpArgs":
+        """Process playlist entries sequentially, enables early termination."""
+        self._lazy_playlist = True
+        return self
+
+    def break_match_filters(self, filter_expr: str) -> "YtdlpArgs":
+        """Stop processing when filter condition fails.
+
+        Args:
+            filter_expr: Filter expression (e.g., "upload_date > 20230101").
+        """
+        self._break_match_filters = filter_expr
         return self
 
     def extend_args(self, args: list[str]) -> "YtdlpArgs":
@@ -132,34 +162,52 @@ class YtdlpArgs:
         args.extend(self._additional_args)
 
         # Add boolean flags
+        # Output control
         if self._quiet:
             args.append("--quiet")
         if self._no_warnings:
             args.append("--no-warnings")
-        if self._skip_download:
-            args.append("--skip-download")
-        if self._flat_playlist:
-            args.append("--flat-playlist")
         if self._dump_single_json:
             args.append("--dump-single-json")
-        if self._no_download:
-            args.append("--no-download")
+        if self._dump_json:
+            args.append("--dump-json")
+
+        # Download control
+        if self._skip_download:
+            args.append("--skip-download")
+
+        # Playlist control
+        if self._flat_playlist:
+            args.append("--flat-playlist")
+        if self._lazy_playlist:
+            args.append("--lazy-playlist")
 
         # Add arguments with values
+        # Playlist filtering and control
         if self._playlist_limit is not None:
             args.extend(["--playlist-items", f":{self._playlist_limit}"])
+        if self._break_match_filters is not None:
+            args.extend(["--break-match-filters", self._break_match_filters])
+
+        # Date filtering
         if self._dateafter is not None:
             args.extend(["--dateafter", self._dateafter.strftime("%Y%m%d")])
         if self._datebefore is not None:
             args.extend(["--datebefore", self._datebefore.strftime("%Y%m%d")])
+
+        # Output configuration
         if self._output is not None:
             args.extend(["--output", self._output])
         if self._convert_thumbnails is not None:
             args.extend(["--convert-thumbnails", self._convert_thumbnails])
+
+        # Path configuration
         if self._paths_temp is not None:
             args.extend(["--paths", f"temp:{self._paths_temp}"])
         if self._paths_home is not None:
             args.extend(["--paths", f"home:{self._paths_home}"])
+
+        # Authentication
         if self._cookies is not None:
             args.extend(["--cookies", str(self._cookies)])
 

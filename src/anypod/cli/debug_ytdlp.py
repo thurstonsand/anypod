@@ -51,7 +51,17 @@ async def run_debug_ytdlp_mode(settings: AppSettings, paths: PathManager) -> Non
                 feed_id, feed_config.url, cookies_path=settings.cookies_path
             )
 
-            feed, downloads = await ytdlp_wrapper.fetch_metadata(
+            # Get feed metadata and downloads separately for debug mode
+            feed = await ytdlp_wrapper.fetch_playlist_metadata(
+                feed_id=feed_id,
+                source_type=source_type,
+                source_url=feed_config.url,
+                resolved_url=resolved_url,
+                user_yt_cli_args=feed_config.yt_args,
+                cookies_path=settings.cookies_path,
+            )
+
+            downloads = await ytdlp_wrapper.fetch_new_downloads_metadata(
                 feed_id=feed_id,
                 source_type=source_type,
                 source_url=feed_config.url,
@@ -61,6 +71,13 @@ async def run_debug_ytdlp_mode(settings: AppSettings, paths: PathManager) -> Non
                 keep_last=feed_config.keep_last,
                 cookies_path=settings.cookies_path,
             )
+
+            if not downloads:
+                logger.info(
+                    "No downloads found due to filtering or content unavailability.",
+                    extra={"feed_id": feed_id, "feed_url": feed_config.url},
+                )
+                continue
 
             if downloads:
                 logger.info(

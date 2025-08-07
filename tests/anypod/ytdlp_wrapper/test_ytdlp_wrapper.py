@@ -3,7 +3,6 @@
 """Tests for the YtdlpWrapper class and its yt-dlp integration functionality."""
 
 from datetime import UTC, datetime
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -11,7 +10,6 @@ import pytest
 from anypod.db.types import Download, DownloadStatus, Feed, SourceType
 from anypod.path_manager import PathManager
 from anypod.ytdlp_wrapper import YtdlpWrapper
-from anypod.ytdlp_wrapper.base_handler import FetchPurpose
 from anypod.ytdlp_wrapper.core import YtdlpArgs, YtdlpCore, YtdlpInfo
 from anypod.ytdlp_wrapper.youtube_handler import YoutubeHandler
 
@@ -35,121 +33,107 @@ def ytdlp_wrapper(
     return wrapper
 
 
-# --- Tests for YtdlpWrapper._prepare_ydl_options ---
+# --- Tests for YtdlpWrapper._match_filter_since_date ---
 
 
 @pytest.mark.unit
-def test_prepare_ydl_options_metadata_fetch_basic(
+@pytest.mark.parametrize(
+    "since_date,expected_expr",
+    [
+        (datetime(2023, 1, 1, 12, 30, 45, tzinfo=UTC), "upload_date > 20230101"),
+        (datetime(2024, 12, 31, 23, 59, 59, tzinfo=UTC), "upload_date > 20241231"),
+        (datetime(2022, 6, 15, 0, 0, 0, tzinfo=UTC), "upload_date > 20220615"),
+    ],
+)
+def test_match_filter_since_date(
     ytdlp_wrapper: YtdlpWrapper,
+    since_date: datetime,
+    expected_expr: str,
 ):
-    """Tests basic option preparation for METADATA_FETCH purpose with no user CLI args and no source-specific options."""
-    args = YtdlpArgs()
-    purpose = FetchPurpose.METADATA_FETCH
+    """Test date filter expression generation with various dates."""
+    result = ytdlp_wrapper._match_filter_since_date(since_date)
+    assert result == expected_expr
 
-    prepared_args = ytdlp_wrapper._prepare_ytdlp_options(args, purpose)
 
-    # Convert to list to check options
-    prepared_opts = prepared_args.to_list()
-
-    assert "--skip-download" in prepared_opts
-    assert "--quiet" in prepared_opts
-    assert "--no-warnings" in prepared_opts
-    # Key difference for METADATA_FETCH - no flat-playlist
-    assert "--flat-playlist" not in prepared_opts
+# --- Tests for YtdlpWrapper.fetch_playlist_metadata and fetch_new_downloads_metadata ---
 
 
 @pytest.mark.unit
-def test_prepare_ydl_options_media_download(
-    ytdlp_wrapper: YtdlpWrapper,
-):
-    """Tests option preparation for MEDIA_DOWNLOAD purpose."""
-    args = YtdlpArgs()
-    purpose = FetchPurpose.MEDIA_DOWNLOAD
-    mock_temp_path = Path("/tmp/downloads/feed_id/temp")
-    mock_data_path = Path("/tmp/downloads/feed_id/data")
-    mock_download_id = "video_id"
-
-    prepared_args = ytdlp_wrapper._prepare_ytdlp_options(
-        args,
-        purpose,
-        download_temp_dir=mock_temp_path,
-        download_data_dir=mock_data_path,
-        download_id=mock_download_id,
-    )
-
-    # Convert to list to check options
-    prepared_opts = prepared_args.to_list()
-
-    # Should not contain --skip-download (that's the default, omitted means download)
-    assert "--skip-download" not in prepared_opts
-    assert "--output" in prepared_opts
-    assert f"{mock_download_id}.%(ext)s" in prepared_opts
-    assert "--paths" in prepared_opts
-    assert f"temp:{mock_temp_path}" in prepared_opts
-    assert f"home:{mock_data_path}" in prepared_opts
-
-
-@pytest.mark.unit
-def test_prepare_ydl_options_with_user_cli_args_and_source_opts(
-    ytdlp_wrapper: YtdlpWrapper,
-):
-    """Tests option preparation with user CLI args and source-specific options, ensuring they are merged correctly."""
-    args = YtdlpArgs(["--format", "bestvideo"])
-    purpose = FetchPurpose.METADATA_FETCH
-
-    # Add some source-specific options to args using the builder pattern
-    args.cookies(Path("cookies.txt")).extend_args(["--ignore-errors"])
-
-    prepared_args = ytdlp_wrapper._prepare_ytdlp_options(args, purpose)
-
-    # Convert to list to check options
-    prepared_opts = prepared_args.to_list()
-
-    assert "--skip-download" in prepared_opts
-    assert "--quiet" in prepared_opts
-    assert "--no-warnings" in prepared_opts
-
-    assert "--format" in prepared_opts
-    assert "bestvideo" in prepared_opts
-    assert "--cookies" in prepared_opts
-    assert "cookies.txt" in prepared_opts
-    assert "--ignore-errors" in prepared_opts
-
-
-# --- Tests for YtdlpWrapper.fetch_metadata ---
-
-
-@pytest.mark.unit
-@patch.object(YtdlpCore, "extract_info")
+@patch.object(YtdlpCore, "extract_playlist_info")
 @pytest.mark.asyncio
-async def test_fetch_metadata_returns_feed_and_downloads_tuple(
-    mock_extract_info: AsyncMock,
+async def test_fetch_playlist_metadata_returns_feed(
+    mock_extract_playlist_info: AsyncMock,
     ytdlp_wrapper: YtdlpWrapper,
     mock_youtube_handler: MagicMock,
 ):
-    """Tests that fetch_metadata returns a tuple of (Feed, list[Download]) with proper delegation to handler methods."""
-    feed_id = "test_tuple_return"
-    url = "https://www.youtube.com/watch?v=test123"
+    """Tests that fetch_playlist_metadata returns a Feed with proper delegation to handler methods."""
+    feed_id = "test_playlist_feed"
+    url = "https://www.youtube.com/@test/videos"
     yt_cli_args = ["--format", "best"]
 
-    # Mock the main fetch call to return valid data (discovery returns None for direct fetch)
-    mock_main_ytdlp_info = YtdlpInfo({"id": "test123", "title": "Test Video"})
-    mock_extract_info.return_value = mock_main_ytdlp_info
+    # Mock the playlist info call to return valid data
+    mock_playlist_ytdlp_info = YtdlpInfo(
+        {"id": "test_channel", "title": "Test Channel"}
+    )
+    mock_extract_playlist_info.return_value = mock_playlist_ytdlp_info
 
-    # Create expected Feed and Download objects that the handler will return
+    # Create expected Feed object that the handler will return
     expected_feed = Feed(
         id=feed_id,
         is_enabled=True,
-        source_type=SourceType.SINGLE_VIDEO,
+        source_type=SourceType.CHANNEL,
         source_url=url,
         last_successful_sync=datetime.min.replace(tzinfo=UTC),
-        title="Test Video Title",
+        title="Test Channel Title",
         author="Test Author",
     )
+
+    # Mock handler method to return our expected feed
+    mock_youtube_handler.extract_feed_metadata.return_value = expected_feed
+
+    # Call the method under test
+    result = await ytdlp_wrapper.fetch_playlist_metadata(
+        feed_id=feed_id,
+        source_type=SourceType.CHANNEL,
+        source_url=url,
+        resolved_url=url,
+        user_yt_cli_args=yt_cli_args,
+    )
+
+    # Verify return type
+    assert isinstance(result, Feed), (
+        "fetch_playlist_metadata should return a Feed object"
+    )
+    assert result == expected_feed
+
+    # Verify that the handler method was called with correct parameters
+    mock_youtube_handler.extract_feed_metadata.assert_called_once_with(
+        feed_id, mock_playlist_ytdlp_info, SourceType.CHANNEL, url
+    )
+
+
+@pytest.mark.unit
+@patch.object(YtdlpCore, "extract_downloads_info")
+@pytest.mark.asyncio
+async def test_fetch_new_downloads_metadata_returns_downloads(
+    mock_extract_downloads_info: AsyncMock,
+    ytdlp_wrapper: YtdlpWrapper,
+    mock_youtube_handler: MagicMock,
+):
+    """Tests that fetch_new_downloads_metadata returns a list of Downloads with proper delegation to handler methods."""
+    feed_id = "test_downloads_feed"
+    url = "https://www.youtube.com/@test/videos"
+    yt_cli_args = ["--format", "best"]
+
+    # Mock the downloads info call to return valid data
+    mock_video_info = YtdlpInfo({"id": "test123", "title": "Test Video"})
+    mock_extract_downloads_info.return_value = [mock_video_info]
+
+    # Create expected Download object that the handler will return
     expected_download = Download(
         feed_id=feed_id,
         id="test123",
-        source_url=url,
+        source_url="https://www.youtube.com/watch?v=test123",
         title="Test Video",
         published=datetime(2023, 1, 1, 0, 0, 0, tzinfo=UTC),
         ext="mp4",
@@ -159,46 +143,26 @@ async def test_fetch_metadata_returns_feed_and_downloads_tuple(
         status=DownloadStatus.QUEUED,
     )
 
-    # Mock handler methods to return our expected objects
-    mock_youtube_handler.determine_fetch_strategy = AsyncMock(
-        return_value=(
-            url,
-            SourceType.SINGLE_VIDEO,
-        )
-    )
-    mock_youtube_handler.extract_feed_metadata.return_value = expected_feed
-    mock_youtube_handler.parse_metadata_to_downloads.return_value = [expected_download]
+    # Mock handler method to return our expected download
+    mock_youtube_handler.extract_download_metadata.return_value = expected_download
 
     # Call the method under test
-    result = await ytdlp_wrapper.fetch_metadata(
+    result = await ytdlp_wrapper.fetch_new_downloads_metadata(
         feed_id=feed_id,
-        source_type=SourceType.SINGLE_VIDEO,
+        source_type=SourceType.CHANNEL,
         source_url=url,
         resolved_url=url,
         user_yt_cli_args=yt_cli_args,
     )
 
-    # Verify return type and structure
-    assert isinstance(result, tuple), "fetch_metadata should return a tuple"
-    assert len(result) == 2, "fetch_metadata should return a 2-tuple"
+    # Verify return type and values
+    assert isinstance(result, list), "fetch_new_downloads_metadata should return a list"
+    assert len(result) == 1
+    assert result[0] == expected_download
 
-    feed, downloads = result
-    assert isinstance(feed, Feed), "First element should be a Feed object"
-    assert isinstance(downloads, list), "Second element should be a list"
-
-    # Verify the actual values match what the handler returned
-    assert feed == expected_feed
-    assert downloads == [expected_download]
-
-    # Verify that the handler methods were called with correct parameters
-    mock_youtube_handler.extract_feed_metadata.assert_called_once_with(
-        feed_id, mock_main_ytdlp_info, SourceType.SINGLE_VIDEO, url, None
-    )
-    mock_youtube_handler.parse_metadata_to_downloads.assert_called_once_with(
-        feed_id,
-        mock_main_ytdlp_info,
-        source_identifier=feed_id,
-        source_type=SourceType.SINGLE_VIDEO,
+    # Verify that the handler method was called with correct parameters
+    mock_youtube_handler.extract_download_metadata.assert_called_once_with(
+        feed_id, mock_video_info
     )
 
 
@@ -206,7 +170,6 @@ async def test_fetch_metadata_returns_feed_and_downloads_tuple(
 
 
 @pytest.mark.unit
-@patch.object(YtdlpWrapper, "_prepare_ytdlp_options")
 @patch.object(YtdlpCore, "download")
 @patch("aiofiles.os.path.isfile", return_value=True)
 @patch("aiofiles.os.stat")
@@ -219,7 +182,6 @@ async def test_download_media_to_file_success_simplified(
     mock_stat: AsyncMock,
     mock_is_file: AsyncMock,
     mock_ytdlcore_download: AsyncMock,
-    mock_prepare_options: MagicMock,
     ytdlp_wrapper: YtdlpWrapper,
 ):
     """Tests the happy path of download_media_to_file."""
@@ -245,17 +207,6 @@ async def test_download_media_to_file_success_simplified(
 
     expected_final_file = feed_home_path / f"{download_id}.{dummy_download.ext}"
 
-    mock_ydl_opts_for_core_download = [
-        "--output",
-        f"{download_id}.%(ext)s",
-        "--paths",
-        f"temp:{feed_temp_path}",
-        "--paths",
-        f"home:{feed_home_path}",
-        "--format",
-        "bestvideo+bestaudio/best",
-    ]
-    mock_prepare_options.return_value = YtdlpArgs(mock_ydl_opts_for_core_download)
     mock_ytdlcore_download.return_value = None
 
     expected_final_file.parent.mkdir(parents=True, exist_ok=True)
@@ -276,14 +227,6 @@ async def test_download_media_to_file_success_simplified(
 
     mock_prep_dl_dir.assert_called_once_with(feed_id)
 
-    # Check that mock_prepare_options was called correctly
-    mock_prepare_options.assert_called_once()
-    _, kwargs = mock_prepare_options.call_args
-    assert kwargs["purpose"] == FetchPurpose.MEDIA_DOWNLOAD
-    assert kwargs["download_temp_dir"] == feed_temp_path
-    assert kwargs["download_data_dir"] == feed_home_path
-    assert kwargs["download_id"] == download_id
-    assert kwargs["cookies_path"] is None
     # Check the download call
     mock_ytdlcore_download.assert_called_once()
     download_args, _ = mock_ytdlcore_download.call_args
@@ -312,10 +255,10 @@ async def test_download_media_to_file_success_simplified(
         (SourceType.CHANNEL, "https://www.youtube.com/@test/videos", True),
     ],
 )
-@patch.object(YtdlpCore, "extract_info")
+@patch.object(YtdlpCore, "extract_downloads_info")
 @pytest.mark.asyncio
 async def test_date_filtering_behavior_by_reference_type(
-    mock_extract_info: AsyncMock,
+    mock_extract_downloads_info: AsyncMock,
     ytdlp_wrapper: YtdlpWrapper,
     mock_youtube_handler: MagicMock,
     source_type: SourceType,
@@ -329,50 +272,38 @@ async def test_date_filtering_behavior_by_reference_type(
     """
     feed_id = "test_feed"
 
-    # Mock the source handler to return the specified source type
-    mock_youtube_handler.determine_fetch_strategy = AsyncMock(
-        return_value=(
-            url,
-            source_type,
-        )
-    )
+    # Mock the extract_downloads_info call to avoid actual yt-dlp calls
+    mock_extract_downloads_info.return_value = []
+    mock_youtube_handler.extract_download_metadata.return_value = MagicMock()
 
-    # Mock the extract_info call to avoid actual yt-dlp calls
-    mock_ytdlp_info = MagicMock()
-    mock_extract_info.return_value = mock_ytdlp_info
-    mock_youtube_handler.extract_feed_metadata.return_value = MagicMock()
-    mock_youtube_handler.parse_metadata_to_downloads.return_value = []
-
-    # Call fetch_metadata with date filtering parameters
+    # Call fetch_new_downloads_metadata with date filtering parameters
     fetch_since_date = datetime(2023, 1, 1, tzinfo=UTC)
-    fetch_until_date = datetime.now(UTC)
 
-    await ytdlp_wrapper.fetch_metadata(
+    await ytdlp_wrapper.fetch_new_downloads_metadata(
         feed_id=feed_id,
         source_type=source_type,
         source_url=url,
         resolved_url=url,
         user_yt_cli_args=[],
         fetch_since_date=fetch_since_date,
-        fetch_until_date=fetch_until_date,
     )
 
     # Verify date filtering is applied in CLI args based on source type
     if should_call_set_date_range:
-        # Check that extract_info was called with CLI args containing date filters
-        call_args = mock_extract_info.call_args[0]
+        # Check that extract_downloads_info was called with CLI args containing optimization flags
+        call_args = mock_extract_downloads_info.call_args[0]
         ytdlp_args = call_args[0]
         cli_args = ytdlp_args.to_list()
-        assert "--dateafter" in cli_args
-        assert "20230101" in cli_args
-        assert "--datebefore" in cli_args
+        assert "--lazy-playlist" in cli_args
+        assert "--break-match-filters" in cli_args
+        assert "upload_date > 20230101" in cli_args
     else:
-        # For single videos, date filtering should not be applied
-        call_args = mock_extract_info.call_args[0]
+        # For single videos, optimization should not be applied
+        call_args = mock_extract_downloads_info.call_args[0]
         ytdlp_args = call_args[0]
         cli_args = ytdlp_args.to_list()
-        assert "--dateafter" not in cli_args
-        assert "--datebefore" not in cli_args
+        assert "--lazy-playlist" not in cli_args
+        assert "--break-match-filters" not in cli_args
 
 
 # --- Tests for keep_last filtering behavior ---
@@ -387,10 +318,10 @@ async def test_date_filtering_behavior_by_reference_type(
         (SourceType.CHANNEL, "https://www.youtube.com/@test/videos", True),
     ],
 )
-@patch.object(YtdlpCore, "extract_info")
+@patch.object(YtdlpCore, "extract_downloads_info")
 @pytest.mark.asyncio
 async def test_keep_last_filtering_behavior_by_reference_type(
-    mock_extract_info: AsyncMock,
+    mock_extract_downloads_info: AsyncMock,
     ytdlp_wrapper: YtdlpWrapper,
     mock_youtube_handler: MagicMock,
     source_type: SourceType,
@@ -405,22 +336,12 @@ async def test_keep_last_filtering_behavior_by_reference_type(
     feed_id = "test_feed"
     keep_last = 5
 
-    # Mock the source handler to return the specified source type
-    mock_youtube_handler.determine_fetch_strategy = AsyncMock(
-        return_value=(
-            url,
-            source_type,
-        )
-    )
+    # Mock the extract_downloads_info call to avoid actual yt-dlp calls
+    mock_extract_downloads_info.return_value = []
+    mock_youtube_handler.extract_download_metadata.return_value = MagicMock()
 
-    # Mock the extract_info call to avoid actual yt-dlp calls
-    mock_ytdlp_info = MagicMock()
-    mock_extract_info.return_value = mock_ytdlp_info
-    mock_youtube_handler.extract_feed_metadata.return_value = MagicMock()
-    mock_youtube_handler.parse_metadata_to_downloads.return_value = []
-
-    # Call fetch_metadata with keep_last parameter
-    await ytdlp_wrapper.fetch_metadata(
+    # Call fetch_new_downloads_metadata with keep_last parameter
+    await ytdlp_wrapper.fetch_new_downloads_metadata(
         feed_id=feed_id,
         source_type=source_type,
         source_url=url,
@@ -431,15 +352,15 @@ async def test_keep_last_filtering_behavior_by_reference_type(
 
     # Verify playlist limit is applied in CLI args based on source type
     if should_call_set_playlist_limit:
-        # Check that extract_info was called with CLI args containing playlist limit
-        call_args = mock_extract_info.call_args[0]
+        # Check that extract_downloads_info was called with CLI args containing playlist limit
+        call_args = mock_extract_downloads_info.call_args[0]
         ytdlp_args = call_args[0]
         cli_args = ytdlp_args.to_list()
         assert "--playlist-items" in cli_args
         assert f":{keep_last}" in cli_args
     else:
         # For single videos, playlist limiting should not be applied
-        call_args = mock_extract_info.call_args[0]
+        call_args = mock_extract_downloads_info.call_args[0]
         ytdlp_args = call_args[0]
         cli_args = ytdlp_args.to_list()
         assert "--playlist-items" not in cli_args

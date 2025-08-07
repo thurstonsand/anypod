@@ -103,14 +103,13 @@ async def enqueue_test_items(
     # Create feed in database first
     await create_test_feed(feed_db, feed_id, feed_config.url, source_type, resolved_url)
 
-    fetch_until_date = datetime.now(UTC)
-    return await enqueuer.enqueue_new_downloads(
+    newly_queued_count, _ = await enqueuer.enqueue_new_downloads(
         feed_id=feed_id,
         feed_config=feed_config,
         fetch_since_date=fetch_since_date,
-        fetch_until_date=fetch_until_date,
         cookies_path=cookies_path,
     )
+    return newly_queued_count
 
 
 @pytest.mark.integration

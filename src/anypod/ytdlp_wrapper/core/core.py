@@ -20,26 +20,33 @@ class YtdlpCore:
     """
 
     @staticmethod
-    async def extract_info(args: YtdlpArgs, url: str) -> YtdlpInfo | None:
-        """Extract metadata information from a URL using yt-dlp subprocess.
-
-        Must have yt-dlp binary installed and in PATH.
+    async def extract_playlist_info(args: YtdlpArgs, url: str) -> YtdlpInfo:
+        """Extract playlist metadata only -- no download metadata.
 
         Args:
             args: YtdlpArgs object containing command-line arguments for yt-dlp.
             url: URL to extract information from.
 
         Returns:
-            YtdlpInfo object with extracted metadata, or None if extraction failed.
+            YtdlpInfo object with extracted playlist metadata.
 
         Raises:
             YtdlpApiError: If extraction fails or an unexpected error occurs.
         """
         # Build subprocess command
-        cli_args = args.dump_single_json().no_download().to_list()
+        cli_args = (
+            args.quiet()
+            .no_warnings()
+            .dump_single_json()
+            .flat_playlist()
+            .skip_download()
+            .to_list()
+        )
         cmd = ["yt-dlp", *cli_args, url]
 
-        logger.debug("Running yt-dlp for metadata extraction", extra={"cmd": cmd})
+        logger.debug(
+            "Running yt-dlp for playlist metadata extraction", extra={"cmd": cmd}
+        )
 
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -61,15 +68,27 @@ class YtdlpCore:
             await proc.wait()
             raise
 
+        # Parse JSON output first - yt-dlp can produce valid output even with non-zero exit codes
+        logger.debug(
+            "yt-dlp process completed.",
+            extra={
+                "exit_code": proc.returncode,
+                "stdout_length": len(stdout) if stdout else 0,
+                "stderr_length": len(stderr) if stderr else 0,
+                "has_stdout": bool(stdout),
+            },
+        )
+
         if proc.returncode != 0:
             raise YtdlpApiError(
-                message=f"yt-dlp failed with exit code {proc.returncode}: {stderr.decode('utf-8', errors='replace')}",
+                message=f"yt-dlp completed with error {proc.returncode}: {stderr.decode('utf-8', errors='replace')}",
                 url=url,
             )
-
-        # Parse JSON output
-        if not stdout:
-            return None
+        elif not stdout:
+            raise YtdlpApiError(
+                message="yt-dlp did not produce any output",
+                url=url,
+            )
 
         try:
             extracted_info = json.loads(stdout.decode("utf-8"))
@@ -80,6 +99,81 @@ class YtdlpCore:
             ) from e
 
         return YtdlpInfo(extracted_info)  # type: ignore
+
+    @staticmethod
+    async def extract_downloads_info(args: YtdlpArgs, url: str) -> list[YtdlpInfo]:
+        """Extract download metadata only -- no playlist or channel metadata.
+
+        Args:
+            args: YtdlpArgs object containing command-line arguments for yt-dlp.
+            url: URL to extract information from.
+
+        Returns:
+            List of YtdlpInfo objects, each representing a download.
+
+        Raises:
+            YtdlpApiError: If extraction fails or an unexpected error occurs.
+        """
+        # Build subprocess command with --dump-json for multi-line output
+        cli_args = args.quiet().no_warnings().dump_json().skip_download().to_list()
+        cmd = ["yt-dlp", *cli_args, url]
+
+        logger.debug(
+            "Running yt-dlp for filtered downloads extraction", extra={"cmd": cmd}
+        )
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        except FileNotFoundError as e:
+            raise YtdlpApiError(
+                message="yt-dlp executable not found. Please ensure yt-dlp is installed and in PATH.",
+                url=url,
+            ) from e
+
+        try:
+            stdout, stderr = await proc.communicate()
+        except asyncio.CancelledError:
+            proc.kill()
+            await proc.wait()
+            raise
+
+        logger.debug(
+            "yt-dlp process completed.",
+            extra={
+                "exit_code": proc.returncode,
+                "stdout_length": len(stdout) if stdout else 0,
+                "stderr_length": len(stderr) if stderr else 0,
+                "has_stdout": bool(stdout),
+            },
+        )
+
+        # 101 means "Download cancelled by some flag, e.g. --break-match-filter etc" - treat as success
+        if proc.returncode != 0 and proc.returncode != 101:
+            raise YtdlpApiError(
+                message=f"yt-dlp completed with error {proc.returncode}: {stderr.decode('utf-8', errors='replace')}",
+                url=url,
+            )
+
+        stdout_text = stdout.decode("utf-8").strip()
+
+        # Parse multiple JSON objects (one per video)
+        entries: list[YtdlpInfo] = []
+        for line in stdout_text.split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+                entries.append(YtdlpInfo(entry))  # type: ignore
+            except json.JSONDecodeError:
+                logger.warning(f"Failed to parse JSON line: {line[:100]}")
+                continue
+
+        return entries
 
     @staticmethod
     async def download(args: YtdlpArgs, url: str) -> None:
