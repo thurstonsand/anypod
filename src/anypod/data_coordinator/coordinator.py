@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 import logging
 from pathlib import Path
 import time
+from typing import Any
 
 from ..config import FeedConfig
 from ..db import FeedDatabase
@@ -392,7 +393,15 @@ class DataCoordinator:
             ProcessingResults containing comprehensive results from all phases.
         """
         start_time = datetime.now(UTC)
-        log_params = {"feed_id": feed_id}
+        log_params: dict[str, Any] = {
+            "feed_id": feed_id,
+            "url": feed_config.url,
+            "schedule": feed_config.schedule,
+        }
+        if feed_config.keep_last:
+            log_params["keep_last"] = feed_config.keep_last
+        if feed_config.since:
+            log_params["since"] = feed_config.since.strftime("%Y%m%d")
 
         logger.info("Starting feed processing.", extra=log_params)
 

@@ -123,9 +123,10 @@ class RSSFeedGenerator:
 
         self._cache_feed_xml(feed_id, feed_xml)
         logger.info(
-            "RSS feed XML generated successfully.",
+            "RSS feed generated.",
             extra={
                 "feed_id": feed_id,
+                "url": self._paths.feed_media_url(feed_id),
                 "num_episodes": len(downloads),
             },
         )

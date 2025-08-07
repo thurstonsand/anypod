@@ -88,7 +88,7 @@ class Downloader:
                 feed_id=download.feed_id,
                 download_id=download.id,
             ) from e
-        logger.info("Database record updated to DOWNLOADED.", extra=log_params)
+        logger.info("Successfully downloaded media.", extra=log_params)
 
     async def _handle_download_failure(
         self, download: Download, feed_config: FeedConfig, error: Exception
