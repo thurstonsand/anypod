@@ -7,7 +7,7 @@ description: Create a pull request from the current branch
 - Current git status: !`git status`
 - Current git diff (all changes since diverging from main): !`git diff main...HEAD`
 - Current branch: !`git branch --show-current`
-- Recent commits on this branch: !`git log --oneline main..HEAD`
+- Recent commits on this branch: !`git log main..HEAD`
 - Remote tracking status: !`git status -b --porcelain | head -1`
 - Check if current branch tracks a remote: !`git rev-parse --abbrev-ref @{upstream} 2>/dev/null || echo "No upstream tracking"`
 

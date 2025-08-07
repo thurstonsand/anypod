@@ -1,36 +1,38 @@
 {
   "permissions": {
     "allow": [
+      "Bash(ls:*)",
+      "Bash(tree:*)",
+      "Bash(mkdir:*)",
+      "Bash(touch:*)",
+      "Bash(cat:*)",
       "Bash(find:*)",
       "Bash(grep:*)",
+      "Bash(rg:*)",
       "Bash(uvx --from ast-grep-cli sg:*)",
       "Bash(uvx --from ast-grep-cli ast-grep:*)",
       "Bash(uv run pytest:*)",
-      "Bash(uv run pre-commit:*)",
       "Bash(uv run ruff:*)",
       "Bash(uv run pyright:*)",
-      "Bash(rg:*)",
-      "Bash(cat:*)",
-      "WebFetch(domain:github.com)",
-      "WebFetch(domain:raw.githubusercontent.com)",
-      "Bash(uvx yt-dlp:*)",
-      "Bash(tree:*)",
-      "Bash(ls:*)",
-      "Bash(mkdir:*)",
-      "Bash(gh pr view:*)",
-      "Bash(touch:*)",
-      "mcp__ide__getDiagnostics",
+      "Bash(uv run pre-commit:*)",
       "Bash(sqlite3:*)",
       "Bash(alembic:*)",
-      "Bash(python3:*)",
-      "Bash(jq:*)",
       "Bash(docker build:*)",
       "Bash(docker compose logs:*)",
+      "Bash(gh pr view:*)",
       "Bash(gh run view:*)",
       "Bash(gh run list:*)",
+      "Bash(git rev-parse:*)",
+      "Bash(uvx yt-dlp:*)",
       "Bash(ffprobe:*)",
-      "Bash(echo:*)"
+      "Bash(jq:*)",
+      "Bash(echo:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "mcp__ide__getDiagnostics"
     ],
-    "deny": []
+    "deny": [
+      "Bash(python3:*)"
+    ]
   }
 }
