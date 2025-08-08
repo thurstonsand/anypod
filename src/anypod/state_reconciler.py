@@ -134,18 +134,19 @@ class StateReconciler:
                 feed_id=feed_id,
             ) from e
 
-    async def _handle_pruning_changes(
+    async def _handle_constraint_changes(
         self,
         feed_id: str,
         config_since: datetime | None,
         config_keep_last: int | None,
         db_feed: Feed,
         log_params: dict[str, Any],
-    ) -> bool:
-        """Handle changes to retention policies (since and keep_last) together.
+    ) -> datetime | None:
+        """Handle since/keep_last changes: restoration and sync timestamp resets.
 
         This method considers both retention policies simultaneously to determine
-        the set of downloads to restore from archived status.
+        the set of downloads to restore from archived status as well as the
+        last_successful_sync.
 
         Args:
             feed_id: The feed identifier.
@@ -155,7 +156,7 @@ class StateReconciler:
             log_params: Logging parameters for context.
 
         Returns:
-            True if changes were applied.
+            new_last_successful_sync: datetime to set, or None if no change needed
 
         Raises:
             StateReconciliationError: If database operations fail.
@@ -165,12 +166,15 @@ class StateReconciler:
         keep_last_changed = config_keep_last != db_feed.keep_last
 
         if not since_changed and not keep_last_changed:
-            return False
+            return None
 
+        new_sync: datetime | None = None
+        # Default to since if it exists
+        restoration_cutoff_date = config_since
         match (db_feed.since, config_since):
             case (None, None):
                 should_restore = False
-                restore_filter_date = None
+                restoration_cutoff_date = None
             case (None, config_since):
                 # Adding 'since' filter - no restoration needed (making filter stricter)
                 # Pruner will handle this case automatically
@@ -183,7 +187,6 @@ class StateReconciler:
                     },
                 )
                 should_restore = False
-                restore_filter_date = None
             case (db_since, None):
                 # Removing 'since' filter - potentially restore all archived downloads
                 logger.info(
@@ -191,9 +194,11 @@ class StateReconciler:
                     extra={**log_params, "old_since": db_since, "new_since": None},
                 )
                 should_restore = True
-                restore_filter_date = None
+                restoration_cutoff_date = None
+                # Reset sync to minimum baseline when since is removed
+                new_sync = MIN_SYNC_DATE
             case (db_since, config_since) if config_since < db_since:
-                # Expanding 'since' to earlier date - restore downloads between the dates
+                # Expanding 'since' to earlier date - restore downloads between the dates, setting back sync time
                 logger.info(
                     f"'since' date expanded from {db_since} to {config_since}, considering downloads after {config_since} for restoration.",
                     extra={
@@ -203,7 +208,9 @@ class StateReconciler:
                     },
                 )
                 should_restore = True
-                restore_filter_date = config_since
+                restoration_cutoff_date = config_since
+                # Reset sync to expanded since date to allow discovery of unseen items
+                new_sync = config_since
             case (db_since, config_since):
                 # Unchanged or `since` filter made stricter - no restoration needed
                 # Pruner will handle this case automatically
@@ -216,7 +223,6 @@ class StateReconciler:
                     },
                 )
                 should_restore = False
-                restore_filter_date = None
 
         # Handle 'keep_last' changes and determine restoration limit
         match db_feed.keep_last, config_keep_last, db_feed.total_downloads:
@@ -242,8 +248,11 @@ class StateReconciler:
                 )
                 should_restore = True
                 restore_limit = available_slots
+                # If we haven't decided on a new sync yet, baseline to since/MIN
+                if new_sync is None:
+                    new_sync = config_since if config_since else MIN_SYNC_DATE
             case (db_keep_last, None, _):
-                # Removing 'keep_last' filter - potentially restore all archived downloads
+                # Removing 'keep_last' filter - potentially restore downloads based on since
                 logger.info(
                     f"'keep_last' filter removed (was {db_keep_last}), considering all archived downloads for restoration.",
                     extra={
@@ -254,6 +263,8 @@ class StateReconciler:
                 )
                 should_restore = True
                 restore_limit = -1
+                if new_sync is None:
+                    new_sync = config_since if config_since else MIN_SYNC_DATE
             case (_, config_keep_last, _):
                 # Keep_last exists and is less than total downloads - constrains restoration
                 # This overrides any since expansion since we're at/above the limit
@@ -270,14 +281,14 @@ class StateReconciler:
 
         # Check if we should restore based on the combined policies
         if not should_restore:
-            return False
+            return new_sync
 
         # Find archived downloads that should be restored
         try:
             downloads_to_restore = await self._download_db.get_downloads_by_status(
                 DownloadStatus.ARCHIVED,
                 feed_id=feed_id,
-                published_after=restore_filter_date,  # None means all downloads
+                published_after=restoration_cutoff_date,  # None means all downloads
                 limit=restore_limit,
             )
         except DatabaseOperationError as e:
@@ -291,7 +302,7 @@ class StateReconciler:
                 "No archived downloads to restore for retention policy changes.",
                 extra=log_params,
             )
-            return False
+            return new_sync
 
         # Log the restoration details
         restore_reason: list[str] = []
@@ -299,6 +310,8 @@ class StateReconciler:
             restore_reason.append("'since' expansion")
         if keep_last_changed and config_keep_last is not None:
             restore_reason.append("'keep_last' increase")
+        if keep_last_changed and config_keep_last is None:
+            restore_reason.append("'keep_last' removed")
 
         logger.info(
             f"Restoring {len(downloads_to_restore)} archived downloads due to {' and '.join(restore_reason)}.",
@@ -325,7 +338,7 @@ class StateReconciler:
                 feed_id=feed_id,
             ) from e
 
-        return True
+        return new_sync
 
     async def _handle_existing_feed(
         self,
@@ -429,14 +442,16 @@ class StateReconciler:
         # This ensures the enqueuer will fetch all videos from the beginning of time
         if db_feed.since is not None and feed_config.since is None:
             logger.info(
-                f"'since' filter removed (was {db_feed.since}), resetting last_successful_sync to allow re-fetching all videos.",
+                "'since' constraint removed, resetting last_successful_sync to allow re-fetching all videos.",
                 extra={**log_params, "old_since": db_feed.since, "new_since": None},
             )
             updated_feed.last_successful_sync = MIN_SYNC_DATE
 
-        await self._handle_pruning_changes(
+        new_sync = await self._handle_constraint_changes(
             feed_id, feed_config.since, feed_config.keep_last, db_feed, log_params
         )
+        if new_sync is not None:
+            updated_feed.last_successful_sync = new_sync
 
         if updated_feed != db_feed:
             logger.debug("Feed configuration changes applied.", extra=log_params)

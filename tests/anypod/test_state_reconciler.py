@@ -512,36 +512,36 @@ async def test_handle_existing_feed_enable_with_since(
     assert updated_feed.last_failed_sync is None
 
 
-# --- Tests for StateReconciler._handle_pruning_changes ---
+# --- Tests for StateReconciler._handle_constraint_changes ---
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_handle_pruning_changes_no_changes(
+async def test_handle_constraint_changes_no_changes(
     state_reconciler: StateReconciler,
     mock_download_db: MagicMock,
 ) -> None:
-    """No changes to retention policies returns False."""
+    """No changes to retention policies returns None."""
     db_feed = deepcopy(MOCK_FEED)
     db_feed.since = datetime(2024, 6, 1, tzinfo=UTC)
     db_feed.keep_last = 10
 
     log_params = {"feed_id": FEED_ID}
-    result = await state_reconciler._handle_pruning_changes(
+    result = await state_reconciler._handle_constraint_changes(
         FEED_ID,
-        config_since=datetime(2024, 6, 1, tzinfo=UTC),  # Same as DB
-        config_keep_last=10,  # Same as DB
+        config_since=db_feed.since,
+        config_keep_last=db_feed.keep_last,
         db_feed=db_feed,
         log_params=log_params,
     )
 
-    assert result is False
+    assert result is None
     mock_download_db.get_downloads_by_status.assert_not_called()
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_handle_pruning_changes_since_expansion_only(
+async def test_handle_constraint_changes_since_expansion_only(
     state_reconciler: StateReconciler,
     mock_download_db: MagicMock,
 ) -> None:
@@ -557,19 +557,20 @@ async def test_handle_pruning_changes_since_expansion_only(
     mock_download_db.requeue_downloads.return_value = 2
 
     log_params = {"feed_id": FEED_ID}
-    result = await state_reconciler._handle_pruning_changes(
+    earlier_since = datetime(2024, 5, 1, tzinfo=UTC)
+    new_sync = await state_reconciler._handle_constraint_changes(
         FEED_ID,
-        config_since=datetime(2024, 5, 1, tzinfo=UTC),  # Earlier than DB since
+        config_since=earlier_since,  # Earlier than DB since
         config_keep_last=None,
         db_feed=db_feed,
         log_params=log_params,
     )
 
-    assert result is True
+    assert new_sync == earlier_since
     mock_download_db.get_downloads_by_status.assert_awaited_once_with(
         DownloadStatus.ARCHIVED,
         feed_id=FEED_ID,
-        published_after=datetime(2024, 5, 1, tzinfo=UTC),
+        published_after=earlier_since,
         limit=-1,  # No keep_last limit
     )
     mock_download_db.requeue_downloads.assert_awaited_once_with(
@@ -579,7 +580,7 @@ async def test_handle_pruning_changes_since_expansion_only(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_handle_pruning_changes_since_removal_only(
+async def test_handle_constraint_changes_since_removal_only(
     state_reconciler: StateReconciler,
     mock_download_db: MagicMock,
 ) -> None:
@@ -595,7 +596,7 @@ async def test_handle_pruning_changes_since_removal_only(
     mock_download_db.requeue_downloads.return_value = 2
 
     log_params = {"feed_id": FEED_ID}
-    result = await state_reconciler._handle_pruning_changes(
+    new_sync = await state_reconciler._handle_constraint_changes(
         FEED_ID,
         config_since=None,  # Removing since filter
         config_keep_last=None,
@@ -603,7 +604,7 @@ async def test_handle_pruning_changes_since_removal_only(
         log_params=log_params,
     )
 
-    assert result is True
+    assert new_sync == MIN_SYNC_DATE
     mock_download_db.get_downloads_by_status.assert_awaited_once_with(
         DownloadStatus.ARCHIVED,
         feed_id=FEED_ID,
@@ -614,7 +615,7 @@ async def test_handle_pruning_changes_since_removal_only(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_handle_pruning_changes_since_stricter_no_restoration(
+async def test_handle_constraint_changes_since_stricter_no_restoration(
     state_reconciler: StateReconciler,
     mock_download_db: MagicMock,
 ) -> None:
@@ -624,7 +625,7 @@ async def test_handle_pruning_changes_since_stricter_no_restoration(
     db_feed.keep_last = None
 
     log_params = {"feed_id": FEED_ID}
-    result = await state_reconciler._handle_pruning_changes(
+    new_sync = await state_reconciler._handle_constraint_changes(
         FEED_ID,
         config_since=datetime(2024, 7, 1, tzinfo=UTC),  # Later than DB since
         config_keep_last=None,
@@ -632,13 +633,13 @@ async def test_handle_pruning_changes_since_stricter_no_restoration(
         log_params=log_params,
     )
 
-    assert result is False
+    assert new_sync is None
     mock_download_db.get_downloads_by_status.assert_not_called()
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_handle_pruning_changes_keep_last_increase_only(
+async def test_handle_constraint_changes_keep_last_increase_only(
     state_reconciler: StateReconciler,
     mock_download_db: MagicMock,
 ) -> None:
@@ -656,26 +657,28 @@ async def test_handle_pruning_changes_keep_last_increase_only(
     mock_download_db.requeue_downloads.return_value = 2
 
     log_params = {"feed_id": FEED_ID}
-    result = await state_reconciler._handle_pruning_changes(
+    new_keep_last = 10
+    new_sync = await state_reconciler._handle_constraint_changes(
         FEED_ID,
         config_since=None,
-        config_keep_last=10,  # Increase from 5 to 10
+        config_keep_last=new_keep_last,  # Increase from 5 to 10
         db_feed=db_feed,
         log_params=log_params,
     )
 
-    assert result is True
+    assert new_sync == MIN_SYNC_DATE
+    expected_limit = new_keep_last - db_feed.total_downloads_internal
     mock_download_db.get_downloads_by_status.assert_awaited_once_with(
         DownloadStatus.ARCHIVED,
         feed_id=FEED_ID,
         published_after=None,  # No since filter
-        limit=5,  # 10 - 5 available slots
+        limit=expected_limit,  # available slots
     )
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_handle_pruning_changes_since_removal_with_keep_last_limit(
+async def test_handle_constraint_changes_since_removal_with_keep_last_limit(
     state_reconciler: StateReconciler,
     mock_download_db: MagicMock,
 ) -> None:
@@ -693,26 +696,28 @@ async def test_handle_pruning_changes_since_removal_with_keep_last_limit(
     mock_download_db.requeue_downloads.return_value = 2
 
     log_params = {"feed_id": FEED_ID}
-    result = await state_reconciler._handle_pruning_changes(
+    new_keep_last = 8
+    new_sync = await state_reconciler._handle_constraint_changes(
         FEED_ID,
         config_since=None,  # Remove since filter
-        config_keep_last=8,  # But keep_last limits restoration
+        config_keep_last=new_keep_last,  # But keep_last limits restoration
         db_feed=db_feed,
         log_params=log_params,
     )
 
-    assert result is True
+    assert new_sync == MIN_SYNC_DATE
+    expected_limit = new_keep_last - db_feed.total_downloads_internal
     mock_download_db.get_downloads_by_status.assert_awaited_once_with(
         DownloadStatus.ARCHIVED,
         feed_id=FEED_ID,
         published_after=None,  # No date filter
-        limit=3,  # 8 - 5 available slots
+        limit=expected_limit,  # available slots
     )
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_handle_pruning_changes_since_expansion_blocked_by_keep_last(
+async def test_handle_constraint_changes_since_expansion_blocked_by_keep_last(
     state_reconciler: StateReconciler,
     mock_download_db: MagicMock,
 ) -> None:
@@ -724,21 +729,22 @@ async def test_handle_pruning_changes_since_expansion_blocked_by_keep_last(
     db_feed.total_downloads_internal = 5  # Set the internal field directly
 
     log_params = {"feed_id": FEED_ID}
-    result = await state_reconciler._handle_pruning_changes(
+    earlier_since = datetime(2024, 5, 1, tzinfo=UTC)
+    new_sync = await state_reconciler._handle_constraint_changes(
         FEED_ID,
-        config_since=datetime(2024, 5, 1, tzinfo=UTC),  # Earlier than DB since
+        config_since=earlier_since,  # Earlier than DB since
         config_keep_last=5,  # Already at limit
         db_feed=db_feed,
         log_params=log_params,
     )
 
-    assert result is False
+    assert new_sync == earlier_since
     mock_download_db.get_downloads_by_status.assert_not_called()
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_handle_pruning_changes_both_policies_change(
+async def test_handle_constraint_changes_both_policies_change(
     state_reconciler: StateReconciler,
     mock_download_db: MagicMock,
 ) -> None:
@@ -755,26 +761,29 @@ async def test_handle_pruning_changes_both_policies_change(
     mock_download_db.requeue_downloads.return_value = 1
 
     log_params = {"feed_id": FEED_ID}
-    result = await state_reconciler._handle_pruning_changes(
+    new_keep_last = 8
+    earlier_since = datetime(2024, 5, 1, tzinfo=UTC)
+    new_sync = await state_reconciler._handle_constraint_changes(
         FEED_ID,
-        config_since=datetime(2024, 5, 1, tzinfo=UTC),  # Earlier than DB since
-        config_keep_last=8,  # Increase from 5 to 8
+        config_since=earlier_since,  # Earlier than DB since
+        config_keep_last=new_keep_last,  # Increase from 5 to 8
         db_feed=db_feed,
         log_params=log_params,
     )
 
-    assert result is True
+    assert new_sync == earlier_since
+    expected_limit = new_keep_last - db_feed.total_downloads_internal
     mock_download_db.get_downloads_by_status.assert_awaited_once_with(
         DownloadStatus.ARCHIVED,
         feed_id=FEED_ID,
-        published_after=datetime(2024, 5, 1, tzinfo=UTC),  # Since filter applied
-        limit=4,  # 8 - 4 available slots
+        published_after=earlier_since,  # Since filter applied
+        limit=expected_limit,
     )
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_handle_pruning_changes_since_expansion_limited_by_new_keep_last(
+async def test_handle_constraint_changes_since_expansion_limited_by_new_keep_last(
     state_reconciler: StateReconciler,
     mock_download_db: MagicMock,
 ) -> None:
@@ -794,26 +803,29 @@ async def test_handle_pruning_changes_since_expansion_limited_by_new_keep_last(
     mock_download_db.requeue_downloads.return_value = 2  # Only 2 restored due to limit
 
     log_params = {"feed_id": FEED_ID}
-    result = await state_reconciler._handle_pruning_changes(
+    expanded_since = datetime(2024, 7, 1, tzinfo=UTC)
+    new_keep_last = 12
+    new_sync = await state_reconciler._handle_constraint_changes(
         FEED_ID,
-        config_since=datetime(2024, 7, 1, tzinfo=UTC),  # Expand since further back
-        config_keep_last=12,  # Add keep_last allowing only 2 more (12-10=2)
+        config_since=expanded_since,  # Expand since further back
+        config_keep_last=new_keep_last,  # Add keep_last allowing only 2 more
         db_feed=db_feed,
         log_params=log_params,
     )
 
-    assert result is True
+    assert new_sync == expanded_since
+    expected_limit = new_keep_last - db_feed.total_downloads_internal
     mock_download_db.get_downloads_by_status.assert_awaited_once_with(
         DownloadStatus.ARCHIVED,
         feed_id=FEED_ID,
-        published_after=datetime(2024, 7, 1, tzinfo=UTC),  # Since filter applied
-        limit=2,  # Limited by keep_last: 12 - 10 = 2
+        published_after=expanded_since,  # Since filter applied
+        limit=expected_limit,
     )
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_handle_pruning_changes_no_archived_downloads(
+async def test_handle_constraint_changes_no_archived_downloads(
     state_reconciler: StateReconciler,
     mock_download_db: MagicMock,
 ) -> None:
@@ -825,21 +837,22 @@ async def test_handle_pruning_changes_no_archived_downloads(
     mock_download_db.get_downloads_by_status.return_value = []  # No archived downloads
 
     log_params = {"feed_id": FEED_ID}
-    result = await state_reconciler._handle_pruning_changes(
+    earlier_since = datetime(2024, 5, 1, tzinfo=UTC)
+    new_sync = await state_reconciler._handle_constraint_changes(
         FEED_ID,
-        config_since=datetime(2024, 5, 1, tzinfo=UTC),  # Earlier than DB since
+        config_since=earlier_since,  # Earlier than DB since
         config_keep_last=None,
         db_feed=db_feed,
         log_params=log_params,
     )
 
-    assert result is False
+    assert new_sync == earlier_since
     mock_download_db.requeue_downloads.assert_not_called()
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_handle_pruning_changes_database_error(
+async def test_handle_constraint_changes_database_error(
     state_reconciler: StateReconciler,
     mock_download_db: MagicMock,
 ) -> None:
@@ -854,7 +867,7 @@ async def test_handle_pruning_changes_database_error(
 
     log_params = {"feed_id": FEED_ID}
     with pytest.raises(StateReconciliationError) as exc_info:
-        await state_reconciler._handle_pruning_changes(
+        await state_reconciler._handle_constraint_changes(
             FEED_ID,
             config_since=datetime(2024, 5, 1, tzinfo=UTC),
             config_keep_last=None,
@@ -863,6 +876,193 @@ async def test_handle_pruning_changes_database_error(
         )
 
     assert exc_info.value.feed_id == FEED_ID
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_keep_last_removed_with_since_sets_sync_to_since(
+    state_reconciler: StateReconciler, mock_download_db: MagicMock
+) -> None:
+    """Removing keep_last sets sync to since."""
+    db_feed = deepcopy(MOCK_FEED)
+    db_feed.since = datetime(2024, 6, 1, tzinfo=UTC)
+    db_feed.keep_last = 5
+    db_feed.total_downloads_internal = 3
+
+    mock_download_db.get_downloads_by_status.return_value = [
+        MOCK_ARCHIVED_DOWNLOAD_1,
+    ]
+    mock_download_db.requeue_downloads.return_value = 1
+
+    log_params = {"feed_id": FEED_ID}
+    new_sync = await state_reconciler._handle_constraint_changes(
+        FEED_ID,
+        config_since=datetime(2024, 6, 1, tzinfo=UTC),
+        config_keep_last=None,  # removal
+        db_feed=db_feed,
+        log_params=log_params,
+    )
+
+    assert new_sync == datetime(2024, 6, 1, tzinfo=UTC)
+    mock_download_db.get_downloads_by_status.assert_awaited_once_with(
+        DownloadStatus.ARCHIVED,
+        feed_id=FEED_ID,
+        published_after=datetime(2024, 6, 1, tzinfo=UTC),
+        limit=-1,
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_keep_last_increase_with_since_sets_sync_to_since(
+    state_reconciler: StateReconciler, mock_download_db: MagicMock
+) -> None:
+    """Increasing keep_last sets sync to since."""
+    db_feed = deepcopy(MOCK_FEED)
+    db_feed.since = datetime(2024, 6, 1, tzinfo=UTC)
+    db_feed.keep_last = 3
+    db_feed.total_downloads_internal = 3
+
+    mock_download_db.get_downloads_by_status.return_value = [
+        MOCK_ARCHIVED_DOWNLOAD_1,
+    ]
+    mock_download_db.requeue_downloads.return_value = 1
+
+    log_params = {"feed_id": FEED_ID}
+    new_sync = await state_reconciler._handle_constraint_changes(
+        FEED_ID,
+        config_since=datetime(2024, 6, 1, tzinfo=UTC),
+        config_keep_last=5,  # increase
+        db_feed=db_feed,
+        log_params=log_params,
+    )
+
+    assert new_sync == datetime(2024, 6, 1, tzinfo=UTC)
+    mock_download_db.get_downloads_by_status.assert_awaited_once_with(
+        DownloadStatus.ARCHIVED,
+        feed_id=FEED_ID,
+        published_after=datetime(2024, 6, 1, tzinfo=UTC),
+        limit=2,
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_handle_constraint_changes_keep_last_decrease_no_restoration(
+    state_reconciler: StateReconciler,
+    mock_download_db: MagicMock,
+) -> None:
+    """Decreasing keep_last should not trigger restoration or change sync."""
+    db_feed = deepcopy(MOCK_FEED)
+    db_feed.since = None
+    db_feed.keep_last = 10
+    db_feed.total_downloads_internal = 8
+
+    log_params = {"feed_id": FEED_ID}
+    new_sync = await state_reconciler._handle_constraint_changes(
+        FEED_ID,
+        config_since=None,  # unchanged
+        config_keep_last=5,  # decrease from 10 to 5
+        db_feed=db_feed,
+        log_params=log_params,
+    )
+
+    assert new_sync is None
+    mock_download_db.get_downloads_by_status.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_keep_last_removed_without_since_sets_sync_to_min(
+    state_reconciler: StateReconciler, mock_download_db: MagicMock
+) -> None:
+    """Removing keep_last with no since set should baseline sync to MIN_SYNC_DATE."""
+    db_feed = deepcopy(MOCK_FEED)
+    db_feed.since = None
+    db_feed.keep_last = 5
+    db_feed.total_downloads_internal = 3
+
+    mock_download_db.get_downloads_by_status.return_value = []
+
+    log_params = {"feed_id": FEED_ID}
+    new_sync = await state_reconciler._handle_constraint_changes(
+        FEED_ID,
+        config_since=None,
+        config_keep_last=None,  # removal
+        db_feed=db_feed,
+        log_params=log_params,
+    )
+
+    assert new_sync == MIN_SYNC_DATE
+    mock_download_db.get_downloads_by_status.assert_awaited_once_with(
+        DownloadStatus.ARCHIVED,
+        feed_id=FEED_ID,
+        published_after=None,
+        limit=-1,
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_keep_last_increase_no_archived_no_since_sets_sync_to_min(
+    state_reconciler: StateReconciler, mock_download_db: MagicMock
+) -> None:
+    """Increasing keep_last with no since and no archived items still baselines sync to MIN."""
+    db_feed = deepcopy(MOCK_FEED)
+    db_feed.since = None
+    db_feed.keep_last = 3
+    db_feed.total_downloads_internal = 3
+
+    mock_download_db.get_downloads_by_status.return_value = []
+
+    log_params = {"feed_id": FEED_ID}
+    new_sync = await state_reconciler._handle_constraint_changes(
+        FEED_ID,
+        config_since=None,
+        config_keep_last=5,  # increase
+        db_feed=db_feed,
+        log_params=log_params,
+    )
+
+    assert new_sync == MIN_SYNC_DATE
+    mock_download_db.get_downloads_by_status.assert_awaited_once_with(
+        DownloadStatus.ARCHIVED,
+        feed_id=FEED_ID,
+        published_after=None,
+        limit=2,
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_keep_last_increase_no_archived_with_since_sets_sync_to_since(
+    state_reconciler: StateReconciler, mock_download_db: MagicMock
+) -> None:
+    """Increasing keep_last with since and no archived items baselines sync to since."""
+    db_feed = deepcopy(MOCK_FEED)
+    since_date = datetime(2024, 6, 1, tzinfo=UTC)
+    db_feed.since = since_date
+    db_feed.keep_last = 3
+    db_feed.total_downloads_internal = 3
+
+    mock_download_db.get_downloads_by_status.return_value = []
+
+    log_params = {"feed_id": FEED_ID}
+    new_sync = await state_reconciler._handle_constraint_changes(
+        FEED_ID,
+        config_since=since_date,
+        config_keep_last=5,  # increase
+        db_feed=db_feed,
+        log_params=log_params,
+    )
+
+    assert new_sync == since_date
+    mock_download_db.get_downloads_by_status.assert_awaited_once_with(
+        DownloadStatus.ARCHIVED,
+        feed_id=FEED_ID,
+        published_after=since_date,
+        limit=2,
+    )
 
 
 # --- Tests for StateReconciler.reconcile_startup_state ---

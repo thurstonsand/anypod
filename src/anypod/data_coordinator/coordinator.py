@@ -395,8 +395,7 @@ class DataCoordinator:
         start_time = datetime.now(UTC)
         log_params: dict[str, Any] = {
             "feed_id": feed_id,
-            "url": feed_config.url,
-            "schedule": feed_config.schedule,
+            "schedule": feed_config.schedule.cron_str,
         }
         if feed_config.keep_last:
             log_params["keep_last"] = feed_config.keep_last
@@ -413,6 +412,7 @@ class DataCoordinator:
 
         try:
             fetch_since_date = await self._calculate_fetch_since_date(feed_id)
+            log_params["from_date"] = fetch_since_date.strftime("%Y%m%d")
 
             # Phase 1: Enqueue new downloads
             results.enqueue_result = await self._execute_enqueue_phase(

@@ -20,6 +20,9 @@ see @DESIGN_DOC.md for in depth design doc.
 ## Commands
 
 ### Development Commands
+
+**NOTE**: All commands should be run from the project root folder -- never use `cd`
+
 ```bash
 # Install dependencies and setup
 uv sync
