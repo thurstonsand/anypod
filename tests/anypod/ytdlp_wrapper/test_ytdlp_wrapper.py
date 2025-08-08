@@ -40,9 +40,9 @@ def ytdlp_wrapper(
 @pytest.mark.parametrize(
     "since_date,expected_expr",
     [
-        (datetime(2023, 1, 1, 12, 30, 45, tzinfo=UTC), "upload_date > 20230101"),
-        (datetime(2024, 12, 31, 23, 59, 59, tzinfo=UTC), "upload_date > 20241231"),
-        (datetime(2022, 6, 15, 0, 0, 0, tzinfo=UTC), "upload_date > 20220615"),
+        (datetime(2023, 1, 1, 12, 30, 45, tzinfo=UTC), "upload_date >= 20230101"),
+        (datetime(2024, 12, 31, 23, 59, 59, tzinfo=UTC), "upload_date >= 20241231"),
+        (datetime(2022, 6, 15, 0, 0, 0, tzinfo=UTC), "upload_date >= 20220615"),
     ],
 )
 def test_match_filter_since_date(
@@ -296,7 +296,7 @@ async def test_date_filtering_behavior_by_reference_type(
         cli_args = ytdlp_args.to_list()
         assert "--lazy-playlist" in cli_args
         assert "--break-match-filters" in cli_args
-        assert "upload_date > 20230101" in cli_args
+        assert "upload_date >= 20230101" in cli_args
     else:
         # For single videos, optimization should not be applied
         call_args = mock_extract_downloads_info.call_args[0]

@@ -122,10 +122,10 @@ class YtdlpWrapper:
             since_date: The datetime to filter from.
 
         Returns:
-            Filter expression in the format "upload_date > YYYYMMDD".
+            Filter expression in the format "upload_date >= YYYYMMDD".
         """
         date_str = since_date.strftime("%Y%m%d")
-        return f"upload_date > {date_str}"
+        return f"upload_date >= {date_str}"
 
     async def fetch_playlist_metadata(
         self,
