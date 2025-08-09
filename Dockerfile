@@ -46,9 +46,8 @@ WORKDIR /app
 COPY --from=builder /python /python
 COPY --from=builder /app /app
 
-# Copy entrypoint script and make it executable
-COPY --chmod=755 docker-entrypoint.sh /usr/local/bin/
-
+# Copy entrypoint scripts and make them executable
+COPY --chmod=755 docker/scripts/ /usr/local/bin/
 
 # Expose port
 EXPOSE 8024

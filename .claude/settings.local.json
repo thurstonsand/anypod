@@ -27,6 +27,7 @@
       "Bash(ffprobe:*)",
       "Bash(jq:*)",
       "Bash(echo:*)",
+      "Bash(true)",
       "WebFetch(domain:github.com)",
       "WebFetch(domain:raw.githubusercontent.com)",
       "mcp__ide__getDiagnostics"

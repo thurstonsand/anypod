@@ -8,8 +8,8 @@ description: Create a git commit
 - Current git diff (staged changes only): !`git diff --cached`
 - Current branch: !`git branch --show-current`
 - Recent commits: !`git log --oneline -10`
-- !`uv run pre-commit run --all-files`
-- !`uv run pre-commit run --all-files`
+- !`uv run pre-commit run --all-files || true`
+- !`uv run pre-commit run --all-files || true`
   (run a second time to see if first time auto-fixed everything)
 - Do not stage any additional files (ignore anything unstaged)
 

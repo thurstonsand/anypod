@@ -11,7 +11,6 @@ Anypod is a thin Python wrapper around **yt-dlp** that converts any yt-dlp–sup
 
 ## Non-Goals
 * Live-stream capture (only post-VOD downloads)
-* Transcoding in the MVP (requires MP4/M4A from source)
 * Graphical UI (a JSON-driven admin dashboard can come later)
 * Automatic retry loop beyond manual `--retry-failed`
 
@@ -547,7 +546,7 @@ yt-dlp's `daterange` parameter only supports YYYYMMDD format, not hour/minute/se
 ### Future Enhancements
 * Admin dashboard (React + shadcn/ui)
 * Automatic retries with jitter
-* Transcoding fallback (ffmpeg) for non-MP4/M4A sources
+* Advanced video conversion options beyond yt-dlp's built-in transcoding
 * OAuth device-flow
 * Prometheus `/metrics`
 * Consider restricting feed_id and download_id in `PathManager` to alphanumeric characters only (plus maybe hyphens/underscores) to avoid potential filesystem and URL encoding issues

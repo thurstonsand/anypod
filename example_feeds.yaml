@@ -35,3 +35,19 @@ feeds:
     schedule: "0 3 * * *"
     since: "20090101"
     keep_last: 3
+
+  # Example with video conversion using the built-in conversion script
+  high_quality_with_conversion:
+    url: https://www.youtube.com/@coletdjnz/videos
+    # Prefer h.265/av1, exclude vp9, get good quality
+    yt_args: >
+      -f
+      bestvideo*[height<=1080][vcodec*=av01]+bestaudio/bestvideo*[height<=1080][vcodec*=av01]/bestvideo*[height<=1080][vcodec*=vp9]+bestaudio/bestvideo*[height<=1080][vcodec*=vp9]/bestvideo*[height<=1080][vcodec*=h265]+bestaudio/bestvideo*[height<=1080][vcodec*=h265]/bestvideo*[height<=1080][vcodec*=hevc]+bestaudio/bestvideo*[height<=1080][vcodec*=hevc]/bestvideo*[height<=1080]+bestaudio/bestvideo*[height<=1080]/best[height<=1080]
+      --exec
+      post_process:'convert_video.sh %(filepath)q'
+    schedule: "0 6 * * *"
+    since: "20220101"
+    keep_last: 5
+    metadata:
+      title: "High Quality Converted Podcast"
+      subtitle: "Automatically converts to H.265/AAC for optimal streaming"

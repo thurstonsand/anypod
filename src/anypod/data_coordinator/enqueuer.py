@@ -358,7 +358,7 @@ class Enqueuer:
             True if download status is QUEUED.
         """
         logger.info(
-            "New download found. Inserting.",
+            "New download found.",
             extra=log_params,
         )
         try:
