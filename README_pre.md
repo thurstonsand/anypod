@@ -1,0 +1,28 @@
+# AnyPod
+
+## Development
+
+- run with `uv run anypod --config-file example_feeds.yaml`
+- if you want to run integration tests, you can put a `cookies.txt` file in `tests/integration`
+
+## Gotchas
+
+- if you unskip a download, it may immediately get archived based on your retention rules
+- you cannot use the following settings as part of your ytdlp args; they will be overridden by the application:
+  - ...TODO
+- in order to get cookies, I have successfully followed these instructions:
+  - [How to pass cookies to yt-dlp](https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp)
+  - [Error 429: Too many requests](https://github.com/yt-dlp/yt-dlp/wiki/FAQ#http-error-429-too-many-requests-or-402-payment-required)
+  - a couple comments:
+    - specifically, I've used the [Get cookies.txt LOCALLY](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc) Chrome extension to retrieve them in a file
+    - if you are on Windows, watch out for the newlines. The Docker container will expect `LF`, and Windows might default to `CRLF`
+    - for Youtube cookies, you need to [follow special instructions](https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies). but this should only be needed if you are trying to access private playlists, age-restricted videos, or members-only content
+    - if downloading from Patreon behind a paywall, it can help help to [simply add `--referer https://www.patreon.com`](https://github.com/yt-dlp/yt-dlp/issues/13263#issuecomment-2903954393) as well to prevent HTTP 403's
+    - With youtube cookies, I have seen that this actually blocks you from even seeing "Premium" (enhanced bitrate) videos; this is a known problem
+      - There might be a way around it if you use a PO Token Provider, but it is nontrivial; see [yt-dlp docs](https://github.com/yt-dlp/yt-dlp/wiki/PO-Token-Guide) and [recommended provider](https://github.com/Brainicism/bgutil-ytdlp-pot-provider)
+      - Probably best to just choose from whatever options you do get -- even without cookies, I mostly just got 403's when trying to download Premium anyway
+- I would not test out feeds using PocketCasts, since they permanently cache on their end. So if you need to modify anything, PocketCasts will not pick up that change -- you'd need to change the feed id to make it pick up a "new" feed. Apple Podcasts is a safe bet
+- if passing in a youtube video that is part of a playlist (example: "https://www.youtube.com/watch?v=aqz-KE-bpKQ&list=PLt5yu3-wZAlSLRHmI1qNm0wjyVNWw1pCU", note the `&list=`), yt-dlp will treat this as if it is just the playlist, not the individual video. Typically, I would recommend replacing this with the playlist url ("https://youtube.com/playlist?list=PLt5yu3-wZAlSLRHmI1qNm0wjyVNWw1pCU&si=kpqBVoLcbAWiCVaO"), but it will act as a playlist regardless of which link is used
+- even if 2 feeds have the same schedule, the system will only process one at a time in order to avoid rate limiting
+- on the topic of rate limiting, youtube can be pretty aggressive, and you may find downloads failing. you can get much higher rate limits by using cookies with an authenticated account, but if you read the above instructions, it outlines that youtube may ban your account if it detects excessive bot activity, so it's better to use a burner account.
+- if you do inline file conversions, it can take a LONG time depending on your hardware. be forewarned that it can look like it's hanging
