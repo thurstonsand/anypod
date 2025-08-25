@@ -178,6 +178,7 @@ async def test_fetch_metadata_success(
         source_url=url,
         resolved_url=expected_resolved_url,
         user_yt_cli_args=YT_DLP_MINIMAL_ARGS,
+        yt_channel="stable",
         cookies_path=cookies_path,
     )
 
@@ -187,6 +188,7 @@ async def test_fetch_metadata_success(
         source_url=url,
         resolved_url=expected_resolved_url,
         user_yt_cli_args=YT_DLP_MINIMAL_ARGS,
+        yt_channel="stable",
         keep_last=1,
         cookies_path=cookies_path,
     )
@@ -253,6 +255,7 @@ async def test_thumbnail_format_validation(
         source_url=url,
         resolved_url=expected_resolved_url,
         user_yt_cli_args=YT_DLP_MINIMAL_ARGS,
+        yt_channel="stable",
         keep_last=1,
         cookies_path=cookies_path,
     )
@@ -293,6 +296,7 @@ async def test_fetch_metadata_non_existent_video(
             source_url=INVALID_VIDEO_URL,
             resolved_url=INVALID_VIDEO_URL,
             user_yt_cli_args=YT_DLP_MINIMAL_ARGS,
+            yt_channel="stable",
             cookies_path=cookies_path,
         )
 
@@ -328,6 +332,7 @@ async def test_fetch_metadata_with_impossible_filter(
         source_url=url,
         resolved_url=expected_resolved_url,
         user_yt_cli_args=impossible_filter_args,
+        yt_channel="stable",
         cookies_path=cookies_path,
     )
 
@@ -337,6 +342,7 @@ async def test_fetch_metadata_with_impossible_filter(
         source_url=url,
         resolved_url=expected_resolved_url,
         user_yt_cli_args=impossible_filter_args,
+        yt_channel="stable",
         cookies_path=cookies_path,
     )
     assert len(downloads) == 0, (
@@ -390,6 +396,7 @@ async def test_download_media_to_file_success(
     downloaded_file_path = await ytdlp_wrapper.download_media_to_file(
         download=download,
         user_yt_cli_args=cli_args,
+        yt_channel="stable",
         cookies_path=cookies_path,
     )
 
@@ -426,6 +433,7 @@ async def test_download_media_to_file_non_existent(
         await ytdlp_wrapper.download_media_to_file(
             download=non_existent_download,
             user_yt_cli_args=cli_args,
+            yt_channel="stable",
             cookies_path=cookies_path,
         )
 
@@ -453,6 +461,7 @@ async def test_download_media_to_file_impossible_filter(
         await ytdlp_wrapper.download_media_to_file(
             download=BIG_BUCK_BUNNY_DOWNLOAD,
             user_yt_cli_args=impossible_filter_args,
+            yt_channel="stable",
             cookies_path=cookies_path,
         )
 
@@ -488,6 +497,7 @@ async def test_fetch_metadata_with_keep_last_limit(
         source_url=channel_url,
         resolved_url=None,
         user_yt_cli_args=minimal_args,
+        yt_channel="stable",
         cookies_path=cookies_path,
     )
 
@@ -497,6 +507,7 @@ async def test_fetch_metadata_with_keep_last_limit(
         source_url=channel_url,
         resolved_url=None,
         user_yt_cli_args=minimal_args,
+        yt_channel="stable",
         keep_last=keep_last,
         cookies_path=cookies_path,
     )
@@ -549,6 +560,7 @@ async def test_fetch_metadata_with_keep_last_none_vs_limit(
         source_url=channel_url,
         resolved_url=None,
         user_yt_cli_args=minimal_args,
+        yt_channel="stable",
         keep_last=1,
         cookies_path=cookies_path,
     )
@@ -564,6 +576,7 @@ async def test_fetch_metadata_with_keep_last_none_vs_limit(
         source_url=channel_url,
         resolved_url=None,
         user_yt_cli_args=args_with_reasonable_limit,
+        yt_channel="stable",
         keep_last=None,
         cookies_path=cookies_path,
     )

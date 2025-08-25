@@ -101,6 +101,7 @@ feeds:
   channel:
     url: https://www.youtube.com/@example
     yt_args: "-f best[ext=mp4]"
+    yt_channel: "stable"  # yt-dlp update channel: stable, nightly, master, or version
     schedule: "0 3 * * *"
     since: "20220101"
   favorite_podcast:
@@ -132,6 +133,7 @@ Reserved/managed `yt‑dlp` options (set by Anypod, do not override):
 - Filtering/iteration: `--break-match-filters`, `--lazy-playlist`, playlist limits derived from `keep_last` and `since`
 - Paths/output: `--paths`, `--output "<download_id>.%(ext)s"`
 - Thumbnails: conversion to `jpg` is enforced
+- Updates: `-U`/`--update-to` controlled by `yt_channel` configuration
 
 ## Environment variables
 

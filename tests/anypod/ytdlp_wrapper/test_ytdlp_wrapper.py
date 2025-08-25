@@ -98,6 +98,7 @@ async def test_fetch_playlist_metadata_returns_feed(
         source_url=url,
         resolved_url=url,
         user_yt_cli_args=yt_cli_args,
+        yt_channel="stable",
     )
 
     # Verify return type
@@ -153,6 +154,7 @@ async def test_fetch_new_downloads_metadata_returns_downloads(
         source_url=url,
         resolved_url=url,
         user_yt_cli_args=yt_cli_args,
+        yt_channel="stable",
     )
 
     # Verify return type and values
@@ -220,7 +222,7 @@ async def test_download_media_to_file_success_simplified(
     mock_aiofiles_wrap.return_value = mock_glob
 
     returned_path = await ytdlp_wrapper.download_media_to_file(
-        dummy_download, yt_cli_args
+        dummy_download, yt_cli_args, "stable"
     )
 
     assert returned_path == expected_final_file
@@ -285,6 +287,7 @@ async def test_date_filtering_behavior_by_reference_type(
         source_url=url,
         resolved_url=url,
         user_yt_cli_args=[],
+        yt_channel="stable",
         fetch_since_date=fetch_since_date,
     )
 
@@ -347,6 +350,7 @@ async def test_keep_last_filtering_behavior_by_reference_type(
         source_url=url,
         resolved_url=url,
         user_yt_cli_args=[],
+        yt_channel="stable",
         keep_last=keep_last,
     )
 

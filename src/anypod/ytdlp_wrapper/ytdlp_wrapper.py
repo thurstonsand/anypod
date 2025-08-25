@@ -134,6 +134,7 @@ class YtdlpWrapper:
         source_url: str,
         resolved_url: str | None,
         user_yt_cli_args: list[str],
+        yt_channel: str,
         cookies_path: Path | None = None,
     ) -> Feed:
         """Get playlist metadata from yt-dlp. Does not retrieve download metadata.
@@ -144,6 +145,7 @@ class YtdlpWrapper:
             source_url: The original source URL from configuration.
             resolved_url: The resolved URL to fetch from.
             user_yt_cli_args: User-configured command-line arguments for yt-dlp.
+            yt_channel: yt-dlp update channel (stable, nightly, master, etc.).
             cookies_path: Path to cookies.txt file for authentication, or None if not needed.
 
         Returns:
@@ -162,7 +164,9 @@ class YtdlpWrapper:
 
         logger.debug("Fetching playlist metadata for feed.", extra=log_config)
 
-        args = YtdlpArgs(user_yt_cli_args).convert_thumbnails("jpg")
+        args = (
+            YtdlpArgs(user_yt_cli_args).update_to(yt_channel).convert_thumbnails("jpg")
+        )
         if cookies_path:
             args.cookies(cookies_path)
 
@@ -194,6 +198,7 @@ class YtdlpWrapper:
         source_url: str,
         resolved_url: str | None,
         user_yt_cli_args: list[str],
+        yt_channel: str,
         fetch_since_date: datetime | None = None,
         keep_last: int | None = None,
         cookies_path: Path | None = None,
@@ -206,6 +211,7 @@ class YtdlpWrapper:
             source_url: The original source URL from configuration.
             resolved_url: The resolved URL to fetch from.
             user_yt_cli_args: User-configured command-line arguments for yt-dlp.
+            yt_channel: yt-dlp update channel (stable, nightly, master, etc.).
             fetch_since_date: The cutoff date for fetching videos (inclusive).
             keep_last: Maximum number of recent playlist items to fetch.
             cookies_path: Path to cookies.txt file for authentication.
@@ -226,7 +232,9 @@ class YtdlpWrapper:
 
         logger.debug("Fetching new downloads metadata for feed.", extra=log_config)
 
-        args = YtdlpArgs(user_yt_cli_args).convert_thumbnails("jpg")
+        args = (
+            YtdlpArgs(user_yt_cli_args).update_to(yt_channel).convert_thumbnails("jpg")
+        )
 
         # Apply filtering for playlists/channels
         if source_type != SourceType.SINGLE_VIDEO:
@@ -300,6 +308,7 @@ class YtdlpWrapper:
         self,
         download: Download,
         user_yt_cli_args: list[str],
+        yt_channel: str,
         cookies_path: Path | None = None,
     ) -> Path:
         """Download the media for a given Download to a target directory.
@@ -310,6 +319,7 @@ class YtdlpWrapper:
         Args:
             download: The Download object containing metadata.
             user_yt_cli_args: User-provided yt-dlp CLI arguments for this feed.
+            yt_channel: yt-dlp update channel (stable, nightly, master, etc.).
             cookies_path: Path to cookies.txt file for authentication, or None if not needed.
 
         Returns:
@@ -335,6 +345,7 @@ class YtdlpWrapper:
         # Inline download options
         download_opts = (
             YtdlpArgs(user_yt_cli_args)
+            .update_to(yt_channel)
             .convert_thumbnails("jpg")
             .output(f"{download.id}.%(ext)s")
             .paths_temp(download_temp_dir)

@@ -280,6 +280,7 @@ class Enqueuer:
                 db_download.source_url,
                 None,  # No resolved URL needed for single video
                 feed_config.yt_args,
+                feed_config.yt_channel,
                 None,  # No date filtering for single video
                 None,  # No keep_last for single video
                 cookies_path=cookies_path,
@@ -642,6 +643,7 @@ class Enqueuer:
                     feed.source_url,
                     feed.resolved_url,
                     user_yt_cli_args,
+                    feed_config.yt_channel,
                     fetch_since_date,
                     feed_config.keep_last,
                     cookies_path,

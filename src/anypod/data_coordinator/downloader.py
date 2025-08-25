@@ -154,6 +154,7 @@ class Downloader:
             downloaded_file_path = await self.ytdlp_wrapper.download_media_to_file(
                 download_to_process,
                 feed_config.yt_args,
+                feed_config.yt_channel,
                 cookies_path=cookies_path,
             )
             await self._handle_download_success(

@@ -10,7 +10,6 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 import logging
 from pathlib import Path
-from urllib.parse import urlparse, urlunparse
 
 from ..db.types import Download, DownloadStatus, Feed, SourceType
 from ..exceptions import (
@@ -312,33 +311,6 @@ class YoutubeEntry:
                             download_id=self.download_id,
                         ) from e
 
-    def _clean_thumbnail_url(self, url: str) -> str:
-        """Clean thumbnail URL for feedgen compatibility.
-
-        Removes query parameters from thumbnail URLs to work around feedgen's
-        overly restrictive URL validation that fails on YouTube thumbnail URLs
-        with query parameters.
-
-        Args:
-            url: Original thumbnail URL, potentially with query parameters.
-
-        Returns:
-            Cleaned URL without query parameters.
-        """
-        parsed = urlparse(url)
-        # Remove query parameters and fragment
-        cleaned = urlunparse(
-            (
-                parsed.scheme,
-                parsed.netloc,
-                parsed.path,
-                "",  # params
-                "",  # query
-                "",  # fragment
-            )
-        )
-        return cleaned
-
     @property
     def thumbnail(self) -> str | None:
         """Get the best quality JPG or PNG thumbnail URL for the video."""
@@ -347,8 +319,7 @@ class YoutubeEntry:
             thumbnails = self._ytdlp_info.thumbnails()
             if not thumbnails:
                 # Fallback to default thumbnail field
-                fallback_url = self._ytdlp_info.get("thumbnail", str)
-                return self._clean_thumbnail_url(fallback_url) if fallback_url else None
+                return self._ytdlp_info.get("thumbnail", str)
 
             # Get the best supported format thumbnail
             best_thumbnail = thumbnails.best_supported()
@@ -362,13 +333,7 @@ class YoutubeEntry:
                     },
                 )
                 return None
-
-            # Clean the URL to remove query parameters for feedgen compatibility
-            return (
-                self._clean_thumbnail_url(best_thumbnail.url)
-                if best_thumbnail.url
-                else None
-            )
+            return best_thumbnail.url
 
     @property
     def description(self) -> str | None:

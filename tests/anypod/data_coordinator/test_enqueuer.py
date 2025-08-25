@@ -197,6 +197,7 @@ async def test_handle_existing_upcoming_download_transitions_to_queued(
         upcoming_dl.source_url,
         None,
         sample_feed_config.yt_args,
+        sample_feed_config.yt_channel,
         None,  # No date filtering for single video
         None,  # No keep_last for single video
         cookies_path=None,
@@ -235,6 +236,7 @@ async def test_handle_existing_upcoming_download_remains_upcoming(
         upcoming_dl.source_url,
         None,
         sample_feed_config.yt_args,
+        sample_feed_config.yt_channel,
         None,  # No date filtering for single video
         None,  # No keep_last for single video
         cookies_path=None,
@@ -367,6 +369,7 @@ async def test_fetch_and_process_new_feed_downloads_no_new_downloads(
         MOCK_FEED.source_url,
         MOCK_FEED.resolved_url,
         sample_feed_config.yt_args,
+        sample_feed_config.yt_channel,
         FETCH_SINCE_DATE,
         sample_feed_config.keep_last,
         None,
@@ -593,6 +596,7 @@ async def test_enqueue_new_downloads_full_flow_mixed_scenarios(
             MOCK_FEED.source_url,
             MOCK_FEED.resolved_url,
             sample_feed_config.yt_args,
+            sample_feed_config.yt_channel,
             FETCH_SINCE_DATE,
             sample_feed_config.keep_last,
             None,
@@ -603,6 +607,7 @@ async def test_enqueue_new_downloads_full_flow_mixed_scenarios(
             "https://example.com/video/up1",  # Individual video URL
             None,  # No resolved URL for individual videos
             sample_feed_config.yt_args,
+            sample_feed_config.yt_channel,
             None,  # No date filtering for single video
             None,  # No keep_last for single video
             cookies_path=None,
@@ -613,6 +618,7 @@ async def test_enqueue_new_downloads_full_flow_mixed_scenarios(
             "https://example.com/video/up2",  # Individual video URL
             None,  # No resolved URL for individual videos
             sample_feed_config.yt_args,
+            sample_feed_config.yt_channel,
             None,  # No date filtering for single video
             None,  # No keep_last for single video
             cookies_path=None,
@@ -715,6 +721,7 @@ async def test_enqueue_new_downloads_ytdlp_error_on_main_feed_fetch(
         MOCK_FEED.source_url,
         MOCK_FEED.resolved_url,
         sample_feed_config.yt_args,
+        sample_feed_config.yt_channel,
         FETCH_SINCE_DATE,
         sample_feed_config.keep_last,
         None,
@@ -751,6 +758,7 @@ async def test_enqueue_new_downloads_no_upcoming_no_new(
         MOCK_FEED.source_url,
         MOCK_FEED.resolved_url,
         sample_feed_config.yt_args,
+        sample_feed_config.yt_channel,
         FETCH_SINCE_DATE,
         sample_feed_config.keep_last,
         None,
@@ -833,11 +841,11 @@ async def test_enqueue_deduplication_with_same_day_overlapping_windows(
 
     # Verify first call used first date window
     first_call = mock_ytdlp_wrapper.fetch_new_downloads_metadata.call_args_list[0]
-    assert first_call[0][5] == first_since  # fetch_since_date
+    assert first_call[0][6] == first_since  # fetch_since_date
 
     # Verify second call used second date window
     second_call = mock_ytdlp_wrapper.fetch_new_downloads_metadata.call_args_list[1]
-    assert second_call[0][5] == second_since  # fetch_since_date
+    assert second_call[0][6] == second_since  # fetch_since_date
 
     # Verify database operations for deduplication
     assert mock_download_db.get_download_by_id.call_count == 2

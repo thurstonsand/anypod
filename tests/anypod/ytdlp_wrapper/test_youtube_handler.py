@@ -956,3 +956,59 @@ def test_extract_feed_metadata_channel_specific_fields():
     assert extracted_feed.language is None  # Not available from yt-dlp
     assert extracted_feed.id == feed_id
     assert extracted_feed.is_enabled is True
+
+
+# --- Tests for thumbnail URL query parameter preservation ---
+
+
+@pytest.mark.unit
+def test_clean_thumbnail_url_preserves_query_parameters():
+    """Test that _clean_thumbnail_url preserves query parameters required for YouTube thumbnails."""
+    original_url = "https://i.ytimg.com/pl_c/PL8mG-RkN2uTw7PhlnAr4pZZz2QubIbujH/studio_square_thumbnail.jpg?sqp=CNnJ9cQG-oaymwEICOADEOADSFqi85f_AwYIwe77sQY%3D&rs=AOn4CLB5y7iZmQcD8vHcdJ4WtzLCK_wOuQ"
+
+    # Create a YoutubeEntry instance to access the _clean_thumbnail_url method
+    video_data = {
+        "id": "test_video_123",
+        "title": "Test Video",
+        "timestamp": 1678886400,
+        "ext": "mp4",
+        "duration": 120,
+        "webpage_url": "https://www.youtube.com/watch?v=test_video_123",
+        "thumbnail": original_url,
+        "epoch": 1678886400,
+    }
+
+    video_entry = YoutubeEntry(YtdlpInfo(video_data), "test_feed")
+    url = video_entry.thumbnail
+
+    # Query parameters should be preserved as they are required for YouTube thumbnails
+    assert url is not None
+    assert "sqp=CNnJ9cQG-oaymwEICOADEOADSFqi85f_AwYIwe77sQY%3D" in url
+    assert "rs=AOn4CLB5y7iZmQcD8vHcdJ4WtzLCK_wOuQ" in url
+    assert url == original_url
+
+
+@pytest.mark.unit
+def test_thumbnail_property_preserves_query_parameters(youtube_handler: YoutubeHandler):
+    """Test that the thumbnail property preserves query parameters in URLs."""
+    thumbnail_url_with_params = (
+        "https://i.ytimg.com/vi/VIDEO_ID/maxresdefault.jpg?sqp=CAE&rs=AOn4CLA"
+    )
+
+    # Mock video entry data with thumbnail URL containing query parameters
+    video_data = {
+        "id": "test_video_123",
+        "title": "Test Video",
+        "timestamp": 1678886400,
+        "ext": "mp4",
+        "duration": 120,
+        "webpage_url": "https://www.youtube.com/watch?v=test_video_123",
+        "thumbnail": thumbnail_url_with_params,
+        "epoch": 1678886400,
+    }
+
+    video_entry = YoutubeEntry(YtdlpInfo(video_data), "test_feed")
+    result_thumbnail = video_entry.thumbnail
+
+    # Query parameters should be preserved
+    assert result_thumbnail == thumbnail_url_with_params
