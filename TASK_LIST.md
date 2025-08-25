@@ -452,7 +452,7 @@ This section details the components that manage the lifecycle of downloads, from
 
 ### 6.1.1 Image Hosting
 
-- [ ] first check on getting the full filepath in there
+- [x] first check on getting the full filepath in there
   - `https://i.ytimg.com/pl_c/PL8mG-RkN2uTw7PhlnAr4pZZz2QubIbujH/studio_square_thumbnail.jpg` isn't enough, you need the extra `?sqp=CNnJ9cQG-oaymwEICOADEOADSFqi85f_AwYIwe77sQY%3D&rs=AOn4CLB5y7iZmQcD8vHcdJ4WtzLCK_wOuQ` on the end
 - [ ] download and host images locally
 

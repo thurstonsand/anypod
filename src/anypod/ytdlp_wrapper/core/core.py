@@ -34,7 +34,7 @@ class YtdlpCore:
             YtdlpApiError: If extraction fails or an unexpected error occurs.
         """
         # Build subprocess command
-        cli_args = (
+        cli_cmd_prefix = (
             args.quiet()
             .no_warnings()
             .dump_single_json()
@@ -42,7 +42,7 @@ class YtdlpCore:
             .skip_download()
             .to_list()
         )
-        cmd = ["yt-dlp", *cli_args, url]
+        cmd = [*cli_cmd_prefix, url]
 
         logger.debug(
             "Running yt-dlp for playlist metadata extraction", extra={"cmd": cmd}
@@ -65,8 +65,9 @@ class YtdlpCore:
         except asyncio.CancelledError:
             # Ensure subprocess cleanup on cancellation
             proc.kill()
-            await proc.wait()
             raise
+        finally:
+            await proc.wait()
 
         # Parse JSON output first - yt-dlp can produce valid output even with non-zero exit codes
         logger.debug(
@@ -114,9 +115,11 @@ class YtdlpCore:
         Raises:
             YtdlpApiError: If extraction fails or an unexpected error occurs.
         """
-        # Build subprocess command with --dump-json for multi-line output
-        cli_args = args.quiet().no_warnings().dump_json().skip_download().to_list()
-        cmd = ["yt-dlp", *cli_args, url]
+        # Build subprocess command
+        cli_cmd_prefix = (
+            args.quiet().no_warnings().dump_json().skip_download().to_list()
+        )
+        cmd = [*cli_cmd_prefix, url]
 
         logger.debug(
             "Running yt-dlp for filtered downloads extraction", extra={"cmd": cmd}
@@ -138,8 +141,9 @@ class YtdlpCore:
             stdout, stderr = await proc.communicate()
         except asyncio.CancelledError:
             proc.kill()
-            await proc.wait()
             raise
+        finally:
+            await proc.wait()
 
         logger.debug(
             "yt-dlp process completed.",
@@ -186,8 +190,8 @@ class YtdlpCore:
         Raises:
             YtdlpApiError: If download fails or returns a non-zero exit code.
         """
-        # Build subprocess command: yt-dlp + args + url
-        cmd = ["yt-dlp", *args.to_list(), url]
+        # Build subprocess command:
+        cmd = [*args.to_list(), url]
 
         logger.debug("Running yt-dlp for download", extra={"cmd": cmd})
 
@@ -208,8 +212,9 @@ class YtdlpCore:
         except asyncio.CancelledError:
             # Ensure subprocess cleanup on cancellation
             proc.kill()
-            await proc.wait()
             raise
+        finally:
+            await proc.wait()
 
         if proc.returncode != 0:
             raise YtdlpApiError(

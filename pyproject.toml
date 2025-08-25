@@ -25,7 +25,6 @@ dependencies = [
     "sqlite-utils>=3.38",
     "sqlmodel>=0.0.24",
     "uvicorn[standard]>=0.35.0",
-    "yt-dlp>=2025.4.30",
 ]
 
 [dependency-groups]
@@ -39,6 +38,7 @@ dev = [
     "pyright>=1.1.400",
     "pytest-xdist>=3.7.0",
     "httpx>=0.28.1",
+    "yt-dlp>=2025.8.22",
 ]
 
 [project.scripts]

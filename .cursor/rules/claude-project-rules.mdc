@@ -212,6 +212,7 @@ feeds:
   channel:
     url: https://www.youtube.com/@example
     yt_args: "-f worst[ext=mp4] --playlist-items 1-3"
+    yt_channel: "stable"
     schedule: "0 3 * * *"
     since: "20220101"
 

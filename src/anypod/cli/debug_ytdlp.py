@@ -58,6 +58,7 @@ async def run_debug_ytdlp_mode(settings: AppSettings, paths: PathManager) -> Non
                 source_url=feed_config.url,
                 resolved_url=resolved_url,
                 user_yt_cli_args=feed_config.yt_args,
+                yt_channel=feed_config.yt_channel,
                 cookies_path=settings.cookies_path,
             )
 
@@ -67,6 +68,7 @@ async def run_debug_ytdlp_mode(settings: AppSettings, paths: PathManager) -> Non
                 source_url=feed_config.url,
                 resolved_url=resolved_url,
                 user_yt_cli_args=feed_config.yt_args,
+                yt_channel=feed_config.yt_channel,
                 fetch_since_date=feed_config.since,
                 keep_last=feed_config.keep_last,
                 cookies_path=settings.cookies_path,
@@ -109,6 +111,7 @@ async def run_debug_ytdlp_mode(settings: AppSettings, paths: PathManager) -> Non
                             download_path = await ytdlp_wrapper.download_media_to_file(
                                 download,
                                 feed_config.yt_args,
+                                feed_config.yt_channel,
                                 cookies_path=settings.cookies_path,
                             )
                             logger.info(f"Download successful: {download_path}")
