@@ -88,16 +88,14 @@ class FileManager:
             Path to the download file.
 
         Raises:
-            FileNotFoundError: If the file does not exist or is not a regular file.
-            FileOperationError: If an OS-level error occurs or if feed/download identifiers are invalid.
+            FileNotFoundError: If the file does not exist or is not a regular file, or if the path is invalid.
+            FileOperationError: If an OS-level error occurs.
         """
         try:
             file_path = await self._paths.media_file_path(feed, download_id, ext)
         except ValueError as e:
-            raise FileOperationError(
+            raise FileNotFoundError(
                 "Invalid feed or download identifier.",
-                feed_id=feed,
-                download_id=download_id,
             ) from e
 
         log_params = {
@@ -182,3 +180,115 @@ class FileManager:
                 download_id=download_id,
                 file_name=f"{download_id}.{ext}",
             ) from e
+
+    async def get_image_path(
+        self, feed_id: str, download_id: str | None, ext: str
+    ) -> Path:
+        """Get the file path for an image file.
+
+        Args:
+            feed_id: The name of the feed.
+            download_id: The unique identifier for the download, or None for feed-level images.
+            ext: File extension without the leading dot.
+
+        Returns:
+            Path to the image file.
+
+        Raises:
+            FileNotFoundError: If the file does not exist or is not a regular file, or if the path is invalid.
+            FileOperationError: If an OS-level error occurs.
+        """
+        try:
+            file_path = await self._paths.image_path(feed_id, download_id, ext)
+        except ValueError as e:
+            raise FileNotFoundError(
+                "Invalid feed or download identifier.",
+            ) from e
+
+        log_params = {
+            "feed_id": feed_id,
+            "download_id": download_id,
+            "file_path": str(file_path),
+        }
+        logger.debug("Getting image file path.", extra=log_params)
+
+        try:
+            exists = await aiofiles.os.path.isfile(file_path)
+        except OSError as e:
+            raise FileOperationError(
+                "Failed to check if image file exists.",
+                file_name=str(file_path),
+            ) from e
+
+        if not exists:
+            raise FileNotFoundError(
+                f"Image file not found or is not a file: {file_path}"
+            )
+        return file_path
+
+    async def image_exists(
+        self, feed_id: str, download_id: str | None, ext: str
+    ) -> bool:
+        """Check if an image file exists.
+
+        Args:
+            feed_id: The name of the feed.
+            download_id: The unique identifier for the download, or None for feed-level images.
+            ext: File extension without the leading dot.
+
+        Returns:
+            True if the file exists and is a file, False otherwise.
+
+        Raises:
+            FileOperationError: If an OS-level error occurs during the file existence check, or if feed/download identifiers are invalid.
+        """
+        try:
+            await self.get_image_path(feed_id, download_id, ext)
+            return True
+        except FileNotFoundError:
+            return False
+
+    async def delete_image(
+        self, feed_id: str, download_id: str | None, ext: str
+    ) -> None:
+        """Delete an image file from the filesystem.
+
+        Args:
+            feed_id: The name of the feed.
+            download_id: The unique identifier for the download, or None for feed-level images.
+            ext: File extension without the leading dot.
+
+        Raises:
+            FileNotFoundError: If the file does not exist or is not a regular file.
+            FileOperationError: If an OS-level error occurs during file deletion, or if feed/download identifiers are invalid.
+        """
+        try:
+            file_path = await self._paths.image_path(feed_id, download_id, ext)
+        except ValueError as e:
+            raise FileOperationError(
+                "Invalid feed or download identifier.",
+                feed_id=feed_id,
+                download_id=download_id,
+            ) from e
+
+        log_params = {
+            "feed_id": feed_id,
+            "download_id": download_id,
+            "image_ext": ext,
+            "file_path": str(file_path),
+        }
+        logger.debug("Attempting to delete image file.", extra=log_params)
+
+        if not await aiofiles.os.path.isfile(file_path):
+            raise FileNotFoundError(f"Image file not found: {file_path}")
+        else:
+            try:
+                await aiofiles.os.remove(file_path)
+                logger.debug("Image file deleted successfully.", extra=log_params)
+            except OSError as e:
+                raise FileOperationError(
+                    "Failed to delete image file.",
+                    feed_id=feed_id,
+                    download_id=download_id,
+                    file_name=f"{download_id or feed_id}.{ext}",
+                ) from e
