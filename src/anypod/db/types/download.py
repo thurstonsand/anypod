@@ -32,7 +32,8 @@ class Download(SQLModel, table=True):
         updated_at: When the download was last updated (UTC).
 
         Optional Media Metadata:
-            thumbnail: Optional thumbnail URL.
+            original_thumbnail_url: Optional original thumbnail URL.
+            thumbnail_ext: Optional hosted thumbnail file extension.
             description: Optional description of the download.
             quality_info: Optional quality information for the download.
 
@@ -86,7 +87,8 @@ class Download(SQLModel, table=True):
     )
 
     # Optional media metadata
-    thumbnail: str | None = None
+    original_thumbnail_url: str | None = None
+    thumbnail_ext: str | None = None
     description: str | None = None
     quality_info: str | None = None
 

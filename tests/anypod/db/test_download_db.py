@@ -75,7 +75,7 @@ def sample_download_queued(test_feed: Feed) -> Download:
         mime_type="video/mp4",
         duration=120,
         status=DownloadStatus.QUEUED,
-        thumbnail="http://example.com/thumb1.jpg",
+        original_thumbnail_url="http://example.com/thumb1.jpg",
         description="Test video description",
         filesize=0,  # 0 for queued items
         retries=0,
@@ -97,7 +97,7 @@ def sample_download_upcoming(test_feed: Feed) -> Download:
         mime_type="video/mp4",
         duration=120,
         status=DownloadStatus.UPCOMING,
-        thumbnail="http://example.com/thumb_upcoming.jpg",
+        original_thumbnail_url="http://example.com/thumb_upcoming.jpg",
         description="Upcoming video description",
         filesize=0,
         retries=0,
@@ -128,7 +128,10 @@ async def test_add_and_get_download(
     assert retrieved_download.published == sample_download_queued.published
     assert retrieved_download.ext == sample_download_queued.ext
     assert retrieved_download.duration == sample_download_queued.duration
-    assert retrieved_download.thumbnail == sample_download_queued.thumbnail
+    assert (
+        retrieved_download.original_thumbnail_url
+        == sample_download_queued.original_thumbnail_url
+    )
     assert retrieved_download.status == sample_download_queued.status
     assert retrieved_download.retries == 0, (
         "Retries should be 0 for a new download from fixture"
@@ -157,7 +160,7 @@ async def test_upsert_download_updates_existing(
         ext="mkv",  # Changed ext
         mime_type="video/x-matroska",  # Changed mime_type
         duration=150,  # Changed duration
-        thumbnail="http://example.com/thumb/v123_updated.jpg",
+        original_thumbnail_url="http://example.com/thumb/v123_updated.jpg",
         description="Updated description",
         filesize=4096,  # Changed filesize
         status=DownloadStatus.DOWNLOADED,  # Changed status
@@ -182,7 +185,10 @@ async def test_upsert_download_updates_existing(
     assert retrieved_download.published == modified_download.published
     assert retrieved_download.ext == modified_download.ext
     assert retrieved_download.duration == modified_download.duration
-    assert retrieved_download.thumbnail == modified_download.thumbnail
+    assert (
+        retrieved_download.original_thumbnail_url
+        == modified_download.original_thumbnail_url
+    )
     assert retrieved_download.status == modified_download.status
     assert retrieved_download.retries == modified_download.retries
     assert retrieved_download.last_error == modified_download.last_error

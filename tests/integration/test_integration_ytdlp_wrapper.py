@@ -144,7 +144,7 @@ BIG_BUCK_BUNNY_DOWNLOAD = Download(
     status=DownloadStatus.QUEUED,
     discovered_at=datetime(2014, 11, 11, 14, 5, 55, tzinfo=UTC),
     updated_at=datetime(2014, 11, 11, 14, 5, 55, tzinfo=UTC),
-    thumbnail="https://i.ytimg.com/vi_webp/aqz-KE-bpKQ/maxresdefault.webp",
+    original_thumbnail_url="https://i.ytimg.com/vi_webp/aqz-KE-bpKQ/maxresdefault.webp",
     retries=0,
     last_error=None,
 )
@@ -222,7 +222,9 @@ async def test_fetch_metadata_success(
 
     assert download.ext == "mp4", f"Download ext should be mp4 for {url_type}"
 
-    assert download.thumbnail, f"Download thumbnail should not be empty for {url_type}"
+    assert download.original_thumbnail_url, (
+        f"Download thumbnail should not be empty for {url_type}"
+    )
     assert download.status == DownloadStatus.QUEUED, (
         f"Download status should be QUEUED for {url_type}, got {download.status}"
     )
@@ -267,16 +269,21 @@ async def test_thumbnail_format_validation(
     download = downloads[0]
 
     # All test videos should have thumbnails
-    assert download.thumbnail, f"Download should have a thumbnail for {url_type}"
+    assert download.original_thumbnail_url, (
+        f"Download should have a thumbnail for {url_type}"
+    )
 
     # Check that thumbnail URL contains supported format (may have query params after)
-    assert ".jpg" in download.thumbnail or ".png" in download.thumbnail, (
-        f"Thumbnail URL should contain .jpg or .png, got: {download.thumbnail}"
+    assert (
+        ".jpg" in download.original_thumbnail_url
+        or ".png" in download.original_thumbnail_url
+    ), (
+        f"Thumbnail URL should contain .jpg or .png, got: {download.original_thumbnail_url}"
     )
 
     # Verify it's a valid URL format
-    assert download.thumbnail.startswith("http"), (
-        f"Thumbnail should be a valid HTTP URL, got: {download.thumbnail}"
+    assert download.original_thumbnail_url.startswith("http"), (
+        f"Thumbnail should be a valid HTTP URL, got: {download.original_thumbnail_url}"
     )
 
 
@@ -383,7 +390,7 @@ async def test_download_media_to_file_success(
         filesize=12345,
         duration=635,
         status=DownloadStatus.QUEUED,
-        thumbnail="https://i.ytimg.com/vi_webp/aqz-KE-bpKQ/maxresdefault.webp",
+        original_thumbnail_url="https://i.ytimg.com/vi_webp/aqz-KE-bpKQ/maxresdefault.webp",
         retries=0,
         last_error=None,
         discovered_at=datetime(2014, 11, 11, 14, 5, 55, tzinfo=UTC),

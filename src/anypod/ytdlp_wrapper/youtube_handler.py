@@ -480,7 +480,7 @@ class YoutubeHandler:
             description=description,
             language=None,  # Not available from yt-dlp
             author=author,
-            image_url=image_url,
+            original_image_url=image_url,
         )
 
         logger.debug(
@@ -773,7 +773,7 @@ class YoutubeHandler:
             filesize=entry.filesize,
             duration=duration,
             status=status,
-            thumbnail=entry.thumbnail,
+            original_thumbnail_url=entry.thumbnail,
             description=entry.description,
             quality_info=entry.quality_info,
         )

@@ -50,7 +50,7 @@ MOCK_FEED = Feed(
     language=None,
     author=None,
     author_email=None,
-    image_url=None,
+    original_image_url=None,
     is_enabled=True,
     source_type=SourceType.UNKNOWN,
     source_url=FEED_URL,
@@ -67,7 +67,7 @@ MOCK_DISABLED_FEED = Feed(
     language=None,
     author=None,
     author_email=None,
-    image_url=None,
+    original_image_url=None,
     is_enabled=True,
     source_type=SourceType.UNKNOWN,
     source_url="https://example.com/removed",
@@ -247,7 +247,7 @@ async def test_handle_new_feed_with_metadata(
     assert inserted_feed.description == metadata.description
     assert inserted_feed.language == metadata.language
     assert inserted_feed.author == metadata.author
-    assert inserted_feed.image_url == metadata.image_url
+    assert inserted_feed.original_image_url == metadata.image_url
     assert inserted_feed.category == metadata.category
     assert inserted_feed.explicit == metadata.explicit
 

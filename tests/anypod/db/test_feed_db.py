@@ -65,7 +65,7 @@ def sample_feed() -> Feed:
         description="Test feed description",
         language="en",
         author="Test Author",
-        image_url="https://example.com/image.jpg",
+        original_image_url="https://example.com/image.jpg",
         category=PodcastCategories("Technology"),
         explicit=PodcastExplicit.NO,
     )
@@ -162,7 +162,7 @@ async def test_upsert_and_get_feed(feed_db: FeedDatabase, sample_feed: Feed):
     assert retrieved_feed.description == sample_feed.description
     assert retrieved_feed.language == sample_feed.language
     assert retrieved_feed.author == sample_feed.author
-    assert retrieved_feed.image_url == sample_feed.image_url
+    assert retrieved_feed.original_image_url == sample_feed.original_image_url
     assert str(retrieved_feed.category) == str(sample_feed.category)
     assert str(retrieved_feed.explicit) == str(sample_feed.explicit)
     assert retrieved_feed.consecutive_failures == sample_feed.consecutive_failures
@@ -187,7 +187,7 @@ async def test_upsert_feed_updates_existing(feed_db: FeedDatabase, sample_feed: 
         description="Updated description",  # Changed
         language="es",  # Changed
         author="Updated Author",  # Changed
-        image_url="https://example.com/updated.jpg",  # Changed
+        original_image_url="https://example.com/updated.jpg",  # Changed
         category=PodcastCategories("Business"),  # Changed
         explicit=PodcastExplicit.YES,  # Changed
         consecutive_failures=2,  # Changed
@@ -208,7 +208,7 @@ async def test_upsert_feed_updates_existing(feed_db: FeedDatabase, sample_feed: 
     assert retrieved_feed.description == modified_feed.description
     assert retrieved_feed.language == modified_feed.language
     assert retrieved_feed.author == modified_feed.author
-    assert retrieved_feed.image_url == modified_feed.image_url
+    assert retrieved_feed.original_image_url == modified_feed.original_image_url
     assert str(retrieved_feed.category) == str(modified_feed.category)
     assert str(retrieved_feed.explicit) == str(modified_feed.explicit)
     assert retrieved_feed.consecutive_failures == modified_feed.consecutive_failures
@@ -489,7 +489,7 @@ async def test_update_feed_metadata(feed_db: FeedDatabase, sample_feed: Feed):
     # Other fields should be unchanged
     assert updated_feed.subtitle == sample_feed.subtitle
     assert updated_feed.author == sample_feed.author
-    assert updated_feed.image_url == sample_feed.image_url
+    assert updated_feed.original_image_url == sample_feed.original_image_url
 
 
 @pytest.mark.unit

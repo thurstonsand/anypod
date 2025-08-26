@@ -71,10 +71,10 @@ class FeedgenCore:
         )
         fg.podcast.itunes_type(feed.podcast_type.rss_str())  # type: ignore
         fg.podcast.itunes_explicit(feed.explicit.rss_str())  # type: ignore
-        if feed.image_url:
-            fg.podcast.itunes_image(feed.image_url)  # type: ignore
+        if feed.original_image_url:
+            fg.podcast.itunes_image(feed.original_image_url)  # type: ignore
             fg.image(  # type: ignore
-                url=feed.image_url,
+                url=feed.original_image_url,
                 title=feed.title,
                 link=feed.source_url,
                 description=f"Artwork for {feed.title}",
@@ -127,9 +127,9 @@ class FeedgenCore:
             # Apple Podcasts documentation indicates description is sufficient for episodes
             fe.podcast.itunes_summary(description)  # type: ignore
 
-            if download.thumbnail:
+            if download.original_thumbnail_url:
                 try:
-                    fe.podcast.itunes_image(download.thumbnail)  # type: ignore
+                    fe.podcast.itunes_image(download.original_thumbnail_url)  # type: ignore
                 except ValueError:
                     # Skip invalid thumbnail URLs rather than failing entire feed generation
                     # Log warning but continue processing
@@ -138,7 +138,7 @@ class FeedgenCore:
                         extra={
                             "feed_id": download.feed_id,
                             "download_id": download.id,
-                            "thumbnail_url": download.thumbnail,
+                            "thumbnail_url": download.original_thumbnail_url,
                         },
                     )
 

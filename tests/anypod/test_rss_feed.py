@@ -61,7 +61,7 @@ def test_feed() -> Feed:
         language="en",
         author=TEST_AUTHOR,
         author_email="test@example.com",
-        image_url="https://example.com/artwork.jpg",
+        original_image_url="https://example.com/artwork.jpg",
         category=PodcastCategories("Technology"),
         podcast_type=PodcastType.EPISODIC,
         explicit=PodcastExplicit.NO,
@@ -85,7 +85,7 @@ def sample_downloads() -> list[Download]:
             status=DownloadStatus.DOWNLOADED,
             discovered_at=datetime(2023, 1, 16, 12, 0, 0, tzinfo=UTC),
             updated_at=datetime(2023, 1, 16, 12, 0, 0, tzinfo=UTC),
-            thumbnail="https://example.com/thumb1.jpg",
+            original_thumbnail_url="https://example.com/thumb1.jpg",
             description="Description for video 1",
         ),
         Download(
@@ -101,7 +101,7 @@ def sample_downloads() -> list[Download]:
             status=DownloadStatus.DOWNLOADED,
             discovered_at=datetime(2023, 1, 11, 10, 30, 0, tzinfo=UTC),
             updated_at=datetime(2023, 1, 11, 10, 30, 0, tzinfo=UTC),
-            thumbnail="https://example.com/thumb2.jpg",
+            original_thumbnail_url="https://example.com/thumb2.jpg",
             description="Description for video 2",
         ),
     ]
@@ -264,7 +264,7 @@ async def test_generated_xml_structure(
     assert rss_image is not None
     rss_image_url = rss_image.find("url")
     assert rss_image_url is not None
-    assert rss_image_url.text == test_feed.image_url
+    assert rss_image_url.text == test_feed.original_image_url
     rss_image_title = rss_image.find("title")
     assert rss_image_title is not None
     assert rss_image_title.text == test_feed.title

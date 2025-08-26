@@ -414,8 +414,13 @@ class Enqueuer:
             updated_download.filesize = fetched_download.filesize
         if existing_db_download.duration != fetched_download.duration:
             updated_download.duration = fetched_download.duration
-        if existing_db_download.thumbnail != fetched_download.thumbnail:
-            updated_download.thumbnail = fetched_download.thumbnail
+        if (
+            existing_db_download.original_thumbnail_url
+            != fetched_download.original_thumbnail_url
+        ):
+            updated_download.original_thumbnail_url = (
+                fetched_download.original_thumbnail_url
+            )
         if existing_db_download.description != fetched_download.description:
             updated_download.description = fetched_download.description
         if existing_db_download.quality_info != fetched_download.quality_info:

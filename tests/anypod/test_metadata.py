@@ -34,7 +34,7 @@ def test_merge_feed_metadata_no_overrides():
         language="en",
         author="Original Author",
         author_email="original@example.com",
-        image_url="https://example.com/image.jpg",
+        original_image_url="https://example.com/image.jpg",
         category=PodcastCategories("Technology"),
         podcast_type=PodcastType.EPISODIC,
         explicit=PodcastExplicit.NO,
@@ -58,7 +58,7 @@ def test_merge_feed_metadata_no_overrides():
     assert result["language"] == "en"
     assert result["author"] == "Original Author"
     assert result["author_email"] == "original@example.com"
-    assert result["image_url"] == "https://example.com/image.jpg"
+    assert result["original_image_url"] == "https://example.com/image.jpg"
     assert result["category"] == PodcastCategories("Technology")
     assert result["podcast_type"] == PodcastType.EPISODIC
     assert result["explicit"] == PodcastExplicit.NO
@@ -81,7 +81,7 @@ def test_merge_feed_metadata_with_overrides():
         language="en",
         author="Original Author",
         author_email="original@example.com",
-        image_url="https://example.com/image.jpg",
+        original_image_url="https://example.com/image.jpg",
         category=PodcastCategories("Technology"),
         podcast_type=PodcastType.EPISODIC,
         explicit=PodcastExplicit.NO,
@@ -122,7 +122,7 @@ def test_merge_feed_metadata_with_overrides():
         result["author_email"] == "original@example.com"
     )  # not overridden, from fetched
     assert (
-        result["image_url"] == "https://example.com/image.jpg"
+        result["original_image_url"] == "https://example.com/image.jpg"
     )  # not overridden, from fetched
     assert result["category"] == PodcastCategories(
         "Business"
@@ -148,7 +148,7 @@ def test_merge_feed_metadata_partial_overrides():
         language="fr",
         author="Original Author",
         author_email="original@example.com",
-        image_url="https://example.com/image.jpg",
+        original_image_url="https://example.com/image.jpg",
         category=PodcastCategories("Music"),
         podcast_type=PodcastType.EPISODIC,
         explicit=PodcastExplicit.CLEAN,
@@ -178,7 +178,9 @@ def test_merge_feed_metadata_partial_overrides():
     assert result["language"] == "es"  # overridden
     assert result["author"] == "Original Author"  # from fetched
     assert result["author_email"] == "original@example.com"  # from fetched
-    assert result["image_url"] == "https://example.com/image.jpg"  # from fetched
+    assert (
+        result["original_image_url"] == "https://example.com/image.jpg"
+    )  # from fetched
     assert result["category"] == PodcastCategories("Music")  # from fetched
     assert result["podcast_type"] == PodcastType.EPISODIC  # from fetched
     assert result["explicit"] == PodcastExplicit.CLEAN  # from fetched
@@ -201,7 +203,7 @@ def test_merge_feed_metadata_removes_none_values():
         language="en",
         author=None,  # None value
         author_email=None,  # None value
-        image_url="https://example.com/image.jpg",
+        original_image_url="https://example.com/image.jpg",
         category=PodcastCategories("Technology"),
         podcast_type=PodcastType.EPISODIC,
         explicit=PodcastExplicit.NO,
@@ -227,7 +229,7 @@ def test_merge_feed_metadata_removes_none_values():
     # Non-None values should be included
     assert result["title"] == "Video Title"
     assert result["language"] == "en"
-    assert result["image_url"] == "https://example.com/image.jpg"
+    assert result["original_image_url"] == "https://example.com/image.jpg"
     assert result["category"] == PodcastCategories("Technology")
 
 
