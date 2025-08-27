@@ -440,7 +440,7 @@ async def test_handle_existing_feed_metadata_changes(
     assert updated_feed.description == metadata.description
     assert updated_feed.language == metadata.language
     assert updated_feed.author == metadata.author
-    assert updated_feed.image_url == metadata.image_url
+    assert updated_feed.original_image_url == metadata.image_url
 
 
 @pytest.mark.unit

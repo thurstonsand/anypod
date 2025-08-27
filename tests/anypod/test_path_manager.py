@@ -197,6 +197,37 @@ async def test_feed_images_dir_handles_mkdir_error(
     assert feed_id in exc_info.value.file_name
 
 
+# --- Tests for download_images_dir ---
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_download_images_dir_creates_directory(path_manager: PathManager):
+    """Tests that download_images_dir creates the downloads directory under the feed images dir."""
+    feed_id = "test_image_feed"
+
+    downloads_dir = await path_manager.download_images_dir(feed_id)
+
+    assert downloads_dir.exists()
+    assert downloads_dir.is_dir()
+    assert downloads_dir.name == "downloads"
+    assert downloads_dir.parent.name == feed_id
+    assert downloads_dir.parent.parent == path_manager.base_images_dir
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_download_images_dir_idempotent(path_manager: PathManager):
+    """Tests that calling download_images_dir multiple times is safe and returns the same path."""
+    feed_id = "idempotent_image_feed"
+
+    first_call = await path_manager.download_images_dir(feed_id)
+    second_call = await path_manager.download_images_dir(feed_id)
+
+    assert first_call == second_call
+    assert first_call.exists()
+
+
 # --- Tests for URL generation methods ---
 
 
@@ -510,6 +541,9 @@ async def test_invalid_feed_id_raises_error(
 
     with pytest.raises(ValueError):
         await path_manager.image_path(invalid_feed_id, download_id, ext)
+
+    with pytest.raises(ValueError):
+        await path_manager.download_images_dir(invalid_feed_id)
 
 
 @pytest.mark.unit

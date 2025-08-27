@@ -127,7 +127,7 @@ feeds:
       language: "en"                                              # Language code (e.g., 'en', 'es', 'fr')
       author: "John Doe"                                          # Podcast author
       author_email: "john@example.com"                            # Podcast author email
-      image_url: "https://example.com/podcast-art.jpg"            # Podcast artwork (min 1400x1400px)
+      image_url: "https://example.com/podcast-art.jpg"            # Original podcast artwork URL (min 1400x1400px, will be downloaded and hosted locally)
       podcast_type: "episodic"                                    # Podcast type: "episodic" or "serial"
       explicit: "no"                                              # Explicit content: "yes", "no", or "clean"
       category:                                                   # Apple Podcasts categories (max 2)
@@ -186,24 +186,25 @@ After reconciliation, the system performs an initial sync of all enabled feeds t
 ### Downloads Table
 ```sql
 CREATE TABLE downloads (
-  feed                TEXT NOT NULL,
-  id                  TEXT NOT NULL,
-  source_url          TEXT NOT NULL,
-  title               TEXT NOT NULL,
-  published           TEXT NOT NULL,           -- ISO 8601 datetime string
-  ext                 TEXT NOT NULL,
-  mime_type           TEXT NOT NULL,
-  filesize            INTEGER NOT NULL,        -- bytes
-  duration            INTEGER NOT NULL,        -- seconds
-  status              TEXT NOT NULL,           -- upcoming | queued | downloaded | error | skipped | archived
-  discovered_at       TEXT NOT NULL,           -- ISO 8601 datetime string
-  updated_at          TEXT NOT NULL,           -- ISO 8601 datetime string
-  thumbnail           TEXT,                    -- URL
-  description         TEXT,                    -- description from source
-  quality_info        TEXT,                    -- quality metadata
-  retries             INTEGER NOT NULL DEFAULT 0,
-  last_error          TEXT,
-  downloaded_at       TEXT,                    -- ISO 8601 datetime string
+  feed                   TEXT NOT NULL,
+  id                     TEXT NOT NULL,
+  source_url             TEXT NOT NULL,
+  title                  TEXT NOT NULL,
+  published              TEXT NOT NULL,           -- ISO 8601 datetime string
+  ext                    TEXT NOT NULL,
+  mime_type              TEXT NOT NULL,
+  filesize               INTEGER NOT NULL,        -- bytes
+  duration               INTEGER NOT NULL,        -- seconds
+  status                 TEXT NOT NULL,           -- upcoming | queued | downloaded | error | skipped | archived
+  discovered_at          TEXT NOT NULL,           -- ISO 8601 datetime string
+  updated_at             TEXT NOT NULL,           -- ISO 8601 datetime string
+  original_thumbnail_url TEXT,                    -- Original thumbnail URL from source
+  thumbnail_ext          TEXT,                    -- Hosted thumbnail file extension (always "jpg")
+  description            TEXT,                    -- description from source
+  quality_info           TEXT,                    -- quality metadata
+  retries                INTEGER NOT NULL DEFAULT 0,
+  last_error             TEXT,
+  downloaded_at          TEXT,                    -- ISO 8601 datetime string
   PRIMARY KEY (feed, id)
 );
 CREATE INDEX idx_feed_status ON downloads(feed, status);
@@ -244,10 +245,10 @@ CREATE TABLE feeds (
   language                  TEXT,
   author                    TEXT,
   author_email              TEXT,
-  image_url                 TEXT,
-  category                  TEXT NOT NULL DEFAULT 'TV & Film',    -- Stored as string, parsed into PodcastCategories
-  podcast_type              TEXT NOT NULL DEFAULT 'episodic',     -- Stored as string, parsed into PodcastType
-  explicit                  TEXT NOT NULL DEFAULT 'NO'           -- Stored as string, parsed into PodcastExplicit
+  original_image_url        TEXT,                              -- Original image URL from source (will be downloaded)
+  category                  TEXT NOT NULL DEFAULT 'TV & Film', -- Stored as string, parsed into PodcastCategories
+  podcast_type              TEXT NOT NULL DEFAULT 'episodic',  -- Stored as string, parsed into PodcastType
+  explicit                  TEXT NOT NULL DEFAULT 'NO'         -- Stored as string, parsed into PodcastExplicit
 );
 ```
 
@@ -458,6 +459,8 @@ The `RSSFeedGenerator` module maintains a **write-once/read-many-locked in-memor
 | `/media` | HTML directory listing of feed directories |
 | `/media/{feed}` | HTML directory listing of media files for feed |
 | `/media/{feed}/{file}` | MP4 / M4A enclosure |
+| `/images/{feed}.jpg` | Feed artwork/thumbnail |
+| `/images/{feed}/{download_id}.jpg` | Episode thumbnail |
 | `/errors` | JSON list of failed downloads |
 | `/api/health` | Health check endpoint returning service status, timestamp, and version |
 
@@ -575,7 +578,7 @@ yt-dlp's `daterange` parameter only supports YYYYMMDD format, not hour/minute/se
 * consider async'ifying the code base. e.g. https://github.com/omnilib/aiosqlite)
   - consider SQLAlchemy as well
 * potentially add support for [websub](https://websubhub.com/)
-* download and self-host metadata like images
+
 * Optimization: Consider merging the enqueuer and downloader into a single component. This would allow immediate downloads for videos that are ready, bypassing the QUEUED state. However, this raises the question of how to handle upcoming videos... maybe a dedicated live handler? but might lead to duplicate download logic.
 * Optimize RSS generation by only regenerating feeds when new content is detected since last sync, using feed-level tracking of last sync timestamp and content changes.
 * User-configurable quality settings with API to change quality preferences after initial setup, including separate download-time vs feed-time quality options.
@@ -584,7 +587,7 @@ yt-dlp's `daterange` parameter only supports YYYYMMDD format, not hour/minute/se
 * Support Patreon
 * Add automatic podcast category mapping using yt-dlp metadata: map YouTube categories to Apple Podcasts categories, enhance with tag and description analysis, and support channel-specific overrides. Implement priority-based logic in `ytdlp_wrapper/category_mapper.py` to select the best category based on YouTube category, tags, description keywords, and known channel mappings, with a fallback if no match is found.
 * Support "generic source" after looking at overlap from a few sources
-* crop thumbnails so they are the right ratio; also consider converting from webp to png/jpg
+* crop thumbnails so they are the right ratio
 * configurable channel tab selection: allow users to specify which tab (videos, shorts, live, etc.) to use when discovering channel URLs, with /videos as default
 * just store rss feeds in the db, don't keep them in-memory (fixes race condition on boot)
 * Enable conditional conversion of file format to allow for more flexible selectors

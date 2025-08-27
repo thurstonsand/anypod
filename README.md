@@ -39,6 +39,7 @@ Anypod is a thin Python wrapper around `yt‑dlp` that turns any `yt‑dlp`–su
 - Simple YAML config with per‑feed schedules
 - Works with YouTube channels and playlists
 - Feed metadata overrides (title, description, artwork, categories, explicit, etc.)
+- Thumbnail hosting: Downloads and serves feed artwork and episode thumbnails locally
 - Retention policies: keep the last N items and/or only since YYYYMMDD
 - Docker image with non‑root (PUID/PGID) support
 
@@ -125,6 +126,7 @@ Notes:
 
 - `schedule` accepts a [cron expression](https://crontab.cronhub.io/)
 - `since` must be in the format `YYYYMMDD` (day‑precision; see Limitation below).
+- `image_url` allows you to override the feed artwork. Anypod will download and host this image locally for better reliability and performance.
 - `yt_args` are passed directly to the [`yt-dlp` program](https://github.com/yt-dlp/yt-dlp); see their docs for full options, keeping note of the options below you cannot use (or risk breaking Anypod)
 
 Reserved/managed `yt‑dlp` options (set by Anypod, do not override):
@@ -159,9 +161,11 @@ All can be provided via env or CLI flags (kebab‑case). Common ones:
 - `GET /media` – directory listing of feeds with media
 - `GET /media/{feed_id}` – directory listing of media files for a feed
 - `GET /media/{feed_id}/{filename}.{ext}` – media file download
+- `GET /images/{feed_id}.jpg` – feed artwork/thumbnail
+- `GET /images/{feed_id}/{download_id}.jpg` – episode thumbnail
 - `GET /api/health` – health check
 
-No authentication is implemented. Only expose `/feeds` and `/media` publicly (they're the only ones available for now).
+No authentication is implemented. Only expose `/feeds`, `/media`, and `/images` publicly (these are the content-serving endpoints).
 
 ## Reverse proxies
 
@@ -253,7 +257,6 @@ High‑level upcoming work. See `TASK_LIST.md` for the full checklist.
 - Integrate sponsorblock to automatically cut out or add chapter markers for ads
 - Podcast feed with an endpoint you can send videos to, to dynamically create your own playlist
   - You can recreate this functionality now by creating an unlisted youtube playlist and add videos to it
-- Download and then self-host feed/podcast images
 - Support for other sources (e.g. Patreon)
 
 ## FAQ / Troubleshooting

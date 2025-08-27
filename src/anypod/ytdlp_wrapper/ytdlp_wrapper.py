@@ -19,7 +19,6 @@ from .base_handler import SourceHandlerBase
 from .core import YtdlpArgs, YtdlpCore
 from .youtube_handler import (
     YoutubeHandler,
-    YtdlpYoutubeDataError,
     YtdlpYoutubeVideoFilteredOutError,
 )
 
@@ -164,18 +163,15 @@ class YtdlpWrapper:
 
         logger.debug("Fetching playlist metadata for feed.", extra=log_config)
 
-        args = (
-            YtdlpArgs(user_yt_cli_args).update_to(yt_channel).convert_thumbnails("jpg")
-        )
+        info_args = YtdlpArgs(user_yt_cli_args).update_to(yt_channel)
         if cookies_path:
-            args.cookies(cookies_path)
+            info_args.cookies(cookies_path)
 
         logger.debug(
             "Acquiring playlist metadata.",
             extra=log_config,
         )
-
-        ytdlp_info = await YtdlpCore.extract_playlist_info(args, resolved_url)
+        ytdlp_info = await YtdlpCore.extract_playlist_info(info_args, resolved_url)
 
         extracted_feed = self._source_handler.extract_feed_metadata(
             feed_id,
@@ -190,6 +186,70 @@ class YtdlpWrapper:
         )
 
         return extracted_feed
+
+    async def download_feed_thumbnail(
+        self,
+        feed_id: str,
+        source_type: SourceType,
+        source_url: str,
+        resolved_url: str | None,
+        user_yt_cli_args: list[str],
+        yt_channel: str,
+        cookies_path: Path | None = None,
+    ) -> None:
+        """Download the feed-level thumbnail.
+
+        For single videos, this downloads the video's thumbnail. For playlists
+        and channels, it downloads the playlist-level thumbnail.
+
+        Args:
+            feed_id: The identifier for the feed.
+            source_type: The source type of the feed.
+            source_url: The original source URL from configuration.
+            resolved_url: The resolved URL to fetch from.
+            user_yt_cli_args: User-configured command-line arguments for yt-dlp.
+            yt_channel: yt-dlp update channel (stable, nightly, master, etc.).
+            cookies_path: Path to cookies.txt file for authentication, or None if not needed.
+
+        Raises:
+            YtdlpApiError: If the thumbnail download fails.
+        """
+        resolved_url = resolved_url or source_url
+        log_config: dict[str, Any] = {
+            "feed_id": feed_id,
+            "source_url": source_url,
+            "resolved_url": resolved_url,
+            "source_type": str(source_type),
+        }
+
+        logger.debug("Downloading feed thumbnail.", extra=log_config)
+
+        feed_images_dir = await self._paths.feed_images_dir(feed_id)
+
+        # Base args for thumbnail download
+        thumb_args = (
+            YtdlpArgs(user_yt_cli_args)
+            .update_to(yt_channel)
+            .skip_download()
+            .write_thumbnails()
+            .convert_thumbnails("jpg")
+        )
+
+        # For single video feeds, use the video's thumbnail as the feed image.
+        if source_type == SourceType.SINGLE_VIDEO:
+            thumb_args.paths_thumbnail(feed_images_dir).output_thumbnail(
+                f"{feed_id}.%(ext)s"
+            )
+        else:
+            thumb_args.paths_pl_thumbnail(feed_images_dir).output_pl_thumbnail(
+                f"{feed_id}.%(ext)s"
+            ).output_thumbnail("")
+
+        if cookies_path:
+            thumb_args.cookies(cookies_path)
+
+        await YtdlpCore.download(thumb_args, resolved_url)
+        logger.debug("Feed thumbnail downloaded successfully.", extra=log_config)
 
     async def fetch_new_downloads_metadata(
         self,
@@ -232,33 +292,33 @@ class YtdlpWrapper:
 
         logger.debug("Fetching new downloads metadata for feed.", extra=log_config)
 
-        args = (
+        info_args = (
             YtdlpArgs(user_yt_cli_args).update_to(yt_channel).convert_thumbnails("jpg")
         )
 
         # Apply filtering for playlists/channels
         if source_type != SourceType.SINGLE_VIDEO:
             if keep_last:
-                args.playlist_limit(keep_last)
+                info_args.playlist_limit(keep_last)
                 log_config["keep_last"] = keep_last
             if fetch_since_date:
                 # Use lazy_playlist with break_match_filters for early termination
-                args.lazy_playlist()
+                info_args.lazy_playlist()
                 date_filter_expr = self._match_filter_since_date(fetch_since_date)
-                args.break_match_filters(date_filter_expr)
+                info_args.break_match_filters(date_filter_expr)
                 log_config["fetch_since_date_day_aligned"] = fetch_since_date.strftime(
                     "%Y%m%d"
                 )
 
         if cookies_path:
-            args.cookies(cookies_path)
+            info_args.cookies(cookies_path)
 
         logger.debug(
             "Acquiring downloads metadata.",
             extra=log_config,
         )
 
-        ytdlp_infos = await YtdlpCore.extract_downloads_info(args, resolved_url)
+        ytdlp_infos = await YtdlpCore.extract_downloads_info(info_args, resolved_url)
 
         if not ytdlp_infos:
             logger.debug(
@@ -281,14 +341,6 @@ class YtdlpWrapper:
                     "Video filtered out by yt-dlp, skipping.",
                     extra={"feed_id": feed_id},
                 )
-            except YtdlpYoutubeDataError as e:
-                # Critical: Required metadata is missing, this shouldn't happen
-                logger.error(
-                    "Failed to extract required metadata from video.",
-                    exc_info=e,
-                    extra={"feed_id": feed_id},
-                )
-                raise
             else:
                 parsed_downloads.append(download)
 
@@ -343,50 +395,25 @@ class YtdlpWrapper:
         )
 
         # Inline download options
-        download_opts = (
+        thumbnails_dir = await self._paths.download_images_dir(download.feed_id)
+        download_args = (
             YtdlpArgs(user_yt_cli_args)
             .update_to(yt_channel)
             .convert_thumbnails("jpg")
+            .write_thumbnails()
+            .paths_thumbnail(thumbnails_dir)
+            .output_thumbnail(f"{download.id}.%(ext)s")
             .output(f"{download.id}.%(ext)s")
             .paths_temp(download_temp_dir)
             .paths_home(download_data_dir)
         )
 
         if cookies_path:
-            download_opts.cookies(cookies_path)
+            download_args.cookies(cookies_path)
 
         url_to_download = download.source_url
 
-        try:
-            await YtdlpCore.download(download_opts, url_to_download)
-        except YtdlpApiError as e:
-            logger.error(
-                "yt-dlp download call failed.",
-                exc_info=e,
-                extra={
-                    "feed_id": download.feed_id,
-                    "download_id": download.id,
-                    "url": url_to_download,
-                    "download_target_dir": str(download_data_dir),
-                },
-            )
-            raise
-        except Exception as e:
-            logger.error(
-                "Unexpected error during yt-dlp download call.",
-                exc_info=e,
-                extra={
-                    "feed_id": download.feed_id,
-                    "download_id": download.id,
-                    "url": url_to_download,
-                },
-            )
-            raise YtdlpApiError(
-                message="Unexpected error during media download.",
-                feed_id=download.feed_id,
-                download_id=download.id,
-                url=url_to_download,
-            ) from e
+        await YtdlpCore.download(download_args, url_to_download)
 
         downloaded_files = list(
             await aiofiles.os.wrap(download_data_dir.glob)(f"{download.id}.*")

@@ -191,7 +191,8 @@ class YtdlpCore:
             YtdlpApiError: If download fails or returns a non-zero exit code.
         """
         # Build subprocess command:
-        cmd = [*args.to_list(), url]
+        cli_cmd_prefix = args.quiet().no_warnings().to_list()
+        cmd = [*cli_cmd_prefix, url]
 
         logger.debug("Running yt-dlp for download", extra={"cmd": cmd})
 

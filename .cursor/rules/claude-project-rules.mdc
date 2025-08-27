@@ -55,9 +55,17 @@ uv run ruff format                              # Format code
 uv run pyright                                  # Type checking
 uv run pre-commit run --all-files               # All of the above, prefer to use this one when confirming your code is good
 
+# Testing
+
+# Run tests (fast, no coverage)
+uv run pytest
+# Run integration tests (use sparingly, or target individual tests/files, as these hit real youtube endpoints)
+uv run pytest --integration
+# Run tests with coverage reporting, including integration tests; use sparingly, and only when running ALL tests
+uv run pytest --integration --cov=src --cov-report=html --cov-report=term-missing
+
 # tool use
 uvx yt-dlp # Can research/view real data from youtube videos for research. see @example_feeds.yaml for real links
-uvx --from ast-grep-cli sg # Syntax-aware code search for exploring codebase structure
 
 # Key patterns for codebase exploration:
 # - Function calls: `sg -p 'function_name($$$ARGS)' -l python src/`
@@ -68,6 +76,7 @@ uvx --from ast-grep-cli sg # Syntax-aware code search for exploring codebase str
 
 # Pattern syntax: `$VAR` = single node, `$$$ARGS` = multiple nodes
 # Use for EXPLORATION of code structure, not changes. Prefer over text tools for finding call sites, instantiations, and syntax patterns.
+uvx --from ast-grep-cli sg # Syntax-aware code search for exploring codebase structure
 ```
 
 ### Docker Deployment Commands
@@ -227,7 +236,7 @@ feeds:
       language: "en"                                              # Language code (e.g., 'en', 'es', 'fr')
       author: "John Doe"                                          # Podcast author
       author_email: "john@example.com"                            # Podcast author email
-      image_url: "https://example.com/podcast-art.jpg"            # Podcast artwork (min 1400x1400px)
+      image_url: "https://example.com/podcast-art.jpg"            # Original podcast artwork URL (min 1400x1400px, will be downloaded and hosted locally)
       podcast_type: "episodic"                                    # Podcast type: "episodic" or "serial"
       explicit: "no"                                              # Explicit content: "yes", "no", or "clean"
       category:                                                   # Apple Podcasts categories (max 2)

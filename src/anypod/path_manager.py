@@ -154,6 +154,34 @@ class PathManager:
             ) from e
         return path
 
+    async def download_images_dir(self, feed_id: str) -> Path:
+        """Return the directory for a feed's per-download image files.
+
+        Creates the directory if it doesn't exist. This directory contains
+        images associated with individual downloads for the given feed.
+
+        Args:
+            feed_id: Unique identifier for the feed.
+
+        Returns:
+            Path to the feed's downloads images directory.
+
+        Raises:
+            ValueError: If feed_id is empty or whitespace-only.
+            FileOperationError: If the directory cannot be created.
+        """
+        # feed_images_dir performs validation and creation of the base feed image dir
+        feed_dir = await self.feed_images_dir(feed_id)
+        downloads_dir = feed_dir / "downloads"
+        try:
+            await aiofiles.os.makedirs(downloads_dir, exist_ok=True)
+        except OSError as e:
+            raise FileOperationError(
+                "Failed to create downloads images directory.",
+                file_name=str(downloads_dir),
+            ) from e
+        return downloads_dir
+
     def feed_url(self, feed_id: str) -> str:
         """Return the full URL for a feed's RSS XML.
 
@@ -275,18 +303,7 @@ class PathManager:
         if download_id is not None and (not download_id or not download_id.strip()):
             raise ValueError("download_id cannot be empty or whitespace-only")
 
-        feed_dir = await self.feed_images_dir(feed_id)
         if download_id is None:
-            # Feed-level image
-            return feed_dir / f"{feed_id}.{ext}"
+            return await self.feed_images_dir(feed_id) / f"{feed_id}.{ext}"
         else:
-            # Download-level image
-            downloads_dir = feed_dir / "downloads"
-            try:
-                await aiofiles.os.makedirs(downloads_dir, exist_ok=True)
-            except OSError as e:
-                raise FileOperationError(
-                    "Failed to create downloads images directory.",
-                    file_name=str(downloads_dir),
-                ) from e
-            return downloads_dir / f"{download_id}.{ext}"
+            return await self.download_images_dir(feed_id) / f"{download_id}.{ext}"

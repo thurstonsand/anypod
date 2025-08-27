@@ -7,6 +7,7 @@ import pytest
 
 from anypod.db.types import Download, DownloadStatus, SourceType
 from anypod.exceptions import YtdlpApiError
+from anypod.path_manager import PathManager
 from anypod.ytdlp_wrapper import YtdlpWrapper
 
 # some CC-BY licensed urls to test with
@@ -157,6 +158,7 @@ BIG_BUCK_BUNNY_DOWNLOAD = Download(
     TEST_URLS_PARAMS,
 )
 async def test_fetch_metadata_success(
+    path_manager: PathManager,  # PathManager fixture
     ytdlp_wrapper: YtdlpWrapper,
     url_type: str,
     url: str,
@@ -227,6 +229,53 @@ async def test_fetch_metadata_success(
     )
     assert download.status == DownloadStatus.QUEUED, (
         f"Download status should be QUEUED for {url_type}, got {download.status}"
+    )
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "url_type, url, expected_source_type, expected_title_contains, expected_resolved_url",
+    TEST_URLS_PARAMS,
+)
+async def test_download_feed_thumbnail_success(
+    path_manager: PathManager,
+    ytdlp_wrapper: YtdlpWrapper,
+    url_type: str,
+    url: str,
+    expected_source_type: SourceType,
+    expected_title_contains: str,
+    expected_resolved_url: str,
+    cookies_path: Path | None,
+):
+    """Tests successful feed thumbnail downloading for various URL types."""
+    feed_id = f"test_thumb_{url_type}"
+
+    # Record initial state of thumbnail files in CWD to detect regression
+    cwd = Path.cwd()
+    initial_thumb_files = set(cwd.glob("*.jpg")) | set(cwd.glob("*.webp"))
+
+    await ytdlp_wrapper.download_feed_thumbnail(
+        feed_id=feed_id,
+        source_type=expected_source_type,
+        source_url=url,
+        resolved_url=expected_resolved_url,
+        user_yt_cli_args=YT_DLP_MINIMAL_ARGS,
+        yt_channel="stable",
+        cookies_path=cookies_path,
+    )
+
+    # Verify no thumbnail files were written to current working directory
+    final_thumb_files = set(cwd.glob("*.jpg")) | set(cwd.glob("*.webp"))
+    new_thumb_files = final_thumb_files - initial_thumb_files
+    assert not new_thumb_files, (
+        f"No thumbnail files should be written to CWD, but found: {[str(f) for f in new_thumb_files]}"
+    )
+
+    # Verify hosted feed-level thumbnail exists in images/{feed_id}/{feed_id}.jpg
+    feed_image_path = await path_manager.image_path(feed_id, None, "jpg")
+    assert feed_image_path.exists(), (
+        f"Expected feed image at {feed_image_path} to exist for {url_type}"
     )
 
 
@@ -371,6 +420,7 @@ async def test_fetch_metadata_with_impossible_filter(
 @pytest.mark.asyncio
 async def test_download_media_to_file_success(
     ytdlp_wrapper: YtdlpWrapper,
+    path_manager: PathManager,
     cookies_path: Path | None,
 ):
     """Tests successful media download for a specific video.
@@ -411,6 +461,16 @@ async def test_download_media_to_file_success(
         f"Downloaded file does not exist at {downloaded_file_path}"
     )
     assert downloaded_file_path.is_file(), f"Path {downloaded_file_path} is not a file"
+
+    # Verify download-level thumbnail was downloaded and converted to JPG
+    # downloads_images_dir = await path_manager.download_images_dir(download.feed_id)
+    # download_image_path = downloads_images_dir / f"{download.id}.jpg"
+    download_image_path = await path_manager.image_path(
+        download.feed_id, download.id, "jpg"
+    )
+    assert download_image_path.exists(), (
+        f"Expected download thumbnail at {download_image_path} to exist"
+    )
 
 
 @pytest.mark.integration

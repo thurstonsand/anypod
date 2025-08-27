@@ -57,11 +57,17 @@ class YtdlpArgs:
 
         # Output configuration
         self._output: str | None = None
+        # Thumbnail-specific output
         self._convert_thumbnails: str | None = None
+        self._write_thumbnails: bool = False
+        self._thumbnail_output: str | None = None
+        self._pl_thumbnail_output: str | None = None
 
         # Path configuration
         self._paths_temp: Path | None = None
         self._paths_home: Path | None = None
+        self._paths_thumbnail: Path | None = None
+        self._paths_pl_thumbnail: Path | None = None
 
         # Authentication
         self._cookies: Path | None = None
@@ -114,6 +120,39 @@ class YtdlpArgs:
         self._convert_thumbnails = format
         return self
 
+    def write_thumbnails(self) -> "YtdlpArgs":
+        """Enable thumbnail downloading.
+
+        Returns:
+            The builder instance for chaining.
+        """
+        self._write_thumbnails = True
+        return self
+
+    def output_thumbnail(self, template: str) -> "YtdlpArgs":
+        """Set output template for thumbnail files.
+
+        Args:
+            template: The output template string for thumbnails (e.g., "%(id)s.%(ext)s").
+
+        Returns:
+            The builder instance for chaining.
+        """
+        self._thumbnail_output = template
+        return self
+
+    def output_pl_thumbnail(self, template: str) -> "YtdlpArgs":
+        """Set output template for playlist-level thumbnail files.
+
+        Args:
+            template: The output template string for playlist thumbnails (e.g., "%(id)s.%(ext)s").
+
+        Returns:
+            The builder instance for chaining.
+        """
+        self._pl_thumbnail_output = template
+        return self
+
     def paths_temp(self, path: Path) -> "YtdlpArgs":
         """Set temporary directory path for downloads."""
         self._paths_temp = path
@@ -122,6 +161,30 @@ class YtdlpArgs:
     def paths_home(self, path: Path) -> "YtdlpArgs":
         """Set final directory path for downloads."""
         self._paths_home = path
+        return self
+
+    def paths_thumbnail(self, path: Path) -> "YtdlpArgs":
+        """Set the directory where thumbnails will be saved.
+
+        Args:
+            path: Filesystem path to save thumbnails in.
+
+        Returns:
+            The builder instance for chaining.
+        """
+        self._paths_thumbnail = path
+        return self
+
+    def paths_pl_thumbnail(self, path: Path) -> "YtdlpArgs":
+        """Set the directory where playlist thumbnails will be saved.
+
+        Args:
+            path: Filesystem path to save playlist thumbnails in.
+
+        Returns:
+            The builder instance for chaining.
+        """
+        self._paths_pl_thumbnail = path
         return self
 
     def cookies(self, path: Path) -> "YtdlpArgs":
@@ -190,7 +253,6 @@ class YtdlpArgs:
         # Add user-provided arguments
         cmd.extend(self._additional_args)
 
-        # Add boolean flags
         # Output control
         if self._quiet:
             cmd.append("--quiet")
@@ -210,9 +272,6 @@ class YtdlpArgs:
             cmd.append("--flat-playlist")
         if self._lazy_playlist:
             cmd.append("--lazy-playlist")
-
-        # Add arguments with values
-        # Playlist filtering and control
         if self._playlist_limit is not None:
             cmd.extend(["--playlist-items", f":{self._playlist_limit}"])
         if self._break_match_filters is not None:
@@ -227,14 +286,26 @@ class YtdlpArgs:
         # Output configuration
         if self._output is not None:
             cmd.extend(["--output", self._output])
+
+        # Thumbnail-specific output
         if self._convert_thumbnails is not None:
             cmd.extend(["--convert-thumbnails", self._convert_thumbnails])
+        if self._write_thumbnails:
+            cmd.append("--write-thumbnail")
+        if self._pl_thumbnail_output is not None:
+            cmd.extend(["--output", f"pl_thumbnail:{self._pl_thumbnail_output}"])
+        if self._thumbnail_output is not None:
+            cmd.extend(["--output", f"thumbnail:{self._thumbnail_output}"])
 
         # Path configuration
         if self._paths_temp is not None:
             cmd.extend(["--paths", f"temp:{self._paths_temp}"])
         if self._paths_home is not None:
             cmd.extend(["--paths", f"home:{self._paths_home}"])
+        if self._paths_thumbnail is not None:
+            cmd.extend(["--paths", f"thumbnail:{self._paths_thumbnail}"])
+        if self._paths_pl_thumbnail is not None:
+            cmd.extend(["--paths", f"pl_thumbnail:{self._paths_pl_thumbnail}"])
 
         # Authentication
         if self._cookies is not None:

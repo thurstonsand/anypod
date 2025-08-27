@@ -168,6 +168,69 @@ async def test_fetch_new_downloads_metadata_returns_downloads(
     )
 
 
+# --- Tests for YtdlpWrapper.download_feed_thumbnail ---
+
+
+@pytest.mark.unit
+@patch.object(YtdlpCore, "download")
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "source_type, expected_output_method, expected_paths_method",
+    [
+        (SourceType.SINGLE_VIDEO, "output_thumbnail", "paths_thumbnail"),
+        (SourceType.PLAYLIST, "output_pl_thumbnail", "paths_pl_thumbnail"),
+        (SourceType.CHANNEL, "output_pl_thumbnail", "paths_pl_thumbnail"),
+    ],
+)
+async def test_download_feed_thumbnail_args(
+    mock_ytdlcore_download: AsyncMock,
+    ytdlp_wrapper: YtdlpWrapper,
+    source_type: SourceType,
+    expected_output_method: str,
+    expected_paths_method: str,
+):
+    """Tests that download_feed_thumbnail constructs the correct YtdlpArgs."""
+    feed_id = "test_feed_thumb"
+    url = "http://example.com/video"
+    yt_cli_args: list[str] = ["--format", "best"]
+
+    await ytdlp_wrapper.download_feed_thumbnail(
+        feed_id=feed_id,
+        source_type=source_type,
+        source_url=url,
+        resolved_url=url,
+        user_yt_cli_args=yt_cli_args,
+        yt_channel="stable",
+    )
+
+    mock_ytdlcore_download.assert_called_once()
+    call_args = mock_ytdlcore_download.call_args[0]
+    ytdlp_args: YtdlpArgs = call_args[0]
+    cmd_list = ytdlp_args.to_list()
+
+    # Verify common args
+    assert "--skip-download" in cmd_list
+    assert "--write-thumbnail" in cmd_list
+    assert "--convert-thumbnails" in cmd_list
+    assert "jpg" in cmd_list
+    assert "--format" in cmd_list
+    assert "best" in cmd_list
+
+    # Verify source-type specific args
+    try:
+        output_index = cmd_list.index("--output")
+        output_value = cmd_list[output_index + 1]
+    except (ValueError, IndexError):
+        pytest.fail("--output flag not found or has no value")
+
+    if source_type == SourceType.SINGLE_VIDEO:
+        expected_template = f"thumbnail:{feed_id}.%(ext)s"
+        assert output_value == expected_template
+    else:
+        expected_template = f"pl_thumbnail:{feed_id}.%(ext)s"
+        assert output_value == expected_template
+
+
 # --- Tests for YtdlpWrapper.download_media_to_file ---
 
 
