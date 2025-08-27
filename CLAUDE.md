@@ -122,8 +122,8 @@ Download status transitions are implemented as explicit methods, not generic upd
 - Currently synchronous but designed for future async conversion
 
 ### Tool Configuration
-- Linting and formatting: see @.ruff.toml for ruff configuration
-- Type checking: see @pyrightconfig.json for pyright configuration
+- Linting and formatting: ruff configuration in @pyproject.toml
+- Type checking: pyright configuration in @pyproject.toml
 - Testing: pytest configuration in @pyproject.toml
 
 ## File Structure

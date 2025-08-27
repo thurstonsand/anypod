@@ -79,6 +79,90 @@ precision = 2
 directory = "coverage_html_report"
 
 
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+exclude = [
+    ".venv",
+    ".git",
+    ".tox",
+    "docs",
+    "venv",
+    "bin",
+    "lib",
+    "deps",
+    "build",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "DTZ", # flake8-datetimez
+    "PIE", # flake8-pie
+    "SIM", # flake8-simplify
+    "PTH", # flake8-use-pathlib
+    "RUF", # ruff-specific rules
+    "D",   # pydocstyle checks
+]
+ignore = [
+    "E501", # line too long (handled by line-length)
+    "E203", # whitespace before ':'
+    "D105", # missing docstring in magic method
+    "D107", # missing docstring in init
+]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+force-sort-within-sections = true
+known-first-party = ["custom_components.godspeed", "tests"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"**/__init__.py" = ["D100", "D104"]
+"**/__main__.py" = ["D100", "D104"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
+[tool.pyright]
+include = ["src", "tests"]
+exclude = [
+    "**/node_modules",
+    "**/__pycache__",
+    ".venv",
+    "build",
+    "dist"
+]
+ignore = ["**/legacy/**"]
+typeCheckingMode = "strict"
+strict = ["src", "tests"]
+pythonVersion = "3.13"
+pythonPlatform = "All"
+venvPath = "."
+venv = ".venv"
+useLibraryCodeForTypes = false
+strictListInference = true
+strictDictionaryInference = true
+strictSetInference = true
+reportMissingImports = "error"
+reportMissingTypeStubs = "error"
+reportMissingModuleSource = "warning"
+reportUnusedImport = "warning"
+reportUnusedVariable = "warning"
+reportOptionalMemberAccess = "error"
+reportOptionalCall = "error"
+stubPath = "typings"
+
 [tool.mypy]
 strict = true
 ignore_missing_imports = false
