@@ -19,6 +19,7 @@ from ..exceptions import (
     DatabaseOperationError,
     DownloadError,
     DownloadNotFoundError,
+    FileOperationError,
     YtdlpApiError,
 )
 from ..file_manager import FileManager
@@ -88,6 +89,23 @@ class Downloader:
                 feed_id=download.feed_id,
                 download_id=download.id,
             ) from e
+        # If a thumbnail was saved by yt-dlp, persist its extension
+        # Check for existence rather than assuming success
+        try:
+            has_thumb = await self.file_manager.image_exists(
+                download.feed_id, download.id, "jpg"
+            )
+        except FileOperationError as e:
+            raise DownloadError(
+                message="Failed to check for thumbnail.",
+                feed_id=download.feed_id,
+                download_id=download.id,
+            ) from e
+        else:
+            if has_thumb:
+                await self.download_db.set_thumbnail_extension(
+                    download.feed_id, download.id, "jpg"
+                )
         logger.info("Successfully downloaded media.", extra=log_params)
 
     async def _handle_download_failure(

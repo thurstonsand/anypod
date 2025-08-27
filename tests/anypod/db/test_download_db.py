@@ -349,6 +349,71 @@ async def test_status_transitions(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+async def test_set_thumbnail_extension_sets_and_clears(
+    download_db: DownloadDatabase, sample_download_queued: Download
+):
+    """Verify setting and clearing thumbnail_ext works as expected."""
+    # Insert base download (thumbnail_ext defaults to None)
+    await download_db.upsert_download(sample_download_queued)
+
+    # Confirm initial state
+    before = await download_db.get_download_by_id(
+        sample_download_queued.feed_id, sample_download_queued.id
+    )
+    assert before.thumbnail_ext is None
+
+    # Set to jpg
+    await download_db.set_thumbnail_extension(
+        sample_download_queued.feed_id, sample_download_queued.id, "jpg"
+    )
+    after_set = await download_db.get_download_by_id(
+        sample_download_queued.feed_id, sample_download_queued.id
+    )
+    assert after_set.thumbnail_ext == "jpg"
+
+    # Clear back to None
+    await download_db.set_thumbnail_extension(
+        sample_download_queued.feed_id, sample_download_queued.id, None
+    )
+    after_clear = await download_db.get_download_by_id(
+        sample_download_queued.feed_id, sample_download_queued.id
+    )
+    assert after_clear.thumbnail_ext is None
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_set_thumbnail_extension_updates_existing_value(
+    download_db: DownloadDatabase, sample_download_queued: Download
+):
+    """Setting thumbnail_ext again should overwrite the existing value."""
+    await download_db.upsert_download(sample_download_queued)
+
+    await download_db.set_thumbnail_extension(
+        sample_download_queued.feed_id, sample_download_queued.id, "jpg"
+    )
+    await download_db.set_thumbnail_extension(
+        sample_download_queued.feed_id, sample_download_queued.id, "png"
+    )
+
+    updated = await download_db.get_download_by_id(
+        sample_download_queued.feed_id, sample_download_queued.id
+    )
+    assert updated.thumbnail_ext == "png"
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_set_thumbnail_extension_nonexistent_download(
+    download_db: DownloadDatabase,
+):
+    """Setting thumbnail_ext on a nonexistent download raises DownloadNotFoundError."""
+    with pytest.raises(DownloadNotFoundError):
+        await download_db.set_thumbnail_extension("missing_feed", "missing_id", "jpg")
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 async def test_requeue_downloads_multi(
     feed_db: FeedDatabase, download_db: DownloadDatabase
 ):

@@ -276,6 +276,48 @@ class DownloadDatabase:
 
         logger.debug("Download marked as DOWNLOADED.", extra=log_params)
 
+    @handle_download_db_errors("set thumbnail extension for download")
+    async def set_thumbnail_extension(
+        self, feed_id: str, download_id: str, thumbnail_ext: str | None
+    ) -> None:
+        """Persist the hosted thumbnail extension for a download.
+
+        Args:
+            feed_id: The feed identifier.
+            download_id: The download identifier.
+            thumbnail_ext: File extension for hosted thumbnail (e.g., "jpg"), or None to clear.
+
+        Raises:
+            DownloadNotFoundError: If the download is not found.
+            DatabaseOperationError: If the database operation fails.
+        """
+        log_params = {
+            "feed_id": feed_id,
+            "download_id": download_id,
+            "thumbnail_ext": thumbnail_ext,
+        }
+        logger.debug("Attempting to set thumbnail extension.", extra=log_params)
+        async with self._db.session() as session:
+            stmt = (
+                update(Download)
+                .where(
+                    col(Download.feed_id) == feed_id,
+                    col(Download.id) == download_id,
+                )
+                .values(thumbnail_ext=thumbnail_ext)
+            )
+            result = await session.execute(stmt)
+            try:
+                self._db.assert_exactly_one_row_affected(
+                    result, feed_id=feed_id, download_id=download_id
+                )
+            except NotFoundError as e:
+                raise DownloadNotFoundError(
+                    "Download not found.", feed_id=feed_id, download_id=download_id
+                ) from e
+            await session.commit()
+        logger.debug("Thumbnail extension updated.", extra=log_params)
+
     @handle_download_db_errors("mark download as SKIPPED")
     async def skip_download(self, feed_id: str, download_id: str) -> None:
         """Skip a download by setting its status to SKIPPED.
