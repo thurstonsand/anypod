@@ -321,6 +321,6 @@ class PathManager:
             raise ValueError("download_id cannot be empty or whitespace-only")
 
         if download_id is None:
-            return await self.feed_images_dir(feed_id) / f"{feed_id}.{ext}"
+            return (await self.feed_images_dir(feed_id)) / f"{feed_id}.{ext}"
         else:
-            return await self.download_images_dir(feed_id) / f"{download_id}.{ext}"
+            return (await self.download_images_dir(feed_id)) / f"{download_id}.{ext}"
