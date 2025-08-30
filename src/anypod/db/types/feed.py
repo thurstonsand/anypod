@@ -80,7 +80,7 @@ class Feed(SQLModel, table=True):
             language: Feed language code.
             author: Feed author.
             author_email: Feed author email.
-            image_url: URL to feed image.
+            remote_image_url: URL to feed image.
             category: List of podcast categories.
             podcast_type: Podcast type.
             explicit: Explicit content flag.
@@ -165,7 +165,8 @@ class Feed(SQLModel, table=True):
     language: str | None = None
     author: str | None = None
     author_email: str | None = None
-    image_url: str | None = None
+    remote_image_url: str | None = None
+    image_ext: str | None = None
     category: PodcastCategories = Field(
         default_factory=lambda: PodcastCategories("TV & Film"),
         sa_column=Column(

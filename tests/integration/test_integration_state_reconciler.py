@@ -20,6 +20,8 @@ from anypod.config.types import (
 from anypod.data_coordinator.pruner import Pruner
 from anypod.db import DownloadDatabase, FeedDatabase
 from anypod.db.types import Download, DownloadStatus, Feed, SourceType
+from anypod.file_manager import FileManager
+from anypod.image_downloader import ImageDownloader
 from anypod.path_manager import PathManager
 from anypod.state_reconciler import StateReconciler
 from anypod.ytdlp_wrapper import YtdlpWrapper
@@ -39,9 +41,19 @@ def state_reconciler(
     download_db: DownloadDatabase,
     ytdlp_wrapper: YtdlpWrapper,
     pruner: Pruner,
+    file_manager: FileManager,
+    path_manager: PathManager,
 ) -> StateReconciler:
     """Provides a StateReconciler instance with real dependencies."""
-    return StateReconciler(feed_db, download_db, ytdlp_wrapper, pruner)
+    image_downloader = ImageDownloader(path_manager, ytdlp_wrapper)
+    return StateReconciler(
+        file_manager,
+        image_downloader,
+        feed_db,
+        download_db,
+        ytdlp_wrapper,
+        pruner,
+    )
 
 
 def create_test_download(
@@ -88,11 +100,13 @@ async def write_test_media_file(
 async def test_new_feed_addition(
     state_reconciler: StateReconciler,
     feed_db: FeedDatabase,
+    path_manager: PathManager,
 ) -> None:
     """New feed is properly added to database with all fields."""
     # Setup config
+    feed_id = "new_feed"
     config_feeds = {
-        "new_feed": FeedConfig(
+        feed_id: FeedConfig(
             url=BIG_BUCK_BUNNY_SHORT_URL,
             schedule=TEST_CRON_SCHEDULE,  # type: ignore
             enabled=True,
@@ -117,7 +131,6 @@ async def test_new_feed_addition(
     ready_feeds = await state_reconciler.reconcile_startup_state(config_feeds)
 
     # Verify results
-    feed_id = next(iter(config_feeds))
     assert ready_feeds == [feed_id]
 
     # Check database state
@@ -140,10 +153,15 @@ async def test_new_feed_addition(
     assert db_feed.description == metadata.description
     assert db_feed.language == metadata.language
     assert db_feed.author == metadata.author
-    assert db_feed.image_url == metadata.image_url
+    assert db_feed.remote_image_url == metadata.image_url
     assert db_feed.category is not None
     assert db_feed.category == metadata.category
     assert db_feed.explicit == metadata.explicit
+
+    # Verify image was downloaded for new feed with image URL override
+    assert db_feed.image_ext == "jpg"
+    image_path = await path_manager.image_path(feed_id, None, "jpg")
+    assert image_path.exists()
 
 
 @pytest.mark.integration
@@ -491,11 +509,14 @@ async def test_keep_last_increase_restores_downloads(
 async def test_metadata_updates(
     state_reconciler: StateReconciler,
     feed_db: FeedDatabase,
+    path_manager: PathManager,
 ) -> None:
     """Feed metadata updates are applied correctly."""
-    # Setup: Feed with initial metadata
+    feed_id = "meta_test"
+
+    # Setup: Feed with initial metadata and existing image
     feed = Feed(
-        id="meta_test",
+        id=feed_id,
         title="Original Title",
         subtitle="Original Subtitle",
         is_enabled=True,
@@ -505,12 +526,20 @@ async def test_metadata_updates(
         last_successful_sync=BASE_TIME,
         language="en",
         explicit=PodcastExplicit.YES,
+        remote_image_url="https://example.com/old_image.jpg",
+        image_ext="jpg",
     )
     await feed_db.upsert_feed(feed)
 
-    # Update metadata
+    # Create existing image file to test replacement
+    old_image_path = await path_manager.image_path(feed_id, None, "jpg")
+    old_image_path.parent.mkdir(parents=True, exist_ok=True)
+    old_image_path.write_bytes(b"old image content")
+    assert old_image_path.exists()
+
+    # Update metadata with new image URL
     config_feeds = {
-        "meta_test": FeedConfig(
+        feed_id: FeedConfig(
             url=COLETDJNZ_CHANNEL_VIDEOS,
             schedule=TEST_CRON_SCHEDULE,  # type: ignore
             enabled=True,
@@ -534,19 +563,24 @@ async def test_metadata_updates(
     await state_reconciler.reconcile_startup_state(config_feeds)
 
     # Verify all metadata updated
-    feed_config = config_feeds["meta_test"]
+    feed_config = config_feeds[feed_id]
     metadata = feed_config.metadata
     assert metadata is not None
-    db_feed = await feed_db.get_feed_by_id("meta_test")
+    db_feed = await feed_db.get_feed_by_id(feed_id)
     assert db_feed.title == metadata.title
     assert db_feed.subtitle == metadata.subtitle
     assert db_feed.description == metadata.description
     assert db_feed.language == metadata.language
     assert db_feed.author == metadata.author
-    assert db_feed.image_url == metadata.image_url
+    assert db_feed.remote_image_url == metadata.image_url
     assert db_feed.category is not None
     assert db_feed.category == metadata.category
     assert db_feed.explicit == metadata.explicit
+
+    # Verify image was downloaded and replaced
+    assert db_feed.image_ext == "jpg"
+    new_image_path = await path_manager.image_path(feed_id, None, "jpg")
+    assert new_image_path.exists()
 
 
 @pytest.mark.integration

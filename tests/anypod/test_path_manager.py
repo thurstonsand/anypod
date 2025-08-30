@@ -47,6 +47,7 @@ def test_properties_return_correct_values(path_manager: PathManager, data_dir: P
     """Tests that properties return the initialized values."""
     assert path_manager.base_data_dir == data_dir.resolve() / "media"
     assert path_manager.base_tmp_dir == data_dir.resolve() / "tmp"
+    assert path_manager.base_images_dir == data_dir.resolve() / "images"
     assert path_manager.base_url == "http://localhost:8024"
 
 
@@ -146,6 +147,87 @@ async def test_feed_tmp_dir_handles_mkdir_error(
     assert feed_id in exc_info.value.file_name
 
 
+# --- Tests for feed_images_dir ---
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_feed_images_dir_creates_directory(path_manager: PathManager):
+    """Tests that feed_images_dir creates the directory if it doesn't exist."""
+    feed_id = "test_image_feed"
+
+    feed_dir = await path_manager.feed_images_dir(feed_id)
+
+    assert feed_dir.exists()
+    assert feed_dir.is_dir()
+    assert feed_dir.name == feed_id
+    assert feed_dir.parent == path_manager.base_images_dir
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_feed_images_dir_idempotent(path_manager: PathManager):
+    """Tests that calling feed_images_dir multiple times is safe."""
+    feed_id = "idempotent_image_feed"
+
+    first_call = await path_manager.feed_images_dir(feed_id)
+    second_call = await path_manager.feed_images_dir(feed_id)
+
+    assert first_call == second_call
+    assert first_call.exists()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@patch(
+    "aiofiles.os.makedirs",
+    new_callable=AsyncMock,
+    side_effect=OSError("Permission denied"),
+)
+async def test_feed_images_dir_handles_mkdir_error(
+    _mock_makedirs: AsyncMock, path_manager: PathManager
+):
+    """Tests that feed_images_dir handles directory creation errors properly."""
+    feed_id = "image_error_feed"
+
+    with pytest.raises(FileOperationError) as exc_info:
+        await path_manager.feed_images_dir(feed_id)
+
+    assert exc_info.value.file_name is not None
+    assert feed_id in exc_info.value.file_name
+
+
+# --- Tests for download_images_dir ---
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_download_images_dir_creates_directory(path_manager: PathManager):
+    """Tests that download_images_dir creates the downloads directory under the feed images dir."""
+    feed_id = "test_image_feed"
+
+    downloads_dir = await path_manager.download_images_dir(feed_id)
+
+    assert downloads_dir.exists()
+    assert downloads_dir.is_dir()
+    assert downloads_dir.name == "downloads"
+    assert downloads_dir.parent.name == feed_id
+    assert downloads_dir.parent.parent == path_manager.base_images_dir
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_download_images_dir_idempotent(path_manager: PathManager):
+    """Tests that calling download_images_dir multiple times is safe and returns the same path."""
+    feed_id = "idempotent_image_feed"
+
+    first_call = await path_manager.download_images_dir(feed_id)
+    second_call = await path_manager.download_images_dir(feed_id)
+
+    assert first_call == second_call
+    assert first_call.exists()
+
+
 # --- Tests for URL generation methods ---
 
 
@@ -156,7 +238,7 @@ def test_feed_url_generation(path_manager: PathManager):
 
     url = path_manager.feed_url(feed_id)
 
-    assert url == "http://localhost:8024/feeds/my_podcast.xml"
+    assert url == f"{path_manager.base_url}/feeds/{feed_id}.xml"
 
 
 @pytest.mark.unit
@@ -166,7 +248,7 @@ def test_feed_url_special_characters(path_manager: PathManager):
 
     url = path_manager.feed_url(feed_id)
 
-    assert url == "http://localhost:8024/feeds/feed-with_special.chars.xml"
+    assert url == f"{path_manager.base_url}/feeds/{feed_id}.xml"
 
 
 @pytest.mark.unit
@@ -176,7 +258,7 @@ def test_feed_media_url_generation(path_manager: PathManager):
 
     url = path_manager.feed_media_url(feed_id)
 
-    assert url == "http://localhost:8024/media/video_feed/"
+    assert url == f"{path_manager.base_url}/media/{feed_id}/"
 
 
 @pytest.mark.unit
@@ -188,7 +270,7 @@ def test_media_file_url_generation(path_manager: PathManager):
 
     url = path_manager.media_file_url(feed_id, download_id, ext)
 
-    assert url == "http://localhost:8024/media/content_feed/video_123.mp4"
+    assert url == f"{path_manager.feed_media_url(feed_id)}{download_id}.{ext}"
 
 
 @pytest.mark.unit
@@ -202,9 +284,66 @@ def test_media_file_url_different_extensions(path_manager: PathManager):
     webm_url = path_manager.media_file_url(feed_id, download_id, "webm")
     m4a_url = path_manager.media_file_url(feed_id, download_id, "m4a")
 
-    assert mp4_url == "http://localhost:8024/media/multi_format/item_456.mp4"
-    assert webm_url == "http://localhost:8024/media/multi_format/item_456.webm"
-    assert m4a_url == "http://localhost:8024/media/multi_format/item_456.m4a"
+    assert mp4_url == f"{path_manager.feed_media_url(feed_id)}{download_id}.mp4"
+    assert webm_url == f"{path_manager.feed_media_url(feed_id)}{download_id}.webm"
+    assert m4a_url == f"{path_manager.feed_media_url(feed_id)}{download_id}.m4a"
+
+
+@pytest.mark.unit
+def test_image_url_feed_level(path_manager: PathManager):
+    """Tests that image_url generates correct feed-level image URLs."""
+    feed_id = "my_podcast"
+    ext = "jpg"
+
+    url = path_manager.image_url(feed_id, None, ext)
+
+    assert url == f"{path_manager.base_url}/images/{feed_id}.{ext}"
+
+
+@pytest.mark.unit
+def test_image_url_download_level(path_manager: PathManager):
+    """Tests that image_url generates correct download-level image URLs."""
+    feed_id = "content_feed"
+    download_id = "video_123"
+    ext = "jpg"
+
+    url = path_manager.image_url(feed_id, download_id, ext)
+
+    assert url == f"{path_manager.base_url}/images/{feed_id}/{download_id}.{ext}"
+
+
+@pytest.mark.unit
+def test_image_url_special_characters(path_manager: PathManager):
+    """Tests image_url with special characters in identifiers."""
+    feed_id = "feed-with_special.chars"
+    download_id = "video.with.dots"
+    ext = "jpg"
+
+    # Test feed-level image
+    feed_url = path_manager.image_url(feed_id, None, ext)
+    assert feed_url == f"{path_manager.base_url}/images/{feed_id}.{ext}"
+
+    # Test download-level image
+    download_url = path_manager.image_url(feed_id, download_id, ext)
+    assert (
+        download_url == f"{path_manager.base_url}/images/{feed_id}/{download_id}.{ext}"
+    )
+
+
+@pytest.mark.unit
+def test_image_url_different_extensions(path_manager: PathManager):
+    """Tests image_url with various file extensions."""
+    feed_id = "multi_format"
+    download_id = "item_456"
+
+    # Test different extensions
+    jpg_url = path_manager.image_url(feed_id, download_id, "jpg")
+    png_url = path_manager.image_url(feed_id, download_id, "png")
+    webp_url = path_manager.image_url(feed_id, download_id, "webp")
+
+    assert jpg_url == f"{path_manager.base_url}/images/{feed_id}/{download_id}.jpg"
+    assert png_url == f"{path_manager.base_url}/images/{feed_id}/{download_id}.png"
+    assert webp_url == f"{path_manager.base_url}/images/{feed_id}/{download_id}.webp"
 
 
 # --- Tests for file path generation methods ---
@@ -257,6 +396,53 @@ async def test_media_file_path_different_extensions(path_manager: PathManager):
     assert flv_path == expected_base / "content_item.flv"
 
 
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_image_path_feed_level(path_manager: PathManager):
+    """Tests that image_path generates correct feed-level image file system paths."""
+    feed_id = "path_test_feed"
+    ext = "jpg"
+
+    file_path = await path_manager.image_path(feed_id, None, ext)
+
+    expected_path = path_manager.base_images_dir / feed_id / f"{feed_id}.{ext}"
+    assert file_path == expected_path
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_image_path_download_level(path_manager: PathManager):
+    """Tests that image_path generates correct download-level image file system paths."""
+    feed_id = "path_test_feed"
+    download_id = "video_789"
+    ext = "jpg"
+
+    file_path = await path_manager.image_path(feed_id, download_id, ext)
+
+    expected_path = (
+        path_manager.base_images_dir / feed_id / "downloads" / f"{download_id}.{ext}"
+    )
+    assert file_path == expected_path
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_image_path_different_extensions(path_manager: PathManager):
+    """Tests image_path with various file extensions."""
+    feed_id = "ext_test_feed"
+    download_id = "content_item"
+
+    # Test different extensions
+    jpg_path = await path_manager.image_path(feed_id, download_id, "jpg")
+    png_path = await path_manager.image_path(feed_id, download_id, "png")
+    webp_path = await path_manager.image_path(feed_id, download_id, "webp")
+
+    expected_base = path_manager.base_images_dir / feed_id / "downloads"
+    assert jpg_path == expected_base / "content_item.jpg"
+    assert png_path == expected_base / "content_item.png"
+    assert webp_path == expected_base / "content_item.webp"
+
+
 # --- Integration tests for URL and path consistency ---
 
 
@@ -289,7 +475,7 @@ async def test_special_characters_in_identifiers(path_manager: PathManager):
     download_id = "video.with.dots"
     ext = "mp4"
 
-    # Should handle special characters without issues
+    # Test media files with special characters
     file_path = await path_manager.media_file_path(feed_id, download_id, ext)
     file_url = path_manager.media_file_url(feed_id, download_id, ext)
 
@@ -298,88 +484,97 @@ async def test_special_characters_in_identifiers(path_manager: PathManager):
     assert feed_id in file_url
     assert download_id in file_url
 
+    # Test image files with special characters
+    image_path = await path_manager.image_path(feed_id, download_id, "jpg")
+    image_url = path_manager.image_url(feed_id, download_id, "jpg")
+
+    assert image_path.parent.parent.name == feed_id  # feed dir
+    assert image_path.parent.name == "downloads"  # downloads subdir
+    assert image_path.name == f"{download_id}.jpg"
+    assert feed_id in image_url
+    assert download_id in image_url
+
 
 # --- Edge cases and error handling ---
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_empty_feed_id_raises_error(path_manager: PathManager):
-    """Tests that empty feed_id raises ValueError."""
+@pytest.mark.parametrize(
+    "invalid_feed_id",
+    [
+        "",
+        "   ",
+        "\t\n",
+    ],
+)
+async def test_invalid_feed_id_raises_error(
+    path_manager: PathManager, invalid_feed_id: str
+):
+    """Tests that an empty or whitespace-only feed_id raises ValueError."""
     download_id = "video_123"
     ext = "mp4"
 
     with pytest.raises(ValueError):
-        await path_manager.feed_data_dir("")
+        await path_manager.feed_data_dir(invalid_feed_id)
 
     with pytest.raises(ValueError):
-        await path_manager.feed_tmp_dir("")
+        await path_manager.feed_tmp_dir(invalid_feed_id)
 
     with pytest.raises(ValueError):
-        path_manager.feed_url("")
+        await path_manager.feed_images_dir(invalid_feed_id)
 
     with pytest.raises(ValueError):
-        path_manager.feed_media_url("")
+        path_manager.feed_url(invalid_feed_id)
 
     with pytest.raises(ValueError):
-        await path_manager.media_file_path("", download_id, ext)
+        path_manager.feed_media_url(invalid_feed_id)
 
     with pytest.raises(ValueError):
-        path_manager.media_file_url("", download_id, ext)
+        await path_manager.media_file_path(invalid_feed_id, download_id, ext)
+
+    with pytest.raises(ValueError):
+        path_manager.media_file_url(invalid_feed_id, download_id, ext)
+
+    with pytest.raises(ValueError):
+        path_manager.image_url(invalid_feed_id, download_id, ext)
+
+    with pytest.raises(ValueError):
+        await path_manager.image_path(invalid_feed_id, download_id, ext)
+
+    with pytest.raises(ValueError):
+        await path_manager.download_images_dir(invalid_feed_id)
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_whitespace_only_feed_id_raises_error(path_manager: PathManager):
-    """Tests that whitespace-only feed_id raises ValueError."""
-    download_id = "video_123"
-    ext = "mp4"
-
-    with pytest.raises(ValueError):
-        await path_manager.feed_data_dir("   ")
-
-    with pytest.raises(ValueError):
-        await path_manager.feed_tmp_dir("\t\n")
-
-    with pytest.raises(ValueError):
-        path_manager.feed_url(" ")
-
-    with pytest.raises(ValueError):
-        path_manager.feed_media_url("\t")
-
-    with pytest.raises(ValueError):
-        await path_manager.media_file_path("  ", download_id, ext)
-
-    with pytest.raises(ValueError):
-        path_manager.media_file_url("\n", download_id, ext)
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_empty_download_id_raises_error(path_manager: PathManager):
-    """Tests that empty download_id raises ValueError."""
+@pytest.mark.parametrize(
+    "invalid_download_id",
+    [
+        "",
+        "   ",
+        "\t\n",
+    ],
+)
+async def test_invalid_download_id_raises_error(
+    path_manager: PathManager, invalid_download_id: str
+):
+    """Tests that an empty or whitespace-only download_id raises ValueError."""
     feed_id = "valid_feed"
     ext = "mp4"
 
     with pytest.raises(ValueError):
-        await path_manager.media_file_path(feed_id, "", ext)
+        await path_manager.media_file_path(feed_id, invalid_download_id, ext)
 
     with pytest.raises(ValueError):
-        path_manager.media_file_url(feed_id, "", ext)
+        path_manager.media_file_url(feed_id, invalid_download_id, ext)
 
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_whitespace_only_download_id_raises_error(path_manager: PathManager):
-    """Tests that whitespace-only download_id raises ValueError."""
-    feed_id = "valid_feed"
-    ext = "mp4"
+    # Test image methods with empty download_id
+    with pytest.raises(ValueError):
+        path_manager.image_url(feed_id, invalid_download_id, ext)
 
     with pytest.raises(ValueError):
-        await path_manager.media_file_path(feed_id, "   ", ext)
-
-    with pytest.raises(ValueError):
-        path_manager.media_file_url(feed_id, "\t\n", ext)
+        await path_manager.image_path(feed_id, invalid_download_id, ext)
 
 
 @pytest.mark.unit

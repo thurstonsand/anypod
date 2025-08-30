@@ -280,6 +280,7 @@ class Enqueuer:
                 db_download.source_url,
                 None,  # No resolved URL needed for single video
                 feed_config.yt_args,
+                feed_config.yt_channel,
                 None,  # No date filtering for single video
                 None,  # No keep_last for single video
                 cookies_path=cookies_path,
@@ -413,8 +414,13 @@ class Enqueuer:
             updated_download.filesize = fetched_download.filesize
         if existing_db_download.duration != fetched_download.duration:
             updated_download.duration = fetched_download.duration
-        if existing_db_download.thumbnail != fetched_download.thumbnail:
-            updated_download.thumbnail = fetched_download.thumbnail
+        if (
+            existing_db_download.remote_thumbnail_url
+            != fetched_download.remote_thumbnail_url
+        ):
+            updated_download.remote_thumbnail_url = (
+                fetched_download.remote_thumbnail_url
+            )
         if existing_db_download.description != fetched_download.description:
             updated_download.description = fetched_download.description
         if existing_db_download.quality_info != fetched_download.quality_info:
@@ -642,6 +648,7 @@ class Enqueuer:
                     feed.source_url,
                     feed.resolved_url,
                     user_yt_cli_args,
+                    feed_config.yt_channel,
                     fetch_since_date,
                     feed_config.keep_last,
                     cookies_path,

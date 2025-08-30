@@ -26,7 +26,7 @@ def merge_feed_metadata(fetched_feed: Feed, feed_config: FeedConfig) -> dict[str
     """
     # Start with override metadata if present
     candidate_metadata: dict[str, Any] = (
-        feed_config.metadata.model_dump(exclude_none=True)
+        feed_config.metadata.model_dump(exclude_none=True, by_alias=True)
         if feed_config.metadata
         else {}
     )
@@ -48,8 +48,8 @@ def merge_feed_metadata(fetched_feed: Feed, feed_config: FeedConfig) -> dict[str
     candidate_metadata["author_email"] = (
         candidate_metadata.get("author_email") or fetched_feed.author_email
     )
-    candidate_metadata["image_url"] = (
-        candidate_metadata.get("image_url") or fetched_feed.image_url
+    candidate_metadata["remote_image_url"] = (
+        candidate_metadata.get("remote_image_url") or fetched_feed.remote_image_url
     )
     candidate_metadata["category"] = (
         candidate_metadata.get("category") or fetched_feed.category

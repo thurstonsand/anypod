@@ -98,6 +98,7 @@ async def test_fetch_playlist_metadata_returns_feed(
         source_url=url,
         resolved_url=url,
         user_yt_cli_args=yt_cli_args,
+        yt_channel="stable",
     )
 
     # Verify return type
@@ -153,6 +154,7 @@ async def test_fetch_new_downloads_metadata_returns_downloads(
         source_url=url,
         resolved_url=url,
         user_yt_cli_args=yt_cli_args,
+        yt_channel="stable",
     )
 
     # Verify return type and values
@@ -164,6 +166,121 @@ async def test_fetch_new_downloads_metadata_returns_downloads(
     mock_youtube_handler.extract_download_metadata.assert_called_once_with(
         feed_id, mock_video_info
     )
+
+
+# --- Tests for YtdlpWrapper.download_feed_thumbnail ---
+
+
+@pytest.mark.unit
+@patch.object(YtdlpCore, "download")
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "source_type, expected_output_method, expected_paths_method",
+    [
+        (SourceType.SINGLE_VIDEO, "output_thumbnail", "paths_thumbnail"),
+        (SourceType.PLAYLIST, "output_pl_thumbnail", "paths_pl_thumbnail"),
+        (SourceType.CHANNEL, "output_pl_thumbnail", "paths_pl_thumbnail"),
+    ],
+)
+async def test_download_feed_thumbnail_args(
+    mock_ytdlcore_download: AsyncMock,
+    ytdlp_wrapper: YtdlpWrapper,
+    source_type: SourceType,
+    expected_output_method: str,
+    expected_paths_method: str,
+):
+    """Tests that download_feed_thumbnail constructs the correct YtdlpArgs."""
+    feed_id = "test_feed_thumb"
+    url = "http://example.com/video"
+    yt_cli_args: list[str] = ["--format", "best"]
+
+    await ytdlp_wrapper.download_feed_thumbnail(
+        feed_id=feed_id,
+        source_type=source_type,
+        source_url=url,
+        resolved_url=url,
+        user_yt_cli_args=yt_cli_args,
+        yt_channel="stable",
+    )
+
+    mock_ytdlcore_download.assert_called_once()
+    call_args = mock_ytdlcore_download.call_args[0]
+    ytdlp_args: YtdlpArgs = call_args[0]
+    cmd_list = ytdlp_args.to_list()
+
+    # Verify common args
+    assert "--skip-download" in cmd_list
+    assert "--write-thumbnail" in cmd_list
+    assert "--convert-thumbnails" in cmd_list
+    assert "jpg" in cmd_list
+    assert "--format" in cmd_list
+    assert "best" in cmd_list
+
+    # Verify source-type specific args
+    try:
+        output_index = cmd_list.index("--output")
+        output_value = cmd_list[output_index + 1]
+    except (ValueError, IndexError):
+        pytest.fail("--output flag not found or has no value")
+
+    if source_type == SourceType.SINGLE_VIDEO:
+        expected_template = f"thumbnail:{feed_id}.%(ext)s"
+        assert output_value == expected_template
+    else:
+        expected_template = f"pl_thumbnail:{feed_id}.%(ext)s"
+        assert output_value == expected_template
+
+
+@pytest.mark.unit
+@patch.object(YtdlpCore, "download")
+@patch("aiofiles.os.path.isfile")
+@pytest.mark.asyncio
+async def test_download_feed_thumbnail_success_return_value(
+    mock_is_file: AsyncMock,
+    mock_ytdlcore_download: AsyncMock,
+    ytdlp_wrapper: YtdlpWrapper,
+):
+    """Tests that download_feed_thumbnail returns 'jpg' on successful download."""
+    mock_is_file.return_value = True
+
+    result = await ytdlp_wrapper.download_feed_thumbnail(
+        feed_id="test_feed",
+        source_type=SourceType.SINGLE_VIDEO,
+        source_url="http://example.com/video",
+        resolved_url=None,
+        user_yt_cli_args=[],
+        yt_channel="stable",
+    )
+
+    assert result == "jpg"
+    mock_ytdlcore_download.assert_called_once()
+    mock_is_file.assert_called_once()
+
+
+@pytest.mark.unit
+@patch.object(YtdlpCore, "download")
+@patch("aiofiles.os.path.isfile")
+@pytest.mark.asyncio
+async def test_download_feed_thumbnail_file_not_found(
+    mock_is_file: AsyncMock,
+    mock_ytdlcore_download: AsyncMock,
+    ytdlp_wrapper: YtdlpWrapper,
+):
+    """Tests that download_feed_thumbnail returns None when file doesn't exist."""
+    mock_is_file.return_value = False
+
+    result = await ytdlp_wrapper.download_feed_thumbnail(
+        feed_id="test_feed",
+        source_type=SourceType.SINGLE_VIDEO,
+        source_url="http://example.com/video",
+        resolved_url=None,
+        user_yt_cli_args=[],
+        yt_channel="stable",
+    )
+
+    assert result is None
+    mock_ytdlcore_download.assert_called_once()
+    mock_is_file.assert_called_once()
 
 
 # --- Tests for YtdlpWrapper.download_media_to_file ---
@@ -220,7 +337,7 @@ async def test_download_media_to_file_success_simplified(
     mock_aiofiles_wrap.return_value = mock_glob
 
     returned_path = await ytdlp_wrapper.download_media_to_file(
-        dummy_download, yt_cli_args
+        dummy_download, yt_cli_args, "stable"
     )
 
     assert returned_path == expected_final_file
@@ -285,6 +402,7 @@ async def test_date_filtering_behavior_by_reference_type(
         source_url=url,
         resolved_url=url,
         user_yt_cli_args=[],
+        yt_channel="stable",
         fetch_since_date=fetch_since_date,
     )
 
@@ -347,6 +465,7 @@ async def test_keep_last_filtering_behavior_by_reference_type(
         source_url=url,
         resolved_url=url,
         user_yt_cli_args=[],
+        yt_channel="stable",
         keep_last=keep_last,
     )
 

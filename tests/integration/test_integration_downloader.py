@@ -174,6 +174,10 @@ async def test_download_queued_single_video_success(
     assert download.retries == 0  # Should be reset
     assert download.last_error is None  # Should be cleared
 
+    # Verify thumbnail saved and recorded
+    assert download.thumbnail_ext == "jpg"
+    assert await file_manager.image_exists(feed_id, download.id, "jpg")
+
     # Verify file was actually downloaded
     assert await file_manager.download_exists(feed_id, download.id, download.ext)
 
@@ -241,6 +245,9 @@ async def test_download_queued_multiple_videos_success(
             feed_id, downloaded_item.id, downloaded_item.ext
         )
         assert downloaded_item.filesize is not None and downloaded_item.filesize > 0
+        # Verify thumbnails saved and recorded for each
+        assert downloaded_item.thumbnail_ext == "jpg"
+        assert await file_manager.image_exists(feed_id, downloaded_item.id, "jpg")
 
 
 @pytest.mark.integration
@@ -250,6 +257,7 @@ async def test_download_queued_with_limit(
     feed_db: FeedDatabase,
     downloader: Downloader,
     download_db: DownloadDatabase,
+    file_manager: FileManager,
     cookies_path: Path | None,
 ):
     """Tests that the limit parameter properly restricts the number of downloads processed."""
@@ -288,6 +296,10 @@ async def test_download_queued_with_limit(
             DownloadStatus.DOWNLOADED, feed_id=feed_id
         )
         assert len(downloaded_items) == success_count
+        # Verify thumbnails for the downloaded subset
+        for dl in downloaded_items:
+            assert dl.thumbnail_ext == "jpg"
+            assert await file_manager.image_exists(feed_id, dl.id, "jpg")
 
 
 @pytest.mark.integration
@@ -386,6 +398,8 @@ async def test_download_queued_handles_invalid_urls(
     updated_download = await download_db.get_download_by_id(feed_id, "invalid_video_id")
     assert updated_download.retries > 0
     assert updated_download.last_error is not None
+    # No thumbnail should be recorded on failure
+    assert updated_download.thumbnail_ext is None
 
 
 @pytest.mark.integration
@@ -453,6 +467,8 @@ async def test_download_queued_retry_logic_max_errors(
     assert updated_download.retries == 1
     assert updated_download.status == DownloadStatus.ERROR
     assert updated_download.last_error is not None
+    # No thumbnail should be recorded when download fails
+    assert updated_download.thumbnail_ext is None
 
 
 @pytest.mark.integration
@@ -528,6 +544,9 @@ async def test_download_queued_mixed_success_and_failure(
         assert await file_manager.download_exists(
             feed_id, downloaded_item.id, downloaded_item.ext
         )
+        # Verify thumbnails saved and recorded for successful items
+        assert downloaded_item.thumbnail_ext == "jpg"
+        assert await file_manager.image_exists(feed_id, downloaded_item.id, "jpg")
 
     # Verify failed download had retry bumped
     failed_download = await download_db.get_download_by_id(
@@ -535,6 +554,8 @@ async def test_download_queued_mixed_success_and_failure(
     )
     assert failed_download.retries > 0
     assert failed_download.last_error is not None
+    # Failed item should not have a recorded thumbnail
+    assert failed_download.thumbnail_ext is None
 
 
 @pytest.mark.integration
@@ -578,6 +599,10 @@ async def test_download_queued_file_properties(
 
     # File should exist
     assert await file_manager.download_exists(feed_id, download.id, download.ext)
+
+    # Thumbnail should exist and be recorded
+    assert download.thumbnail_ext == "jpg"
+    assert await file_manager.image_exists(feed_id, download.id, "jpg")
 
     # File should be readable - get_download_stream returns an async iterator
     stream_data = b""
@@ -671,6 +696,10 @@ async def test_filesize_metadata_flow(
     assert final_filesize == actual_size, (
         "Database filesize should match actual file size"
     )
+
+    # Verify thumbnail recorded and exists for the downloaded item
+    assert downloaded_item.thumbnail_ext == "jpg"
+    assert await file_manager.image_exists(feed_id, downloaded_item.id, "jpg")
 
     # If initial estimate was available and reasonable, it should be in the ballpark
     if initial_filesize > 0:

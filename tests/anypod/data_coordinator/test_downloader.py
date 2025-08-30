@@ -34,7 +34,7 @@ MOCK_FEED = Feed(
     description=None,
     language=None,
     author=None,
-    image_url=None,
+    remote_image_url=None,
     is_enabled=True,
     source_type=SourceType.UNKNOWN,
     source_url="https://example.com/test",
@@ -243,6 +243,7 @@ async def test_process_single_download_success_flow(
     mock_ytdlp_wrapper.download_media_to_file.assert_called_once_with(
         sample_download,
         sample_feed_config.yt_args,
+        sample_feed_config.yt_channel,
         cookies_path=None,
     )
     mock_handle_success.assert_called_once_with(sample_download, downloaded_path)

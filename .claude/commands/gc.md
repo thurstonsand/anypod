@@ -17,7 +17,7 @@ description: Create a git commit
 
 Based on the above changes, check to make sure that documentation is up-to-date and then create a single git commit.
 
-- Check that @DESIGN_DOC.md, @CLAUDE.md, and @tests/CLAUDE.md reflect the changes present in this commit
+- Read the entire contents of @README.md, @DESIGN_DOC.md, @CLAUDE.md, and @tests/CLAUDE.md, ensure they reflect the changes present in this commit
   - keep updates at the same level of abstraction as what is currently present in these files -- do NOT add unnecessary or out-of-scope details
   - after any updates, make sure to (selectively) `git add` those files
 - Unless the commit specifically and only concerns testing, keep comments about test files concise, at most to one line

@@ -215,3 +215,240 @@ async def test_get_download_stream_file_operation_error(file_manager: FileManage
     assert error.download_id == download_id
     assert error.file_name == file_name
     assert error.__cause__ is simulated_error
+
+
+# --- Tests for get_image_path ---
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_get_image_path_feed_level(file_manager: FileManager):
+    """Tests get_image_path returns correct path for feed-level images."""
+    feed_id = "image_feed"
+    ext = "jpg"
+
+    # Create the image file
+    image_path = await file_manager._paths.image_path(feed_id, None, ext)
+    image_path.write_bytes(b"dummy image content")
+
+    result_path = await file_manager.get_image_path(feed_id, None, ext)
+
+    assert result_path == image_path
+    assert result_path.exists()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_get_image_path_download_level(file_manager: FileManager):
+    """Tests get_image_path returns correct path for download-level images."""
+    feed_id = "image_feed"
+    download_id = "video_123"
+    ext = "jpg"
+
+    # Create the image file
+    image_path = await file_manager._paths.image_path(feed_id, download_id, ext)
+    image_path.write_bytes(b"dummy image content")
+
+    result_path = await file_manager.get_image_path(feed_id, download_id, ext)
+
+    assert result_path == image_path
+    assert result_path.exists()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_get_image_path_not_found(file_manager: FileManager):
+    """Tests get_image_path raises FileNotFoundError for non-existent files."""
+    feed_id = "image_feed_404"
+    download_id = "missing_image"
+    ext = "jpg"
+
+    with pytest.raises(FileNotFoundError):
+        await file_manager.get_image_path(feed_id, download_id, ext)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_get_image_path_invalid_feed_id(file_manager: FileManager):
+    """Tests get_image_path raises FileOperationError for invalid feed_id."""
+    feed_id = ""
+    download_id = "video_123"
+    ext = "jpg"
+
+    with pytest.raises(FileNotFoundError):
+        await file_manager.get_image_path(feed_id, download_id, ext)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_get_image_path_invalid_download_id(file_manager: FileManager):
+    """Tests get_image_path raises FileOperationError for invalid download_id."""
+    feed_id = "valid_feed"
+    download_id = ""
+    ext = "jpg"
+
+    with pytest.raises(FileNotFoundError):
+        await file_manager.get_image_path(feed_id, download_id, ext)
+
+
+# --- Tests for image_exists ---
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_image_exists_feed_level_true(file_manager: FileManager):
+    """Tests image_exists returns True for existing feed-level images."""
+    feed_id = "exists_image_feed"
+    ext = "jpg"
+
+    # Create the image file
+    image_path = await file_manager._paths.image_path(feed_id, None, ext)
+    image_path.write_bytes(b"dummy image content")
+
+    assert await file_manager.image_exists(feed_id, None, ext)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_image_exists_download_level_true(file_manager: FileManager):
+    """Tests image_exists returns True for existing download-level images."""
+    feed_id = "exists_image_feed"
+    download_id = "existing_image"
+    ext = "jpg"
+
+    # Create the image file
+    image_path = await file_manager._paths.image_path(feed_id, download_id, ext)
+    image_path.write_bytes(b"dummy image content")
+
+    assert await file_manager.image_exists(feed_id, download_id, ext)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_image_exists_false_not_found(file_manager: FileManager):
+    """Tests image_exists returns False for non-existent images."""
+    feed_id = "exists_image_feed_false"
+    download_id = "ghost_image"
+    ext = "jpg"
+
+    assert not await file_manager.image_exists(feed_id, download_id, ext)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_image_exists_false_invalid_feed_id(file_manager: FileManager):
+    """Tests image_exists returns False for invalid feed_id."""
+    feed_id = ""
+    download_id = "video_123"
+    ext = "jpg"
+
+    assert not await file_manager.image_exists(feed_id, download_id, ext)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_image_exists_false_invalid_download_id(file_manager: FileManager):
+    """Tests image_exists returns False for invalid download_id."""
+    feed_id = "valid_feed"
+    download_id = ""
+    ext = "jpg"
+
+    assert not await file_manager.image_exists(feed_id, download_id, ext)
+
+
+# --- Tests for delete_image ---
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_delete_image_feed_level_success(file_manager: FileManager):
+    """Tests successful deletion of feed-level images."""
+    feed_id = "delete_image_feed"
+    ext = "jpg"
+
+    # Create the image file
+    image_path = await file_manager._paths.image_path(feed_id, None, ext)
+    image_path.write_bytes(b"dummy image content")
+
+    assert image_path.exists()
+    await file_manager.delete_image(feed_id, None, ext)
+    assert not image_path.exists()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_delete_image_download_level_success(file_manager: FileManager):
+    """Tests successful deletion of download-level images."""
+    feed_id = "delete_image_feed"
+    download_id = "to_delete"
+    ext = "jpg"
+
+    # Create the image file
+    image_path = await file_manager._paths.image_path(feed_id, download_id, ext)
+    image_path.write_bytes(b"dummy image content")
+
+    assert image_path.exists()
+    await file_manager.delete_image(feed_id, download_id, ext)
+    assert not image_path.exists()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_delete_image_not_found(file_manager: FileManager):
+    """Tests delete_image raises FileNotFoundError for non-existent images."""
+    feed_id = "delete_image_feed_404"
+    download_id = "non_existent"
+    ext = "jpg"
+
+    with pytest.raises(FileNotFoundError):
+        await file_manager.delete_image(feed_id, download_id, ext)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_delete_image_invalid_feed_id(file_manager: FileManager):
+    """Tests delete_image raises FileOperationError for invalid feed_id."""
+    feed_id = ""
+    download_id = "video_123"
+    ext = "jpg"
+
+    with pytest.raises(FileOperationError) as exc_info:
+        await file_manager.delete_image(feed_id, download_id, ext)
+
+    assert exc_info.value.feed_id == feed_id
+    assert exc_info.value.download_id == download_id
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_delete_image_invalid_download_id(file_manager: FileManager):
+    """Tests delete_image raises FileOperationError for invalid download_id."""
+    feed_id = "valid_feed"
+    download_id = ""
+    ext = "jpg"
+
+    with pytest.raises(FileOperationError) as exc_info:
+        await file_manager.delete_image(feed_id, download_id, ext)
+
+    assert exc_info.value.feed_id == feed_id
+    assert exc_info.value.download_id == download_id
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_delete_image_os_error(file_manager: FileManager):
+    """Tests delete_image raises FileOperationError for OS-level errors."""
+    feed_id = "error_feed"
+    download_id = "error_image"
+    ext = "jpg"
+
+    # Create the image file
+    image_path = await file_manager._paths.image_path(feed_id, download_id, ext)
+    image_path.write_bytes(b"dummy image content")
+
+    # Remove the file after creating it to simulate a race condition
+    image_path.unlink()
+
+    # Now try to delete it again - this should raise FileNotFoundError which gets converted to FileOperationError
+    with pytest.raises(FileNotFoundError):
+        await file_manager.delete_image(feed_id, download_id, ext)

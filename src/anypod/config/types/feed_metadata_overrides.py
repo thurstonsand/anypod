@@ -23,10 +23,13 @@ class FeedMetadataOverrides(BaseModel):
     podcast_type: PodcastType | None = Field(
         None, description="Podcast type: 'episodic' or 'serial'"
     )
-    explicit: PodcastExplicit | None = Field(None, description="Explicit content flag")
+    explicit: PodcastExplicit | None = Field(
+        None, description="Explicit content flag; yes | no | clean"
+    )
     image_url: str | None = Field(
         None,
         description="Podcast image URL, must be at least 1400x1400px, ideally 3000x3000px",
+        serialization_alias="remote_image_url",
     )
     author: str | None = Field(None, description="Podcast author")
     author_email: str | None = Field(None, description="Podcast author email")

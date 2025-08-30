@@ -26,9 +26,12 @@ from anypod.db.feed_db import FeedDatabase
 from anypod.db.types import Download, DownloadStatus, Feed, SourceType
 from anypod.exceptions import (
     DatabaseOperationError,
+    ImageDownloadError,
     PruneError,
     StateReconciliationError,
 )
+from anypod.file_manager import FileManager
+from anypod.image_downloader import ImageDownloader
 from anypod.state_reconciler import MIN_SYNC_DATE, StateReconciler
 from anypod.ytdlp_wrapper import YtdlpWrapper
 
@@ -50,7 +53,7 @@ MOCK_FEED = Feed(
     language=None,
     author=None,
     author_email=None,
-    image_url=None,
+    remote_image_url=None,
     is_enabled=True,
     source_type=SourceType.UNKNOWN,
     source_url=FEED_URL,
@@ -67,7 +70,7 @@ MOCK_DISABLED_FEED = Feed(
     language=None,
     author=None,
     author_email=None,
-    image_url=None,
+    remote_image_url=None,
     is_enabled=True,
     source_type=SourceType.UNKNOWN,
     source_url="https://example.com/removed",
@@ -149,7 +152,24 @@ def mock_ytdlp_wrapper() -> MagicMock:
 
 
 @pytest.fixture
+def mock_file_manager() -> MagicMock:
+    """Provides a MagicMock for FileManager."""
+    return MagicMock(spec=FileManager)
+
+
+@pytest.fixture
+def mock_image_downloader() -> MagicMock:
+    """Provides a MagicMock for ImageDownloader with async methods."""
+    dl = MagicMock(spec=ImageDownloader)
+    dl.download_feed_image_direct = AsyncMock(return_value="jpg")
+    dl.download_feed_image_ytdlp = AsyncMock(return_value="jpg")
+    return dl
+
+
+@pytest.fixture
 def state_reconciler(
+    mock_file_manager: MagicMock,
+    mock_image_downloader: MagicMock,
     mock_feed_db: MagicMock,
     mock_download_db: MagicMock,
     mock_ytdlp_wrapper: MagicMock,
@@ -157,6 +177,8 @@ def state_reconciler(
 ) -> StateReconciler:
     """Provides a StateReconciler instance with mocked dependencies."""
     return StateReconciler(
+        mock_file_manager,
+        mock_image_downloader,
         mock_feed_db,
         mock_download_db,
         mock_ytdlp_wrapper,
@@ -247,7 +269,7 @@ async def test_handle_new_feed_with_metadata(
     assert inserted_feed.description == metadata.description
     assert inserted_feed.language == metadata.language
     assert inserted_feed.author == metadata.author
-    assert inserted_feed.image_url == metadata.image_url
+    assert inserted_feed.remote_image_url == metadata.image_url
     assert inserted_feed.category == metadata.category
     assert inserted_feed.explicit == metadata.explicit
 
@@ -440,7 +462,7 @@ async def test_handle_existing_feed_metadata_changes(
     assert updated_feed.description == metadata.description
     assert updated_feed.language == metadata.language
     assert updated_feed.author == metadata.author
-    assert updated_feed.image_url == metadata.image_url
+    assert updated_feed.remote_image_url == metadata.image_url
 
 
 @pytest.mark.unit
@@ -1063,6 +1085,306 @@ async def test_keep_last_increase_no_archived_with_since_sets_sync_to_since(
         published_after=since_date,
         limit=2,
     )
+
+
+# --- Tests for StateReconciler._handle_image_url_changes ---
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_handle_image_url_changes_override_added(
+    state_reconciler: StateReconciler,
+    mock_image_downloader: MagicMock,
+    base_feed_config: FeedConfig,
+) -> None:
+    """Config provides new image URL override."""
+    # Setup existing feed without image override
+    db_feed = deepcopy(MOCK_FEED)
+    db_feed.remote_image_url = None
+
+    # Setup config with new image URL
+    config = deepcopy(base_feed_config)
+    config.metadata = FeedMetadataOverrides(  # type: ignore # fields default to None
+        image_url="https://example.com/new-image.jpg"
+    )
+
+    # Setup updated feed with the new URL
+    updated_feed = deepcopy(db_feed)
+    updated_feed.remote_image_url = "https://example.com/new-image.jpg"
+
+    mock_image_downloader.download_feed_image_direct.return_value = "jpg"
+
+    result = await state_reconciler._handle_image_url_changes(
+        FEED_ID, config, db_feed, updated_feed
+    )
+
+    assert result == "jpg"
+    mock_image_downloader.download_feed_image_direct.assert_called_once_with(
+        FEED_ID, "https://example.com/new-image.jpg"
+    )
+    mock_image_downloader.download_feed_image_ytdlp.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_handle_image_url_changes_override_changed(
+    state_reconciler: StateReconciler,
+    mock_image_downloader: MagicMock,
+    base_feed_config: FeedConfig,
+) -> None:
+    """Config changes existing image URL override."""
+    # Setup existing feed with old image override
+    db_feed = deepcopy(MOCK_FEED)
+    db_feed.remote_image_url = "https://example.com/old-image.jpg"
+
+    # Setup config with different image URL
+    config = deepcopy(base_feed_config)
+    config.metadata = FeedMetadataOverrides(  # type: ignore # fields default to None
+        image_url="https://example.com/new-image.jpg",
+    )
+
+    # Setup updated feed with the new URL
+    updated_feed = deepcopy(db_feed)
+    updated_feed.remote_image_url = "https://example.com/new-image.jpg"
+
+    mock_image_downloader.download_feed_image_direct.return_value = "jpg"
+
+    result = await state_reconciler._handle_image_url_changes(
+        FEED_ID, config, db_feed, updated_feed
+    )
+
+    assert result == "jpg"
+    mock_image_downloader.download_feed_image_direct.assert_called_once_with(
+        FEED_ID, "https://example.com/new-image.jpg"
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_handle_image_url_changes_override_removed_with_natural_url(
+    state_reconciler: StateReconciler,
+    mock_image_downloader: MagicMock,
+    base_feed_config: FeedConfig,
+) -> None:
+    """Config removes image override, reverting to natural feed image."""
+    # Setup existing feed with image override
+    db_feed = deepcopy(MOCK_FEED)
+    db_feed.remote_image_url = "https://example.com/override.jpg"
+
+    # Setup config without image URL (None)
+    config = deepcopy(base_feed_config)
+    config.metadata = None
+
+    # Setup updated feed with natural URL (different from DB override)
+    updated_feed = deepcopy(db_feed)
+    updated_feed.remote_image_url = "https://example.com/natural.jpg"
+
+    mock_image_downloader.download_feed_image_ytdlp.return_value = "jpg"
+
+    result = await state_reconciler._handle_image_url_changes(
+        FEED_ID, config, db_feed, updated_feed
+    )
+
+    assert result == "jpg"
+    mock_image_downloader.download_feed_image_ytdlp.assert_called_once_with(
+        feed_id=FEED_ID,
+        source_type=updated_feed.source_type,
+        source_url=updated_feed.source_url,
+        resolved_url=updated_feed.resolved_url,
+        user_yt_cli_args=config.yt_args,
+        yt_channel=config.yt_channel,
+        cookies_path=None,
+    )
+    mock_image_downloader.download_feed_image_direct.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_handle_image_url_changes_no_change_needed(
+    state_reconciler: StateReconciler,
+    mock_image_downloader: MagicMock,
+    base_feed_config: FeedConfig,
+) -> None:
+    """No image URL changes needed."""
+    # Setup existing feed with image URL
+    db_feed = deepcopy(MOCK_FEED)
+    db_feed.remote_image_url = "https://example.com/image.jpg"
+
+    # Setup config with same image URL
+    config = deepcopy(base_feed_config)
+    config.metadata = FeedMetadataOverrides(  # type: ignore # fields default to None
+        image_url="https://example.com/image.jpg",
+    )
+
+    # Setup updated feed with same URL
+    updated_feed = deepcopy(db_feed)
+    updated_feed.remote_image_url = "https://example.com/image.jpg"
+
+    result = await state_reconciler._handle_image_url_changes(
+        FEED_ID, config, db_feed, updated_feed
+    )
+
+    assert result is None
+    mock_image_downloader.download_feed_image_direct.assert_not_called()
+    mock_image_downloader.download_feed_image_ytdlp.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_handle_image_url_changes_override_removed_same_natural_url(
+    state_reconciler: StateReconciler,
+    mock_image_downloader: MagicMock,
+    base_feed_config: FeedConfig,
+) -> None:
+    """Config removes override but natural URL same as DB - no action needed."""
+    # Setup existing feed with image override
+    db_feed = deepcopy(MOCK_FEED)
+    db_feed.remote_image_url = "https://example.com/natural.jpg"
+
+    # Setup config without image URL (None)
+    config = deepcopy(base_feed_config)
+    config.metadata = None
+
+    # Setup updated feed with same natural URL as DB
+    updated_feed = deepcopy(db_feed)
+    updated_feed.remote_image_url = "https://example.com/natural.jpg"
+
+    result = await state_reconciler._handle_image_url_changes(
+        FEED_ID, config, db_feed, updated_feed
+    )
+
+    assert result is None
+    mock_image_downloader.download_feed_image_direct.assert_not_called()
+    mock_image_downloader.download_feed_image_ytdlp.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_handle_image_url_changes_direct_download_failure(
+    state_reconciler: StateReconciler,
+    mock_image_downloader: MagicMock,
+    base_feed_config: FeedConfig,
+) -> None:
+    """Direct image download fails gracefully."""
+    # Setup config with new image URL
+    config = deepcopy(base_feed_config)
+    config.metadata = FeedMetadataOverrides(
+        image_url="https://example.com/image.jpg",
+        title=None,
+        subtitle=None,
+        description=None,
+        language=None,
+        category=None,
+        podcast_type=None,
+        explicit=None,
+        author=None,
+        author_email=None,
+    )
+
+    db_feed = deepcopy(MOCK_FEED)
+    updated_feed = deepcopy(db_feed)
+    updated_feed.remote_image_url = "https://example.com/image.jpg"
+
+    mock_image_downloader.download_feed_image_direct.side_effect = ImageDownloadError(
+        "Download failed"
+    )
+
+    result = await state_reconciler._handle_image_url_changes(
+        FEED_ID, config, db_feed, updated_feed
+    )
+
+    assert result is None
+    mock_image_downloader.download_feed_image_direct.assert_called_once()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_handle_image_url_changes_ytdlp_download_failure(
+    state_reconciler: StateReconciler,
+    mock_image_downloader: MagicMock,
+    base_feed_config: FeedConfig,
+) -> None:
+    """yt-dlp image download fails gracefully."""
+    # Setup existing feed with override
+    db_feed = deepcopy(MOCK_FEED)
+    db_feed.remote_image_url = "https://example.com/override.jpg"
+
+    # Config removes override
+    config = deepcopy(base_feed_config)
+    config.metadata = None
+
+    # Natural URL is different
+    updated_feed = deepcopy(db_feed)
+    updated_feed.remote_image_url = "https://example.com/natural.jpg"
+
+    mock_image_downloader.download_feed_image_ytdlp.side_effect = ImageDownloadError(
+        "yt-dlp failed"
+    )
+
+    result = await state_reconciler._handle_image_url_changes(
+        FEED_ID, config, db_feed, updated_feed
+    )
+
+    assert result is None
+    mock_image_downloader.download_feed_image_ytdlp.assert_called_once()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_handle_image_url_changes_direct_download_returns_none(
+    state_reconciler: StateReconciler,
+    mock_image_downloader: MagicMock,
+    base_feed_config: FeedConfig,
+) -> None:
+    """Direct image download returns None (no image found)."""
+    # Setup config with new image URL
+    config = deepcopy(base_feed_config)
+    config.metadata = FeedMetadataOverrides(  # type: ignore # fields default to None
+        image_url="https://example.com/image.jpg",
+    )
+
+    db_feed = deepcopy(MOCK_FEED)
+    updated_feed = deepcopy(db_feed)
+    updated_feed.remote_image_url = "https://example.com/image.jpg"
+
+    mock_image_downloader.download_feed_image_direct.return_value = None
+
+    result = await state_reconciler._handle_image_url_changes(
+        FEED_ID, config, db_feed, updated_feed
+    )
+
+    assert result is None
+    mock_image_downloader.download_feed_image_direct.assert_called_once()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_handle_image_url_changes_ytdlp_download_returns_none(
+    state_reconciler: StateReconciler,
+    mock_image_downloader: MagicMock,
+    base_feed_config: FeedConfig,
+) -> None:
+    """YT-DLP image download returns None (no image found)."""
+    # Setup existing feed with override
+    db_feed = deepcopy(MOCK_FEED)
+    db_feed.remote_image_url = "https://example.com/override.jpg"
+
+    # Config removes override
+    config = deepcopy(base_feed_config)
+    config.metadata = None
+
+    # Natural URL is different
+    updated_feed = deepcopy(db_feed)
+    updated_feed.remote_image_url = "https://example.com/natural.jpg"
+
+    mock_image_downloader.download_feed_image_ytdlp.return_value = None
+
+    result = await state_reconciler._handle_image_url_changes(
+        FEED_ID, config, db_feed, updated_feed
+    )
+
+    assert result is None
+    mock_image_downloader.download_feed_image_ytdlp.assert_called_once()
 
 
 # --- Tests for StateReconciler.reconcile_startup_state ---

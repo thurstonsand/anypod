@@ -75,7 +75,7 @@ def sample_download_queued(test_feed: Feed) -> Download:
         mime_type="video/mp4",
         duration=120,
         status=DownloadStatus.QUEUED,
-        thumbnail="http://example.com/thumb1.jpg",
+        remote_thumbnail_url="http://example.com/thumb1.jpg",
         description="Test video description",
         filesize=0,  # 0 for queued items
         retries=0,
@@ -97,7 +97,7 @@ def sample_download_upcoming(test_feed: Feed) -> Download:
         mime_type="video/mp4",
         duration=120,
         status=DownloadStatus.UPCOMING,
-        thumbnail="http://example.com/thumb_upcoming.jpg",
+        remote_thumbnail_url="http://example.com/thumb_upcoming.jpg",
         description="Upcoming video description",
         filesize=0,
         retries=0,
@@ -128,7 +128,10 @@ async def test_add_and_get_download(
     assert retrieved_download.published == sample_download_queued.published
     assert retrieved_download.ext == sample_download_queued.ext
     assert retrieved_download.duration == sample_download_queued.duration
-    assert retrieved_download.thumbnail == sample_download_queued.thumbnail
+    assert (
+        retrieved_download.remote_thumbnail_url
+        == sample_download_queued.remote_thumbnail_url
+    )
     assert retrieved_download.status == sample_download_queued.status
     assert retrieved_download.retries == 0, (
         "Retries should be 0 for a new download from fixture"
@@ -157,7 +160,7 @@ async def test_upsert_download_updates_existing(
         ext="mkv",  # Changed ext
         mime_type="video/x-matroska",  # Changed mime_type
         duration=150,  # Changed duration
-        thumbnail="http://example.com/thumb/v123_updated.jpg",
+        remote_thumbnail_url="http://example.com/thumb/v123_updated.jpg",
         description="Updated description",
         filesize=4096,  # Changed filesize
         status=DownloadStatus.DOWNLOADED,  # Changed status
@@ -182,7 +185,10 @@ async def test_upsert_download_updates_existing(
     assert retrieved_download.published == modified_download.published
     assert retrieved_download.ext == modified_download.ext
     assert retrieved_download.duration == modified_download.duration
-    assert retrieved_download.thumbnail == modified_download.thumbnail
+    assert (
+        retrieved_download.remote_thumbnail_url
+        == modified_download.remote_thumbnail_url
+    )
     assert retrieved_download.status == modified_download.status
     assert retrieved_download.retries == modified_download.retries
     assert retrieved_download.last_error == modified_download.last_error
@@ -260,12 +266,18 @@ async def test_status_transitions(
         "Error should be cleared on UNSKIP (via REQUEUE)"
     )
 
+    # Set thumbnail_ext before archiving to test it gets cleared
+    await download_db.set_thumbnail_extension(feed_id, dl_id, "jpg")
+    before_archive = await download_db.get_download_by_id(feed_id, dl_id)
+    assert before_archive.thumbnail_ext == "jpg"
+
     # QUEUED -> ARCHIVED (from a clean QUEUED state)
     await download_db.archive_download(feed_id, dl_id)
     download = await download_db.get_download_by_id(feed_id, dl_id)
     assert download.status == DownloadStatus.ARCHIVED
     assert download.retries == 0  # Preserved from last requeue
     assert download.last_error is None  # Preserved from last requeue
+    assert download.thumbnail_ext is None  # Should be cleared when archived
 
     # Re-insert a fresh download to test archiving from an ERROR state
     sample_download_queued.status = DownloadStatus.QUEUED
@@ -284,6 +296,11 @@ async def test_status_transitions(
     assert download_error_state.retries == 1
     assert download_error_state.last_error == "Maxed out errors"
 
+    # Set thumbnail_ext before archiving from ERROR state
+    await download_db.set_thumbnail_extension(q_feed_id, q_dl_id, "png")
+    before_error_archive = await download_db.get_download_by_id(q_feed_id, q_dl_id)
+    assert before_error_archive.thumbnail_ext == "png"
+
     # ERROR -> ARCHIVED
     await download_db.archive_download(q_feed_id, q_dl_id)
     download_archived_from_error = await download_db.get_download_by_id(
@@ -291,6 +308,7 @@ async def test_status_transitions(
     )
     assert download_archived_from_error.status == DownloadStatus.ARCHIVED
     assert download_archived_from_error.retries == 1, "Retries should be preserved"
+    assert download_archived_from_error.thumbnail_ext is None  # Should be cleared
     assert download_archived_from_error.last_error == "Maxed out errors", (
         "Error should be preserved"
     )
@@ -339,6 +357,71 @@ async def test_status_transitions(
             "mp4",
             1024,
         )
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_set_thumbnail_extension_sets_and_clears(
+    download_db: DownloadDatabase, sample_download_queued: Download
+):
+    """Verify setting and clearing thumbnail_ext works as expected."""
+    # Insert base download (thumbnail_ext defaults to None)
+    await download_db.upsert_download(sample_download_queued)
+
+    # Confirm initial state
+    before = await download_db.get_download_by_id(
+        sample_download_queued.feed_id, sample_download_queued.id
+    )
+    assert before.thumbnail_ext is None
+
+    # Set to jpg
+    await download_db.set_thumbnail_extension(
+        sample_download_queued.feed_id, sample_download_queued.id, "jpg"
+    )
+    after_set = await download_db.get_download_by_id(
+        sample_download_queued.feed_id, sample_download_queued.id
+    )
+    assert after_set.thumbnail_ext == "jpg"
+
+    # Clear back to None
+    await download_db.set_thumbnail_extension(
+        sample_download_queued.feed_id, sample_download_queued.id, None
+    )
+    after_clear = await download_db.get_download_by_id(
+        sample_download_queued.feed_id, sample_download_queued.id
+    )
+    assert after_clear.thumbnail_ext is None
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_set_thumbnail_extension_updates_existing_value(
+    download_db: DownloadDatabase, sample_download_queued: Download
+):
+    """Setting thumbnail_ext again should overwrite the existing value."""
+    await download_db.upsert_download(sample_download_queued)
+
+    await download_db.set_thumbnail_extension(
+        sample_download_queued.feed_id, sample_download_queued.id, "jpg"
+    )
+    await download_db.set_thumbnail_extension(
+        sample_download_queued.feed_id, sample_download_queued.id, "png"
+    )
+
+    updated = await download_db.get_download_by_id(
+        sample_download_queued.feed_id, sample_download_queued.id
+    )
+    assert updated.thumbnail_ext == "png"
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_set_thumbnail_extension_nonexistent_download(
+    download_db: DownloadDatabase,
+):
+    """Setting thumbnail_ext on a nonexistent download raises DownloadNotFoundError."""
+    with pytest.raises(DownloadNotFoundError):
+        await download_db.set_thumbnail_extension("missing_feed", "missing_id", "jpg")
 
 
 @pytest.mark.unit

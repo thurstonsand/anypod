@@ -269,6 +269,43 @@ async def test_identify_prune_candidates_keep_last_db_error_raises_prune_error(
     assert exc_info.value.__cause__ is db_error
 
 
+# --- Tests for Pruner._handle_image_deletion ---
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_handle_image_deletion_success(
+    pruner: Pruner,
+    mock_file_manager: AsyncMock,
+    sample_downloaded_item: Download,
+):
+    """Tests _handle_image_deletion successfully deletes image."""
+    # Add thumbnail extension to the download
+    download_with_image = sample_downloaded_item.model_copy(
+        update={"thumbnail_ext": "jpg"}
+    )
+
+    await pruner._handle_image_deletion(download_with_image, "test_feed")
+
+    mock_file_manager.delete_image.assert_called_once_with(
+        "test_feed", "test_dl_id_1", "jpg"
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_handle_image_deletion_no_thumbnail_ext(
+    pruner: Pruner,
+    mock_file_manager: AsyncMock,
+    sample_downloaded_item: Download,
+):
+    """Tests _handle_image_deletion skips deletion when no thumbnail_ext."""
+    # Download without thumbnail_ext (None by default)
+    await pruner._handle_image_deletion(sample_downloaded_item, "test_feed")
+
+    mock_file_manager.delete_image.assert_not_called()
+
+
 # --- Tests for Pruner._handle_file_deletion ---
 
 
@@ -455,6 +492,35 @@ async def test_process_single_download_upcoming_no_file_deletion(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+async def test_process_single_download_downloaded_with_image_deletes_both(
+    pruner: Pruner,
+    mock_download_db: MagicMock,
+    mock_file_manager: AsyncMock,
+    sample_downloaded_item: Download,
+):
+    """Tests _process_single_download_for_pruning deletes both file and image for DOWNLOADED items with thumbnail."""
+    download_with_image = sample_downloaded_item.model_copy(
+        update={"thumbnail_ext": "jpg"}
+    )
+
+    result = await pruner._process_single_download_for_pruning(
+        download_with_image, "test_feed"
+    )
+
+    assert result is True
+    mock_file_manager.delete_download_file.assert_called_once_with(
+        "test_feed", "test_dl_id_1", "mp4"
+    )
+    mock_file_manager.delete_image.assert_called_once_with(
+        "test_feed", "test_dl_id_1", "jpg"
+    )
+    mock_download_db.archive_download.assert_awaited_once_with(
+        "test_feed", download_with_image.id
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 async def test_process_single_download_archive_error_raises_prune_error(
     pruner: Pruner,
     mock_download_db: MagicMock,
@@ -619,6 +685,9 @@ async def test_archive_feed_success_with_downloads(
         "test_feed", sample_downloaded_item.id, "mp4"
     )
 
+    # Verify feed image was deleted
+    mock_file_manager.delete_image.assert_called_once_with("test_feed", None, "jpg")
+
     # Verify feed was disabled
     mock_feed_db.set_feed_enabled.assert_awaited_once_with("test_feed", False)
 
@@ -762,6 +831,90 @@ async def test_archive_feed_file_deletion_error_continues_archival(
     mock_download_db.archive_download.assert_awaited_once_with(
         "test_feed", sample_downloaded_item.id
     )
+
+    # Feed should still be disabled
+    mock_feed_db.set_feed_enabled.assert_awaited_once_with("test_feed", False)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_archive_feed_feed_image_deletion_failure_raises_prune_error(
+    pruner: Pruner,
+    mock_download_db: MagicMock,
+    mock_feed_db: MagicMock,
+    mock_file_manager: AsyncMock,
+    sample_downloaded_item: Download,
+):
+    """Tests archive_feed raises PruneError when feed image deletion fails."""
+
+    # Mock get_downloads_by_status to return one download
+    def get_downloads_by_status_fn(
+        status_to_filter: DownloadStatus, feed_id: str | None
+    ):
+        return {
+            DownloadStatus.DOWNLOADED: [sample_downloaded_item],
+            DownloadStatus.QUEUED: [],
+            DownloadStatus.UPCOMING: [],
+            DownloadStatus.ERROR: [],
+        }.get(status_to_filter, [])
+
+    mock_download_db.get_downloads_by_status.side_effect = get_downloads_by_status_fn
+
+    # Mock feed image deletion to fail with FileOperationError after download operations succeed
+    file_error = FileOperationError("Permission denied")
+
+    def delete_image_side_effect(feed_id: str, download_id: str | None, ext: str):
+        if download_id is None:  # Feed image deletion
+            raise file_error
+        return None  # Download image deletion succeeds
+
+    mock_file_manager.delete_image.side_effect = delete_image_side_effect
+
+    with pytest.raises(PruneError) as exc_info:
+        await pruner.archive_feed("test_feed")
+
+    assert exc_info.value.feed_id == "test_feed"
+    assert exc_info.value.__cause__ is file_error
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_archive_feed_feed_image_not_found_continues(
+    pruner: Pruner,
+    mock_download_db: MagicMock,
+    mock_feed_db: MagicMock,
+    mock_file_manager: AsyncMock,
+    sample_downloaded_item: Download,
+):
+    """Tests archive_feed continues when feed image not found."""
+
+    # Mock get_downloads_by_status to return one download
+    def get_downloads_by_status_fn(
+        status_to_filter: DownloadStatus, feed_id: str | None
+    ):
+        return {
+            DownloadStatus.DOWNLOADED: [sample_downloaded_item],
+            DownloadStatus.QUEUED: [],
+            DownloadStatus.UPCOMING: [],
+            DownloadStatus.ERROR: [],
+        }.get(status_to_filter, [])
+
+    mock_download_db.get_downloads_by_status.side_effect = get_downloads_by_status_fn
+    mock_download_db.count_downloads_by_status.return_value = 0
+
+    # Mock feed image deletion to return FileNotFoundError (should not raise)
+    def delete_image_side_effect(feed_id: str, download_id: str | None, ext: str):
+        if download_id is None:  # Feed image deletion
+            raise FileNotFoundError("Image not found")
+        return None  # Download image deletion succeeds
+
+    mock_file_manager.delete_image.side_effect = delete_image_side_effect
+
+    archived_count, files_deleted_count = await pruner.archive_feed("test_feed")
+
+    # Should succeed despite missing feed image
+    assert archived_count == 1
+    assert files_deleted_count == 1
 
     # Feed should still be disabled
     mock_feed_db.set_feed_enabled.assert_awaited_once_with("test_feed", False)

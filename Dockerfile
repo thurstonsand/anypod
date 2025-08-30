@@ -29,7 +29,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Runtime stage - use base Debian slim and copy uv binary
 FROM debian:bookworm-slim
 
-# Install curl for health check, ca-certificates for SSL verification, and gosu for user switching
+# Install curl for health check, ca-certificates for SSL verification, gosu for user switching, and yt-dlp
 RUN apt-get update && \
     apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
@@ -37,6 +37,8 @@ RUN apt-get update && \
         ca-certificates \
         gosu \
         ffmpeg && \
+    curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp && \
+    chmod a+rx /usr/local/bin/yt-dlp && \
     rm -rf /var/lib/apt/lists/*
 
 # Set working directory

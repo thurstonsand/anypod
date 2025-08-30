@@ -450,6 +450,12 @@ This section details the components that manage the lifecycle of downloads, from
   - [ ] `models/` - Pydantic request/response models
   - [x] `routers/` - API route handlers organized by domain
 
+### 6.1.1 Image Hosting
+
+- [x] first check on getting the full filepath in there
+  - `https://i.ytimg.com/pl_c/PL8mG-RkN2uTw7PhlnAr4pZZz2QubIbujH/studio_square_thumbnail.jpg` isn't enough, you need the extra `?sqp=CNnJ9cQG-oaymwEICOADEOADSFqi85f_AwYIwe77sQY%3D&rs=AOn4CLB5y7iZmQcD8vHcdJ4WtzLCK_wOuQ` on the end
+- [ ] download and host images locally
+
 ### 6.2 FastAPI Application Setup
 - [x] Add `fastapi`, `uvicorn` to dependencies in pyproject.toml
 - [x] Create FastAPI app factory with proper dependency injection

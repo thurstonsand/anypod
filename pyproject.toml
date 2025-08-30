@@ -16,6 +16,7 @@ dependencies = [
     "croniter>=6.0.0",
     "fastapi>=0.116.0",
     "feedgen>=1.0.0",
+    "httpx>=0.28.1",
     "pydantic>=2.11.3",
     "pydantic-settings>=2.9.1",
     "python-json-logger>=3.3.0",
@@ -25,7 +26,6 @@ dependencies = [
     "sqlite-utils>=3.38",
     "sqlmodel>=0.0.24",
     "uvicorn[standard]>=0.35.0",
-    "yt-dlp>=2025.4.30",
 ]
 
 [dependency-groups]
@@ -35,10 +35,11 @@ dev = [
     "pytest-asyncio>=0.26.0",
     "pytest-mock>=3.14.0",
     "pytest-cov>=5.0.0",
-    "ruff>=0.11.7",
     "pyright>=1.1.400",
     "pytest-xdist>=3.7.0",
-    "httpx>=0.28.1",
+    "respx>=0.22.0",
+    "ruff>=0.11.7",
+    "yt-dlp>=2025.8.22",
 ]
 
 [project.scripts]
@@ -51,7 +52,7 @@ managed = true
 minversion = "7.0"
 pythonpath = ["src", "tests"]
 testpaths = ["tests"]
-addopts = "-ra -q --tb=short --disable-warnings --strict-markers -n 4 --cov=src --cov-report=html --cov-report=term-missing"
+addopts = "-ra -q --tb=short --disable-warnings --strict-markers -n 4"
 filterwarnings = ["error"]
 markers = [
     "integration: mark slow integration tests",
@@ -78,6 +79,84 @@ precision = 2
 [tool.coverage.html]
 directory = "coverage_html_report"
 
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+exclude = [
+    ".venv",
+    ".git",
+    ".tox",
+    "docs",
+    "venv",
+    "bin",
+    "lib",
+    "deps",
+    "build",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "DTZ", # flake8-datetimez
+    "PIE", # flake8-pie
+    "SIM", # flake8-simplify
+    "PTH", # flake8-use-pathlib
+    "RUF", # ruff-specific rules
+    "D",   # pydocstyle checks
+]
+ignore = [
+    "E501", # line too long (handled by line-length)
+    "E203", # whitespace before ':'
+    "D105", # missing docstring in magic method
+    "D107", # missing docstring in init
+]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+force-sort-within-sections = true
+known-first-party = ["custom_components.godspeed", "tests"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"**/__init__.py" = ["D100", "D104"]
+"**/__main__.py" = ["D100", "D104"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
+[tool.pyright]
+include = ["src", "tests"]
+exclude = ["**/node_modules", "**/__pycache__", ".venv", "build", "dist"]
+ignore = ["**/legacy/**"]
+typeCheckingMode = "strict"
+strict = ["src", "tests"]
+pythonVersion = "3.13"
+pythonPlatform = "All"
+venvPath = "."
+venv = ".venv"
+useLibraryCodeForTypes = false
+strictListInference = true
+strictDictionaryInference = true
+strictSetInference = true
+reportMissingImports = "error"
+reportMissingTypeStubs = "error"
+reportMissingModuleSource = "warning"
+reportUnusedImport = "warning"
+reportUnusedVariable = "warning"
+reportOptionalMemberAccess = "error"
+reportOptionalCall = "error"
+stubPath = "typings"
 
 [tool.mypy]
 strict = true

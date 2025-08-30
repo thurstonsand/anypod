@@ -5,9 +5,9 @@
 from datetime import UTC, datetime
 from html.parser import HTMLParser
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.testclient import TestClient
 import pytest
 
@@ -120,6 +120,16 @@ def client(app: FastAPI) -> TestClient:
     return TestClient(app)
 
 
+def _file_response_side_effect(
+    path: str | Path,
+    media_type: str | None = None,
+    headers: dict[str, str] | None = None,
+    **_: object,
+) -> Response:
+    """Common FileResponse side-effect returning a lightweight Response."""
+    return Response(content=b"", media_type=media_type, headers=headers)
+
+
 # --- Tests for RSS feed endpoint ---
 
 
@@ -133,7 +143,7 @@ def test_serve_feed_success(client: TestClient, mock_rss_generator: Mock):
 
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/rss+xml"
-    assert "Cache-Control" in response.headers
+    assert "cache-control" in response.headers
     assert response.content == b'<?xml version="1.0"?><rss></rss>'
 
     mock_rss_generator.get_feed_xml.assert_called_once_with("test_feed")
@@ -154,15 +164,17 @@ def test_serve_feed_not_found(client: TestClient, mock_rss_generator: Mock):
 
 
 @pytest.mark.unit
+@patch("anypod.server.routers.static.FileResponse")
 def test_serve_media_success(
-    client: TestClient, mock_file_manager: Mock, tmp_path: Path
-):
+    mock_file_response: Mock,
+    client: TestClient,
+    mock_file_manager: Mock,
+) -> None:
     """Test successful media file serving."""
-    # Create a real test file
-    test_content = b"fake video content"
-    test_file_path = tmp_path / "test_video.mp4"
-    test_file_path.write_bytes(test_content)
-    mock_file_manager.get_download_file_path.return_value = test_file_path
+    mock_file_manager.get_download_file_path.return_value = Path(
+        "/ignored/test_video.mp4"
+    )
+    mock_file_response.side_effect = _file_response_side_effect
 
     response = client.get("/media/test_feed/test_video.mp4")
 
@@ -170,10 +182,15 @@ def test_serve_media_success(
     assert response.headers["content-type"] == "video/mp4"
     assert "cache-control" in response.headers
     assert response.headers["cache-control"] == "public, max-age=86400"
-    assert response.content == test_content
 
     mock_file_manager.get_download_file_path.assert_called_once_with(
         "test_feed", "test_video", "mp4"
+    )
+    assert mock_file_response.called
+    assert mock_file_response.call_args is not None
+    assert mock_file_response.call_args.kwargs.get("media_type") == "video/mp4"
+    assert mock_file_response.call_args.kwargs.get("path") == Path(
+        "/ignored/test_video.mp4"
     )
 
 
@@ -204,6 +221,7 @@ def test_serve_media_file_operation_error(client: TestClient, mock_file_manager:
 
 
 @pytest.mark.unit
+@patch("anypod.server.routers.static.FileResponse")
 @pytest.mark.parametrize(
     "filename,ext,expected_content_type",
     [
@@ -213,29 +231,36 @@ def test_serve_media_file_operation_error(client: TestClient, mock_file_manager:
     ],
 )
 def test_serve_media_content_type_guessing(
+    mock_file_response: Mock,
     client: TestClient,
     mock_file_manager: Mock,
-    tmp_path: Path,
     filename: str,
     ext: str,
     expected_content_type: str,
-):
+) -> None:
     """Test that media content type is correctly guessed from extension."""
-    # Create a real test file
-    test_content = b"fake content"
-    test_file_path = tmp_path / f"{filename}.{ext}"
-    test_file_path.write_bytes(test_content)
-    mock_file_manager.get_download_file_path.return_value = test_file_path
+    mock_file_manager.get_download_file_path.return_value = Path(
+        f"/ignored/{filename}.{ext}"
+    )
+    mock_file_response.side_effect = _file_response_side_effect
 
     response = client.get(f"/media/test_feed/{filename}.{ext}")
 
     assert response.status_code == 200
     assert response.headers["content-type"] == expected_content_type
-    assert response.content == test_content
 
     # Verify the correct parameters were passed
     mock_file_manager.get_download_file_path.assert_called_once_with(
         "test_feed", filename, ext
+    )
+    # And that FileResponse was constructed with expected media type
+    assert mock_file_response.called
+    assert mock_file_response.call_args is not None
+    assert (
+        mock_file_response.call_args.kwargs.get("media_type") == expected_content_type
+    )
+    assert mock_file_response.call_args.kwargs.get("path") == Path(
+        f"/ignored/{filename}.{ext}"
     )
 
 
@@ -330,8 +355,6 @@ def test_browse_feeds_database_error(client: TestClient, mock_feed_database: Moc
 @pytest.mark.unit
 def test_browse_media_success(client: TestClient, mock_feed_database: Mock):
     """Test successful media directory browsing."""
-    from datetime import UTC, datetime
-
     # Mock feed database to return test feeds
     mock_feeds = [
         Feed(
@@ -406,8 +429,6 @@ def test_browse_media_empty(client: TestClient, mock_feed_database: Mock):
 @pytest.mark.unit
 def test_browse_media_feed_success(client: TestClient, mock_download_database: Mock):
     """Test successful media feed directory browsing."""
-    from datetime import UTC, datetime
-
     # Mock download database to return test downloads
     mock_downloads = [
         Download(
@@ -560,6 +581,272 @@ def test_browse_media_feed_html_escaping(
     # The parser correctly unescapes HTML entities, so parsed text contains original characters
     link_texts = [text for _, text in parsed.links]
     assert "video<script>alert('xss')</script>.mp4" in link_texts
+
+
+# --- Tests for image serving endpoints ---
+
+
+@pytest.mark.unit
+@patch("anypod.server.routers.static.FileResponse")
+def test_serve_feed_image_success(
+    mock_file_response: Mock,
+    client: TestClient,
+    mock_file_manager: Mock,
+) -> None:
+    """Test successful feed image serving."""
+    mock_file_manager.get_image_path.return_value = Path("/ignored/test_feed.jpg")
+    mock_file_response.side_effect = _file_response_side_effect
+
+    response = client.get("/images/test_feed.jpg")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/jpeg"
+    assert "cache-control" in response.headers
+    assert response.headers["cache-control"] == "public, max-age=86400"
+
+    mock_file_manager.get_image_path.assert_called_once_with("test_feed", None, "jpg")
+
+
+@pytest.mark.unit
+def test_serve_feed_image_not_found(client: TestClient, mock_file_manager: Mock):
+    """Test feed image serving when file doesn't exist."""
+    mock_file_manager.get_image_path.side_effect = FileNotFoundError("File not found")
+
+    response = client.get("/images/nonexistent_feed.jpg")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Feed image not found"
+
+
+@pytest.mark.unit
+def test_serve_feed_image_operation_error(client: TestClient, mock_file_manager: Mock):
+    """Test feed image serving when file operation fails."""
+    mock_file_manager.get_image_path.side_effect = FileOperationError(
+        "File operation failed"
+    )
+
+    response = client.get("/images/error_feed.jpg")
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "Internal server error"
+
+
+@pytest.mark.unit
+@patch("anypod.server.routers.static.FileResponse")
+def test_serve_download_image_success(
+    mock_file_response: Mock,
+    client: TestClient,
+    mock_file_manager: Mock,
+) -> None:
+    """Test successful download image serving."""
+    mock_file_manager.get_image_path.return_value = Path("/ignored/download123.jpg")
+    mock_file_response.side_effect = _file_response_side_effect
+
+    response = client.get("/images/test_feed/download123.jpg")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/jpeg"
+    assert "cache-control" in response.headers
+    assert response.headers["cache-control"] == "public, max-age=86400"
+
+    mock_file_manager.get_image_path.assert_called_once_with(
+        "test_feed", "download123", "jpg"
+    )
+
+
+@pytest.mark.unit
+def test_serve_download_image_not_found(client: TestClient, mock_file_manager: Mock):
+    """Test download image serving when file doesn't exist."""
+    mock_file_manager.get_image_path.side_effect = FileNotFoundError("File not found")
+
+    response = client.get("/images/test_feed/nonexistent_download.jpg")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Download image not found"
+
+
+@pytest.mark.unit
+def test_serve_download_image_operation_error(
+    client: TestClient, mock_file_manager: Mock
+):
+    """Test download image serving when file operation fails."""
+    mock_file_manager.get_image_path.side_effect = FileOperationError(
+        "File operation failed"
+    )
+
+    response = client.get("/images/test_feed/error_download.jpg")
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "Internal server error"
+
+
+@pytest.mark.unit
+@patch("anypod.server.routers.static.FileResponse")
+@pytest.mark.parametrize(
+    "ext,expected_content_type",
+    [
+        ("jpg", "image/jpeg"),
+        ("jpeg", "image/jpeg"),
+        ("png", "image/png"),
+        ("webp", "image/webp"),
+    ],
+)
+def test_serve_image_content_type_guessing(
+    mock_file_response: Mock,
+    client: TestClient,
+    mock_file_manager: Mock,
+    ext: str,
+    expected_content_type: str,
+) -> None:
+    """Test that image content type is correctly guessed from extension."""
+    mock_file_manager.get_image_path.return_value = Path(f"/ignored/test_image.{ext}")
+    mock_file_response.side_effect = _file_response_side_effect
+
+    response = client.get(f"/images/test_feed.{ext}")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == expected_content_type
+
+    # Verify the correct parameters were passed
+    mock_file_manager.get_image_path.assert_called_once_with("test_feed", None, ext)
+    assert mock_file_response.called
+    assert mock_file_response.call_args is not None
+    assert (
+        mock_file_response.call_args.kwargs.get("media_type") == expected_content_type
+    )
+    assert mock_file_response.call_args.kwargs.get("path") == Path(
+        f"/ignored/test_image.{ext}"
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "feed_id",
+    [
+        "valid_feed",  # Valid but image not found
+        "feed123",
+        "feed_name",
+        "feed-name",
+        "a",  # Minimum length
+        "a" * 255,  # Maximum length
+    ],
+)
+def test_serve_feed_image_valid_ids_reach_handler(
+    client: TestClient, mock_file_manager: Mock, feed_id: str
+):
+    """Test that valid feed IDs pass validation and reach the file manager."""
+    # Valid IDs should reach the file manager
+    mock_file_manager.get_image_path.side_effect = FileNotFoundError("File not found")
+
+    response = client.get(f"/images/{feed_id}.jpg")
+    assert response.status_code == 404  # Image not found
+
+    # Should have called the file manager
+    mock_file_manager.get_image_path.assert_called_once_with(feed_id, None, "jpg")
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "feed_id,expected_status",
+    [
+        # Invalid feed IDs (FastAPI returns 422 for validation errors)
+        ("feed$", 422),
+        ("feed<script>", 422),
+        ("feed with spaces", 422),
+        ("feed.with.dots", 422),
+        ("a" * 256, 422),  # Too long
+        # Path traversal attempts (routing returns 404)
+        ("../../../etc/passwd", 404),  # Contains slashes, routing returns 404
+        (
+            "feed/../../../etc",
+            404,
+        ),  # Contains slashes, routing resolves to different path
+        ("feed%2e%2e%2f", 404),  # URL encoded ../, routing sees as different path
+    ],
+)
+def test_serve_feed_image_invalid_ids_rejected(
+    client: TestClient, mock_file_manager: Mock, feed_id: str, expected_status: int
+):
+    """Test that invalid feed IDs are rejected before reaching the file manager."""
+    # Invalid IDs should not reach the file manager
+    mock_file_manager.get_image_path.side_effect = Exception("Should not be called")
+
+    response = client.get(f"/images/{feed_id}.jpg")
+    assert response.status_code == expected_status
+
+    # Should not have called the file manager
+    mock_file_manager.get_image_path.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "filename,expected_status",
+    [
+        # Valid filenames
+        ("valid_download", 404),  # Valid but image not found
+        ("download123", 404),
+        ("download.with.dots", 404),  # Dots allowed in filename
+        # Basic security cases
+        ("../../../etc/passwd", 404),  # Contains slashes, routing returns 404
+        ("download$", 422),  # Invalid characters
+        (".", 400),  # Path traversal attempt
+        ("..", 400),  # Path traversal attempt
+    ],
+)
+def test_serve_download_image_validation(
+    client: TestClient, mock_file_manager: Mock, filename: str, expected_status: int
+):
+    """Test download image endpoint filename validation."""
+    if expected_status == 404:
+        mock_file_manager.get_image_path.side_effect = FileNotFoundError(
+            "File not found"
+        )
+
+    response = client.get(f"/images/valid_feed/{filename}.jpg")
+    assert response.status_code == expected_status
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "ext,expected_status",
+    [
+        # Valid extensions
+        ("jpg", 404),  # Valid but file not found
+        ("jpeg", 404),
+        ("png", 404),
+        ("webp", 404),
+        # Basic security cases
+        ("../../../etc", 404),  # Path traversal - routing returns 404
+        ("jpg$", 422),  # Invalid characters
+    ],
+)
+def test_serve_image_extension_validation(
+    client: TestClient,
+    mock_file_manager: Mock,
+    ext: str,
+    expected_status: int,
+):
+    """Test image serve endpoint extension validation."""
+    if expected_status == 404:
+        # For file not found (normal case)
+        mock_file_manager.get_image_path.side_effect = FileNotFoundError(
+            "File not found"
+        )
+
+    response = client.get(f"/images/valid_feed.{ext}")
+    assert response.status_code == expected_status
+
+
+@pytest.mark.unit
+def test_serve_image_security_validation(client: TestClient, mock_file_manager: Mock):
+    """Test that security validation prevents path traversal for images."""
+    # Mock should never be called for malicious input
+    mock_file_manager.get_image_path.side_effect = Exception("Should not be called")
+
+    # Test the dependency validation catches . and ..
+    response = client.get("/images/valid_feed/..jpg")
+    assert response.status_code == 400
+    mock_file_manager.get_image_path.assert_not_called()
 
 
 # --- Security Tests ---

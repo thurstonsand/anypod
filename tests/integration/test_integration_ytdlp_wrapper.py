@@ -7,6 +7,7 @@ import pytest
 
 from anypod.db.types import Download, DownloadStatus, SourceType
 from anypod.exceptions import YtdlpApiError
+from anypod.path_manager import PathManager
 from anypod.ytdlp_wrapper import YtdlpWrapper
 
 # some CC-BY licensed urls to test with
@@ -144,7 +145,7 @@ BIG_BUCK_BUNNY_DOWNLOAD = Download(
     status=DownloadStatus.QUEUED,
     discovered_at=datetime(2014, 11, 11, 14, 5, 55, tzinfo=UTC),
     updated_at=datetime(2014, 11, 11, 14, 5, 55, tzinfo=UTC),
-    thumbnail="https://i.ytimg.com/vi_webp/aqz-KE-bpKQ/maxresdefault.webp",
+    remote_thumbnail_url="https://i.ytimg.com/vi_webp/aqz-KE-bpKQ/maxresdefault.webp",
     retries=0,
     last_error=None,
 )
@@ -157,6 +158,7 @@ BIG_BUCK_BUNNY_DOWNLOAD = Download(
     TEST_URLS_PARAMS,
 )
 async def test_fetch_metadata_success(
+    path_manager: PathManager,  # PathManager fixture
     ytdlp_wrapper: YtdlpWrapper,
     url_type: str,
     url: str,
@@ -178,6 +180,7 @@ async def test_fetch_metadata_success(
         source_url=url,
         resolved_url=expected_resolved_url,
         user_yt_cli_args=YT_DLP_MINIMAL_ARGS,
+        yt_channel="stable",
         cookies_path=cookies_path,
     )
 
@@ -187,6 +190,7 @@ async def test_fetch_metadata_success(
         source_url=url,
         resolved_url=expected_resolved_url,
         user_yt_cli_args=YT_DLP_MINIMAL_ARGS,
+        yt_channel="stable",
         keep_last=1,
         cookies_path=cookies_path,
     )
@@ -220,9 +224,63 @@ async def test_fetch_metadata_success(
 
     assert download.ext == "mp4", f"Download ext should be mp4 for {url_type}"
 
-    assert download.thumbnail, f"Download thumbnail should not be empty for {url_type}"
+    assert download.remote_thumbnail_url, (
+        f"Download thumbnail should not be empty for {url_type}"
+    )
     assert download.status == DownloadStatus.QUEUED, (
         f"Download status should be QUEUED for {url_type}, got {download.status}"
+    )
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "url_type, url, expected_source_type, expected_title_contains, expected_resolved_url",
+    TEST_URLS_PARAMS,
+)
+async def test_download_feed_thumbnail_success(
+    path_manager: PathManager,
+    ytdlp_wrapper: YtdlpWrapper,
+    url_type: str,
+    url: str,
+    expected_source_type: SourceType,
+    expected_title_contains: str,
+    expected_resolved_url: str,
+    cookies_path: Path | None,
+):
+    """Tests successful feed thumbnail downloading for various URL types."""
+    feed_id = f"test_thumb_{url_type}"
+
+    # Record initial state of thumbnail files in CWD to detect regression
+    cwd = Path.cwd()
+    initial_thumb_files = set(cwd.glob("*.jpg")) | set(cwd.glob("*.webp"))
+
+    result = await ytdlp_wrapper.download_feed_thumbnail(
+        feed_id=feed_id,
+        source_type=expected_source_type,
+        source_url=url,
+        resolved_url=expected_resolved_url,
+        user_yt_cli_args=YT_DLP_MINIMAL_ARGS,
+        yt_channel="stable",
+        cookies_path=cookies_path,
+    )
+
+    # Verify download was successful
+    assert result == "jpg", (
+        f"Expected successful download to return 'jpg', got {result}"
+    )
+
+    # Verify no thumbnail files were written to current working directory
+    final_thumb_files = set(cwd.glob("*.jpg")) | set(cwd.glob("*.webp"))
+    new_thumb_files = final_thumb_files - initial_thumb_files
+    assert not new_thumb_files, (
+        f"No thumbnail files should be written to CWD, but found: {[str(f) for f in new_thumb_files]}"
+    )
+
+    # Verify hosted feed-level thumbnail exists in images/{feed_id}/{feed_id}.jpg
+    feed_image_path = await path_manager.image_path(feed_id, None, "jpg")
+    assert feed_image_path.exists(), (
+        f"Expected feed image at {feed_image_path} to exist for {url_type}"
     )
 
 
@@ -253,6 +311,7 @@ async def test_thumbnail_format_validation(
         source_url=url,
         resolved_url=expected_resolved_url,
         user_yt_cli_args=YT_DLP_MINIMAL_ARGS,
+        yt_channel="stable",
         keep_last=1,
         cookies_path=cookies_path,
     )
@@ -264,16 +323,21 @@ async def test_thumbnail_format_validation(
     download = downloads[0]
 
     # All test videos should have thumbnails
-    assert download.thumbnail, f"Download should have a thumbnail for {url_type}"
+    assert download.remote_thumbnail_url, (
+        f"Download should have a thumbnail for {url_type}"
+    )
 
     # Check that thumbnail URL contains supported format (may have query params after)
-    assert ".jpg" in download.thumbnail or ".png" in download.thumbnail, (
-        f"Thumbnail URL should contain .jpg or .png, got: {download.thumbnail}"
+    assert (
+        ".jpg" in download.remote_thumbnail_url
+        or ".png" in download.remote_thumbnail_url
+    ), (
+        f"Thumbnail URL should contain .jpg or .png, got: {download.remote_thumbnail_url}"
     )
 
     # Verify it's a valid URL format
-    assert download.thumbnail.startswith("http"), (
-        f"Thumbnail should be a valid HTTP URL, got: {download.thumbnail}"
+    assert download.remote_thumbnail_url.startswith("http"), (
+        f"Thumbnail should be a valid HTTP URL, got: {download.remote_thumbnail_url}"
     )
 
 
@@ -293,6 +357,7 @@ async def test_fetch_metadata_non_existent_video(
             source_url=INVALID_VIDEO_URL,
             resolved_url=INVALID_VIDEO_URL,
             user_yt_cli_args=YT_DLP_MINIMAL_ARGS,
+            yt_channel="stable",
             cookies_path=cookies_path,
         )
 
@@ -328,6 +393,7 @@ async def test_fetch_metadata_with_impossible_filter(
         source_url=url,
         resolved_url=expected_resolved_url,
         user_yt_cli_args=impossible_filter_args,
+        yt_channel="stable",
         cookies_path=cookies_path,
     )
 
@@ -337,6 +403,7 @@ async def test_fetch_metadata_with_impossible_filter(
         source_url=url,
         resolved_url=expected_resolved_url,
         user_yt_cli_args=impossible_filter_args,
+        yt_channel="stable",
         cookies_path=cookies_path,
     )
     assert len(downloads) == 0, (
@@ -358,6 +425,7 @@ async def test_fetch_metadata_with_impossible_filter(
 @pytest.mark.asyncio
 async def test_download_media_to_file_success(
     ytdlp_wrapper: YtdlpWrapper,
+    path_manager: PathManager,
     cookies_path: Path | None,
 ):
     """Tests successful media download for a specific video.
@@ -377,7 +445,7 @@ async def test_download_media_to_file_success(
         filesize=12345,
         duration=635,
         status=DownloadStatus.QUEUED,
-        thumbnail="https://i.ytimg.com/vi_webp/aqz-KE-bpKQ/maxresdefault.webp",
+        remote_thumbnail_url="https://i.ytimg.com/vi_webp/aqz-KE-bpKQ/maxresdefault.webp",
         retries=0,
         last_error=None,
         discovered_at=datetime(2014, 11, 11, 14, 5, 55, tzinfo=UTC),
@@ -390,6 +458,7 @@ async def test_download_media_to_file_success(
     downloaded_file_path = await ytdlp_wrapper.download_media_to_file(
         download=download,
         user_yt_cli_args=cli_args,
+        yt_channel="stable",
         cookies_path=cookies_path,
     )
 
@@ -397,6 +466,16 @@ async def test_download_media_to_file_success(
         f"Downloaded file does not exist at {downloaded_file_path}"
     )
     assert downloaded_file_path.is_file(), f"Path {downloaded_file_path} is not a file"
+
+    # Verify download-level thumbnail was downloaded and converted to JPG
+    # downloads_images_dir = await path_manager.download_images_dir(download.feed_id)
+    # download_image_path = downloads_images_dir / f"{download.id}.jpg"
+    download_image_path = await path_manager.image_path(
+        download.feed_id, download.id, "jpg"
+    )
+    assert download_image_path.exists(), (
+        f"Expected download thumbnail at {download_image_path} to exist"
+    )
 
 
 @pytest.mark.integration
@@ -426,6 +505,7 @@ async def test_download_media_to_file_non_existent(
         await ytdlp_wrapper.download_media_to_file(
             download=non_existent_download,
             user_yt_cli_args=cli_args,
+            yt_channel="stable",
             cookies_path=cookies_path,
         )
 
@@ -453,6 +533,7 @@ async def test_download_media_to_file_impossible_filter(
         await ytdlp_wrapper.download_media_to_file(
             download=BIG_BUCK_BUNNY_DOWNLOAD,
             user_yt_cli_args=impossible_filter_args,
+            yt_channel="stable",
             cookies_path=cookies_path,
         )
 
@@ -488,6 +569,7 @@ async def test_fetch_metadata_with_keep_last_limit(
         source_url=channel_url,
         resolved_url=None,
         user_yt_cli_args=minimal_args,
+        yt_channel="stable",
         cookies_path=cookies_path,
     )
 
@@ -497,6 +579,7 @@ async def test_fetch_metadata_with_keep_last_limit(
         source_url=channel_url,
         resolved_url=None,
         user_yt_cli_args=minimal_args,
+        yt_channel="stable",
         keep_last=keep_last,
         cookies_path=cookies_path,
     )
@@ -549,6 +632,7 @@ async def test_fetch_metadata_with_keep_last_none_vs_limit(
         source_url=channel_url,
         resolved_url=None,
         user_yt_cli_args=minimal_args,
+        yt_channel="stable",
         keep_last=1,
         cookies_path=cookies_path,
     )
@@ -564,6 +648,7 @@ async def test_fetch_metadata_with_keep_last_none_vs_limit(
         source_url=channel_url,
         resolved_url=None,
         user_yt_cli_args=args_with_reasonable_limit,
+        yt_channel="stable",
         keep_last=None,
         cookies_path=cookies_path,
     )

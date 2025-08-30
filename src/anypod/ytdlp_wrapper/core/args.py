@@ -1,6 +1,7 @@
 """Builder for yt-dlp command-line arguments."""
 
 from datetime import datetime
+import os
 from pathlib import Path
 
 
@@ -17,6 +18,20 @@ class YtdlpArgs:
                 .skip_download()
                 .playlist_items("1-5"))
     """
+
+    # Cache pytest detection to avoid repeated environment checks
+    _running_under_pytest_cached: bool | None = None
+
+    @classmethod
+    def _running_under_pytest(cls) -> bool:
+        """Return True if executing under pytest.
+
+        Returns:
+            True when PYTEST_CURRENT_TEST environment variable is present.
+        """
+        if cls._running_under_pytest_cached is None:
+            cls._running_under_pytest_cached = "PYTEST_CURRENT_TEST" in os.environ
+        return cls._running_under_pytest_cached
 
     def __init__(self, user_args: list[str] | None = None):
         self._additional_args = user_args or []
@@ -42,14 +57,23 @@ class YtdlpArgs:
 
         # Output configuration
         self._output: str | None = None
+        # Thumbnail-specific output
         self._convert_thumbnails: str | None = None
+        self._write_thumbnails: bool = False
+        self._thumbnail_output: str | None = None
+        self._pl_thumbnail_output: str | None = None
 
         # Path configuration
         self._paths_temp: Path | None = None
         self._paths_home: Path | None = None
+        self._paths_thumbnail: Path | None = None
+        self._paths_pl_thumbnail: Path | None = None
 
         # Authentication
         self._cookies: Path | None = None
+
+        # Update control
+        self._update_to: str | None = None
 
     def quiet(self) -> "YtdlpArgs":
         """Enable quiet mode (suppress verbose output)."""
@@ -96,6 +120,39 @@ class YtdlpArgs:
         self._convert_thumbnails = format
         return self
 
+    def write_thumbnails(self) -> "YtdlpArgs":
+        """Enable thumbnail downloading.
+
+        Returns:
+            The builder instance for chaining.
+        """
+        self._write_thumbnails = True
+        return self
+
+    def output_thumbnail(self, template: str) -> "YtdlpArgs":
+        """Set output template for thumbnail files.
+
+        Args:
+            template: The output template string for thumbnails (e.g., "%(id)s.%(ext)s").
+
+        Returns:
+            The builder instance for chaining.
+        """
+        self._thumbnail_output = template
+        return self
+
+    def output_pl_thumbnail(self, template: str) -> "YtdlpArgs":
+        """Set output template for playlist-level thumbnail files.
+
+        Args:
+            template: The output template string for playlist thumbnails (e.g., "%(id)s.%(ext)s").
+
+        Returns:
+            The builder instance for chaining.
+        """
+        self._pl_thumbnail_output = template
+        return self
+
     def paths_temp(self, path: Path) -> "YtdlpArgs":
         """Set temporary directory path for downloads."""
         self._paths_temp = path
@@ -104,6 +161,30 @@ class YtdlpArgs:
     def paths_home(self, path: Path) -> "YtdlpArgs":
         """Set final directory path for downloads."""
         self._paths_home = path
+        return self
+
+    def paths_thumbnail(self, path: Path) -> "YtdlpArgs":
+        """Set the directory where thumbnails will be saved.
+
+        Args:
+            path: Filesystem path to save thumbnails in.
+
+        Returns:
+            The builder instance for chaining.
+        """
+        self._paths_thumbnail = path
+        return self
+
+    def paths_pl_thumbnail(self, path: Path) -> "YtdlpArgs":
+        """Set the directory where playlist thumbnails will be saved.
+
+        Args:
+            path: Filesystem path to save playlist thumbnails in.
+
+        Returns:
+            The builder instance for chaining.
+        """
+        self._paths_pl_thumbnail = path
         return self
 
     def cookies(self, path: Path) -> "YtdlpArgs":
@@ -135,6 +216,16 @@ class YtdlpArgs:
         self._break_match_filters = filter_expr
         return self
 
+    def update_to(self, channel: str) -> "YtdlpArgs":
+        """Update to a specific channel or version.
+
+        Args:
+            channel: Channel name (stable, nightly, master), version tag,
+                    or repository (owner/repo format).
+        """
+        self._update_to = channel
+        return self
+
     def extend_args(self, args: list[str]) -> "YtdlpArgs":
         """Add additional raw arguments to the end."""
         self._additional_args.extend(args)
@@ -151,67 +242,80 @@ class YtdlpArgs:
         return self._additional_args.copy()
 
     def to_list(self) -> list[str]:
-        """Convert arguments to a list of strings for subprocess execution.
+        """Convert arguments to a complete command list for subprocess execution.
 
         Returns:
-            List of CLI arguments ready for yt-dlp subprocess.
+            Complete command list including yt-dlp binary and CLI arguments.
         """
-        args: list[str] = []
+        # Start with the yt-dlp command prefix
+        cmd = ["uv", "run", "yt-dlp"] if self._running_under_pytest() else ["yt-dlp"]
 
-        # Start with user-provided arguments
-        args.extend(self._additional_args)
+        # Add user-provided arguments
+        cmd.extend(self._additional_args)
 
-        # Add boolean flags
         # Output control
         if self._quiet:
-            args.append("--quiet")
+            cmd.append("--quiet")
         if self._no_warnings:
-            args.append("--no-warnings")
+            cmd.append("--no-warnings")
         if self._dump_single_json:
-            args.append("--dump-single-json")
+            cmd.append("--dump-single-json")
         if self._dump_json:
-            args.append("--dump-json")
+            cmd.append("--dump-json")
 
         # Download control
         if self._skip_download:
-            args.append("--skip-download")
+            cmd.append("--skip-download")
 
         # Playlist control
         if self._flat_playlist:
-            args.append("--flat-playlist")
+            cmd.append("--flat-playlist")
         if self._lazy_playlist:
-            args.append("--lazy-playlist")
-
-        # Add arguments with values
-        # Playlist filtering and control
+            cmd.append("--lazy-playlist")
         if self._playlist_limit is not None:
-            args.extend(["--playlist-items", f":{self._playlist_limit}"])
+            cmd.extend(["--playlist-items", f":{self._playlist_limit}"])
         if self._break_match_filters is not None:
-            args.extend(["--break-match-filters", self._break_match_filters])
+            cmd.extend(["--break-match-filters", self._break_match_filters])
 
         # Date filtering
         if self._dateafter is not None:
-            args.extend(["--dateafter", self._dateafter.strftime("%Y%m%d")])
+            cmd.extend(["--dateafter", self._dateafter.strftime("%Y%m%d")])
         if self._datebefore is not None:
-            args.extend(["--datebefore", self._datebefore.strftime("%Y%m%d")])
+            cmd.extend(["--datebefore", self._datebefore.strftime("%Y%m%d")])
 
         # Output configuration
         if self._output is not None:
-            args.extend(["--output", self._output])
+            cmd.extend(["--output", self._output])
+
+        # Thumbnail-specific output
         if self._convert_thumbnails is not None:
-            args.extend(["--convert-thumbnails", self._convert_thumbnails])
+            cmd.extend(["--convert-thumbnails", self._convert_thumbnails])
+        if self._write_thumbnails:
+            cmd.append("--write-thumbnail")
+        if self._pl_thumbnail_output is not None:
+            cmd.extend(["--output", f"pl_thumbnail:{self._pl_thumbnail_output}"])
+        if self._thumbnail_output is not None:
+            cmd.extend(["--output", f"thumbnail:{self._thumbnail_output}"])
 
         # Path configuration
         if self._paths_temp is not None:
-            args.extend(["--paths", f"temp:{self._paths_temp}"])
+            cmd.extend(["--paths", f"temp:{self._paths_temp}"])
         if self._paths_home is not None:
-            args.extend(["--paths", f"home:{self._paths_home}"])
+            cmd.extend(["--paths", f"home:{self._paths_home}"])
+        if self._paths_thumbnail is not None:
+            cmd.extend(["--paths", f"thumbnail:{self._paths_thumbnail}"])
+        if self._paths_pl_thumbnail is not None:
+            cmd.extend(["--paths", f"pl_thumbnail:{self._paths_pl_thumbnail}"])
 
         # Authentication
         if self._cookies is not None:
-            args.extend(["--cookies", str(self._cookies)])
+            cmd.extend(["--cookies", str(self._cookies)])
 
-        return args
+        # Update control - skip in pytest to avoid issues with pip-installed yt-dlp
+        if self._update_to is not None and not self._running_under_pytest():
+            cmd.extend(["--update-to", self._update_to])
+
+        return cmd
 
     def __str__(self) -> str:
         """Build command-line argument string for yt-dlp subprocess.

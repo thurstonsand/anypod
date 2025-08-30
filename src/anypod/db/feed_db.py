@@ -241,9 +241,10 @@ class FeedDatabase:
         log_params = {"feed_id": feed_id, "enabled": enabled}
         logger.debug("Attempting to set feed enabled status.", extra=log_params)
         async with self._db.session() as session:
-            stmt = (
-                update(Feed).where(col(Feed.id) == feed_id).values(is_enabled=enabled)
-            )
+            values: dict[str, Any] = {"is_enabled": enabled}
+            if not enabled:
+                values["image_ext"] = None
+            stmt = update(Feed).where(col(Feed.id) == feed_id).values(**values)
             try:
                 self._db.assert_exactly_one_row_affected(
                     await session.execute(stmt), feed_id=feed_id
@@ -265,7 +266,7 @@ class FeedDatabase:
         language: str | None = None,
         author: str | None = None,
         author_email: str | None = None,
-        image_url: str | None = None,
+        remote_image_url: str | None = None,
         category: PodcastCategories | None = None,
         podcast_type: PodcastType | None = None,
         explicit: PodcastExplicit | None = None,
@@ -283,7 +284,7 @@ class FeedDatabase:
             language: Optional new language.
             author: Optional new author.
             author_email: Optional new author email.
-            image_url: Optional new image URL.
+            remote_image_url: Optional new image URL.
             category: Optional new category.
             podcast_type: Optional new podcast type.
             explicit: Optional new explicit flag.
@@ -310,8 +311,8 @@ class FeedDatabase:
             updates["author"] = author
         if author_email is not None:
             updates["author_email"] = author_email
-        if image_url is not None:
-            updates["image_url"] = image_url
+        if remote_image_url is not None:
+            updates["remote_image_url"] = remote_image_url
         if category is not None:
             updates["category"] = category
         if podcast_type is not None:
