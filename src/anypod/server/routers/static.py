@@ -271,3 +271,77 @@ async def serve_media(
             "Cache-Control": "public, max-age=86400",  # Cache for 24 hours
         },
     )
+
+
+@router.api_route("/images/{feed_id}.{ext}", methods=["GET", "HEAD"])
+async def serve_feed_image(
+    feed_id: ValidatedFeedId,
+    ext: ValidatedExtension,
+    file_manager: FileManagerDep,
+) -> FileResponse:
+    """Serve feed-level image file.
+
+    Args:
+        feed_id: The unique identifier for the feed.
+        ext: The file extension of the image file.
+        file_manager: The file manager dependency.
+
+    Returns:
+        File response with image content.
+
+    Raises:
+        HTTPException: If image not found or cannot be served.
+    """
+    logger.debug("Serving feed image", extra={"feed_id": feed_id})
+
+    try:
+        file_path = await file_manager.get_image_path(feed_id, None, ext)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail="Feed image not found") from e
+    except FileOperationError as e:
+        raise HTTPException(status_code=500, detail="Internal server error") from e
+
+    return FileResponse(
+        path=file_path,
+        media_type=mimetypes.guess_type(f"file.{ext}")[0],
+        headers={"Cache-Control": "public, max-age=86400"},  # 24 hours
+    )
+
+
+@router.api_route("/images/{feed_id}/{filename}.{ext}", methods=["GET", "HEAD"])
+async def serve_download_image(
+    feed_id: ValidatedFeedId,
+    filename: ValidatedFilename,
+    ext: ValidatedExtension,
+    file_manager: FileManagerDep,
+) -> FileResponse:
+    """Serve download-level image file.
+
+    Args:
+        feed_id: The unique identifier for the feed.
+        filename: The download identifier (filename without extension).
+        ext: The file extension of the image file.
+        file_manager: The file manager dependency.
+
+    Returns:
+        File response with image content.
+
+    Raises:
+        HTTPException: If image not found or cannot be served.
+    """
+    logger.debug(
+        "Serving download image", extra={"feed_id": feed_id, "download_id": filename}
+    )
+
+    try:
+        file_path = await file_manager.get_image_path(feed_id, filename, ext)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail="Download image not found") from e
+    except FileOperationError as e:
+        raise HTTPException(status_code=500, detail="Internal server error") from e
+
+    return FileResponse(
+        path=file_path,
+        media_type=mimetypes.guess_type(f"file.{ext}")[0],
+        headers={"Cache-Control": "public, max-age=86400"},  # 24 hours
+    )

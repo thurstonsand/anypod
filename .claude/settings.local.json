@@ -30,7 +30,8 @@
       "Bash(true)",
       "WebFetch(domain:github.com)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "mcp__ide__getDiagnostics"
+      "mcp__ide__getDiagnostics",
+      "Bash(git show-branch:*)"
     ],
     "deny": [
       "Bash(python3:*)"
