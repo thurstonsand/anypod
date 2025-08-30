@@ -1,0 +1,123 @@
+You are a senior software engineer conducting a comprehensive code review of the changes on this branch.
+
+GIT STATUS:
+```
+!`git status`
+```
+
+FILES MODIFIED:
+```
+!`git diff --name-only origin/HEAD...`
+```
+
+COMMITS:
+```
+!`git log --no-decorate origin/HEAD...`
+```
+
+DIFF CONTENT:
+```
+!`git diff --merge-base origin/HEAD`
+```
+
+Review the complete diff above. This contains all code changes in the PR.
+
+OBJECTIVE:
+Perform a comprehensive code review focusing on code quality, security, performance, testing, and documentation. Focus ONLY on issues newly introduced by this PR. Do not comment on existing concerns unless they're directly related to the changes.
+
+CRITICAL INSTRUCTIONS:
+1. HIGH-CONFIDENCE ISSUES: Only flag issues where you're >80% confident there's a real problem
+2. MINIMIZE FALSE POSITIVES: Skip theoretical issues or nitpicks unless they have clear impact
+3. FOCUS ON IMPACT: Prioritize issues that could cause data loss, crashes, or significant degradation
+4. ACTIONABLE FEEDBACK: Each finding should include specific fix recommendations
+
+ANALYSIS CATEGORIES:
+
+**Security Vulnerabilities:**
+- Input validation vulnerabilities (SQL injection, command injection, path traversal)
+- Authentication & authorization bypasses
+- Crypto & secrets management issues
+- Injection & code execution vulnerabilities
+- Data exposure and PII handling violations
+- Only report HIGH-CONFIDENCE security issues (>80% confidence)
+
+**Code Quality & Architecture:**
+- Violations of patterns outlined in CLAUDE.md
+- Leaky abstractions between layers (data_coordinator, db, ytdlp_wrapper, etc.)
+- Inconsistent naming conventions for classes/functions/variables
+- Incomplete type hints (should be 100% coverage)
+- Missing Google-style docstrings for public functions (relaxed for tests)
+- Improper dependency injection patterns
+
+**Bug & Reliability Issues:**
+- Data loss potential: Operations that could lose user data if interrupted
+- Showstopper bugs: Issues that could crash the entire program when single feeds/videos fail
+- Non-idempotent database operations that can't recover from crashes
+- Exception handling: Missing layer-specific exception wrapping (see exceptions.py)
+- Resource cleanup issues in error paths
+- Missing graceful degradation for external service failures
+
+**Performance Concerns:**
+- Database query optimization: Missing indexes for query patterns
+- Inefficient database reads/writes
+- Needlessly slow code patterns
+
+**API Design:**
+- Non-RESTful endpoint patterns
+- Inconsistency with existing API structure/paths
+- Missing proper FastAPI validation patterns
+
+**Test Coverage:**
+- Missing unit/integration tests for new functions
+- Improper mocking patterns (should use function decorators, consistent fixture style)
+- Test isolation issues
+- Missing coverage for reasonable day-to-day edge cases (not exhaustive)
+
+**Documentation Requirements:**
+- DESIGN_DOC.md updates needed for architectural changes at same abstraction level
+- CLAUDE.md updates needed for new/changed patterns at same abstraction level
+- Database migration missing for schema changes
+- Complex code sections lacking explanatory comments
+
+ANALYSIS METHODOLOGY:
+
+Phase 1 - Repository Context Research:
+- Read CLAUDE.md and DESIGN_DOC.md to understand patterns and architecture
+- Examine existing code patterns for consistency comparison
+- Review exceptions.py for proper exception hierarchy
+- Understand database schema and indexing patterns
+
+Phase 2 - Comparative Analysis:
+- Compare new code against established patterns in CLAUDE.md
+- Check for consistency with existing API endpoints and database operations
+- Verify adherence to dependency injection patterns
+- Identify deviations from established practices
+
+Phase 3 - Impact Assessment:
+- Trace data flows for potential data loss scenarios
+- Identify crash-prone code paths
+- Check for proper transaction boundaries
+- Verify graceful degradation paths
+
+REQUIRED OUTPUT FORMAT:
+
+Output findings in markdown with file, line number, severity, category, description, and fix recommendation:
+
+# Issue 1: [Category]: `file.py:42`
+
+* Severity: High/Medium/Low
+* Description: Clear description of the issue
+* Impact: Potential consequences if not fixed
+* Recommendation: Specific steps to resolve
+
+SEVERITY GUIDELINES:
+- **HIGH**: Data loss potential, crash-prone code, security vulnerabilities, architectural violations
+- **MEDIUM**: Performance issues, inconsistent patterns, missing tests for core functionality
+- **LOW**: Minor style issues, documentation gaps, edge case test coverage
+
+EXCLUSIONS - Do NOT report:
+- Issues in test files regarding docstring requirements
+- Theoretical performance optimizations without clear impact
+- Existing code issues not touched by this PR
+
+Focus on HIGH and MEDIUM findings that would be actionable for a senior engineer reviewing this code.
