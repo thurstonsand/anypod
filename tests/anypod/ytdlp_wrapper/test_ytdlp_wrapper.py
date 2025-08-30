@@ -231,6 +231,58 @@ async def test_download_feed_thumbnail_args(
         assert output_value == expected_template
 
 
+@pytest.mark.unit
+@patch.object(YtdlpCore, "download")
+@patch("aiofiles.os.path.isfile")
+@pytest.mark.asyncio
+async def test_download_feed_thumbnail_success_return_value(
+    mock_is_file: AsyncMock,
+    mock_ytdlcore_download: AsyncMock,
+    ytdlp_wrapper: YtdlpWrapper,
+):
+    """Tests that download_feed_thumbnail returns 'jpg' on successful download."""
+    mock_is_file.return_value = True
+
+    result = await ytdlp_wrapper.download_feed_thumbnail(
+        feed_id="test_feed",
+        source_type=SourceType.SINGLE_VIDEO,
+        source_url="http://example.com/video",
+        resolved_url=None,
+        user_yt_cli_args=[],
+        yt_channel="stable",
+    )
+
+    assert result == "jpg"
+    mock_ytdlcore_download.assert_called_once()
+    mock_is_file.assert_called_once()
+
+
+@pytest.mark.unit
+@patch.object(YtdlpCore, "download")
+@patch("aiofiles.os.path.isfile")
+@pytest.mark.asyncio
+async def test_download_feed_thumbnail_file_not_found(
+    mock_is_file: AsyncMock,
+    mock_ytdlcore_download: AsyncMock,
+    ytdlp_wrapper: YtdlpWrapper,
+):
+    """Tests that download_feed_thumbnail returns None when file doesn't exist."""
+    mock_is_file.return_value = False
+
+    result = await ytdlp_wrapper.download_feed_thumbnail(
+        feed_id="test_feed",
+        source_type=SourceType.SINGLE_VIDEO,
+        source_url="http://example.com/video",
+        resolved_url=None,
+        user_yt_cli_args=[],
+        yt_channel="stable",
+    )
+
+    assert result is None
+    mock_ytdlcore_download.assert_called_once()
+    mock_is_file.assert_called_once()
+
+
 # --- Tests for YtdlpWrapper.download_media_to_file ---
 
 

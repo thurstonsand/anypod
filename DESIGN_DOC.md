@@ -186,25 +186,25 @@ After reconciliation, the system performs an initial sync of all enabled feeds t
 ### Downloads Table
 ```sql
 CREATE TABLE downloads (
-  feed                   TEXT NOT NULL,
-  id                     TEXT NOT NULL,
-  source_url             TEXT NOT NULL,
-  title                  TEXT NOT NULL,
-  published              TEXT NOT NULL,           -- ISO 8601 datetime string
-  ext                    TEXT NOT NULL,
-  mime_type              TEXT NOT NULL,
-  filesize               INTEGER NOT NULL,        -- bytes
-  duration               INTEGER NOT NULL,        -- seconds
-  status                 TEXT NOT NULL,           -- upcoming | queued | downloaded | error | skipped | archived
-  discovered_at          TEXT NOT NULL,           -- ISO 8601 datetime string
-  updated_at             TEXT NOT NULL,           -- ISO 8601 datetime string
-  original_thumbnail_url TEXT,                    -- Original thumbnail URL from source
-  thumbnail_ext          TEXT,                    -- Hosted thumbnail file extension (always "jpg")
-  description            TEXT,                    -- description from source
-  quality_info           TEXT,                    -- quality metadata
-  retries                INTEGER NOT NULL DEFAULT 0,
-  last_error             TEXT,
-  downloaded_at          TEXT,                    -- ISO 8601 datetime string
+  feed                 TEXT NOT NULL,
+  id                   TEXT NOT NULL,
+  source_url           TEXT NOT NULL,
+  title                TEXT NOT NULL,
+  published            TEXT NOT NULL,           -- ISO 8601 datetime string
+  ext                  TEXT NOT NULL,
+  mime_type            TEXT NOT NULL,
+  filesize             INTEGER NOT NULL,        -- bytes
+  duration             INTEGER NOT NULL,        -- seconds
+  status               TEXT NOT NULL,           -- upcoming | queued | downloaded | error | skipped | archived
+  discovered_at        TEXT NOT NULL,           -- ISO 8601 datetime string
+  updated_at           TEXT NOT NULL,           -- ISO 8601 datetime string
+  remote_thumbnail_url TEXT,                    -- Original thumbnail URL from source
+  thumbnail_ext        TEXT,                    -- Hosted thumbnail file extension (always "jpg")
+  description          TEXT,                    -- description from source
+  quality_info         TEXT,                    -- quality metadata
+  retries              INTEGER NOT NULL DEFAULT 0,
+  last_error           TEXT,
+  downloaded_at        TEXT,                    -- ISO 8601 datetime string
   PRIMARY KEY (feed, id)
 );
 CREATE INDEX idx_feed_status ON downloads(feed, status);
@@ -245,7 +245,7 @@ CREATE TABLE feeds (
   language                  TEXT,
   author                    TEXT,
   author_email              TEXT,
-  original_image_url        TEXT,                              -- Original image URL from source (will be downloaded)
+  remote_image_url        TEXT,                              -- Original image URL from source (will be downloaded)
   category                  TEXT NOT NULL DEFAULT 'TV & Film', -- Stored as string, parsed into PodcastCategories
   podcast_type              TEXT NOT NULL DEFAULT 'episodic',  -- Stored as string, parsed into PodcastType
   explicit                  TEXT NOT NULL DEFAULT 'NO'         -- Stored as string, parsed into PodcastExplicit

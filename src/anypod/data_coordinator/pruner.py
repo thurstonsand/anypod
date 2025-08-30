@@ -152,6 +152,46 @@ class Pruner:
             ) from e
         logger.debug("File deleted successfully during pruning.", extra=log_params)
 
+    async def _handle_image_deletion(self, download: Download, feed_id: str) -> None:
+        """Handle image deletion for a DOWNLOADED item being pruned.
+
+        Args:
+            download: The Download object with DOWNLOADED status.
+            feed_id: The feed identifier.
+
+        Raises:
+            PruneError: If image deletion fails.
+        """
+        if not download.thumbnail_ext:
+            return
+
+        log_params: dict[str, Any] = {
+            "feed_id": feed_id,
+            "download_thumbnail": f"{download.id}.{download.thumbnail_ext}",
+        }
+        logger.debug(
+            "Attempting to delete image for downloaded item being pruned.",
+            extra=log_params,
+        )
+
+        try:
+            await self._file_manager.delete_image(
+                feed_id, download.id, download.thumbnail_ext
+            )
+        except FileNotFoundError:
+            logger.debug(
+                "Image file not found for deletion during pruning.",
+                extra=log_params,
+            )
+        except FileOperationError as e:
+            raise PruneError(
+                message="Failed to delete image during pruning.",
+                feed_id=feed_id,
+                download_id=download.id,
+            ) from e
+        else:
+            logger.debug("Image deleted successfully during pruning.", extra=log_params)
+
     async def _archive_download(self, download: Download, feed_id: str) -> None:
         """Archive a download in the database.
 
@@ -204,7 +244,7 @@ class Pruner:
 
         file_deleted = False
 
-        # Delete file if the download is DOWNLOADED
+        # Delete file+thumbnail if the download is DOWNLOADED
         if download.status == DownloadStatus.DOWNLOADED:
             try:
                 await self._handle_file_deletion(download, feed_id)
@@ -215,6 +255,14 @@ class Pruner:
                 )
             else:
                 file_deleted = True
+
+            try:
+                await self._handle_image_deletion(download, feed_id)
+            except PruneError:
+                logger.warning(
+                    "Image deletion failed during pruning, continuing with DB archival.",
+                    extra=log_params,
+                )
 
         # Always archive the download
         await self._archive_download(download, feed_id)
@@ -369,6 +417,25 @@ class Pruner:
                 archived_count += 1
                 if file_deleted:
                     files_deleted_count += 1
+
+            # Delete feed image
+            try:
+                await self._file_manager.delete_image(feed_id, None, "jpg")
+            except FileNotFoundError:
+                logger.debug(
+                    "No feed image found to delete during feed archival.",
+                    extra=log_params,
+                )
+            except FileOperationError as e:
+                raise PruneError(
+                    message="Failed to delete feed image during archival.",
+                    feed_id=feed_id,
+                ) from e
+            else:
+                logger.debug(
+                    "Feed image deleted successfully during feed archival.",
+                    extra=log_params,
+                )
 
             # Disable the feed last
             await self._feed_db.set_feed_enabled(feed_id, False)

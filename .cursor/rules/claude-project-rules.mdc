@@ -200,6 +200,7 @@ anypod/
 │   │       └── thumbnails.py    # yt-dlp thumbnail parser
 │   ├── exceptions.py            # Custom exceptions
 │   ├── file_manager.py          # File operations abstraction
+│   ├── image_downloader.py      # Image downloading for feeds/thumbnails
 │   ├── logging_config.py        # Logging configuration
 │   ├── metadata.py              # Metadata utility functions
 │   ├── path_manager.py          # Path resolution logic

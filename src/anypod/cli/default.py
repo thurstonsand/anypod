@@ -15,6 +15,7 @@ from ..exceptions import (
     StateReconciliationError,
 )
 from ..file_manager import FileManager
+from ..image_downloader import ImageDownloader
 from ..path_manager import PathManager
 from ..rss import RSSFeedGenerator
 from ..schedule import FeedScheduler
@@ -97,6 +98,7 @@ async def _init(
     # Initialize application components
     ytdlp_wrapper = YtdlpWrapper(paths=path_manager)
     rss_generator = RSSFeedGenerator(download_db=download_db, paths=path_manager)
+    image_downloader = ImageDownloader(paths=path_manager, ytdlp_wrapper=ytdlp_wrapper)
 
     # Initialize data coordinator components
     enqueuer = Enqueuer(
@@ -123,6 +125,8 @@ async def _init(
     # Run state reconciliation
     logger.debug("Running state reconciliation.")
     state_reconciler = StateReconciler(
+        file_manager=file_manager,
+        image_downloader=image_downloader,
         feed_db=feed_db,
         download_db=download_db,
         ytdlp_wrapper=ytdlp_wrapper,

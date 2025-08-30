@@ -281,9 +281,11 @@ class RSSGenerationError(AnypodError):
         self,
         message: str,
         feed_id: str | None = None,
+        download_id: str | None = None,
     ):
         super().__init__(message)
         self.feed_id = feed_id
+        self.download_id = download_id
 
 
 class StateReconciliationError(AnypodError):
@@ -300,6 +302,25 @@ class StateReconciliationError(AnypodError):
     ):
         super().__init__(message)
         self.feed_id = feed_id
+
+
+class ImageDownloadError(AnypodError):
+    """Raised when image download operations fail.
+
+    Attributes:
+        feed_id: The feed identifier associated with the error.
+        url: The image URL associated with the error.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        feed_id: str | None = None,
+        url: str | None = None,
+    ):
+        super().__init__(message)
+        self.feed_id = feed_id
+        self.url = url
 
 
 class SchedulerError(AnypodError):

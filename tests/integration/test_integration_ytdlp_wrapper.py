@@ -145,7 +145,7 @@ BIG_BUCK_BUNNY_DOWNLOAD = Download(
     status=DownloadStatus.QUEUED,
     discovered_at=datetime(2014, 11, 11, 14, 5, 55, tzinfo=UTC),
     updated_at=datetime(2014, 11, 11, 14, 5, 55, tzinfo=UTC),
-    original_thumbnail_url="https://i.ytimg.com/vi_webp/aqz-KE-bpKQ/maxresdefault.webp",
+    remote_thumbnail_url="https://i.ytimg.com/vi_webp/aqz-KE-bpKQ/maxresdefault.webp",
     retries=0,
     last_error=None,
 )
@@ -224,7 +224,7 @@ async def test_fetch_metadata_success(
 
     assert download.ext == "mp4", f"Download ext should be mp4 for {url_type}"
 
-    assert download.original_thumbnail_url, (
+    assert download.remote_thumbnail_url, (
         f"Download thumbnail should not be empty for {url_type}"
     )
     assert download.status == DownloadStatus.QUEUED, (
@@ -255,7 +255,7 @@ async def test_download_feed_thumbnail_success(
     cwd = Path.cwd()
     initial_thumb_files = set(cwd.glob("*.jpg")) | set(cwd.glob("*.webp"))
 
-    await ytdlp_wrapper.download_feed_thumbnail(
+    result = await ytdlp_wrapper.download_feed_thumbnail(
         feed_id=feed_id,
         source_type=expected_source_type,
         source_url=url,
@@ -263,6 +263,11 @@ async def test_download_feed_thumbnail_success(
         user_yt_cli_args=YT_DLP_MINIMAL_ARGS,
         yt_channel="stable",
         cookies_path=cookies_path,
+    )
+
+    # Verify download was successful
+    assert result == "jpg", (
+        f"Expected successful download to return 'jpg', got {result}"
     )
 
     # Verify no thumbnail files were written to current working directory
@@ -318,21 +323,21 @@ async def test_thumbnail_format_validation(
     download = downloads[0]
 
     # All test videos should have thumbnails
-    assert download.original_thumbnail_url, (
+    assert download.remote_thumbnail_url, (
         f"Download should have a thumbnail for {url_type}"
     )
 
     # Check that thumbnail URL contains supported format (may have query params after)
     assert (
-        ".jpg" in download.original_thumbnail_url
-        or ".png" in download.original_thumbnail_url
+        ".jpg" in download.remote_thumbnail_url
+        or ".png" in download.remote_thumbnail_url
     ), (
-        f"Thumbnail URL should contain .jpg or .png, got: {download.original_thumbnail_url}"
+        f"Thumbnail URL should contain .jpg or .png, got: {download.remote_thumbnail_url}"
     )
 
     # Verify it's a valid URL format
-    assert download.original_thumbnail_url.startswith("http"), (
-        f"Thumbnail should be a valid HTTP URL, got: {download.original_thumbnail_url}"
+    assert download.remote_thumbnail_url.startswith("http"), (
+        f"Thumbnail should be a valid HTTP URL, got: {download.remote_thumbnail_url}"
     )
 
 
@@ -440,7 +445,7 @@ async def test_download_media_to_file_success(
         filesize=12345,
         duration=635,
         status=DownloadStatus.QUEUED,
-        original_thumbnail_url="https://i.ytimg.com/vi_webp/aqz-KE-bpKQ/maxresdefault.webp",
+        remote_thumbnail_url="https://i.ytimg.com/vi_webp/aqz-KE-bpKQ/maxresdefault.webp",
         retries=0,
         last_error=None,
         discovered_at=datetime(2014, 11, 11, 14, 5, 55, tzinfo=UTC),

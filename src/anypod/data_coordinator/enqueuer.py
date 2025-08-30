@@ -415,11 +415,11 @@ class Enqueuer:
         if existing_db_download.duration != fetched_download.duration:
             updated_download.duration = fetched_download.duration
         if (
-            existing_db_download.original_thumbnail_url
-            != fetched_download.original_thumbnail_url
+            existing_db_download.remote_thumbnail_url
+            != fetched_download.remote_thumbnail_url
         ):
-            updated_download.original_thumbnail_url = (
-                fetched_download.original_thumbnail_url
+            updated_download.remote_thumbnail_url = (
+                fetched_download.remote_thumbnail_url
             )
         if existing_db_download.description != fetched_download.description:
             updated_download.description = fetched_download.description

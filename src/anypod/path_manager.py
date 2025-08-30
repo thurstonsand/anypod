@@ -3,6 +3,7 @@
 import logging
 from pathlib import Path
 from urllib.parse import urljoin
+import uuid
 
 import aiofiles.os
 
@@ -181,6 +182,22 @@ class PathManager:
                 file_name=str(downloads_dir),
             ) from e
         return downloads_dir
+
+    async def tmp_file(self, feed_id: str) -> Path:
+        """Return a temporary file path for a feed.
+
+        Args:
+            feed_id: Unique identifier for the feed.
+
+        Returns:
+            Path to a temporary file within the feed's tmp directory.
+
+        Raises:
+            ValueError: If feed_id is empty or whitespace-only.
+            FileOperationError: If the directory cannot be created.
+        """
+        tmp_dir = await self.feed_tmp_dir(feed_id)
+        return tmp_dir / f"tmp_{uuid.uuid4().hex}"
 
     def feed_url(self, feed_id: str) -> str:
         """Return the full URL for a feed's RSS XML.

@@ -15,6 +15,7 @@ from ..db.sqlalchemy_core import SqlalchemyCore
 from ..db.types import Download, DownloadStatus
 from ..exceptions import DatabaseOperationError, EnqueueError, StateReconciliationError
 from ..file_manager import FileManager
+from ..image_downloader import ImageDownloader
 from ..path_manager import PathManager
 from ..state_reconciler import StateReconciler
 from ..ytdlp_wrapper import YtdlpWrapper
@@ -52,7 +53,15 @@ async def run_debug_enqueuer_mode(
         file_manager = FileManager(paths)
         ytdlp_wrapper = YtdlpWrapper(paths)
         pruner = Pruner(feed_db, download_db, file_manager)
-        state_reconciler = StateReconciler(feed_db, download_db, ytdlp_wrapper, pruner)
+        image_downloader = ImageDownloader(paths, ytdlp_wrapper)
+        state_reconciler = StateReconciler(
+            file_manager,
+            image_downloader,
+            feed_db,
+            download_db,
+            ytdlp_wrapper,
+            pruner,
+        )
         enqueuer = Enqueuer(feed_db, download_db, ytdlp_wrapper)
     except Exception as e:
         logger.critical(

@@ -15,6 +15,7 @@ from anypod.db.download_db import DownloadDatabase
 from anypod.db.feed_db import FeedDatabase
 from anypod.db.sqlalchemy_core import SqlalchemyCore
 from anypod.file_manager import FileManager
+from anypod.image_downloader import ImageDownloader
 from anypod.path_manager import PathManager
 from anypod.rss.rss_feed import RSSFeedGenerator
 from anypod.server.app import create_app
@@ -114,6 +115,32 @@ def ytdlp_wrapper(path_manager: PathManager) -> YtdlpWrapper:
         YtdlpWrapper instance configured with test path manager.
     """
     return YtdlpWrapper(path_manager)
+
+
+@pytest.fixture
+def image_downloader(
+    path_manager: PathManager, ytdlp_wrapper: YtdlpWrapper
+) -> ImageDownloader:
+    """Provide an ImageDownloader instance with shared components.
+
+    Returns:
+        ImageDownloader instance configured with test path manager and ytdlp wrapper.
+    """
+    return ImageDownloader(path_manager, ytdlp_wrapper)
+
+
+@pytest.fixture
+def test_images() -> dict[str, Path]:
+    """Provide paths to test image files.
+
+    Returns:
+        Dictionary mapping image format names to their file paths.
+    """
+    test_dir = Path(__file__).parent.parent / "helpers"
+    return {
+        "jpg": test_dir / "image.jpg",
+        "png": test_dir / "image.png",
+    }
 
 
 @pytest.fixture

@@ -196,7 +196,7 @@ class YtdlpWrapper:
         user_yt_cli_args: list[str],
         yt_channel: str,
         cookies_path: Path | None = None,
-    ) -> None:
+    ) -> str | None:
         """Download the feed-level thumbnail.
 
         For single videos, this downloads the video's thumbnail. For playlists
@@ -210,6 +210,9 @@ class YtdlpWrapper:
             user_yt_cli_args: User-configured command-line arguments for yt-dlp.
             yt_channel: yt-dlp update channel (stable, nightly, master, etc.).
             cookies_path: Path to cookies.txt file for authentication, or None if not needed.
+
+        Returns:
+            Extension string (e.g., "jpg") if successful, None if failed.
 
         Raises:
             YtdlpApiError: If the thumbnail download fails.
@@ -249,7 +252,31 @@ class YtdlpWrapper:
             thumb_args.cookies(cookies_path)
 
         await YtdlpCore.download(thumb_args, resolved_url)
-        logger.debug("Feed thumbnail downloaded successfully.", extra=log_config)
+
+        # Verify the file was created successfully
+        try:
+            image_path = await self._paths.image_path(feed_id, None, "jpg")
+        except ValueError:
+            logger.warning(
+                "Failed to get image path for verification.", extra=log_config
+            )
+            return None
+
+        try:
+            file_exists = await aiofiles.os.path.isfile(image_path)
+        except OSError:
+            logger.warning("Failed to check if image file exists.", extra=log_config)
+            return None
+
+        if file_exists:
+            logger.debug("Feed thumbnail downloaded successfully.", extra=log_config)
+            return "jpg"
+        else:
+            logger.warning(
+                "Feed thumbnail download appeared to succeed but file not found.",
+                extra=log_config,
+            )
+            return None
 
     async def fetch_new_downloads_metadata(
         self,

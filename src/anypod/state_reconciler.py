@@ -17,10 +17,13 @@ from .db.feed_db import FeedDatabase
 from .db.types import DownloadStatus, Feed
 from .exceptions import (
     DatabaseOperationError,
+    ImageDownloadError,
     PruneError,
     StateReconciliationError,
     YtdlpApiError,
 )
+from .file_manager import FileManager
+from .image_downloader import ImageDownloader
 from .metadata import merge_feed_metadata
 from .ytdlp_wrapper import YtdlpWrapper
 
@@ -37,6 +40,8 @@ class StateReconciler:
     It ensures database consistency and applies configuration changes properly.
 
     Attributes:
+        _file_manager: FileManager for file operations.
+        _image_downloader: ImageDownloader for downloading images.
         _feed_db: Database manager for feed record operations.
         _download_db: Database manager for download record operations.
         _pruner: Pruner for feed pruning on deletion.
@@ -45,11 +50,15 @@ class StateReconciler:
 
     def __init__(
         self,
+        file_manager: FileManager,
+        image_downloader: ImageDownloader,
         feed_db: FeedDatabase,
         download_db: DownloadDatabase,
         ytdlp_wrapper: YtdlpWrapper,
         pruner: Pruner,
-    ):
+    ) -> None:
+        self._file_manager = file_manager
+        self._image_downloader = image_downloader
         self._feed_db = feed_db
         self._download_db = download_db
         self._ytdlp_wrapper = ytdlp_wrapper
@@ -127,6 +136,48 @@ class StateReconciler:
             keep_last=feed_config.keep_last,
             **merged_metadata,
         )
+
+        # Download feed image - try override first, fallback to yt-dlp natural image
+        image_ext = None
+        if feed_config.metadata and feed_config.metadata.image_url:
+            # Try direct download from override URL
+            try:
+                image_ext = await self._image_downloader.download_feed_image_direct(
+                    feed_id, feed_config.metadata.image_url
+                )
+            except ImageDownloadError as e:
+                logger.warning(
+                    "Failed to download feed image from override URL.",
+                    extra={**log_params, "image_url": feed_config.metadata.image_url},
+                    exc_info=e,
+                )
+
+        if not image_ext:
+            # Fallback to yt-dlp natural image download
+            try:
+                image_ext = await self._image_downloader.download_feed_image_ytdlp(
+                    feed_id=feed_id,
+                    source_type=new_feed.source_type,
+                    source_url=new_feed.source_url,
+                    resolved_url=resolved_url,
+                    user_yt_cli_args=feed_config.yt_args,
+                    yt_channel=feed_config.yt_channel,
+                    cookies_path=cookies_path,
+                )
+            except ImageDownloadError as e:
+                logger.warning(
+                    "Failed to download natural feed image via yt-dlp.",
+                    extra=log_params,
+                    exc_info=e,
+                )
+
+        if image_ext:
+            new_feed.image_ext = image_ext
+            logger.debug(
+                "Successfully downloaded feed image for new feed.",
+                extra={**log_params, "image_ext": image_ext},
+            )
+
         try:
             await self._feed_db.upsert_feed(new_feed)
         except (DatabaseOperationError, ValueError) as e:
@@ -341,6 +392,107 @@ class StateReconciler:
 
         return new_sync
 
+    async def _handle_image_url_changes(
+        self,
+        feed_id: str,
+        feed_config: FeedConfig,
+        db_feed: Feed,
+        updated_feed: Feed,
+        cookies_path: Path | None = None,
+    ) -> str | None:
+        """Handle image URL override changes and removals.
+
+        Args:
+            feed_id: The feed identifier.
+            feed_config: The FeedConfig from YAML.
+            db_feed: The existing Feed from database.
+            updated_feed: The updated Feed with merged metadata.
+            cookies_path: Path to cookies.txt file for yt-dlp authentication.
+
+        Returns:
+            New image_ext value or None if no change needed.
+
+        Raises:
+            StateReconciliationError: If image operations fail.
+        """
+        log_params = {"feed_id": feed_id}
+
+        # Prepare inputs for decision: DB value, config override, and current natural URL
+        config_image_url = (
+            feed_config.metadata.image_url if feed_config.metadata else None
+        )
+        db_url = db_feed.remote_image_url
+        curr_url = updated_feed.remote_image_url
+
+        # Determine what action to take based on URL changes
+        match (db_url, config_image_url, curr_url):
+            # Override added/changed: config provides a URL different from DB value
+            case (old_url, str() as new_url, _) if old_url != new_url:
+                logger.debug(
+                    "Image URL override change detected - will download new image.",
+                    extra={**log_params, "old_url": old_url, "new_url": new_url},
+                )
+                should_download = True
+                download_by_ytdlp = False
+            # Override removed: DB had a URL; config cleared it; natural differs from DB value
+            case (str() as old_url, None, str() as natural_url) if (
+                old_url != natural_url
+            ):
+                logger.debug(
+                    "Image URL override removed - will download natural feed image.",
+                    extra={
+                        **log_params,
+                        "old_url": old_url,
+                        "natural_url": natural_url,
+                    },
+                )
+                should_download = True
+                download_by_ytdlp = True
+            case _:
+                return None
+
+        # Execute the download
+        if should_download:
+            try:
+                if download_by_ytdlp:
+                    result = await self._image_downloader.download_feed_image_ytdlp(
+                        feed_id=feed_id,
+                        source_type=updated_feed.source_type,
+                        source_url=updated_feed.source_url,
+                        resolved_url=updated_feed.resolved_url,
+                        user_yt_cli_args=feed_config.yt_args,
+                        yt_channel=feed_config.yt_channel,
+                        cookies_path=cookies_path,
+                    )
+
+                else:
+                    result = await self._image_downloader.download_feed_image_direct(
+                        feed_id,
+                        config_image_url,  # type: ignore # config_image_url is guaranteed to be defined due to match statement
+                    )
+            except ImageDownloadError as e:
+                logger.warning(
+                    f"Failed to download feed image via {'ytdlp' if download_by_ytdlp else 'direct'} method.",
+                    extra=log_params,
+                    exc_info=e,
+                )
+                return None
+            else:
+                if result:
+                    logger.debug(
+                        f"Successfully downloaded feed image via {'ytdlp' if download_by_ytdlp else 'direct'} method.",
+                        extra={**log_params, "image_ext": result},
+                    )
+                    return result
+                else:
+                    logger.warning(
+                        f"Feed image download via {'ytdlp' if download_by_ytdlp else 'direct'} method failed.",
+                        extra=log_params,
+                    )
+                    return None
+
+        return None
+
     async def _handle_existing_feed(
         self,
         feed_id: str,
@@ -454,6 +606,13 @@ class StateReconciler:
         )
         if new_sync is not None:
             updated_feed.last_successful_sync = new_sync
+
+        # Handle image URL override changes
+        new_image_ext = await self._handle_image_url_changes(
+            feed_id, feed_config, db_feed, updated_feed, cookies_path
+        )
+        if new_image_ext is not None:
+            updated_feed.image_ext = new_image_ext
 
         if updated_feed != db_feed:
             logger.debug("Feed configuration changes applied.", extra=log_params)

@@ -71,10 +71,25 @@ class FeedgenCore:
         )
         fg.podcast.itunes_type(feed.podcast_type.rss_str())  # type: ignore
         fg.podcast.itunes_explicit(feed.explicit.rss_str())  # type: ignore
-        if feed.original_image_url:
-            fg.podcast.itunes_image(feed.original_image_url)  # type: ignore
+        # Prefer hosted feed image; fall back to remote URL
+        if feed.image_ext:
+            try:
+                hosted_feed_image_url = paths.image_url(feed_id, None, feed.image_ext)
+            except ValueError as e:
+                raise RSSGenerationError(
+                    "Invalid feed identifier for image URL", feed_id=feed_id
+                ) from e
+            fg.podcast.itunes_image(hosted_feed_image_url)  # type: ignore
             fg.image(  # type: ignore
-                url=feed.original_image_url,
+                url=hosted_feed_image_url,
+                title=feed.title,
+                link=feed.source_url,
+                description=f"Artwork for {feed.title}",
+            )
+        elif feed.remote_image_url:
+            fg.podcast.itunes_image(feed.remote_image_url)  # type: ignore
+            fg.image(  # type: ignore
+                url=feed.remote_image_url,
                 title=feed.title,
                 link=feed.source_url,
                 description=f"Artwork for {feed.title}",
@@ -127,18 +142,29 @@ class FeedgenCore:
             # Apple Podcasts documentation indicates description is sufficient for episodes
             fe.podcast.itunes_summary(description)  # type: ignore
 
-            if download.original_thumbnail_url:
+            # Prefer hosted per-episode thumbnail when thumbnail_ext is present; fall back to remote URL
+            if download.thumbnail_ext:
                 try:
-                    fe.podcast.itunes_image(download.original_thumbnail_url)  # type: ignore
+                    thumbnail_url = self._paths.image_url(
+                        download.feed_id, download.id, download.thumbnail_ext
+                    )
+                except ValueError as e:
+                    raise RSSGenerationError(
+                        "Invalid feed or download identifier for image URL",
+                        feed_id=download.feed_id,
+                        download_id=download.id,
+                    ) from e
+                fe.podcast.itunes_image(thumbnail_url)  # type: ignore
+            elif download.remote_thumbnail_url:
+                try:
+                    fe.podcast.itunes_image(download.remote_thumbnail_url)  # type: ignore
                 except ValueError:
-                    # Skip invalid thumbnail URLs rather than failing entire feed generation
-                    # Log warning but continue processing
                     logger.warning(
                         "Skipping invalid thumbnail URL for download.",
                         extra={
                             "feed_id": download.feed_id,
                             "download_id": download.id,
-                            "thumbnail_url": download.original_thumbnail_url,
+                            "thumbnail_url": download.remote_thumbnail_url,
                         },
                     )
 

@@ -61,7 +61,7 @@ def test_feed() -> Feed:
         language="en",
         author=TEST_AUTHOR,
         author_email="test@example.com",
-        original_image_url="https://example.com/artwork.jpg",
+        remote_image_url="https://example.com/artwork.jpg",
         category=PodcastCategories("Technology"),
         podcast_type=PodcastType.EPISODIC,
         explicit=PodcastExplicit.NO,
@@ -85,7 +85,7 @@ def sample_downloads() -> list[Download]:
             status=DownloadStatus.DOWNLOADED,
             discovered_at=datetime(2023, 1, 16, 12, 0, 0, tzinfo=UTC),
             updated_at=datetime(2023, 1, 16, 12, 0, 0, tzinfo=UTC),
-            original_thumbnail_url="https://example.com/thumb1.jpg",
+            remote_thumbnail_url="https://example.com/thumb1.jpg",
             description="Description for video 1",
         ),
         Download(
@@ -101,7 +101,7 @@ def sample_downloads() -> list[Download]:
             status=DownloadStatus.DOWNLOADED,
             discovered_at=datetime(2023, 1, 11, 10, 30, 0, tzinfo=UTC),
             updated_at=datetime(2023, 1, 11, 10, 30, 0, tzinfo=UTC),
-            original_thumbnail_url="https://example.com/thumb2.jpg",
+            remote_thumbnail_url="https://example.com/thumb2.jpg",
             description="Description for video 2",
         ),
     ]
@@ -264,7 +264,7 @@ async def test_generated_xml_structure(
     assert rss_image is not None
     rss_image_url = rss_image.find("url")
     assert rss_image_url is not None
-    assert rss_image_url.text == test_feed.original_image_url
+    assert rss_image_url.text == test_feed.remote_image_url
     rss_image_title = rss_image.find("title")
     assert rss_image_title is not None
     assert rss_image_title.text == test_feed.title
@@ -313,6 +313,102 @@ async def test_generated_xml_structure(
     itunes_episode_type = first_item.find("itunes:episodeType", itunes_ns)
     assert itunes_episode_type is not None
     assert itunes_episode_type.text == "full"
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_channel_and_items_use_hosted_images_when_exts_present(
+    rss_generator: RSSFeedGenerator,
+    mock_download_db: MagicMock,
+    test_feed: Feed,
+    sample_downloads: list[Download],
+):
+    """When feed.image_ext and download.thumbnail_ext are set, hosted URLs are used."""
+    feed_id = TEST_FEED_ID
+    # Set feed image extension to use hosted channel artwork
+    test_feed.image_ext = "jpg"
+    # Set per-item thumbnail extensions to use hosted episode images
+    for dl in sample_downloads:
+        dl.thumbnail_ext = "jpg"
+
+    mock_download_db.get_downloads_by_status.return_value = sample_downloads
+
+    await rss_generator.update_feed(feed_id, test_feed)
+    xml_bytes = rss_generator.get_feed_xml(feed_id)
+
+    root = ET.fromstring(xml_bytes)
+    channel = root.find("channel")
+    assert channel is not None
+
+    itunes_ns = {"itunes": "http://www.itunes.com/dtds/podcast-1.0.dtd"}
+
+    # Channel image should point to hosted artwork
+    itunes_image = channel.find("itunes:image", itunes_ns)
+    assert itunes_image is not None
+    assert itunes_image.get("href") == f"{TEST_BASE_URL}/images/{feed_id}.jpg"
+
+    rss_image = channel.find("image")
+    assert rss_image is not None
+    rss_image_url = rss_image.find("url")
+    assert rss_image_url is not None
+    assert rss_image_url.text == f"{TEST_BASE_URL}/images/{feed_id}.jpg"
+
+    # Item-level itunes:image should point to hosted per-download thumbnails
+    items = channel.findall("item")
+    assert len(items) == 2
+
+    first_item = items[0]
+    first_itunes_image = first_item.find("itunes:image", itunes_ns)
+    assert first_itunes_image is not None
+    assert (
+        first_itunes_image.get("href") == f"{TEST_BASE_URL}/images/{feed_id}/video1.jpg"
+    )
+
+    second_item = items[1]
+    second_itunes_image = second_item.find("itunes:image", itunes_ns)
+    assert second_itunes_image is not None
+    assert (
+        second_itunes_image.get("href")
+        == f"{TEST_BASE_URL}/images/{feed_id}/video2.jpg"
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_items_use_original_thumbnail_when_no_ext(
+    rss_generator: RSSFeedGenerator,
+    mock_download_db: MagicMock,
+    test_feed: Feed,
+    sample_downloads: list[Download],
+):
+    """When thumbnail_ext is absent, original thumbnail URLs should be used."""
+    feed_id = TEST_FEED_ID
+    # Ensure no hosted image ext is set for items
+    for dl in sample_downloads:
+        dl.thumbnail_ext = None
+
+    mock_download_db.get_downloads_by_status.return_value = sample_downloads
+
+    await rss_generator.update_feed(feed_id, test_feed)
+    xml_bytes = rss_generator.get_feed_xml(feed_id)
+
+    root = ET.fromstring(xml_bytes)
+    channel = root.find("channel")
+    assert channel is not None
+
+    itunes_ns = {"itunes": "http://www.itunes.com/dtds/podcast-1.0.dtd"}
+    items = channel.findall("item")
+    assert len(items) == 2
+
+    first_item = items[0]
+    first_itunes_image = first_item.find("itunes:image", itunes_ns)
+    assert first_itunes_image is not None
+    assert first_itunes_image.get("href") == "https://example.com/thumb1.jpg"
+
+    second_item = items[1]
+    second_itunes_image = second_item.find("itunes:image", itunes_ns)
+    assert second_itunes_image is not None
+    assert second_itunes_image.get("href") == "https://example.com/thumb2.jpg"
 
 
 @pytest.mark.unit

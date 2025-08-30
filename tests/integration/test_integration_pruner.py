@@ -36,6 +36,7 @@ SAMPLE_DOWNLOADS = [
         retries=0,
         discovered_at=BASE_PUBLISH_DATE - timedelta(days=9),
         updated_at=BASE_PUBLISH_DATE - timedelta(days=9),
+        thumbnail_ext="jpg",  # Has thumbnail
     ),
     Download(
         feed_id=TEST_FEED_ID,
@@ -66,6 +67,7 @@ SAMPLE_DOWNLOADS = [
         retries=0,
         discovered_at=BASE_PUBLISH_DATE - timedelta(days=4),
         updated_at=BASE_PUBLISH_DATE - timedelta(days=4),
+        thumbnail_ext="jpg",
     ),
     Download(
         feed_id=TEST_FEED_ID,
@@ -96,6 +98,7 @@ SAMPLE_DOWNLOADS = [
         retries=0,
         discovered_at=BASE_PUBLISH_DATE - timedelta(hours=12),
         updated_at=BASE_PUBLISH_DATE - timedelta(hours=12),
+        thumbnail_ext="jpg",
     ),
     # Non-downloaded items (should not have files deleted but can be archived)
     Download(
@@ -245,19 +248,20 @@ async def populated_test_data(
     for download in SAMPLE_DOWNLOADS:
         await download_db.upsert_download(download)
 
-    # Create files only for DOWNLOADED items
-    created_files: list[Path] = []
+    # Create files and images for DOWNLOADED items
     for download in SAMPLE_DOWNLOADS:
         if download.status == DownloadStatus.DOWNLOADED:
-            file_path: Path = await create_dummy_file(file_manager, download)
-            created_files.append(file_path)
+            # Create media file
+            await create_dummy_file(file_manager, download)
+
+            # Create image file if download has thumbnail_ext
+            if download.thumbnail_ext:
+                image_path = await file_manager._paths.image_path(
+                    download.feed_id, download.id, download.thumbnail_ext
+                )
+                image_path.write_bytes(b"dummy image content")
 
     yield SAMPLE_DOWNLOADS
-
-    # Cleanup: files should be deleted by tests, but clean up any remaining
-    for file_path in created_files:
-        if file_path.exists():
-            file_path.unlink()
 
 
 @pytest.mark.integration
@@ -320,17 +324,29 @@ async def test_prune_feed_downloads_keep_last_success(
     expected_remaining_ids = {dl.id for dl in most_recent_downloaded}
     assert remaining_ids == expected_remaining_ids
 
-    # Verify files were deleted for pruned DOWNLOADED items
+    # Verify files and images were deleted for pruned DOWNLOADED items
     kept_downloaded_ids = {dl.id for dl in most_recent_downloaded}
     for download in initial_downloaded:
         if download.id in kept_downloaded_ids:
             assert await file_manager.download_exists(
                 TEST_FEED_ID, download.id, download.ext
             )
+            # Check image still exists if download has thumbnail_ext
+            if download.thumbnail_ext:
+                image_path = await file_manager._paths.image_path(
+                    download.feed_id, download.id, download.thumbnail_ext
+                )
+                assert image_path.exists()
         else:
             assert not await file_manager.download_exists(
                 TEST_FEED_ID, download.id, download.ext
             )
+            # Check image was deleted if download had thumbnail_ext
+            if download.thumbnail_ext:
+                image_path = await file_manager._paths.image_path(
+                    download.feed_id, download.id, download.thumbnail_ext
+                )
+                assert not image_path.exists()
 
     # Verify archived downloads increased
     archived_downloads = await download_db.get_downloads_by_status(
@@ -862,11 +878,17 @@ async def test_archive_feed_success(
     )
     assert len(skipped_downloads) == 1
 
-    # Verify files are deleted for previously downloaded items
+    # Verify files and images are deleted for previously downloaded items
     for download in initial_downloaded:
         assert not await file_manager.download_exists(
             TEST_FEED_ID, download.id, download.ext
         )
+        # Check image was deleted if download had thumbnail_ext
+        if download.thumbnail_ext:
+            image_path = await file_manager._paths.image_path(
+                download.feed_id, download.id, download.thumbnail_ext
+            )
+            assert not image_path.exists()
 
     # Verify feed is disabled
     feed = await feed_db.get_feed_by_id(TEST_FEED_ID)

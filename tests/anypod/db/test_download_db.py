@@ -75,7 +75,7 @@ def sample_download_queued(test_feed: Feed) -> Download:
         mime_type="video/mp4",
         duration=120,
         status=DownloadStatus.QUEUED,
-        original_thumbnail_url="http://example.com/thumb1.jpg",
+        remote_thumbnail_url="http://example.com/thumb1.jpg",
         description="Test video description",
         filesize=0,  # 0 for queued items
         retries=0,
@@ -97,7 +97,7 @@ def sample_download_upcoming(test_feed: Feed) -> Download:
         mime_type="video/mp4",
         duration=120,
         status=DownloadStatus.UPCOMING,
-        original_thumbnail_url="http://example.com/thumb_upcoming.jpg",
+        remote_thumbnail_url="http://example.com/thumb_upcoming.jpg",
         description="Upcoming video description",
         filesize=0,
         retries=0,
@@ -129,8 +129,8 @@ async def test_add_and_get_download(
     assert retrieved_download.ext == sample_download_queued.ext
     assert retrieved_download.duration == sample_download_queued.duration
     assert (
-        retrieved_download.original_thumbnail_url
-        == sample_download_queued.original_thumbnail_url
+        retrieved_download.remote_thumbnail_url
+        == sample_download_queued.remote_thumbnail_url
     )
     assert retrieved_download.status == sample_download_queued.status
     assert retrieved_download.retries == 0, (
@@ -160,7 +160,7 @@ async def test_upsert_download_updates_existing(
         ext="mkv",  # Changed ext
         mime_type="video/x-matroska",  # Changed mime_type
         duration=150,  # Changed duration
-        original_thumbnail_url="http://example.com/thumb/v123_updated.jpg",
+        remote_thumbnail_url="http://example.com/thumb/v123_updated.jpg",
         description="Updated description",
         filesize=4096,  # Changed filesize
         status=DownloadStatus.DOWNLOADED,  # Changed status
@@ -186,8 +186,8 @@ async def test_upsert_download_updates_existing(
     assert retrieved_download.ext == modified_download.ext
     assert retrieved_download.duration == modified_download.duration
     assert (
-        retrieved_download.original_thumbnail_url
-        == modified_download.original_thumbnail_url
+        retrieved_download.remote_thumbnail_url
+        == modified_download.remote_thumbnail_url
     )
     assert retrieved_download.status == modified_download.status
     assert retrieved_download.retries == modified_download.retries
@@ -266,12 +266,18 @@ async def test_status_transitions(
         "Error should be cleared on UNSKIP (via REQUEUE)"
     )
 
+    # Set thumbnail_ext before archiving to test it gets cleared
+    await download_db.set_thumbnail_extension(feed_id, dl_id, "jpg")
+    before_archive = await download_db.get_download_by_id(feed_id, dl_id)
+    assert before_archive.thumbnail_ext == "jpg"
+
     # QUEUED -> ARCHIVED (from a clean QUEUED state)
     await download_db.archive_download(feed_id, dl_id)
     download = await download_db.get_download_by_id(feed_id, dl_id)
     assert download.status == DownloadStatus.ARCHIVED
     assert download.retries == 0  # Preserved from last requeue
     assert download.last_error is None  # Preserved from last requeue
+    assert download.thumbnail_ext is None  # Should be cleared when archived
 
     # Re-insert a fresh download to test archiving from an ERROR state
     sample_download_queued.status = DownloadStatus.QUEUED
@@ -290,6 +296,11 @@ async def test_status_transitions(
     assert download_error_state.retries == 1
     assert download_error_state.last_error == "Maxed out errors"
 
+    # Set thumbnail_ext before archiving from ERROR state
+    await download_db.set_thumbnail_extension(q_feed_id, q_dl_id, "png")
+    before_error_archive = await download_db.get_download_by_id(q_feed_id, q_dl_id)
+    assert before_error_archive.thumbnail_ext == "png"
+
     # ERROR -> ARCHIVED
     await download_db.archive_download(q_feed_id, q_dl_id)
     download_archived_from_error = await download_db.get_download_by_id(
@@ -297,6 +308,7 @@ async def test_status_transitions(
     )
     assert download_archived_from_error.status == DownloadStatus.ARCHIVED
     assert download_archived_from_error.retries == 1, "Retries should be preserved"
+    assert download_archived_from_error.thumbnail_ext is None  # Should be cleared
     assert download_archived_from_error.last_error == "Maxed out errors", (
         "Error should be preserved"
     )

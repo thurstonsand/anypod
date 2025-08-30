@@ -382,6 +382,7 @@ class DownloadDatabase:
                 )
                 .values(
                     status=DownloadStatus.ARCHIVED,
+                    thumbnail_ext=None,
                 )
             )
             result = await session.execute(stmt)

@@ -83,7 +83,7 @@ def test_extract_feed_metadata_with_full_metadata(
     assert extracted_feed.title == "Test Feed Title"
     assert extracted_feed.description == "Test feed description content"
     assert extracted_feed.author == "Test Uploader Name"  # uploader takes precedence
-    assert extracted_feed.original_image_url == "https://example.com/feed_thumbnail.jpg"
+    assert extracted_feed.remote_image_url == "https://example.com/feed_thumbnail.jpg"
     assert extracted_feed.subtitle is None  # Not available from yt-dlp
     assert extracted_feed.language is None  # Not available from yt-dlp
 
@@ -134,7 +134,7 @@ def test_extract_feed_metadata_minimal_data(
     assert extracted_feed.description is None
     assert extracted_feed.language is None
     assert extracted_feed.author is None
-    assert extracted_feed.original_image_url is None
+    assert extracted_feed.remote_image_url is None
 
 
 # --- Tests for YoutubeHandler.extract_download_metadata (formerly _parse_single_video_entry) ---
@@ -158,7 +158,7 @@ def test_parse_single_video_entry_success_basic(
     assert download.duration == valid_video_entry_data["duration"]
     assert download.source_url == valid_video_entry_data["webpage_url"]
     assert download.status == DownloadStatus.QUEUED
-    assert download.original_thumbnail_url == valid_video_entry_data["thumbnail"]
+    assert download.remote_thumbnail_url == valid_video_entry_data["thumbnail"]
     assert download.description == valid_video_entry_data["description"]
     assert download.mime_type == "video/mp4"  # Based on ext="mp4"
     assert download.filesize == 0  # Default for QUEUED status
@@ -853,7 +853,7 @@ async def test_determine_fetch_strategy_preserves_channel_classification(
     assert extracted_feed.description == "A test channel description"
     assert extracted_feed.author == "Test Channel Creator"
     assert (
-        extracted_feed.original_image_url
+        extracted_feed.remote_image_url
         == "https://yt3.googleusercontent.com/testchannel_image"
     )
 
@@ -949,7 +949,7 @@ def test_extract_feed_metadata_channel_specific_fields():
         extracted_feed.author == "Tech Reviewer"
     )  # uploader takes precedence over channel
     assert (
-        extracted_feed.original_image_url
+        extracted_feed.remote_image_url
         == "https://yt3.googleusercontent.com/amazing_tech_channel_image"
     )
     assert extracted_feed.subtitle is None  # Not available from yt-dlp

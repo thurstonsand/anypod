@@ -29,7 +29,7 @@ class FeedMetadataOverrides(BaseModel):
     image_url: str | None = Field(
         None,
         description="Podcast image URL, must be at least 1400x1400px, ideally 3000x3000px",
-        serialization_alias="original_image_url",
+        serialization_alias="remote_image_url",
     )
     author: str | None = Field(None, description="Podcast author")
     author_email: str | None = Field(None, description="Podcast author email")
