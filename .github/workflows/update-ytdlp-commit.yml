@@ -5,17 +5,20 @@ on:
   schedule:
     - cron: '0 0 * * *' # Runs daily at midnight UTC
 
+permissions:
+  contents: write  # needed to push uv.lock updates
+
 jobs:
   update-and-commit:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           # We need to fetch the history to be able to push
           fetch-depth: 0
           # Use a personal access token with write permissions
-          token: ${{ secrets.PAT_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@v6
@@ -24,18 +27,40 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
-      - name: Update yt-dlp dependency
-        run: uv lock --upgrade-package yt-dlp
+      - name: Update yt-dlp and detect changes
+        id: lockcheck
+        run: |
+          set -euo pipefail
+          uv lock --upgrade-package yt-dlp
+          if git diff --quiet -- uv.lock; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "No changes to uv.lock"
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "uv.lock updated"
+          fi
+
+      - name: Run pre-commit checks
+        if: steps.lockcheck.outputs.changed == 'true'
+        uses: pre-commit/action@v3.0.1
+
+      - name: Run tests
+        if: steps.lockcheck.outputs.changed == 'true'
+        run: |
+          uv sync --locked --all-extras --dev
+          uv run pytest --cov-report xml
 
       - name: Commit and push if changed
+        if: steps.lockcheck.outputs.changed == 'true'
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           git add uv.lock
-          # Check if there are changes to commit
-          if git diff --staged --quiet; then
-            echo "No changes to commit."
-          else
-            git commit -m "chore(deps): update yt-dlp dependency"
-            git push origin main
-          fi
+          echo "Committing uv.lock update (tests passed)"
+          git commit -m "chore(deps): update yt-dlp dependency
+
+          Auto-update performed by GitHub Actions after validating:
+            - Dependency lock file update successful
+            - Pre-commit checks passed
+            - All tests passed"
+          git push origin main
