@@ -32,7 +32,7 @@ jobs:
 
       - name: Run Claude Code
         id: claude
-        uses: anthropics/claude-code-action@beta
+        uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 
@@ -40,9 +40,5 @@ jobs:
           additional_permissions: |
             actions: read
 
-          allowed_tools: "Bash(uv run:*),Bash(uvx:*),Bash(rg:*),Bash(grep:*),Bash(sqlite3:*),Bash(alembic:*)"
-
-          custom_instructions: |
-            - Follow the project's coding standards in CLAUDE.md
-            - For tests, follow the project's testing standards in tests/CLAUDE.md
-            - Use uv run/uvx to run commands
+          claude_args: |
+            --allowedTools "Bash(uv run:*),Bash(uvx:*),Bash(rg:*),Bash(grep:*),Bash(sqlite3:*),Bash(alembic:*)"
