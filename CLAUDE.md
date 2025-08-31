@@ -17,6 +17,19 @@ This design prioritizes simplicity, reliability, and ease of self-hosting over s
 
 see @DESIGN_DOC.md for in depth design doc.
 
+## Behavior
+
+1. **Prioritize focus**: Limit context gathering to the immediate set of files relevant to the requested command or question. Avoid scanning the whole codebase unless explicitly instructed.
+2. **Start with direct matches**: First look for direct function/class/file name matches related to the command or topic. Only expand the scope if those are insufficient.
+3. **Avoid excessive global context**: Do not recursively walk or analyze all files "just in case"—prefer to incrementally expand as more information is required.
+4. **Be cautious of insufficient context**: Do not be too eager to start without at least the core, directly related files loaded. If unsure, ask for clarification or explicit file references rather than assuming broad context.
+5. **Balance context size**: Start narrowly (using cues such as file names, directory hints, or explicit function/class usages) but do not limit so much that reasoning/implementation is disconnected from the intended change.
+
+**Example workflow:**
+- User asks about a function: Load the file(s) where that function/class is implemented; load related imports/types only if clearly required.
+- If asked about architecture: Prefer documentation files (README, DESIGN_DOC.md) and top-level source structure, not all code files.
+- When a question seems ambiguous, request the user to specify file or module names before loading the entire codebase.
+
 ## Commands
 
 ### Development Commands

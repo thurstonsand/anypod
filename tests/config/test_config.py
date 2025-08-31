@@ -39,6 +39,9 @@ SAMPLE_FEEDS_DATA = {
 # Expected parsed yt_args for podcast2
 EXPECTED_PODCAST2_YT_ARGS = ["--format", "bestaudio"]
 
+# Example POT provider URL used for environment override tests
+POT_PROVIDER_URL_VALUE = "http://pot.example:4416"
+
 
 @pytest.fixture
 def sample_config_file(tmp_path: Path) -> Path:
@@ -63,6 +66,7 @@ def test_load_from_default_location(mock_get_yaml_path: Mock, tmp_path: Path):
     settings = AppSettings()  # type: ignore
 
     assert len(settings.feeds) == len(SAMPLE_FEEDS_DATA["feeds"])
+    assert settings.pot_provider_url is None, "pot_provider_url should default to None"
     assert "podcast1" in settings.feeds
     assert (
         settings.feeds["podcast1"].url == SAMPLE_FEEDS_DATA["feeds"]["podcast1"]["url"]
@@ -103,6 +107,9 @@ def test_load_from_default_location(mock_get_yaml_path: Mock, tmp_path: Path):
     )
     assert "data_dir" in dumped_settings, "'data_dir' should be present in model_dump"
     assert "feeds" in dumped_settings
+    assert "pot_provider_url" in dumped_settings, (
+        "'pot_provider_url' should be present in model_dump to reflect default None"
+    )
 
 
 @pytest.mark.unit
@@ -111,6 +118,8 @@ def test_override_location_with_env_var(sample_config_file: Path):
     """Tests if AppSettings loads configuration from the path specified by the CONFIG_FILE environment variable."""
     # Set the CONFIG_FILE environment variable to our test config file path
     os.environ["CONFIG_FILE"] = str(sample_config_file)
+    # Set POT provider URL via environment
+    os.environ["POT_PROVIDER_URL"] = POT_PROVIDER_URL_VALUE
 
     settings = AppSettings()  # type: ignore
 
@@ -128,6 +137,9 @@ def test_override_location_with_env_var(sample_config_file: Path):
     assert (
         settings.feeds["podcast2"].url == SAMPLE_FEEDS_DATA["feeds"]["podcast2"]["url"]
     )
+    assert settings.pot_provider_url == POT_PROVIDER_URL_VALUE, (
+        "pot_provider_url should be sourced from POT_PROVIDER_URL env var"
+    )
 
 
 @pytest.mark.unit
@@ -138,6 +150,9 @@ def test_override_location_with_init_arg(sample_config_file: Path):
 
     assert len(settings.feeds) == len(SAMPLE_FEEDS_DATA["feeds"]), (
         "Number of loaded feeds should match sample data when overridden by init arg"
+    )
+    assert settings.pot_provider_url is None, (
+        "pot_provider_url should default to None when not provided via env or YAML"
     )
 
     assert "podcast1" in settings.feeds, (
@@ -224,6 +239,9 @@ def test_empty_yaml_file_loads_defaults(tmp_path: Path):
     settings = AppSettings(config_file=empty_yaml_path)
 
     assert settings.feeds == {}, "Feeds should be empty for an empty YAML file"
+    assert settings.pot_provider_url is None, (
+        "pot_provider_url should default to None for an empty YAML file"
+    )
 
 
 @pytest.mark.unit
@@ -250,6 +268,9 @@ def test_yaml_file_with_only_other_keys(tmp_path: Path):
     )
     assert "podcast3" in settings.feeds, "Feed 'podcast3' should be loaded"
     assert settings.feeds["podcast3"].url == "https://example.com/feed3.xml"
+    assert settings.pot_provider_url is None, (
+        "pot_provider_url should default to None when not provided"
+    )
     assert not hasattr(settings, "some_other_key"), (
         "Extra key 'some_other_key' should not be an attribute on settings (extra='ignore')"
     )

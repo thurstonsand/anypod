@@ -68,6 +68,7 @@ services:
       LOG_INCLUDE_STACKTRACE: "false"
       BASE_URL: https://reverseproxy.example
       SERVER_PORT: 8024
+  # TODO: add POT provider
 ```
 
 Start it:
@@ -150,6 +151,7 @@ All can be provided via env or CLI flags (kebab‑case). Common ones:
 | `LOG_FORMAT` | `json` | `human` or `json` |
 | `LOG_LEVEL` | `INFO` | Log level |
 | `LOG_INCLUDE_STACKTRACE` | `false` | Include stack traces in error logs |
+| `POT_PROVIDER_URL` | unset | Base URL for a bgutil POT provider. When set, yt-dlp will be configured to use this provider for YouTube PO Tokens; when unset, POT fetching is disabled. |
 | `PUID` | `1000` | Container user |
 | `PGID` | `1000` | Container group |
 
@@ -192,6 +194,20 @@ In order to get cookies, I have successfully followed these instructions:
 - With youtube cookies, I have seen that this actually blocks you from even seeing "Premium" (enhanced bitrate) videos; this is a known problem
     - There might be a way around it if you use a PO Token Provider, but it is nontrivial; see [yt-dlp docs](https://github.com/yt-dlp/yt-dlp/wiki/PO-Token-Guide) and [recommended provider](https://github.com/Brainicism/bgutil-ytdlp-pot-provider)
     - Probably best to just choose from whatever options you do get -- even without cookies, I mostly just got 403's when trying to download Premium anyway
+
+### PO Tokens (YouTube)
+
+Some YouTube endpoints and qualities require short‑lived Proof‑of‑Origin (PO) tokens. In practice, using PO Tokens can:
+
+- Improve reliability for otherwise rate‑limited or blocked videos
+- Unlock higher qualities for some content (e.g., 1080p+ or Premium‑gated variants)
+
+Anypod defaults to POT disabled. To opt‑in, run a PO Token provider and set `POT_PROVIDER_URL` to its HTTP endpoint. Anypod will then configure `yt‑dlp` to use that provider; when unset, POT fetching is disabled.
+
+References:
+
+- yt‑dlp PO‑Token Guide: [PO‑Token‑Guide](https://github.com/yt-dlp/yt-dlp/wiki/PO-Token-Guide)
+- Recommended provider: [bgutil‑ytdlp‑pot‑provider](https://github.com/Brainicism/bgutil-ytdlp-pot-provider)
 
 ### Pocket Casts
 
