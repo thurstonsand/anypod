@@ -52,7 +52,7 @@ async def run_debug_downloader_mode(
 
         file_manager = FileManager(paths)
 
-        ytdlp_wrapper = YtdlpWrapper(paths)
+        ytdlp_wrapper = YtdlpWrapper(paths, pot_provider_url=settings.pot_provider_url)
         downloader = Downloader(download_db, file_manager, ytdlp_wrapper)
     except Exception as e:
         logger.critical(

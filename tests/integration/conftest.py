@@ -114,7 +114,7 @@ def ytdlp_wrapper(path_manager: PathManager) -> YtdlpWrapper:
     Returns:
         YtdlpWrapper instance configured with test path manager.
     """
-    return YtdlpWrapper(path_manager)
+    return YtdlpWrapper(path_manager, None)
 
 
 @pytest.fixture

@@ -96,7 +96,9 @@ async def _init(
     download_db = DownloadDatabase(db_core)
 
     # Initialize application components
-    ytdlp_wrapper = YtdlpWrapper(paths=path_manager)
+    ytdlp_wrapper = YtdlpWrapper(
+        paths=path_manager, pot_provider_url=settings.pot_provider_url
+    )
     rss_generator = RSSFeedGenerator(download_db=download_db, paths=path_manager)
     image_downloader = ImageDownloader(paths=path_manager, ytdlp_wrapper=ytdlp_wrapper)
 

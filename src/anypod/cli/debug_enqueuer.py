@@ -51,7 +51,7 @@ async def run_debug_enqueuer_mode(
         feed_db = FeedDatabase(db_core)
         download_db = DownloadDatabase(db_core)
         file_manager = FileManager(paths)
-        ytdlp_wrapper = YtdlpWrapper(paths)
+        ytdlp_wrapper = YtdlpWrapper(paths, pot_provider_url=settings.pot_provider_url)
         pruner = Pruner(feed_db, download_db, file_manager)
         image_downloader = ImageDownloader(paths, ytdlp_wrapper)
         state_reconciler = StateReconciler(

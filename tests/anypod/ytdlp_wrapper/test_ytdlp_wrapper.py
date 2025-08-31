@@ -28,9 +28,88 @@ def ytdlp_wrapper(
     """Fixture to provide a YtdlpWrapper instance with a mocked YoutubeHandler and temp paths."""
     app_data_dir = tmp_path_factory.mktemp("app_data")
     paths = PathManager(app_data_dir, "http://localhost")
-    wrapper = YtdlpWrapper(paths)
+    wrapper = YtdlpWrapper(paths, None)
     wrapper._source_handler = mock_youtube_handler
     return wrapper
+
+
+# --- Tests for POT provider extractor args injection ---
+
+
+@pytest.mark.unit
+@patch.object(YtdlpCore, "extract_playlist_info")
+@pytest.mark.asyncio
+async def test_extractor_args_default_none_sets_fetch_pot_never(
+    mock_extract_playlist_info: AsyncMock,
+    tmp_path_factory: pytest.TempPathFactory,
+):
+    """Verify default behavior injects fetch_pot=never when URL is not set."""
+    app_data_dir = tmp_path_factory.mktemp("app_data_default_none")
+    paths = PathManager(app_data_dir, "http://localhost")
+    wrapper = YtdlpWrapper(paths, None)
+    # Avoid real parsing in handler; we only need to inspect args passed to core
+    wrapper._source_handler = MagicMock()
+    wrapper._source_handler.extract_feed_metadata.return_value = MagicMock()
+
+    mock_extract_playlist_info.return_value = YtdlpInfo({"id": "x", "title": "t"})
+
+    await wrapper.fetch_playlist_metadata(
+        feed_id="f",
+        source_type=SourceType.CHANNEL,
+        source_url="https://example.com",
+        resolved_url="https://example.com",
+        user_yt_cli_args=[],
+        yt_channel="stable",
+    )
+
+    args: YtdlpArgs = mock_extract_playlist_info.call_args[0][0]
+    cmd = args.to_list()
+    # Find all extractor-args values
+    extractor_args_values = [
+        v for i, v in enumerate(cmd) if cmd[i - 1] == "--extractor-args"
+    ]
+    assert len(extractor_args_values) == 1, "Expected exactly one extractor-args flag"
+    assert extractor_args_values[0] == "youtube:fetch_pot=never", (
+        "Expected fetch_pot=never when pot_provider_url is None"
+    )
+
+
+@pytest.mark.unit
+@patch.object(YtdlpCore, "extract_playlist_info")
+@pytest.mark.asyncio
+async def test_extractor_args_with_provider_url_sets_http_base_url(
+    mock_extract_playlist_info: AsyncMock,
+    tmp_path_factory: pytest.TempPathFactory,
+):
+    """Verify provider URL injects youtubepot-bgutilhttp base_url extractor arg."""
+    app_data_dir = tmp_path_factory.mktemp("app_data_with_url")
+    paths = PathManager(app_data_dir, "http://localhost")
+    provider_url = "http://bgutil-provider:4416"
+    wrapper = YtdlpWrapper(paths, provider_url)
+    wrapper._source_handler = MagicMock()
+    wrapper._source_handler.extract_feed_metadata.return_value = MagicMock()
+
+    mock_extract_playlist_info.return_value = YtdlpInfo({"id": "x", "title": "t"})
+
+    await wrapper.fetch_playlist_metadata(
+        feed_id="f",
+        source_type=SourceType.CHANNEL,
+        source_url="https://example.com",
+        resolved_url="https://example.com",
+        user_yt_cli_args=[],
+        yt_channel="stable",
+    )
+
+    args: YtdlpArgs = mock_extract_playlist_info.call_args[0][0]
+    cmd = args.to_list()
+    # Find all extractor-args values
+    extractor_args_values = [
+        v for i, v in enumerate(cmd) if cmd[i - 1] == "--extractor-args"
+    ]
+    assert len(extractor_args_values) == 1, "Expected exactly one extractor-args flag"
+    assert (
+        extractor_args_values[0] == f"youtubepot-bgutilhttp:base_url={provider_url}"
+    ), "Expected youtubepot-bgutilhttp base_url when pot_provider_url is set"
 
 
 # --- Tests for YtdlpWrapper._match_filter_since_date ---

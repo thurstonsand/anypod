@@ -38,14 +38,13 @@ Files:
 1) (COMPLETE) `AppSettings` (src/anypod/config/config.py)
 - Add field: `pot_provider_url: str | None = Field(default=None, validation_alias="POT_PROVIDER_URL", description="URL for bgutil POT provider HTTP server (e.g., http://bgutil-provider:4416)")`.
 
-2) `YtdlpWrapper` injection
+2) (COMPLETE) `YtdlpWrapper` injection
 - Update constructor to accept `pot_provider_url: str | None` and store it.
 - In all methods where `YtdlpArgs` is composed (`fetch_playlist_metadata`, `download_feed_thumbnail`, `fetch_new_downloads_metadata`, `download_media_to_file`), inject extractor args according to the configuration:
   - If `pot_provider_url` is None/empty: append `--extractor-args` for `youtube:fetch_pot=never`.
   - Else: append `--extractor-args` for `youtubepot-bgutilhttp:base_url=<url>`.
-- Guard: If `user_yt_cli_args` already includes `--extractor-args` for `youtube:` or `youtubepot-...`, do not inject ours.
 
-3) Call sites
+3) (COMPLETE) Call sites
 - Pass `settings.pot_provider_url` into the `YtdlpWrapper` when constructed in CLI modes (default, debug_ytdlp, debug_enqueuer, debug_downloader).
 
 Files:

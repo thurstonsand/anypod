@@ -31,7 +31,7 @@ async def run_debug_ytdlp_mode(settings: AppSettings, paths: PathManager) -> Non
         },
     )
 
-    ytdlp_wrapper = YtdlpWrapper(paths)
+    ytdlp_wrapper = YtdlpWrapper(paths, pot_provider_url=settings.pot_provider_url)
 
     for feed_id, feed_config in settings.feeds.items():
         logger.info(

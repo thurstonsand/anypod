@@ -41,15 +41,36 @@ class YtdlpWrapper:
 
     _source_handler: SourceHandlerBase = YoutubeHandler()
 
-    def __init__(self, paths: PathManager):
+    def __init__(self, paths: PathManager, pot_provider_url: str | None):
         self._paths = paths
+        self._pot_provider_url = pot_provider_url or None
         logger.debug(
             "YtdlpWrapper initialized.",
             extra={
                 "app_tmp_dir": str(self._paths.base_tmp_dir),
                 "app_data_dir": str(self._paths.base_data_dir),
+                "pot_provider_url": self._pot_provider_url or "<disabled>",
             },
         )
+
+    def _apply_pot_extractor_args(self, args: YtdlpArgs) -> YtdlpArgs:
+        """Apply POT provider related extractor args to the given builder.
+
+        When ``self._pot_provider_url`` is unset/empty, force yt-dlp to never
+        fetch POT. Otherwise, configure the youtubepot HTTP provider base URL.
+
+        Args:
+            args: The :class:`YtdlpArgs` builder to modify.
+
+        Returns:
+            The same builder instance for chaining.
+        """
+        extractor_arg = (
+            f"youtubepot-bgutilhttp:base_url={self._pot_provider_url}"
+            if self._pot_provider_url
+            else "youtube:fetch_pot=never"
+        )
+        return args.extractor_args(extractor_arg)
 
     async def discover_feed_properties(
         self,
@@ -164,6 +185,7 @@ class YtdlpWrapper:
         logger.debug("Fetching playlist metadata for feed.", extra=log_config)
 
         info_args = YtdlpArgs(user_yt_cli_args).update_to(yt_channel)
+        self._apply_pot_extractor_args(info_args)
         if cookies_path:
             info_args.cookies(cookies_path)
 
@@ -237,6 +259,7 @@ class YtdlpWrapper:
             .write_thumbnails()
             .convert_thumbnails("jpg")
         )
+        self._apply_pot_extractor_args(thumb_args)
 
         # For single video feeds, use the video's thumbnail as the feed image.
         if source_type == SourceType.SINGLE_VIDEO:
@@ -322,6 +345,7 @@ class YtdlpWrapper:
         info_args = (
             YtdlpArgs(user_yt_cli_args).update_to(yt_channel).convert_thumbnails("jpg")
         )
+        self._apply_pot_extractor_args(info_args)
 
         # Apply filtering for playlists/channels
         if source_type != SourceType.SINGLE_VIDEO:
@@ -434,6 +458,7 @@ class YtdlpWrapper:
             .paths_temp(download_temp_dir)
             .paths_home(download_data_dir)
         )
+        self._apply_pot_extractor_args(download_args)
 
         if cookies_path:
             download_args.cookies(cookies_path)

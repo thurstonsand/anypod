@@ -75,6 +75,9 @@ class YtdlpArgs:
         # Update control
         self._update_to: str | None = None
 
+        # Extractor args
+        self._extractor_args: list[str] = []
+
     def quiet(self) -> "YtdlpArgs":
         """Enable quiet mode (suppress verbose output)."""
         self._quiet = True
@@ -231,6 +234,21 @@ class YtdlpArgs:
         self._additional_args.extend(args)
         return self
 
+    def extractor_args(self, value: str) -> "YtdlpArgs":
+        """Append an ``--extractor-args`` flag value.
+
+        Args:
+            value: Raw extractor-args string (e.g.,
+                "youtube:fetch_pot=never" or
+                "youtubepot-bgutilhttp:base_url=http://host:4416").
+
+        Returns:
+            The builder instance for chaining.
+        """
+        if value:
+            self._extractor_args.append(value)
+        return self
+
     @property
     def additional_args_count(self) -> int:
         """Get the number of user-provided arguments."""
@@ -310,6 +328,10 @@ class YtdlpArgs:
         # Authentication
         if self._cookies is not None:
             cmd.extend(["--cookies", str(self._cookies)])
+
+        # Extractor args
+        for ex_arg in self._extractor_args:
+            cmd.extend(["--extractor-args", ex_arg])
 
         # Update control - skip in pytest to avoid issues with pip-installed yt-dlp
         if self._update_to is not None and not self._running_under_pytest():
