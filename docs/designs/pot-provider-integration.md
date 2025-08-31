@@ -55,7 +55,7 @@ Files:
 - src/anypod/cli/debug_downloader.py
 - src/anypod/ytdlp_wrapper/core/args.py (used for composing args; no structural change expected)
 
-## Docker Image (binary runtime)
+## (COMPLETE) Docker Image (binary runtime)
 
 - Install the plugin zip directly into a system plugin directory so yt-dlp auto-loads it:
   - Create directory `/etc/yt-dlp/plugins/`.
@@ -69,7 +69,7 @@ Notes:
 Files:
 - Dockerfile
 
-## docker-compose
+## (COMPLETE) docker-compose
 
 Add a `bgutil-provider` service and wire Anypod to it via env:
 

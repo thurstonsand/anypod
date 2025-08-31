@@ -68,7 +68,17 @@ services:
       LOG_INCLUDE_STACKTRACE: "false"
       BASE_URL: https://reverseproxy.example
       SERVER_PORT: 8024
-  # TODO: add POT provider
+      POT_PROVIDER_URL: http://bgutil-provider:4416
+
+    depends_on:
+      - bgutil-provider
+
+  bgutil-provider:
+    image: brainicism/bgutil-ytdlp-pot-provider:latest
+    container_name: bgutil-provider
+    restart: unless-stopped
+    ports:
+      - "4416:4416"
 ```
 
 Start it:

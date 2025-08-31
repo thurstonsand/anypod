@@ -37,8 +37,12 @@ RUN apt-get update && \
         ca-certificates \
         gosu \
         ffmpeg && \
+    # Install yt-dlp binary
     curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp && \
     chmod a+rx /usr/local/bin/yt-dlp && \
+    # Install bgutil POT provider plugin (zip) into yt-dlp system plugins dir
+    mkdir -p /etc/yt-dlp/plugins && \
+    curl -L https://github.com/brainicism/bgutil-ytdlp-pot-provider/releases/latest/download/bgutil-ytdlp-pot-provider.zip -o /etc/yt-dlp/plugins/bgutil-ytdlp-pot-provider.zip && \
     rm -rf /var/lib/apt/lists/*
 
 # Set working directory

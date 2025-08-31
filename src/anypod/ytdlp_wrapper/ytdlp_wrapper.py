@@ -250,6 +250,7 @@ class YtdlpWrapper:
         logger.debug("Downloading feed thumbnail.", extra=log_config)
 
         feed_images_dir = await self._paths.feed_images_dir(feed_id)
+        feed_tmp_dir = await self._paths.feed_tmp_dir(feed_id)
 
         # Base args for thumbnail download
         thumb_args = (
@@ -258,6 +259,8 @@ class YtdlpWrapper:
             .skip_download()
             .write_thumbnails()
             .convert_thumbnails("jpg")
+            .paths_temp(feed_tmp_dir)
+            # .paths_home(feed_images_dir) # maybe this one too?
         )
         self._apply_pot_extractor_args(thumb_args)
 
