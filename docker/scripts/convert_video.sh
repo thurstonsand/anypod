@@ -61,7 +61,7 @@ if [[ "$CONVERT_VIDEO" == true || "$CONVERT_AUDIO" == true || "$CONVERT_CONTAINE
     fi
 
     if [[ "$CONVERT_AUDIO" == true ]]; then
-        AUDIO_ARGS="-c:a aac_at -q:a 9"
+        AUDIO_ARGS="-c:a aac -b:a 96k"
     fi
 
     # Run ffmpeg with determined arguments
