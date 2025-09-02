@@ -246,7 +246,7 @@ class YtdlpWrapper:
         else:
             thumb_args.paths_pl_thumbnail(feed_images_dir).output_pl_thumbnail(
                 f"{feed_id}.%(ext)s"
-            ).output_thumbnail("")
+            ).output_thumbnail("").playlist_limit(0)
 
         if cookies_path:
             thumb_args.cookies(cookies_path)
