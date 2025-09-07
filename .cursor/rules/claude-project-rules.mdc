@@ -200,8 +200,9 @@ anypod/
 │   │   ├── server.py            # HTTP server configuration
 │   │   ├── validation.py        # Input validation utilities for endpoints
 │   │   └── routers/             # API routers
-│   │       ├── health.py        # Health check endpoint
-│   │       └── static.py        # Static file serving and directory browsing
+  │   │       ├── health.py        # Health check endpoint
+  │   │       └── static.py        # Static file serving and directory browsing
+  │   │       └── admin.py         # Admin-only endpoints (served on private admin server)
 │   ├── ytdlp_wrapper/           # `yt-dlp` integration
 │   │   ├── base_handler.py      # Base handler interface for different source types
 │   │   ├── youtube_handler.py   # YouTube source handler

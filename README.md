@@ -169,6 +169,7 @@ All can be provided via env or CLI flags (kebab‑case). Common ones:
 
 ## HTTP endpoints
 
+### Public endpoints
 - `GET /feeds` – directory listing of feeds
 - `GET /feeds/{feed_id}.xml` – podcast RSS
 - `GET /media` – directory listing of feeds with media
@@ -177,6 +178,9 @@ All can be provided via env or CLI flags (kebab‑case). Common ones:
 - `GET /images/{feed_id}.jpg` – feed artwork/thumbnail
 - `GET /images/{feed_id}/{download_id}.jpg` – episode thumbnail
 - `GET /api/health` – health check
+
+### Admin endpoints (trusted/local access only)
+- `POST /admin/feeds/{feed_id}/reset-errors` – reset all ERROR downloads for a feed to QUEUED status
 
 No authentication is implemented. Only expose `/feeds`, `/media`, and `/images` publicly (these are the content-serving endpoints).
 

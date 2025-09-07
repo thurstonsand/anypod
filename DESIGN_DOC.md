@@ -463,6 +463,8 @@ The `RSSFeedGenerator` module maintains a **write-once/read-many-locked in-memor
 - Cache population on startup will occur when the scheduler and HTTP server are implemented
 
 ## HTTP Endpoints
+
+### Public Endpoints
 | Path | Description |
 |------|-------------|
 | `/feeds` | HTML directory listing of available feeds |
@@ -474,6 +476,11 @@ The `RSSFeedGenerator` module maintains a **write-once/read-many-locked in-memor
 | `/images/{feed}/{download_id}.jpg` | Episode thumbnail |
 | `/errors` | JSON list of failed downloads |
 | `/api/health` | Health check endpoint returning service status, timestamp, and version |
+
+### Admin Endpoints (Private/Trusted Access)
+| Path | Description |
+|------|-------------|
+| `POST /admin/feeds/{feed_id}/reset-errors` | Reset all ERROR downloads for a feed to QUEUED status |
 
 ---
 
