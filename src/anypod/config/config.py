@@ -225,7 +225,12 @@ class AppSettings(BaseSettings):
     server_port: int = Field(
         default=8024,
         validation_alias="SERVER_PORT",
-        description="Port number for the HTTP server to listen on.",
+        description="Port number for the static HTTP server (default: 8024).",
+    )
+    admin_server_port: int = Field(
+        default=8025,
+        validation_alias="ADMIN_SERVER_PORT",
+        description="Port number for the admin HTTP server (default: 8025). Should not be exposed to the public.",
     )
     trusted_proxies: list[str] | None = Field(
         default=None,

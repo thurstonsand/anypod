@@ -1,3 +1,5 @@
+# pyright: reportPrivateUsage=false
+
 """Integration tests for HTTP server with real dependencies."""
 
 from datetime import UTC, datetime

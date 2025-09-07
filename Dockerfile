@@ -57,8 +57,11 @@ COPY --from=builder /app /app
 # Copy entrypoint scripts and make them executable
 COPY --chmod=755 docker/scripts/ /usr/local/bin/
 
-# Expose port
+# Expose public port
 EXPOSE 8024
+
+# Expose admin port
+EXPOSE 8025
 
 ENV PATH="/app/.venv/bin:$PATH" \
     CONFIG_FILE=/config/feeds.yaml \
@@ -66,6 +69,7 @@ ENV PATH="/app/.venv/bin:$PATH" \
     COOKIE_PATH=/cookies/cookies.txt \
     SERVER_HOST=0.0.0.0 \
     SERVER_PORT=8024 \
+    ADMIN_SERVER_PORT=8025 \
     LOG_FORMAT=json \
     LOG_LEVEL=INFO \
     LOG_INCLUDE_STACKTRACE=true

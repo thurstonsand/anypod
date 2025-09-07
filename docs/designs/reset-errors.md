@@ -30,14 +30,13 @@
 
 ## Admin Server
 - Separate server for admin endpoints to avoid public exposure of admin operations.
-- Settings (proposed):
-  - `ADMIN_SERVER_HOST` (default: `127.0.0.1`)
+- Settings:
   - `ADMIN_SERVER_PORT` (default: `8025`)
-  - `ADMIN_API_ENABLED` (default: `true`)
 - Implementation:
-  - Add `create_admin_app()` with only admin router (and optional health).
-  - Add `create_admin_server(settings, ...)` similar to `create_server`, but bound to admin host/port.
+  - Add `create_admin_app()` with admin router and health endpoint.
+  - Add `create_admin_server(settings, ...)` similar to `create_server`, but bound to admin port.
   - Start both uvicorn servers concurrently in `cli/default.py` using `asyncio.gather`.
+  - Health endpoint exists on both servers for flexibility.
   - Document that operators should only expose the public server port in Docker/compose.
 
 ## Implementation Steps
@@ -47,9 +46,9 @@
    - Validate feed via `FeedDatabase.get_feed_by_id`; return 404 when missing.
 
 2) Admin Server & Settings
-   - Add new settings: `ADMIN_SERVER_HOST`, `ADMIN_SERVER_PORT`, `ADMIN_API_ENABLED`.
+   - Add new setting: `ADMIN_SERVER_PORT`.
    - Add `create_admin_app()` and `create_admin_server()`.
-   - In default mode, run admin server concurrently when enabled.
+   - In default mode, run admin server concurrently with main server.
 
 3) DB Layer: Bulk Requeue
    - Enhance `DownloadDatabase.requeue_downloads` to support bulk operations with `download_ids=None` and required `from_status` parameter.
@@ -71,6 +70,7 @@
 ## Risks & Mitigations
 - Large feeds: bulk update is a single SQL statement; should be efficient.
 - Ensure both servers shut down gracefully together (use shared shutdown callback in default mode).
+- Docker health check uses static server port since health endpoint exists on both servers.
 
 ## Open Questions
 - Do we also want a global reset endpoint (all feeds) for parity? If yes: `POST /api/feeds/reset-errors`.

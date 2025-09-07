@@ -20,7 +20,7 @@ from anypod.file_manager import FileManager
 from anypod.image_downloader import ImageDownloader
 from anypod.path_manager import PathManager
 from anypod.rss.rss_feed import RSSFeedGenerator
-from anypod.server.app import create_app
+from anypod.server.app import create_admin_app, create_app
 from anypod.ytdlp_wrapper.ytdlp_wrapper import YtdlpWrapper
 
 
@@ -222,6 +222,27 @@ def test_app(
     app = create_app(
         file_manager=file_manager,
         rss_generator=rss_generator,
+        feed_database=feed_db,
+        download_database=download_db,
+    )
+    return TestClient(app)
+
+
+@pytest.fixture
+def admin_test_app(
+    file_manager: FileManager,
+    rss_generator: RSSFeedGenerator,
+    feed_db: FeedDatabase,
+    download_db: DownloadDatabase,
+) -> TestClient:
+    """Create a FastAPI admin test client with real dependencies.
+
+    Returns:
+        TestClient configured with real FileManager and RSSFeedGenerator for admin APIs.
+    """
+    app = create_admin_app(
+        rss_generator=rss_generator,
+        file_manager=file_manager,
         feed_database=feed_db,
         download_database=download_db,
     )
