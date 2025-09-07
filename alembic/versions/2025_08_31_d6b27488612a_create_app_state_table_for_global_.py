@@ -6,15 +6,13 @@ Create Date: 2025-08-31 00:37:42.255607
 """
 
 from collections.abc import Sequence
+from datetime import UTC, datetime
 
 import sqlalchemy as sa
-from sqlalchemy.sql import column, table, text
+from sqlalchemy.sql import column, table
 
 from alembic import op
-from anypod.db.types.timezone_aware_datetime import (
-    SQLITE_DATETIME_NOW,
-    TimezoneAwareDatetime,
-)
+from anypod.db.types.timezone_aware_datetime import TimezoneAwareDatetime
 
 # revision identifiers, used by Alembic.
 revision: str = "d6b27488612a"
@@ -46,7 +44,7 @@ def upgrade() -> None:
     )
     op.bulk_insert(
         appstate_table,
-        [{"id": "global", "last_yt_dlp_update": text(SQLITE_DATETIME_NOW)}],
+        [{"id": "global", "last_yt_dlp_update": datetime.now(UTC)}],
     )
 
 

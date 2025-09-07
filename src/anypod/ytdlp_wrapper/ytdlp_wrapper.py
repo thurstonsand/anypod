@@ -124,8 +124,15 @@ class YtdlpWrapper:
 
         logger.debug("Discovering feed properties.", extra=log_config)
 
+        # Prepare discovery args with centralized configuration and universal options
+        discovery_args = YtdlpArgs().quiet().no_warnings()
+        discovery_args = await self._update_to(discovery_args)
+        discovery_args = self._pot_extractor_args(discovery_args)
+        if cookies_path:
+            discovery_args = discovery_args.cookies(cookies_path)
+
         resolved_url, source_type = await self._source_handler.determine_fetch_strategy(
-            feed_id, url, cookies_path
+            feed_id, url, discovery_args
         )
 
         logger.debug(
@@ -207,7 +214,7 @@ class YtdlpWrapper:
         info_args = await self._update_to(info_args)
         info_args = self._pot_extractor_args(info_args)
         if cookies_path:
-            info_args.cookies(cookies_path)
+            info_args = info_args.cookies(cookies_path)
 
         logger.debug(
             "Acquiring playlist metadata.",
@@ -292,7 +299,7 @@ class YtdlpWrapper:
             ).output_thumbnail("").playlist_limit(0)
 
         if cookies_path:
-            thumb_args.cookies(cookies_path)
+            thumb_args = thumb_args.cookies(cookies_path)
 
         await YtdlpCore.download(thumb_args, resolved_url)
 
@@ -379,7 +386,7 @@ class YtdlpWrapper:
                 )
 
         if cookies_path:
-            info_args.cookies(cookies_path)
+            info_args = info_args.cookies(cookies_path)
 
         logger.debug(
             "Acquiring downloads metadata.",
@@ -476,7 +483,7 @@ class YtdlpWrapper:
         download_args = self._pot_extractor_args(download_args)
 
         if cookies_path:
-            download_args.cookies(cookies_path)
+            download_args = download_args.cookies(cookies_path)
 
         url_to_download = download.source_url
 

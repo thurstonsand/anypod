@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from anypod.db.types import Download, DownloadStatus, SourceType
-from anypod.ytdlp_wrapper.core import YtdlpCore
+from anypod.ytdlp_wrapper.core import YtdlpArgs, YtdlpCore
 from anypod.ytdlp_wrapper.youtube_handler import (
     YoutubeEntry,
     YoutubeHandler,
@@ -25,6 +25,12 @@ from anypod.ytdlp_wrapper.youtube_handler import (
 def youtube_handler() -> YoutubeHandler:
     """Provides a YoutubeHandler instance for the tests."""
     return YoutubeHandler()
+
+
+@pytest.fixture
+def base_args() -> YtdlpArgs:
+    """Provides a basic YtdlpArgs instance for tests."""
+    return YtdlpArgs().quiet().no_warnings()
 
 
 @pytest.fixture
@@ -462,7 +468,9 @@ def test_parse_single_video_entry_error_invalid_duration(
 @pytest.mark.asyncio
 @patch.object(YtdlpCore, "extract_playlist_info", new_callable=AsyncMock)
 async def test_determine_fetch_strategy_single_video(
-    mock_extract_playlist_info: AsyncMock, youtube_handler: YoutubeHandler
+    mock_extract_playlist_info: AsyncMock,
+    youtube_handler: YoutubeHandler,
+    base_args: YtdlpArgs,
 ):
     """Tests strategy determination for a single YouTube video URL."""
     initial_url = "https://www.youtube.com/watch?v=video123"
@@ -477,7 +485,7 @@ async def test_determine_fetch_strategy_single_video(
     mock_extract_playlist_info.return_value = mock_extract_info_return
 
     fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
-        FEED_ID, initial_url
+        FEED_ID, initial_url, base_args
     )
 
     mock_extract_playlist_info.assert_called_once()
@@ -491,6 +499,7 @@ async def test_determine_fetch_strategy_single_video(
 async def test_determine_fetch_strategy_channel_main_page_finds_videos_tab(
     mock_extract_playlist_info: AsyncMock,
     youtube_handler: YoutubeHandler,
+    base_args: YtdlpArgs,
 ):
     """Tests strategy for a main channel page, successfully finding the 'Videos' tab."""
     initial_url = "https://www.youtube.com/@channelhandle"
@@ -522,7 +531,7 @@ async def test_determine_fetch_strategy_channel_main_page_finds_videos_tab(
     )
 
     fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
-        FEED_ID, initial_url
+        FEED_ID, initial_url, base_args
     )
 
     mock_extract_playlist_info.assert_called_once()
@@ -536,6 +545,7 @@ async def test_determine_fetch_strategy_channel_main_page_finds_videos_tab(
 async def test_determine_fetch_strategy_channel_main_page_no_videos_tab(
     mock_extract_playlist_info: AsyncMock,
     youtube_handler: YoutubeHandler,
+    base_args: YtdlpArgs,
 ):
     """Tests strategy for a main channel page where 'Videos' tab is not found, defaulting to the resolved URL."""
     initial_url = "https://www.youtube.com/channel/UCxxxx"
@@ -560,7 +570,7 @@ async def test_determine_fetch_strategy_channel_main_page_no_videos_tab(
     )
 
     fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
-        FEED_ID, initial_url
+        FEED_ID, initial_url, base_args
     )
 
     assert fetch_url == resolved_channel_url
@@ -573,6 +583,7 @@ async def test_determine_fetch_strategy_channel_main_page_no_videos_tab(
 async def test_determine_fetch_strategy_channel_videos_tab_direct(
     mock_extract_playlist_info: AsyncMock,
     youtube_handler: YoutubeHandler,
+    base_args: YtdlpArgs,
 ):
     """Tests strategy for a direct URL to a channel's 'Videos' tab."""
     initial_url = "https://www.youtube.com/@channelhandle/videos"
@@ -587,7 +598,7 @@ async def test_determine_fetch_strategy_channel_videos_tab_direct(
     )
 
     fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
-        FEED_ID, initial_url
+        FEED_ID, initial_url, base_args
     )
     assert fetch_url == initial_url
     assert ref_type == SourceType.PLAYLIST
@@ -595,7 +606,9 @@ async def test_determine_fetch_strategy_channel_videos_tab_direct(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_determine_fetch_strategy_playlist_url(youtube_handler: YoutubeHandler):
+async def test_determine_fetch_strategy_playlist_url(
+    youtube_handler: YoutubeHandler, base_args: YtdlpArgs
+):
     """Tests strategy for a regular playlist URL."""
     initial_url = "https://www.youtube.com/playlist?list=PLxxxxxxxxxxxxx"
     mock_extract_info_return = YtdlpInfo(
@@ -614,7 +627,7 @@ async def test_determine_fetch_strategy_playlist_url(youtube_handler: YoutubeHan
         mock_extract_playlist_info.return_value = mock_extract_info_return
 
         fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
-            FEED_ID, initial_url
+            FEED_ID, initial_url, base_args
         )
 
         mock_extract_playlist_info.assert_called_once()
@@ -628,6 +641,7 @@ async def test_determine_fetch_strategy_playlist_url(youtube_handler: YoutubeHan
 async def test_determine_fetch_strategy_playlists_tab_error(
     mock_extract_playlist_info: AsyncMock,
     youtube_handler: YoutubeHandler,
+    base_args: YtdlpArgs,
 ):
     """Tests that a 'playlists' tab URL raises YtdlpYoutubeDataError."""
     initial_url = "https://www.youtube.com/@channelhandle/playlists"
@@ -639,7 +653,7 @@ async def test_determine_fetch_strategy_playlists_tab_error(
         }
     )
     with pytest.raises(YtdlpYoutubeDataError):
-        await youtube_handler.determine_fetch_strategy(FEED_ID, initial_url)
+        await youtube_handler.determine_fetch_strategy(FEED_ID, initial_url, base_args)
 
 
 @pytest.mark.unit
@@ -648,13 +662,14 @@ async def test_determine_fetch_strategy_playlists_tab_error(
 async def test_determine_fetch_strategy_discovery_fails(
     mock_extract_playlist_info: AsyncMock,
     youtube_handler: YoutubeHandler,
+    base_args: YtdlpArgs,
 ):
     """Tests strategy when discovery (ydl_caller) returns None."""
     initial_url = "https://www.youtube.com/some_unresolvable_url"
     mock_extract_playlist_info.return_value = None
 
     fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
-        FEED_ID, initial_url
+        FEED_ID, initial_url, base_args
     )
 
     assert fetch_url == initial_url
@@ -667,6 +682,7 @@ async def test_determine_fetch_strategy_discovery_fails(
 async def test_determine_fetch_strategy_unknown_extractor(
     mock_extract_playlist_info: AsyncMock,
     youtube_handler: YoutubeHandler,
+    base_args: YtdlpArgs,
 ):
     """Tests strategy for an unhandled extractor type."""
     initial_url = "https://some.other.video.site/video1"
@@ -680,7 +696,7 @@ async def test_determine_fetch_strategy_unknown_extractor(
     )
 
     fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
-        FEED_ID, initial_url
+        FEED_ID, initial_url, base_args
     )
 
     assert fetch_url == resolved_url_from_yt_dlp
@@ -693,6 +709,7 @@ async def test_determine_fetch_strategy_unknown_extractor(
 async def test_determine_fetch_strategy_channel_with_no_videos_but_has_entries(
     mock_extract_playlist_info: AsyncMock,
     youtube_handler: YoutubeHandler,
+    base_args: YtdlpArgs,
 ):
     """Tests channel identification when entries exist but Videos tab is not found."""
     initial_url = "https://www.youtube.com/@newchannel"
@@ -720,7 +737,7 @@ async def test_determine_fetch_strategy_channel_with_no_videos_but_has_entries(
     )
 
     fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
-        FEED_ID, initial_url
+        FEED_ID, initial_url, base_args
     )
 
     # Should fallback to using the resolved URL as CHANNEL type
@@ -734,6 +751,7 @@ async def test_determine_fetch_strategy_channel_with_no_videos_but_has_entries(
 async def test_determine_fetch_strategy_channel_with_empty_entries(
     mock_extract_playlist_info: AsyncMock,
     youtube_handler: YoutubeHandler,
+    base_args: YtdlpArgs,
 ):
     """Tests channel identification when channel has no entries (empty/new channel)."""
     initial_url = "https://www.youtube.com/@emptychannel"
@@ -749,7 +767,7 @@ async def test_determine_fetch_strategy_channel_with_empty_entries(
     )
 
     fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
-        FEED_ID, initial_url
+        FEED_ID, initial_url, base_args
     )
 
     # Should identify as channel even with empty entries
@@ -763,6 +781,7 @@ async def test_determine_fetch_strategy_channel_with_empty_entries(
 async def test_determine_fetch_strategy_existing_channel_tab_not_main_page(
     mock_extract_playlist_info: AsyncMock,
     youtube_handler: YoutubeHandler,
+    base_args: YtdlpArgs,
 ):
     """Tests that existing channel tabs are not treated as main channel pages."""
     initial_url = "https://www.youtube.com/@channel/shorts"
@@ -777,7 +796,7 @@ async def test_determine_fetch_strategy_existing_channel_tab_not_main_page(
     )
 
     fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
-        FEED_ID, initial_url
+        FEED_ID, initial_url, base_args
     )
 
     # Should be treated as COLLECTION, not attempt channel tab resolution
@@ -794,6 +813,7 @@ async def test_determine_fetch_strategy_existing_channel_tab_not_main_page(
 async def test_determine_fetch_strategy_preserves_channel_classification(
     mock_extract_playlist_info: AsyncMock,
     youtube_handler: YoutubeHandler,
+    base_args: YtdlpArgs,
 ):
     """Test that channel classification is properly preserved through the discovery process.
 
@@ -833,7 +853,7 @@ async def test_determine_fetch_strategy_preserves_channel_classification(
     )
 
     fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
-        FEED_ID, initial_url
+        FEED_ID, initial_url, base_args
     )
 
     # Verify that the fetch strategy correctly identifies this as a channel
@@ -864,6 +884,7 @@ async def test_determine_fetch_strategy_preserves_channel_classification(
 async def test_determine_fetch_strategy_channel_without_videos_tab_still_classified_correctly(
     mock_extract_playlist_info: AsyncMock,
     youtube_handler: YoutubeHandler,
+    base_args: YtdlpArgs,
 ):
     """Test that channels without explicit videos tab are still classified as CHANNEL."""
     initial_url = "https://www.youtube.com/@newchannel"
@@ -894,7 +915,7 @@ async def test_determine_fetch_strategy_channel_without_videos_tab_still_classif
     )
 
     fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
-        FEED_ID, initial_url
+        FEED_ID, initial_url, base_args
     )
 
     # Should still be classified as channel even without videos tab
