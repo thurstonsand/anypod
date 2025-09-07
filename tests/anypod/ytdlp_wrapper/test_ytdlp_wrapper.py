@@ -2,11 +2,12 @@
 
 """Tests for the YtdlpWrapper class and its yt-dlp integration functionality."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from anypod.db.app_state_db import AppStateDatabase
 from anypod.db.types import Download, DownloadStatus, Feed, SourceType
 from anypod.path_manager import PathManager
 from anypod.ytdlp_wrapper import YtdlpWrapper
@@ -22,13 +23,51 @@ def mock_youtube_handler() -> MagicMock:
 
 
 @pytest.fixture
-def ytdlp_wrapper(
-    mock_youtube_handler: MagicMock, tmp_path_factory: pytest.TempPathFactory
-) -> YtdlpWrapper:
-    """Fixture to provide a YtdlpWrapper instance with a mocked YoutubeHandler and temp paths."""
+def app_state_db_mock() -> MagicMock:
+    """Provide a mocked AppStateDatabase with update gating enabled."""
+    app_state_db = MagicMock(spec=AppStateDatabase)
+    app_state_db.update_yt_dlp_timestamp_if_stale = AsyncMock(return_value=True)
+    return app_state_db
+
+
+@pytest.fixture
+def paths(tmp_path_factory: pytest.TempPathFactory) -> PathManager:
+    """Provide a PathManager rooted in a temp directory."""
     app_data_dir = tmp_path_factory.mktemp("app_data")
-    paths = PathManager(app_data_dir, "http://localhost")
-    wrapper = YtdlpWrapper(paths, None)
+    return PathManager(app_data_dir, "http://localhost")
+
+
+@pytest.fixture
+def ytdlp_wrapper_with_provider(
+    paths: PathManager, app_state_db_mock: MagicMock, mock_youtube_handler: MagicMock
+) -> YtdlpWrapper:
+    """YtdlpWrapper configured with a provider URL and mocked handler."""
+    provider_url = "http://bgutil-provider:4416"
+    wrapper = YtdlpWrapper(
+        paths,
+        provider_url,
+        app_state_db=app_state_db_mock,
+        yt_channel="stable",
+        yt_update_freq=timedelta(hours=12),
+    )
+    wrapper._source_handler = mock_youtube_handler
+    return wrapper
+
+
+@pytest.fixture
+def ytdlp_wrapper(
+    paths: PathManager,
+    app_state_db_mock: MagicMock,
+    mock_youtube_handler: MagicMock,
+) -> YtdlpWrapper:
+    """YtdlpWrapper with a mocked YoutubeHandler and shared paths/app state."""
+    wrapper = YtdlpWrapper(
+        paths,
+        None,
+        app_state_db=app_state_db_mock,
+        yt_channel="stable",
+        yt_update_freq=timedelta(hours=12),
+    )
     wrapper._source_handler = mock_youtube_handler
     return wrapper
 
@@ -41,25 +80,21 @@ def ytdlp_wrapper(
 @pytest.mark.asyncio
 async def test_extractor_args_default_none_sets_fetch_pot_never(
     mock_extract_playlist_info: AsyncMock,
-    tmp_path_factory: pytest.TempPathFactory,
+    ytdlp_wrapper: YtdlpWrapper,
 ):
     """Verify default behavior injects fetch_pot=never when URL is not set."""
-    app_data_dir = tmp_path_factory.mktemp("app_data_default_none")
-    paths = PathManager(app_data_dir, "http://localhost")
-    wrapper = YtdlpWrapper(paths, None)
-    # Avoid real parsing in handler; we only need to inspect args passed to core
-    wrapper._source_handler = MagicMock()
-    wrapper._source_handler.extract_feed_metadata.return_value = MagicMock()
+    ytdlp_wrapper._source_handler.extract_feed_metadata = MagicMock(
+        return_value=MagicMock()
+    )
 
     mock_extract_playlist_info.return_value = YtdlpInfo({"id": "x", "title": "t"})
 
-    await wrapper.fetch_playlist_metadata(
+    await ytdlp_wrapper.fetch_playlist_metadata(
         feed_id="f",
         source_type=SourceType.CHANNEL,
         source_url="https://example.com",
         resolved_url="https://example.com",
         user_yt_cli_args=[],
-        yt_channel="stable",
     )
 
     args: YtdlpArgs = mock_extract_playlist_info.call_args[0][0]
@@ -79,25 +114,22 @@ async def test_extractor_args_default_none_sets_fetch_pot_never(
 @pytest.mark.asyncio
 async def test_extractor_args_with_provider_url_sets_http_base_url(
     mock_extract_playlist_info: AsyncMock,
-    tmp_path_factory: pytest.TempPathFactory,
+    ytdlp_wrapper_with_provider: YtdlpWrapper,
 ):
     """Verify provider URL injects youtubepot-bgutilhttp base_url extractor arg."""
-    app_data_dir = tmp_path_factory.mktemp("app_data_with_url")
-    paths = PathManager(app_data_dir, "http://localhost")
     provider_url = "http://bgutil-provider:4416"
-    wrapper = YtdlpWrapper(paths, provider_url)
-    wrapper._source_handler = MagicMock()
-    wrapper._source_handler.extract_feed_metadata.return_value = MagicMock()
+    ytdlp_wrapper_with_provider._source_handler.extract_feed_metadata = MagicMock(
+        return_value=MagicMock()
+    )
 
     mock_extract_playlist_info.return_value = YtdlpInfo({"id": "x", "title": "t"})
 
-    await wrapper.fetch_playlist_metadata(
+    await ytdlp_wrapper_with_provider.fetch_playlist_metadata(
         feed_id="f",
         source_type=SourceType.CHANNEL,
         source_url="https://example.com",
         resolved_url="https://example.com",
         user_yt_cli_args=[],
-        yt_channel="stable",
     )
 
     args: YtdlpArgs = mock_extract_playlist_info.call_args[0][0]
@@ -177,7 +209,6 @@ async def test_fetch_playlist_metadata_returns_feed(
         source_url=url,
         resolved_url=url,
         user_yt_cli_args=yt_cli_args,
-        yt_channel="stable",
     )
 
     # Verify return type
@@ -233,7 +264,6 @@ async def test_fetch_new_downloads_metadata_returns_downloads(
         source_url=url,
         resolved_url=url,
         user_yt_cli_args=yt_cli_args,
-        yt_channel="stable",
     )
 
     # Verify return type and values
@@ -279,7 +309,6 @@ async def test_download_feed_thumbnail_args(
         source_url=url,
         resolved_url=url,
         user_yt_cli_args=yt_cli_args,
-        yt_channel="stable",
     )
 
     mock_ytdlcore_download.assert_called_once()
@@ -328,7 +357,6 @@ async def test_download_feed_thumbnail_success_return_value(
         source_url="http://example.com/video",
         resolved_url=None,
         user_yt_cli_args=[],
-        yt_channel="stable",
     )
 
     assert result == "jpg"
@@ -354,7 +382,6 @@ async def test_download_feed_thumbnail_file_not_found(
         source_url="http://example.com/video",
         resolved_url=None,
         user_yt_cli_args=[],
-        yt_channel="stable",
     )
 
     assert result is None
@@ -416,7 +443,7 @@ async def test_download_media_to_file_success_simplified(
     mock_aiofiles_wrap.return_value = mock_glob
 
     returned_path = await ytdlp_wrapper.download_media_to_file(
-        dummy_download, yt_cli_args, "stable"
+        dummy_download, yt_cli_args
     )
 
     assert returned_path == expected_final_file
@@ -481,7 +508,6 @@ async def test_date_filtering_behavior_by_reference_type(
         source_url=url,
         resolved_url=url,
         user_yt_cli_args=[],
-        yt_channel="stable",
         fetch_since_date=fetch_since_date,
     )
 
@@ -544,7 +570,6 @@ async def test_keep_last_filtering_behavior_by_reference_type(
         source_url=url,
         resolved_url=url,
         user_yt_cli_args=[],
-        yt_channel="stable",
         keep_last=keep_last,
     )
 

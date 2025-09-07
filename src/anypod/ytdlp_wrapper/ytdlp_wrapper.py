@@ -5,13 +5,14 @@ for metadata fetching and media downloading, integrating with source-specific
 handlers for different platforms.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 from pathlib import Path
 from typing import Any
 
 import aiofiles.os
 
+from ..db.app_state_db import AppStateDatabase
 from ..db.types import Download, Feed, SourceType
 from ..exceptions import FileOperationError, YtdlpApiError
 from ..path_manager import PathManager
@@ -41,19 +42,39 @@ class YtdlpWrapper:
 
     _source_handler: SourceHandlerBase = YoutubeHandler()
 
-    def __init__(self, paths: PathManager, pot_provider_url: str | None):
+    def __init__(
+        self,
+        paths: PathManager,
+        pot_provider_url: str | None,
+        app_state_db: AppStateDatabase,
+        yt_channel: str,
+        yt_update_freq: timedelta,
+    ):
         self._paths = paths
-        self._pot_provider_url = pot_provider_url or None
+        self._pot_provider_url = pot_provider_url if pot_provider_url else None
+        self._app_state_db = app_state_db
+        self._yt_channel = yt_channel
+        self._yt_update_freq = yt_update_freq
         logger.debug(
             "YtdlpWrapper initialized.",
             extra={
                 "app_tmp_dir": str(self._paths.base_tmp_dir),
                 "app_data_dir": str(self._paths.base_data_dir),
                 "pot_provider_url": self._pot_provider_url or "<disabled>",
+                "yt_channel": self._yt_channel,
+                "yt_update_freq_seconds": int(self._yt_update_freq.total_seconds()),
             },
         )
 
-    def _apply_pot_extractor_args(self, args: YtdlpArgs) -> YtdlpArgs:
+    async def _update_to(self, args: YtdlpArgs) -> YtdlpArgs:
+        """Apply --update-to if allowed by rate limiter and record timestamp."""
+        if await self._app_state_db.update_yt_dlp_timestamp_if_stale(
+            self._yt_update_freq
+        ):
+            args.update_to(self._yt_channel)
+        return args
+
+    def _pot_extractor_args(self, args: YtdlpArgs) -> YtdlpArgs:
         """Apply POT provider related extractor args to the given builder.
 
         When ``self._pot_provider_url`` is unset/empty, force yt-dlp to never
@@ -154,7 +175,6 @@ class YtdlpWrapper:
         source_url: str,
         resolved_url: str | None,
         user_yt_cli_args: list[str],
-        yt_channel: str,
         cookies_path: Path | None = None,
     ) -> Feed:
         """Get playlist metadata from yt-dlp. Does not retrieve download metadata.
@@ -165,7 +185,6 @@ class YtdlpWrapper:
             source_url: The original source URL from configuration.
             resolved_url: The resolved URL to fetch from.
             user_yt_cli_args: User-configured command-line arguments for yt-dlp.
-            yt_channel: yt-dlp update channel (stable, nightly, master, etc.).
             cookies_path: Path to cookies.txt file for authentication, or None if not needed.
 
         Returns:
@@ -184,8 +203,9 @@ class YtdlpWrapper:
 
         logger.debug("Fetching playlist metadata for feed.", extra=log_config)
 
-        info_args = YtdlpArgs(user_yt_cli_args).update_to(yt_channel)
-        self._apply_pot_extractor_args(info_args)
+        info_args = YtdlpArgs(user_yt_cli_args)
+        info_args = await self._update_to(info_args)
+        info_args = self._pot_extractor_args(info_args)
         if cookies_path:
             info_args.cookies(cookies_path)
 
@@ -216,7 +236,6 @@ class YtdlpWrapper:
         source_url: str,
         resolved_url: str | None,
         user_yt_cli_args: list[str],
-        yt_channel: str,
         cookies_path: Path | None = None,
     ) -> str | None:
         """Download the feed-level thumbnail.
@@ -230,7 +249,6 @@ class YtdlpWrapper:
             source_url: The original source URL from configuration.
             resolved_url: The resolved URL to fetch from.
             user_yt_cli_args: User-configured command-line arguments for yt-dlp.
-            yt_channel: yt-dlp update channel (stable, nightly, master, etc.).
             cookies_path: Path to cookies.txt file for authentication, or None if not needed.
 
         Returns:
@@ -255,14 +273,13 @@ class YtdlpWrapper:
         # Base args for thumbnail download
         thumb_args = (
             YtdlpArgs(user_yt_cli_args)
-            .update_to(yt_channel)
             .skip_download()
-            .write_thumbnails()
+            .write_thumbnail()
             .convert_thumbnails("jpg")
             .paths_temp(feed_tmp_dir)
-            # .paths_home(feed_images_dir) # maybe this one too?
         )
-        self._apply_pot_extractor_args(thumb_args)
+        thumb_args = await self._update_to(thumb_args)
+        thumb_args = self._pot_extractor_args(thumb_args)
 
         # For single video feeds, use the video's thumbnail as the feed image.
         if source_type == SourceType.SINGLE_VIDEO:
@@ -311,7 +328,6 @@ class YtdlpWrapper:
         source_url: str,
         resolved_url: str | None,
         user_yt_cli_args: list[str],
-        yt_channel: str,
         fetch_since_date: datetime | None = None,
         keep_last: int | None = None,
         cookies_path: Path | None = None,
@@ -324,7 +340,6 @@ class YtdlpWrapper:
             source_url: The original source URL from configuration.
             resolved_url: The resolved URL to fetch from.
             user_yt_cli_args: User-configured command-line arguments for yt-dlp.
-            yt_channel: yt-dlp update channel (stable, nightly, master, etc.).
             fetch_since_date: The cutoff date for fetching videos (inclusive).
             keep_last: Maximum number of recent playlist items to fetch.
             cookies_path: Path to cookies.txt file for authentication.
@@ -345,10 +360,9 @@ class YtdlpWrapper:
 
         logger.debug("Fetching new downloads metadata for feed.", extra=log_config)
 
-        info_args = (
-            YtdlpArgs(user_yt_cli_args).update_to(yt_channel).convert_thumbnails("jpg")
-        )
-        self._apply_pot_extractor_args(info_args)
+        info_args = YtdlpArgs(user_yt_cli_args).convert_thumbnails("jpg")
+        info_args = await self._update_to(info_args)
+        info_args = self._pot_extractor_args(info_args)
 
         # Apply filtering for playlists/channels
         if source_type != SourceType.SINGLE_VIDEO:
@@ -414,7 +428,6 @@ class YtdlpWrapper:
         self,
         download: Download,
         user_yt_cli_args: list[str],
-        yt_channel: str,
         cookies_path: Path | None = None,
     ) -> Path:
         """Download the media for a given Download to a target directory.
@@ -425,7 +438,6 @@ class YtdlpWrapper:
         Args:
             download: The Download object containing metadata.
             user_yt_cli_args: User-provided yt-dlp CLI arguments for this feed.
-            yt_channel: yt-dlp update channel (stable, nightly, master, etc.).
             cookies_path: Path to cookies.txt file for authentication, or None if not needed.
 
         Returns:
@@ -452,16 +464,16 @@ class YtdlpWrapper:
         thumbnails_dir = await self._paths.download_images_dir(download.feed_id)
         download_args = (
             YtdlpArgs(user_yt_cli_args)
-            .update_to(yt_channel)
             .convert_thumbnails("jpg")
-            .write_thumbnails()
+            .write_thumbnail()
             .paths_thumbnail(thumbnails_dir)
             .output_thumbnail(f"{download.id}.%(ext)s")
             .output(f"{download.id}.%(ext)s")
             .paths_temp(download_temp_dir)
             .paths_home(download_data_dir)
         )
-        self._apply_pot_extractor_args(download_args)
+        download_args = await self._update_to(download_args)
+        download_args = self._pot_extractor_args(download_args)
 
         if cookies_path:
             download_args.cookies(cookies_path)

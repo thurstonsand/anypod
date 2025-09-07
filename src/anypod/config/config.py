@@ -5,6 +5,7 @@ application, including feed configurations, application settings, and custom
 YAML file loading capabilities.
 """
 
+from datetime import timedelta
 from enum import Enum
 import logging
 from pathlib import Path
@@ -256,6 +257,22 @@ class AppSettings(BaseSettings):
         description=(
             "URL for bgutil POT provider HTTP server (e.g., 'http://bgutil-provider:4416'). "
             "If unset, POT fetching is disabled."
+        ),
+    )
+
+    # yt-dlp update configuration
+    yt_channel: str = Field(
+        default="stable",
+        validation_alias="YT_CHANNEL",
+        description=(
+            "yt-dlp update channel: stable, nightly, master, or specific version/repository."
+        ),
+    )
+    yt_dlp_update_freq: timedelta = Field(
+        default=timedelta(hours=12),
+        validation_alias="YT_DLP_UPDATE_FREQ",
+        description=(
+            "Minimum interval between yt-dlp --update-to invocations (e.g., '12h', '1d')."
         ),
     )
 

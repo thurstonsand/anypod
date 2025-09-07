@@ -40,10 +40,6 @@ class FeedConfig(BaseModel):
         default_factory=list[str],
         description="Command-line arguments for yt-dlp, parsed from user-provided string in config.",
     )
-    yt_channel: str = Field(
-        default="stable",
-        description="yt-dlp update channel: stable, nightly, master, or specific version/repository.",
-    )
     schedule: CronExpression = Field(
         ..., description="Cron schedule expression (supports seconds)"
     )

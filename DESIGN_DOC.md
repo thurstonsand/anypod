@@ -112,7 +112,6 @@ feeds:
   channel:
     url: https://www.youtube.com/@example
     yt_args: "-f worst[ext=mp4] --playlist-items 1-3"
-    yt_channel: "stable"
     schedule: "0 3 * * *"
     since: "20220101"
 
@@ -154,6 +153,9 @@ TZ=America/New_York                    # Timezone for date parsing (default: sys
 SERVER_HOST=0.0.0.0                   # HTTP server host (default: 0.0.0.0)
 SERVER_PORT=8024                      # HTTP server port (default: 8024)
 TRUSTED_PROXIES=["192.168.1.0/24"]    # Trusted proxy IPs/networks for reverse proxy support (default: None)
+POT_PROVIDER_URL=http://bgutil-provider:4416  # Optional POT provider URL for YouTube PO tokens (default: None)
+YT_CHANNEL=stable                      # yt-dlp update channel: stable, nightly, master, or version (default: stable)
+YT_DLP_UPDATE_FREQ=12h                 # Minimum interval between yt-dlp --update-to invocations (default: 12h)
 PUID=1000                             # User ID for non-root execution (Docker only)
 PGID=1000                             # Group ID for non-root execution (Docker only)
 ```
@@ -252,12 +254,21 @@ CREATE TABLE feeds (
 );
 ```
 
+### AppState Table
+```sql
+CREATE TABLE appstate (
+  id                        TEXT NOT NULL PRIMARY KEY,  -- Always "global"
+  last_yt_dlp_update        TEXT NOT NULL               -- ISO 8601 datetime string
+);
+```
+
 **Key Schema Notes:**
 * `ext` and `mime_type` are both **NOT NULL**; absence indicates a metadata-extraction bug.
 * All datetime fields are stored as ISO 8601 strings in TEXT columns.
 * `downloaded_at` is automatically set by database trigger when status changes to DOWNLOADED.
 * `updated_at` is automatically updated by database trigger on any row change.
 * The `feeds` table stores both configuration and runtime state for each feed.
+* The `appstate` table contains a single row with ID "global" used to track application-wide state such as yt-dlp update timestamps for rate limiting.
 
 ### Status Lifecycle
 The `status` field in the `downloads` table tracks the state of each download.
@@ -593,3 +604,4 @@ yt-dlp's `daterange` parameter only supports YYYYMMDD format, not hour/minute/se
 * Enable conditional conversion of file format to allow for more flexible selectors
 * handle the scenario where adding a new feed with a restrictive filter that doesn't pick up any videos (`since` too recent); in this case, it will error out because it won't have metadata to generate the rss feed. in this case, it should error, but continue generating as normal
 * combine enqueuer and downloader into 1 call -- should be possible by using something like `--no-simulate`
+* store media conversion report

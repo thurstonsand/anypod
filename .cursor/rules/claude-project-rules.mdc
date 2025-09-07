@@ -235,7 +235,6 @@ feeds:
   channel:
     url: https://www.youtube.com/@example
     yt_args: "-f worst[ext=mp4] --playlist-items 1-3"
-    yt_channel: "stable"
     schedule: "0 3 * * *"
     since: "20220101"
 
@@ -277,6 +276,8 @@ SERVER_HOST=0.0.0.0                   # HTTP server host (default: 0.0.0.0)
 SERVER_PORT=8024                      # HTTP server port (default: 8024)
 TRUSTED_PROXIES=["192.168.1.0/24"]    # Trusted proxy IPs/networks for reverse proxy support (default: None)
 POT_PROVIDER_URL=http://bgutil-provider:4416  # Optional POT provider URL for YouTube PO tokens (default: None)
+YT_CHANNEL=stable                      # yt-dlp update channel: stable, nightly, master, or version (default: stable)
+YT_DLP_UPDATE_FREQ=12h                 # Minimum interval between yt-dlp --update-to invocations (default: 12h)
 ```
 
 ## Code Style Guidelines

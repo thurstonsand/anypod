@@ -115,7 +115,6 @@ class StateReconciler:
                 source_url=feed_config.url,
                 resolved_url=resolved_url,
                 user_yt_cli_args=feed_config.yt_args,
-                yt_channel=feed_config.yt_channel,
                 cookies_path=cookies_path,
             )
         except YtdlpApiError as e:
@@ -161,7 +160,6 @@ class StateReconciler:
                     source_url=new_feed.source_url,
                     resolved_url=resolved_url,
                     user_yt_cli_args=feed_config.yt_args,
-                    yt_channel=feed_config.yt_channel,
                     cookies_path=cookies_path,
                 )
             except ImageDownloadError as e:
@@ -461,7 +459,6 @@ class StateReconciler:
                         source_url=updated_feed.source_url,
                         resolved_url=updated_feed.resolved_url,
                         user_yt_cli_args=feed_config.yt_args,
-                        yt_channel=feed_config.yt_channel,
                         cookies_path=cookies_path,
                     )
 
@@ -574,7 +571,6 @@ class StateReconciler:
                 source_url=feed_config.url,
                 resolved_url=updated_feed.resolved_url,
                 user_yt_cli_args=feed_config.yt_args,
-                yt_channel=feed_config.yt_channel,
                 cookies_path=cookies_path,
             )
         except YtdlpApiError as e:

@@ -113,7 +113,6 @@ feeds:
   channel:
     url: https://www.youtube.com/@example
     yt_args: "-f best[ext=mp4]"
-    yt_channel: "stable"  # yt-dlp update channel: stable, nightly, master, or version
     schedule: "0 3 * * *"
     since: "20220101"
   favorite_podcast:
@@ -162,6 +161,8 @@ All can be provided via env or CLI flags (kebab‑case). Common ones:
 | `LOG_LEVEL` | `INFO` | Log level |
 | `LOG_INCLUDE_STACKTRACE` | `false` | Include stack traces in error logs |
 | `POT_PROVIDER_URL` | unset | Base URL for a bgutil POT provider. When set, yt-dlp will be configured to use this provider for YouTube PO Tokens; when unset, POT fetching is disabled. |
+| `YT_CHANNEL` | `stable` | yt-dlp update channel: stable, nightly, master, or version |
+| `YT_DLP_UPDATE_FREQ` | `12h` | Minimum interval between yt-dlp --update-to invocations |
 | `PUID` | `1000` | Container user |
 | `PGID` | `1000` | Container group |
 

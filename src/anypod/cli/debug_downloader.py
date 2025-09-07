@@ -11,7 +11,7 @@ import logging
 
 from ..config import AppSettings
 from ..data_coordinator.downloader import Downloader
-from ..db import DownloadDatabase
+from ..db import AppStateDatabase, DownloadDatabase
 from ..db.sqlalchemy_core import SqlalchemyCore
 from ..db.types import Download, DownloadStatus
 from ..exceptions import DatabaseOperationError, DownloadError
@@ -52,7 +52,14 @@ async def run_debug_downloader_mode(
 
         file_manager = FileManager(paths)
 
-        ytdlp_wrapper = YtdlpWrapper(paths, pot_provider_url=settings.pot_provider_url)
+        app_state_db = AppStateDatabase(db_core)
+        ytdlp_wrapper = YtdlpWrapper(
+            paths,
+            pot_provider_url=settings.pot_provider_url,
+            app_state_db=app_state_db,
+            yt_channel=settings.yt_channel,
+            yt_update_freq=settings.yt_dlp_update_freq,
+        )
         downloader = Downloader(download_db, file_manager, ytdlp_wrapper)
     except Exception as e:
         logger.critical(

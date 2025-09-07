@@ -29,3 +29,6 @@ local_*.yaml
 
 # AI
 references/
+
+# Claude Code settings
+.claude/settings.local.json

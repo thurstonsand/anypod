@@ -123,7 +123,7 @@ class YtdlpArgs:
         self._convert_thumbnails = format
         return self
 
-    def write_thumbnails(self) -> "YtdlpArgs":
+    def write_thumbnail(self) -> "YtdlpArgs":
         """Enable thumbnail downloading.
 
         Returns:

@@ -1,6 +1,7 @@
 """Shared fixtures for integration tests."""
 
 from collections.abc import AsyncGenerator
+from datetime import timedelta
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -11,6 +12,7 @@ import pytest_asyncio
 from anypod.data_coordinator.downloader import Downloader
 from anypod.data_coordinator.enqueuer import Enqueuer
 from anypod.data_coordinator.pruner import Pruner
+from anypod.db import AppStateDatabase
 from anypod.db.download_db import DownloadDatabase
 from anypod.db.feed_db import FeedDatabase
 from anypod.db.sqlalchemy_core import SqlalchemyCore
@@ -108,13 +110,20 @@ def download_db(db_core: SqlalchemyCore) -> DownloadDatabase:
 
 
 @pytest.fixture
-def ytdlp_wrapper(path_manager: PathManager) -> YtdlpWrapper:
+def ytdlp_wrapper(path_manager: PathManager, db_core: SqlalchemyCore) -> YtdlpWrapper:
     """Provide a YtdlpWrapper instance with shared directories.
 
     Returns:
         YtdlpWrapper instance configured with test path manager.
     """
-    return YtdlpWrapper(path_manager, None)
+    app_state_db = AppStateDatabase(db_core)
+    return YtdlpWrapper(
+        path_manager,
+        None,
+        app_state_db=app_state_db,
+        yt_channel="stable",
+        yt_update_freq=timedelta(hours=12),
+    )
 
 
 @pytest.fixture
