@@ -565,6 +565,118 @@ async def test_requeue_downloads_multi(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+async def test_bulk_requeue_by_status_only_updates_matching(
+    feed_db: FeedDatabase, download_db: DownloadDatabase
+):
+    """Bulk requeue applies to all downloads with a given status for a feed."""
+    base_time = datetime(2023, 2, 1, 12, 0, 0, tzinfo=UTC)
+    feed_id = "bulk_requeue_feed"
+
+    # Create feed
+    await feed_db.upsert_feed(
+        Feed(
+            id=feed_id,
+            is_enabled=True,
+            source_type=SourceType.CHANNEL,
+            source_url=f"http://example.com/{feed_id}",
+            last_successful_sync=base_time,
+        )
+    )
+
+    # Add downloads: two ERROR, one SKIPPED, one QUEUED
+    d_error_a = Download(
+        feed_id=feed_id,
+        id="err_a",
+        published=base_time,
+        status=DownloadStatus.ERROR,
+        source_url="url",
+        title="err a",
+        ext="mp4",
+        mime_type="video/mp4",
+        filesize=1,
+        duration=1,
+        retries=2,
+        last_error="boom",
+    )
+    d_error_b = d_error_a.model_copy(update={"id": "err_b", "retries": 5})
+    d_skipped = d_error_a.model_copy(
+        update={"id": "skip_1", "status": DownloadStatus.SKIPPED, "last_error": None}
+    )
+    d_queued = d_error_a.model_copy(
+        update={"id": "q_1", "status": DownloadStatus.QUEUED, "last_error": None}
+    )
+
+    for dl in (d_error_a, d_error_b, d_skipped, d_queued):
+        await download_db.upsert_download(dl)
+
+    # Bulk requeue only ERROR rows
+    count = await download_db.requeue_downloads(
+        feed_id, None, from_status=DownloadStatus.ERROR
+    )
+    assert count == 2
+
+    # Verify ERROR rows are now QUEUED and cleared, others unchanged
+    err_a = await download_db.get_download_by_id(feed_id, "err_a")
+    err_b = await download_db.get_download_by_id(feed_id, "err_b")
+    skip_1 = await download_db.get_download_by_id(feed_id, "skip_1")
+    q_1 = await download_db.get_download_by_id(feed_id, "q_1")
+
+    for row in (err_a, err_b):
+        assert row.status == DownloadStatus.QUEUED
+        assert row.retries == 0
+        assert row.last_error is None
+
+    assert skip_1.status == DownloadStatus.SKIPPED  # unaffected
+    assert q_1.status == DownloadStatus.QUEUED  # unaffected
+
+    # Re-running should be idempotent (no ERROR left)
+    count_second = await download_db.requeue_downloads(
+        feed_id, None, from_status=DownloadStatus.ERROR
+    )
+    assert count_second == 0
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_bulk_requeue_requires_status(
+    feed_db: FeedDatabase, download_db: DownloadDatabase
+):
+    """Bulk requeue without from_status should raise an error for safety."""
+    base_time = datetime(2023, 2, 2, 12, 0, 0, tzinfo=UTC)
+    feed_id = "bulk_require_status"
+
+    await feed_db.upsert_feed(
+        Feed(
+            id=feed_id,
+            is_enabled=True,
+            source_type=SourceType.CHANNEL,
+            source_url=f"http://example.com/{feed_id}",
+            last_successful_sync=base_time,
+        )
+    )
+
+    # Add one download just to have rows in the table
+    await download_db.upsert_download(
+        Download(
+            feed_id=feed_id,
+            id="x",
+            published=base_time,
+            status=DownloadStatus.ERROR,
+            source_url="url",
+            title="x",
+            ext="mp4",
+            mime_type="video/mp4",
+            filesize=1,
+            duration=1,
+        )
+    )
+
+    with pytest.raises(DatabaseOperationError):
+        await download_db.requeue_downloads(feed_id, None)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 async def test_get_downloads_to_prune_by_keep_last(
     feed_db: FeedDatabase, download_db: DownloadDatabase
 ):
