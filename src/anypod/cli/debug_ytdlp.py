@@ -6,6 +6,8 @@ This module provides functionality to test yt-dlp operations in isolation.
 import logging
 
 from ..config import AppSettings
+from ..db import AppStateDatabase
+from ..db.sqlalchemy_core import SqlalchemyCore
 from ..db.types import DownloadStatus
 from ..exceptions import YtdlpApiError
 from ..path_manager import PathManager
@@ -31,7 +33,15 @@ async def run_debug_ytdlp_mode(settings: AppSettings, paths: PathManager) -> Non
         },
     )
 
-    ytdlp_wrapper = YtdlpWrapper(paths)
+    db_core = SqlalchemyCore(await paths.db_dir())
+    app_state_db = AppStateDatabase(db_core)
+    ytdlp_wrapper = YtdlpWrapper(
+        paths,
+        pot_provider_url=settings.pot_provider_url,
+        app_state_db=app_state_db,
+        yt_channel=settings.yt_channel,
+        yt_update_freq=settings.yt_dlp_update_freq,
+    )
 
     for feed_id, feed_config in settings.feeds.items():
         logger.info(
@@ -58,7 +68,6 @@ async def run_debug_ytdlp_mode(settings: AppSettings, paths: PathManager) -> Non
                 source_url=feed_config.url,
                 resolved_url=resolved_url,
                 user_yt_cli_args=feed_config.yt_args,
-                yt_channel=feed_config.yt_channel,
                 cookies_path=settings.cookies_path,
             )
 
@@ -68,7 +77,6 @@ async def run_debug_ytdlp_mode(settings: AppSettings, paths: PathManager) -> Non
                 source_url=feed_config.url,
                 resolved_url=resolved_url,
                 user_yt_cli_args=feed_config.yt_args,
-                yt_channel=feed_config.yt_channel,
                 fetch_since_date=feed_config.since,
                 keep_last=feed_config.keep_last,
                 cookies_path=settings.cookies_path,
@@ -111,7 +119,6 @@ async def run_debug_ytdlp_mode(settings: AppSettings, paths: PathManager) -> Non
                             download_path = await ytdlp_wrapper.download_media_to_file(
                                 download,
                                 feed_config.yt_args,
-                                feed_config.yt_channel,
                                 cookies_path=settings.cookies_path,
                             )
                             logger.info(f"Download successful: {download_path}")

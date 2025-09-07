@@ -1192,7 +1192,6 @@ async def test_handle_image_url_changes_override_removed_with_natural_url(
         source_url=updated_feed.source_url,
         resolved_url=updated_feed.resolved_url,
         user_yt_cli_args=config.yt_args,
-        yt_channel=config.yt_channel,
         cookies_path=None,
     )
     mock_image_downloader.download_feed_image_direct.assert_not_called()

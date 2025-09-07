@@ -10,7 +10,7 @@ import logging
 from ..config import AppSettings
 from ..data_coordinator.enqueuer import Enqueuer
 from ..data_coordinator.pruner import Pruner
-from ..db import DownloadDatabase, FeedDatabase
+from ..db import AppStateDatabase, DownloadDatabase, FeedDatabase
 from ..db.sqlalchemy_core import SqlalchemyCore
 from ..db.types import Download, DownloadStatus
 from ..exceptions import DatabaseOperationError, EnqueueError, StateReconciliationError
@@ -51,7 +51,14 @@ async def run_debug_enqueuer_mode(
         feed_db = FeedDatabase(db_core)
         download_db = DownloadDatabase(db_core)
         file_manager = FileManager(paths)
-        ytdlp_wrapper = YtdlpWrapper(paths)
+        app_state_db = AppStateDatabase(db_core)
+        ytdlp_wrapper = YtdlpWrapper(
+            paths,
+            pot_provider_url=settings.pot_provider_url,
+            app_state_db=app_state_db,
+            yt_channel=settings.yt_channel,
+            yt_update_freq=settings.yt_dlp_update_freq,
+        )
         pruner = Pruner(feed_db, download_db, file_manager)
         image_downloader = ImageDownloader(paths, ytdlp_wrapper)
         state_reconciler = StateReconciler(

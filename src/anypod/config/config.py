@@ -5,6 +5,7 @@ application, including feed configurations, application settings, and custom
 YAML file loading capabilities.
 """
 
+from datetime import timedelta
 from enum import Enum
 import logging
 from pathlib import Path
@@ -179,6 +180,7 @@ class AppSettings(BaseSettings):
         tz: Timezone for date parsing in config files.
         config_file: Path to the YAML config file.
         cookies_path: Path to the cookies.txt file for yt-dlp authentication.
+        pot_provider_url: URL for bgutil POT provider HTTP server used by yt-dlp.
         feeds: Configuration for all podcast feeds.
     """
 
@@ -246,6 +248,32 @@ class AppSettings(BaseSettings):
         default=Path("/cookies/cookies.txt"),
         validation_alias="COOKIES_PATH",
         description="Optional path to the cookies.txt file for yt-dlp authentication.",
+    )
+
+    # yt-dlp POT provider configuration
+    pot_provider_url: str | None = Field(
+        default=None,
+        validation_alias="POT_PROVIDER_URL",
+        description=(
+            "URL for bgutil POT provider HTTP server (e.g., 'http://bgutil-provider:4416'). "
+            "If unset, POT fetching is disabled."
+        ),
+    )
+
+    # yt-dlp update configuration
+    yt_channel: str = Field(
+        default="stable",
+        validation_alias="YT_CHANNEL",
+        description=(
+            "yt-dlp update channel: stable, nightly, master, or specific version/repository."
+        ),
+    )
+    yt_dlp_update_freq: timedelta = Field(
+        default=timedelta(hours=12),
+        validation_alias="YT_DLP_UPDATE_FREQ",
+        description=(
+            "Minimum interval between yt-dlp --update-to invocations (e.g., '12h', '1d')."
+        ),
     )
 
     feeds: dict[str, FeedConfig] = Field(

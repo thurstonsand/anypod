@@ -229,7 +229,6 @@ class ImageDownloader:
         source_url: str,
         resolved_url: str | None,
         user_yt_cli_args: list[str],
-        yt_channel: str,
         cookies_path: Path | None = None,
     ) -> str | None:
         """Download feed image using yt-dlp wrapper.
@@ -240,7 +239,6 @@ class ImageDownloader:
             source_url: Source URL for ytdlp.
             resolved_url: Resolved URL for ytdlp.
             user_yt_cli_args: User CLI args for ytdlp.
-            yt_channel: YT channel for ytdlp.
             cookies_path: Optional cookies file path.
 
         Returns:
@@ -253,7 +251,6 @@ class ImageDownloader:
                 source_url=source_url,
                 resolved_url=resolved_url,
                 user_yt_cli_args=user_yt_cli_args,
-                yt_channel=yt_channel,
                 cookies_path=cookies_path,
             )
         except YtdlpApiError as e:

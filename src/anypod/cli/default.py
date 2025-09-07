@@ -8,7 +8,7 @@ import logging
 
 from ..config import AppSettings
 from ..data_coordinator import DataCoordinator, Downloader, Enqueuer, Pruner
-from ..db import DownloadDatabase, FeedDatabase
+from ..db import AppStateDatabase, DownloadDatabase, FeedDatabase
 from ..db.sqlalchemy_core import SqlalchemyCore
 from ..exceptions import (
     DatabaseOperationError,
@@ -92,11 +92,18 @@ async def _init(
     file_manager = FileManager(path_manager)
 
     # Initialize database layers
+    app_state_db = AppStateDatabase(db_core)
     feed_db = FeedDatabase(db_core)
     download_db = DownloadDatabase(db_core)
 
     # Initialize application components
-    ytdlp_wrapper = YtdlpWrapper(paths=path_manager)
+    ytdlp_wrapper = YtdlpWrapper(
+        paths=path_manager,
+        pot_provider_url=settings.pot_provider_url,
+        app_state_db=app_state_db,
+        yt_channel=settings.yt_channel,
+        yt_update_freq=settings.yt_dlp_update_freq,
+    )
     rss_generator = RSSFeedGenerator(download_db=download_db, paths=path_manager)
     image_downloader = ImageDownloader(paths=path_manager, ytdlp_wrapper=ytdlp_wrapper)
 

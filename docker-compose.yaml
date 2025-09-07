@@ -38,3 +38,15 @@ services:
 
       # Optional: Trusted proxy networks for reverse proxy support
       # TRUSTED_PROXIES: '["192.168.1.0/24", "172.16.0.0/16"]'
+      # POT provider URL to enable bgutil plugin (leave unset to disable POT)
+      POT_PROVIDER_URL: http://bgutil-provider:4416
+
+    depends_on:
+      - bgutil-provider
+
+  bgutil-provider:
+    image: brainicism/bgutil-ytdlp-pot-provider:latest
+    container_name: bgutil-provider
+    restart: unless-stopped
+    ports:
+      - "4416:4416"

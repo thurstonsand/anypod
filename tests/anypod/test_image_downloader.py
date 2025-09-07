@@ -103,7 +103,6 @@ async def test_download_feed_image_ytdlp_success(
         source_url=src_url,
         resolved_url=resolved_url,
         user_yt_cli_args=yt_args,
-        yt_channel="stable",
         cookies_path=cookies,
     )
 
@@ -114,7 +113,6 @@ async def test_download_feed_image_ytdlp_success(
         source_url=src_url,
         resolved_url=resolved_url,
         user_yt_cli_args=yt_args,
-        yt_channel="stable",
         cookies_path=cookies,
     )
 
@@ -134,7 +132,6 @@ async def test_download_feed_image_ytdlp_returns_none(
         source_url="https://yt/playlist",
         resolved_url=None,
         user_yt_cli_args=[],
-        yt_channel="stable",
     )
     assert res is None
 
@@ -157,7 +154,6 @@ async def test_download_feed_image_ytdlp_wraps_error(
             source_url="https://yt/watch?v=abc",
             resolved_url=None,
             user_yt_cli_args=[],
-            yt_channel="stable",
         )
     assert exc.value.feed_id == "feed"
     assert exc.value.url == "https://yt/watch?v=abc"

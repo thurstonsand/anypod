@@ -5,11 +5,10 @@ implementing source-specific strategies for yt-dlp operations, including
 fetch strategy determination and metadata parsing.
 """
 
-from pathlib import Path
 from typing import Protocol
 
 from ..db.types import Download, Feed, SourceType
-from .core import YtdlpInfo
+from .core import YtdlpArgs, YtdlpInfo
 
 
 class SourceHandlerBase(Protocol):
@@ -24,14 +23,14 @@ class SourceHandlerBase(Protocol):
         self,
         feed_id: str,
         initial_url: str,
-        cookies_path: Path | None = None,
+        base_args: YtdlpArgs,
     ) -> tuple[str | None, SourceType]:
         """Classify the initial URL and determine the final URL to fetch downloads from.
 
         Args:
             feed_id: The feed identifier.
             initial_url: The initial URL to classify.
-            cookies_path: Path to cookies.txt file for authentication, or None if not needed.
+            base_args: Pre-configured YtdlpArgs with shared settings (POT, updates, cookies, etc.).
 
         Returns:
             Tuple of (final_url, source_type).

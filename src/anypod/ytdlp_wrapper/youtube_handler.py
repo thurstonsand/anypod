@@ -9,7 +9,6 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 import logging
-from pathlib import Path
 
 from ..db.types import Download, DownloadStatus, Feed, SourceType
 from ..exceptions import (
@@ -501,7 +500,7 @@ class YoutubeHandler:
         self,
         feed_id: str,
         initial_url: str,
-        cookies_path: Path | None = None,
+        base_args: YtdlpArgs,
     ) -> tuple[str | None, SourceType]:
         """Determine the fetch strategy for a YouTube URL.
 
@@ -511,7 +510,7 @@ class YoutubeHandler:
         Args:
             feed_id: The feed identifier.
             initial_url: The initial URL to analyze.
-            cookies_path: Path to cookies.txt file for authentication, or None if not needed.
+            base_args: Pre-configured YtdlpArgs with shared settings (POT, updates, cookies, etc.).
 
         Returns:
             Tuple of (final_url_to_fetch, source_type).
@@ -523,16 +522,8 @@ class YoutubeHandler:
             "Determining fetch strategy for URL.", extra={"initial_url": initial_url}
         )
 
-        # Build discovery args directly
-        discovery_args = YtdlpArgs([])
-        # Apply standard discovery options
-        discovery_args.quiet().no_warnings().skip_download().flat_playlist().convert_thumbnails(
-            "jpg"
-        )
-
-        # Add cookies if provided
-        if cookies_path is not None:
-            discovery_args.cookies(cookies_path)
+        # Add YouTube-specific discovery options
+        discovery_args = base_args.skip_download().flat_playlist()
 
         logger.debug(
             "Performing discovery call.",
