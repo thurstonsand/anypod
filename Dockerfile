@@ -29,6 +29,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Runtime stage - use base Debian slim and copy uv binary
 FROM debian:bookworm-slim
 
+ARG BGUTIL_POT_PROVIDER_VERSION=1.2.2
+
 # Install curl for health check, ca-certificates for SSL verification, gosu for user switching, and yt-dlp
 RUN apt-get update && \
     apt-get upgrade -y && \
@@ -42,7 +44,7 @@ RUN apt-get update && \
     chmod a+rx /usr/local/bin/yt-dlp && \
     # Install bgutil POT provider plugin (zip) into yt-dlp system plugins dir
     mkdir -p /etc/yt-dlp/plugins && \
-    curl -L https://github.com/brainicism/bgutil-ytdlp-pot-provider/releases/latest/download/bgutil-ytdlp-pot-provider.zip -o /etc/yt-dlp/plugins/bgutil-ytdlp-pot-provider.zip && \
+    curl -L https://github.com/brainicism/bgutil-ytdlp-pot-provider/releases/download/${BGUTIL_POT_PROVIDER_VERSION}/bgutil-ytdlp-pot-provider.zip -o /etc/yt-dlp/plugins/bgutil-ytdlp-pot-provider.zip && \
     rm -rf /var/lib/apt/lists/*
 
 # Set working directory
