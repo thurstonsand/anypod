@@ -14,6 +14,7 @@ from typing import Any
 from sqlalchemy import and_, func, update
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import col, select
 
 from ..exceptions import DatabaseOperationError, DownloadNotFoundError, NotFoundError
@@ -155,24 +156,22 @@ class DownloadDatabase:
     async def requeue_downloads(
         self,
         feed_id: str,
-        download_ids: str | list[str],
+        download_ids: None | list[str] | str,
         from_status: DownloadStatus | None = None,
     ) -> int:
-        """Re-queue one or more downloads by resetting their status and error counters.
+        """Re-queue downloads by resetting status and error counters.
 
-        This can happen due to:
-        - Manually re-queueing ERROR'd downloads.
-        - Manually re-queueing to get the latest version of downloads (previously DOWNLOADED).
-        - Un-SKIPPING videos (if they don't get ARCHIVED).
-        - Restoring ARCHIVED downloads when retention policies change.
+        - Targeted: provide one or more `download_ids` to re-queue those items.
+        - Bulk: pass `download_ids=None` to re-queue all downloads for the feed.
+          `from_status` is required for bulk operations to avoid unintended re-queuing.
 
         Sets status to QUEUED and resets retries to 0 and last_error to NULL.
 
         Args:
             feed_id: The feed identifier.
-            download_ids: download identifier(s) to requeue.
-            from_status: Optional status to check before updating. If provided, the update
-                        will only occur if the current status matches this value.
+            download_ids: download identifier(s) to requeue, or None to apply to all downloads of the feed.
+            from_status: Optional status precondition. If provided, only downloads currently
+                        in this status are updated.
 
         Returns:
             Number of downloads successfully requeued.
@@ -180,32 +179,52 @@ class DownloadDatabase:
         Raises:
             DatabaseOperationError: If database operations fail.
         """
-        if isinstance(download_ids, str):
-            download_ids = [download_ids]
+        where_clauses: list[ColumnElement[bool]] = [col(Download.feed_id) == feed_id]
 
-        if not download_ids:
-            return 0
+        match download_ids:
+            case None if from_status is None:
+                # Safety: bulk mode must specify from_status to avoid re-queuing
+                # unintended statuses (e.g., DOWNLOADED).
+                raise DatabaseOperationError(
+                    "Bulk requeue requires 'from_status' to be specified."
+                )
+            case None:
+                expected_count = None
+                download_count_repr = "<all>"
+            case list() as id_list:
+                if len(id_list) == 0:
+                    return 0
+                where_clauses.append(col(Download.id).in_(id_list))
+                expected_count = len(id_list)
+                download_count_repr = expected_count
+            case str() as single_id:
+                where_clauses.append(col(Download.id) == single_id)
+                expected_count = 1
+                download_count_repr = 1
+
+        if from_status is not None:
+            where_clauses.append(col(Download.status) == from_status)
 
         log_params = {
             "feed_id": feed_id,
-            "download_count": len(download_ids),
+            "download_count": download_count_repr,
             "from_status": str(from_status) if from_status else None,
         }
         logger.debug("Attempting to re-queue downloads.", extra=log_params)
 
         async with self._db.session() as session:
-            stmt = update(Download).where(
-                col(Download.feed_id) == feed_id,
-                col(Download.id).in_(download_ids),
+            stmt = (
+                update(Download)
+                .where(*where_clauses)
+                .values(
+                    status=DownloadStatus.QUEUED,
+                    retries=0,
+                    last_error=None,
+                )
             )
-            if from_status:
-                stmt = stmt.where(col(Download.status) == from_status)
-
-            stmt = stmt.values(status=DownloadStatus.QUEUED, retries=0, last_error=None)
             result = await session.execute(stmt)
 
-            expected_count = len(download_ids)
-            if result.rowcount != expected_count:
+            if expected_count is not None and expected_count != result.rowcount:
                 raise DatabaseOperationError(
                     f"Expected to requeue {expected_count} downloads but only {result.rowcount} were updated. "
                     f"Some downloads may not exist or may not have the expected status. Rolling back changes.",
@@ -214,10 +233,7 @@ class DownloadDatabase:
 
         logger.debug(
             "Downloads requeued.",
-            extra={
-                **log_params,
-                "count_requeued": result.rowcount,
-            },
+            extra={**log_params, "count_requeued": result.rowcount},
         )
         return result.rowcount
 

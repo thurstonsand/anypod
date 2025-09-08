@@ -55,21 +55,42 @@ services:
     restart: unless-stopped
     ports:
       - "8024:8024"
+      - "8025:8025"
     volumes:
       - ./example_feeds.yaml:/config/feeds.yaml
       - ./data:/data
       - ./cookies.txt:/cookies/cookies.txt # optional
       - /etc/localtime:/etc/localtime:ro
     environment:
+      # Identity / permissions
       PUID: 1000
       PGID: 1000
-      LOG_FORMAT: json
-      LOG_LEVEL: INFO
-      LOG_INCLUDE_STACKTRACE: "false"
-      BASE_URL: https://reverseproxy.example
-      SERVER_PORT: 8024
-      POT_PROVIDER_URL: http://bgutil-provider:4416
 
+      SERVER_PORT: 8024                      # Public server port
+      ADMIN_SERVER_PORT: 8025                # Admin server port (keep private)
+
+      # External URL (set when behind a reverse proxy)
+      # BASE_URL: https://reverseproxy.example
+
+      # Trusted proxy networks; enables X-Forwarded-* processing
+      # TRUSTED_PROXIES:
+      #   - "192.168.1.0/24"
+      #   - "192.168.3.213" # e.g. your reverse proxy
+
+      # Logging
+      # LOG_FORMAT: json                     # json | human
+      # LOG_LEVEL: INFO                      # DEBUG | INFO | WARNING | ERROR
+      # LOG_INCLUDE_STACKTRACE: "false"      # true to include stack traces
+
+      # Timezone for date parsing in config (optional)
+      # TZ: "America/New_York"
+
+      # yt-dlp update behavior
+      # YT_CHANNEL: stable                   # stable | nightly | master | version
+      # YT_DLP_UPDATE_FREQ: 12h              # e.g., 6h, 12h, 1d
+
+      # Optional: YouTube PO Token provider for yt-dlp
+      POT_PROVIDER_URL: http://bgutil-provider:4416
     depends_on:
       - bgutil-provider
 
@@ -154,7 +175,8 @@ All can be provided via env or CLI flags (kebab‑case). Common ones:
 | Name | Default | Description |
 | ---- | ------- | ----------- |
 | `BASE_URL` | `http://reverseproxy.example:8024` | Public base URL for feed/media links (set this behind a reverse proxy) |
-| `SERVER_PORT` | `8024` | Bind port |
+| `SERVER_PORT` | `8024` | Bind port for public server |
+| `ADMIN_SERVER_PORT` | `8025` | Bind port for admin server (should not be exposed publicly) |
 | `TRUSTED_PROXIES` | unset | List of local IPs or networks allowed to access the server, mainly for reverse proxy use (e.g. `["192.168.1.0/24"]`) |
 | `TZ` | unset | Your timezone (set if you don't want to mount `/etc/localtime`) |
 | `LOG_FORMAT` | `json` | `human` or `json` |
@@ -169,6 +191,7 @@ All can be provided via env or CLI flags (kebab‑case). Common ones:
 
 ## HTTP endpoints
 
+### Public endpoints
 - `GET /feeds` – directory listing of feeds
 - `GET /feeds/{feed_id}.xml` – podcast RSS
 - `GET /media` – directory listing of feeds with media
@@ -178,7 +201,11 @@ All can be provided via env or CLI flags (kebab‑case). Common ones:
 - `GET /images/{feed_id}/{download_id}.jpg` – episode thumbnail
 - `GET /api/health` – health check
 
-No authentication is implemented. Only expose `/feeds`, `/media`, and `/images` publicly (these are the content-serving endpoints).
+### Admin endpoints (trusted/local access only)
+- `POST /admin/feeds/{feed_id}/reset-errors` – reset all ERROR downloads for a feed to QUEUED status
+- `GET /api/health` – health check
+
+Admin endpoints run on a separate server. No authentication is implemented. Only expose the public server publicly.
 
 ## Reverse proxies
 

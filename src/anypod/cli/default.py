@@ -4,6 +4,7 @@ This module provides the default execution mode that initializes all components,
 runs state reconciliation, starts the scheduler, and manages the application lifecycle.
 """
 
+import asyncio
 import logging
 
 from ..config import AppSettings
@@ -19,7 +20,7 @@ from ..image_downloader import ImageDownloader
 from ..path_manager import PathManager
 from ..rss import RSSFeedGenerator
 from ..schedule import FeedScheduler
-from ..server import create_server
+from ..server import create_admin_server, create_server
 from ..state_reconciler import StateReconciler
 from ..ytdlp_wrapper import YtdlpWrapper
 
@@ -208,19 +209,29 @@ async def default(settings: AppSettings) -> None:
             shutdown_callback=lambda: graceful_shutdown(scheduler, db_core),
         )
 
+        # Create admin HTTP server (no shutdown callback to avoid double-close)
+        admin_server = create_admin_server(
+            settings=settings,
+            rss_generator=rss_generator,
+            file_manager=file_manager,
+            feed_database=feed_db,
+            download_database=download_db,
+        )
+
         logger.info(
-            "Starting scheduler and HTTP server...",
+            "Starting scheduler and HTTP servers...",
             extra={
                 "scheduled_feeds": scheduler.get_scheduled_feed_ids(),
                 "server_host": settings.server_host,
                 "server_port": settings.server_port,
+                "admin_port": settings.admin_server_port,
             },
         )
 
         await scheduler.start()
 
         # Will gracefully shutdown on SIGINT/SIGTERM
-        await server.serve()
+        await asyncio.gather(server.serve(), admin_server.serve())
     except Exception as e:
         logger.error("Unexpected error during execution.", exc_info=e)
         await graceful_shutdown(scheduler, db_core)

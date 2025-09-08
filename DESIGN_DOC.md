@@ -152,6 +152,7 @@ COOKIES_PATH=/path/to/cookies.txt     # Optional cookies.txt file for yt-dlp aut
 TZ=America/New_York                    # Timezone for date parsing (default: system timezone)
 SERVER_HOST=0.0.0.0                   # HTTP server host (default: 0.0.0.0)
 SERVER_PORT=8024                      # HTTP server port (default: 8024)
+ADMIN_SERVER_PORT=8025                 # Admin HTTP server port (default: 8025)
 TRUSTED_PROXIES=["192.168.1.0/24"]    # Trusted proxy IPs/networks for reverse proxy support (default: None)
 POT_PROVIDER_URL=http://bgutil-provider:4416  # Optional POT provider URL for YouTube PO tokens (default: None)
 YT_CHANNEL=stable                      # yt-dlp update channel: stable, nightly, master, or version (default: stable)
@@ -463,6 +464,8 @@ The `RSSFeedGenerator` module maintains a **write-once/read-many-locked in-memor
 - Cache population on startup will occur when the scheduler and HTTP server are implemented
 
 ## HTTP Endpoints
+
+### Public Endpoints
 | Path | Description |
 |------|-------------|
 | `/feeds` | HTML directory listing of available feeds |
@@ -474,6 +477,11 @@ The `RSSFeedGenerator` module maintains a **write-once/read-many-locked in-memor
 | `/images/{feed}/{download_id}.jpg` | Episode thumbnail |
 | `/errors` | JSON list of failed downloads |
 | `/api/health` | Health check endpoint returning service status, timestamp, and version |
+
+### Admin Endpoints (Private/Trusted Access)
+| Path | Description |
+|------|-------------|
+| `POST /admin/feeds/{feed_id}/reset-errors` | Reset all ERROR downloads for a feed to QUEUED status |
 
 ---
 

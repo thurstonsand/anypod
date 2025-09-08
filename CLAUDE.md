@@ -194,8 +194,9 @@ anypod/
 │   │   ├── server.py            # HTTP server configuration
 │   │   ├── validation.py        # Input validation utilities for endpoints
 │   │   └── routers/             # API routers
-│   │       ├── health.py        # Health check endpoint
-│   │       └── static.py        # Static file serving and directory browsing
+  │   │       ├── health.py        # Health check endpoint
+  │   │       └── static.py        # Static file serving and directory browsing
+  │   │       └── admin.py         # Admin-only endpoints (served on private admin server)
 │   ├── ytdlp_wrapper/           # `yt-dlp` integration
 │   │   ├── base_handler.py      # Base handler interface for different source types
 │   │   ├── youtube_handler.py   # YouTube source handler
@@ -268,6 +269,7 @@ CONFIG_FILE=/path/to/feeds.yaml       # Config file path (default: /config/feeds
 COOKIES_PATH=/path/to/cookies.txt     # Optional cookies.txt file for yt-dlp authentication (default: /cookies/cookies.txt)
 SERVER_HOST=0.0.0.0                   # HTTP server host (default: 0.0.0.0)
 SERVER_PORT=8024                      # HTTP server port (default: 8024)
+ADMIN_SERVER_PORT=8025                 # Admin HTTP server port (default: 8025)
 TRUSTED_PROXIES=["192.168.1.0/24"]    # Trusted proxy IPs/networks for reverse proxy support (default: None)
 POT_PROVIDER_URL=http://bgutil-provider:4416  # Optional POT provider URL for YouTube PO tokens (default: None)
 YT_CHANNEL=stable                      # yt-dlp update channel: stable, nightly, master, or version (default: stable)

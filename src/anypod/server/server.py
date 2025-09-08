@@ -15,7 +15,7 @@ from ..db.feed_db import FeedDatabase
 from ..file_manager import FileManager
 from ..logging_config import LOGGING_CONFIG
 from ..rss import RSSFeedGenerator
-from .app import create_app
+from .app import create_admin_app, create_app
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +73,53 @@ def create_server(
             "host": settings.server_host,
             "port": settings.server_port,
         },
+    )
+
+    return server
+
+
+def create_admin_server(
+    settings: AppSettings,
+    rss_generator: RSSFeedGenerator,
+    file_manager: FileManager,
+    feed_database: FeedDatabase,
+    download_database: DownloadDatabase,
+) -> uvicorn.Server:
+    """Create and configure a uvicorn HTTP server for the admin FastAPI app.
+
+    Args:
+        settings: Application settings containing admin server configuration.
+        rss_generator: The RSS feed generator instance.
+        file_manager: The file manager instance.
+        feed_database: The feed database instance.
+        download_database: The download database instance.
+
+    Returns:
+        Configured uvicorn server ready to run the admin app.
+    """
+    logger.debug("Creating FastAPI admin application.")
+    app = create_admin_app(
+        rss_generator=rss_generator,
+        file_manager=file_manager,
+        feed_database=feed_database,
+        download_database=download_database,
+    )
+
+    config = uvicorn.Config(
+        app=app,
+        host=settings.server_host,
+        port=settings.admin_server_port,
+        log_config=LOGGING_CONFIG,  # Use our own logging configuration
+        access_log=False,  # We have our own logging middleware
+        ws="none",  # We don't need websockets
+        lifespan="off",  # Disable signal handling - main server handles shutdown
+        proxy_headers=False,  # We don't need proxy headers
+    )
+    server = uvicorn.Server(config)
+
+    logger.debug(
+        "Admin HTTP server configured.",
+        extra={"host": settings.server_host, "port": settings.admin_server_port},
     )
 
     return server

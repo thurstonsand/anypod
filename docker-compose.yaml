@@ -6,6 +6,7 @@ services:
 
     ports:
       - "8024:8024"
+      - "8025:8025"
 
     volumes:
       # Configuration file
@@ -21,24 +22,34 @@ services:
       - /etc/localtime:/etc/localtime:ro
 
     environment:
-      # User/Group configuration for non-root execution
+      # Identity / permissions
       PUID: 501
       PGID: 20
 
-      # Logging configuration
-      LOG_FORMAT: json
-      LOG_LEVEL: INFO
-      LOG_INCLUDE_STACKTRACE: true
+      SERVER_PORT: 8024                      # Public server port
+      ADMIN_SERVER_PORT: 8025                # Admin server port (keep private)
 
-      # Server configuration
-      SERVER_PORT: 8024
+      # External URL (set when behind a reverse proxy)
+      # BASE_URL: https://reverseproxy.example
 
-      # Optional: Base URL for RSS feeds (useful for reverse proxy)
-      BASE_URL: https://anypod.example.com
+      # Trusted proxy networks; enables X-Forwarded-* processing
+      # TRUSTED_PROXIES:
+      #   - "192.168.1.0/24"
+      #   - "192.168.3.213" # e.g. your reverse proxy
 
-      # Optional: Trusted proxy networks for reverse proxy support
-      # TRUSTED_PROXIES: '["192.168.1.0/24", "172.16.0.0/16"]'
-      # POT provider URL to enable bgutil plugin (leave unset to disable POT)
+      # Logging
+      # LOG_FORMAT: json                     # json | human
+      # LOG_LEVEL: INFO                      # DEBUG | INFO | WARNING | ERROR
+      # LOG_INCLUDE_STACKTRACE: "false"      # true to include stack traces
+
+      # Timezone for date parsing in config (optional)
+      # TZ: "America/New_York"
+
+      # yt-dlp update behavior
+      # YT_CHANNEL: stable                   # stable | nightly | master | version
+      # YT_DLP_UPDATE_FREQ: 12h              # e.g., 6h, 12h, 1d
+
+      # Optional: YouTube PO Token provider for yt-dlp
       POT_PROVIDER_URL: http://bgutil-provider:4416
 
     depends_on:

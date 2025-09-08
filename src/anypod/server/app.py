@@ -19,7 +19,7 @@ from ..db.download_db import DownloadDatabase
 from ..db.feed_db import FeedDatabase
 from ..file_manager import FileManager
 from ..rss import RSSFeedGenerator
-from .routers import health, static
+from .routers import admin, health, static
 
 logger = logging.getLogger(__name__)
 
@@ -120,10 +120,54 @@ def create_app(
     app.state.feed_database = feed_database
     app.state.download_database = download_database
 
-    # Include routers
-    app.include_router(health.router, tags=["health"])
+    # Include public routers
     app.include_router(static.router, tags=["static"])
+    app.include_router(health.router, tags=["health"])  # /api/health on public server
 
     logger.debug("FastAPI application created successfully")
 
+    return app
+
+
+def create_admin_app(
+    rss_generator: RSSFeedGenerator,
+    file_manager: FileManager,
+    feed_database: FeedDatabase,
+    download_database: DownloadDatabase,
+) -> FastAPI:
+    """Create and configure the admin FastAPI application instance.
+
+    The admin app exposes private administration endpoints and should be bound
+    to a private interface/port (e.g., 127.0.0.1). It intentionally includes
+    only the admin router.
+
+    Args:
+        rss_generator: The RSS feed generator instance.
+        file_manager: The file manager instance.
+        feed_database: The feed database instance.
+        download_database: The download database instance.
+
+    Returns:
+        Configured FastAPI application instance for admin APIs.
+    """
+    app = FastAPI(
+        title="Anypod Admin",
+        description="Private admin API for Anypod",
+        version="0.1.0",
+    )
+
+    # Reuse logging middleware for consistency
+    app.add_middleware(LoggingMiddleware)
+
+    # Attach dependencies to app state
+    app.state.rss_generator = rss_generator
+    app.state.file_manager = file_manager
+    app.state.feed_database = feed_database
+    app.state.download_database = download_database
+
+    # Include admin and health routers
+    app.include_router(admin.router, tags=["admin"])
+    app.include_router(health.router, tags=["health"])
+
+    logger.debug("FastAPI admin application created successfully")
     return app
