@@ -546,14 +546,16 @@ This section details the components that manage the lifecycle of downloads, from
 
 ## 9  Release Automation
 - [x] GH Action `release-yt-dlp.yaml`: on yt-dlp tag → rebuild, test, draft release.
-- [ ] GH Action `deps-bump.yaml`: weekly minor‑bump PR; require manual approval for major
-- [ ] make override enum settings caps agnostic (e.g. requires EPISODIC or SERIAL right now)
+- [x] GH Action `deps-bump.yaml`: weekly minor‑bump PR; require manual approval for major
+  - done with dependabot instead
 
 
 ## 10 Extraneous
+- [x] make override enum settings caps agnostic (e.g. requires EPISODIC or SERIAL right now)
 - [ ] changing max_errors should reset all ERROR status videos
 - [ ] create an http endpoint to reset error status videos
 - [ ] create a top-level http endpoint to reset ERROR status videos across all feeds
+
 ---
 
 When all boxes are checked, you'll be able to run:
