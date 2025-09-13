@@ -433,9 +433,9 @@ This section details the components that manage the lifecycle of downloads, from
 
 
 ### 5.5 Initial Sync Strategy
-- [ ] After reconciliation, trigger immediate sync:
+- [x] After reconciliation, trigger immediate sync:
   - [x] Process all enabled feeds to populate RSS
-  - [ ] Ensure RSS feeds available before HTTP server starts
+  - [/] Ensure RSS feeds available before HTTP server starts
   - [x] Handle failures gracefully without blocking startup, unless config is wrong -- that should cause failure until fixed
 
 ## 6  HTTP Server
@@ -552,8 +552,7 @@ This section details the components that manage the lifecycle of downloads, from
 
 ## 10 Extraneous
 - [x] make override enum settings caps agnostic (e.g. requires EPISODIC or SERIAL right now)
-- [ ] changing max_errors should reset all ERROR status videos
-- [ ] create an http endpoint to reset error status videos
+- [x] create an http endpoint to reset error status videos
 - [ ] create a top-level http endpoint to reset ERROR status videos across all feeds
 
 ---

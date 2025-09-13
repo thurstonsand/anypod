@@ -46,6 +46,11 @@ class PathManager:
         return self._base_data_dir / "images"
 
     @property
+    def base_feeds_dir(self) -> Path:
+        """Return the directory used for persisted RSS XML files."""
+        return self._base_data_dir / "feeds"
+
+    @property
     def base_url(self) -> str:
         """Return the base URL for feed and media links."""
         return self._base_url
@@ -232,6 +237,35 @@ class PathManager:
             raise ValueError("feed_id cannot be empty or whitespace-only")
 
         return urljoin(self._base_url, f"/media/{feed_id}/")
+
+    async def feed_xml_path(self, feed_id: str) -> Path:
+        """Return the full file system path for a feed's RSS XML file.
+
+        Creates the directory if it doesn't exist.
+
+        Args:
+            feed_id: Unique identifier for the feed.
+
+        Returns:
+            Complete path to the RSS XML file on disk.
+
+        Raises:
+            ValueError: If feed_id is empty or whitespace-only.
+            FileOperationError: If the directory cannot be created.
+        """
+        if not feed_id or not feed_id.strip():
+            raise ValueError("feed_id cannot be empty or whitespace-only")
+
+        feeds_dir = self.base_feeds_dir
+        try:
+            await aiofiles.os.makedirs(feeds_dir, exist_ok=True)
+        except OSError as e:
+            raise FileOperationError(
+                "Failed to create feeds directory.",
+                file_name=str(feeds_dir),
+            ) from e
+
+        return feeds_dir / f"{feed_id}.xml"
 
     async def media_file_path(self, feed_id: str, download_id: str, ext: str) -> Path:
         """Return the full file system path for a specific downloaded media file.

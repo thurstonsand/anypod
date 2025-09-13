@@ -292,3 +292,58 @@ class FileManager:
                     download_id=download_id,
                     file_name=f"{download_id or feed_id}.{ext}",
                 ) from e
+
+    async def get_feed_xml_path(self, feed_id: str) -> Path:
+        """Get the file path for a feed's RSS XML file.
+
+        Args:
+            feed_id: The unique identifier for the feed.
+
+        Returns:
+            Path to the RSS XML file.
+
+        Raises:
+            FileNotFoundError: If the file does not exist or is not a regular file, or if the path is invalid.
+            FileOperationError: If an OS-level error occurs.
+        """
+        try:
+            file_path = await self._paths.feed_xml_path(feed_id)
+        except ValueError as e:
+            raise FileNotFoundError(
+                "Invalid feed identifier.",
+            ) from e
+
+        logger.debug(
+            "Getting feed XML file path.",
+            extra={"feed_id": feed_id, "file_path": str(file_path)},
+        )
+
+        try:
+            exists = await aiofiles.os.path.isfile(file_path)
+        except OSError as e:
+            raise FileOperationError(
+                "Failed to check if feed XML exists.",
+                file_name=str(file_path),
+            ) from e
+
+        if not exists:
+            raise FileNotFoundError(f"Feed XML not found or is not a file: {file_path}")
+        return file_path
+
+    async def feed_xml_exists(self, feed_id: str) -> bool:
+        """Check if a feed's RSS XML file exists.
+
+        Args:
+            feed_id: The unique identifier for the feed.
+
+        Returns:
+            True if the XML file exists and is a file, False otherwise.
+
+        Raises:
+            FileOperationError: If an OS-level error occurs during the file existence check.
+        """
+        try:
+            await self.get_feed_xml_path(feed_id)
+            return True
+        except FileNotFoundError:
+            return False

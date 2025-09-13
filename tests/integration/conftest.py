@@ -221,7 +221,6 @@ def test_app(
     """
     app = create_app(
         file_manager=file_manager,
-        rss_generator=rss_generator,
         feed_database=feed_db,
         download_database=download_db,
     )
@@ -241,7 +240,6 @@ def admin_test_app(
         TestClient configured with real FileManager and RSSFeedGenerator for admin APIs.
     """
     app = create_admin_app(
-        rss_generator=rss_generator,
         file_manager=file_manager,
         feed_database=feed_db,
         download_database=download_db,

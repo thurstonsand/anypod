@@ -156,10 +156,3 @@ reportUnusedImport = "warning"
 reportUnusedVariable = "warning"
 reportOptionalMemberAccess = "error"
 reportOptionalCall = "error"
-stubPath = "typings"
-
-[tool.mypy]
-strict = true
-ignore_missing_imports = false
-disallow_untyped_defs = true
-disallow_untyped_calls = true

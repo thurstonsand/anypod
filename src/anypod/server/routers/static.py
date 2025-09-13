@@ -7,13 +7,12 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, Response
 
 from ...db.types import DownloadStatus
-from ...exceptions import DatabaseOperationError, FileOperationError, RSSGenerationError
+from ...exceptions import DatabaseOperationError, FileOperationError
 from ...mimetypes import mimetypes
 from ..dependencies import (
     DownloadDatabaseDep,
     FeedDatabaseDep,
     FileManagerDep,
-    RSSFeedGeneratorDep,
 )
 from ..validation import ValidatedExtension, ValidatedFeedId, ValidatedFilename
 
@@ -83,15 +82,15 @@ def _generate_directory_listing(
 @router.api_route("/feeds/{feed_id}.xml", methods=["GET", "HEAD"])
 async def serve_feed(
     feed_id: ValidatedFeedId,
-    request: Request,
-    rss_generator: RSSFeedGeneratorDep,
+    _request: Request,
+    file_manager: FileManagerDep,
 ) -> Response:
     """Serve RSS feed XML for a specific feed.
 
     Args:
         feed_id: The unique identifier for the feed.
         request: The FastAPI request object.
-        rss_generator: The RSS generator dependency.
+        file_manager: FileManager used to resolve and validate the feed XML path.
 
     Returns:
         RSS XML response.
@@ -102,15 +101,17 @@ async def serve_feed(
     logger.debug("Serving RSS feed", extra={"feed_id": feed_id})
 
     try:
-        feed_xml = rss_generator.get_feed_xml(feed_id)
-    except RSSGenerationError as e:
+        file_path = await file_manager.get_feed_xml_path(feed_id)
+    except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail="Feed not found") from e
+    except FileOperationError as e:
+        raise HTTPException(status_code=500, detail="Internal server error") from e
 
-    return Response(
-        content=feed_xml,
+    return FileResponse(
+        path=file_path,
         media_type="application/rss+xml",
         headers={
-            "Cache-Control": "public, max-age=300",  # 5 minutes # TODO: do we need this?
+            "Cache-Control": "public, max-age=300",
         },
     )
 

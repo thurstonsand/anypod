@@ -16,10 +16,8 @@ from anypod.db.types import Download, DownloadStatus, Feed, SourceType
 from anypod.exceptions import (
     DatabaseOperationError,
     FileOperationError,
-    RSSGenerationError,
 )
 from anypod.file_manager import FileManager
-from anypod.rss import RSSFeedGenerator
 from anypod.server.routers.static import router
 
 
@@ -77,12 +75,6 @@ def mock_file_manager() -> Mock:
 
 
 @pytest.fixture
-def mock_rss_generator() -> Mock:
-    """Create a mock RSSFeedGenerator for testing."""
-    return Mock(spec=RSSFeedGenerator)
-
-
-@pytest.fixture
 def mock_feed_database() -> Mock:
     """Create a mock FeedDatabase for testing."""
     return Mock(spec=FeedDatabase)
@@ -97,7 +89,6 @@ def mock_download_database() -> Mock:
 @pytest.fixture
 def app(
     mock_file_manager: Mock,
-    mock_rss_generator: Mock,
     mock_feed_database: Mock,
     mock_download_database: Mock,
 ) -> FastAPI:
@@ -107,7 +98,6 @@ def app(
 
     # Attach mocked dependencies to app state
     app.state.file_manager = mock_file_manager
-    app.state.rss_generator = mock_rss_generator
     app.state.feed_database = mock_feed_database
     app.state.download_database = mock_download_database
 
@@ -134,25 +124,31 @@ def _file_response_side_effect(
 
 
 @pytest.mark.unit
-def test_serve_feed_success(client: TestClient, mock_rss_generator: Mock):
-    """Test successful RSS feed serving."""
-    # Mock RSS generator to return XML bytes
-    mock_rss_generator.get_feed_xml.return_value = b'<?xml version="1.0"?><rss></rss>'
+@patch("anypod.server.routers.static.FileResponse")
+def test_serve_feed_success(
+    mock_file_response: Mock, client: TestClient, mock_file_manager: Mock
+):
+    """Test successful RSS feed serving from filesystem."""
+    mock_file_manager.get_feed_xml_path.return_value = Path("/ignored/test_feed.xml")
+    mock_file_response.side_effect = _file_response_side_effect
 
     response = client.get("/feeds/test_feed.xml")
 
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/rss+xml"
     assert "cache-control" in response.headers
-    assert response.content == b'<?xml version="1.0"?><rss></rss>'
 
-    mock_rss_generator.get_feed_xml.assert_called_once_with("test_feed")
+    mock_file_manager.get_feed_xml_path.assert_called_once_with("test_feed")
+    assert mock_file_response.called
+    assert mock_file_response.call_args.kwargs.get("path") == Path(
+        "/ignored/test_feed.xml"
+    )
 
 
 @pytest.mark.unit
-def test_serve_feed_not_found(client: TestClient, mock_rss_generator: Mock):
-    """Test RSS feed serving when RSS generation fails."""
-    mock_rss_generator.get_feed_xml.side_effect = RSSGenerationError("Feed not found")
+def test_serve_feed_not_found(client: TestClient, mock_file_manager: Mock):
+    """Test RSS feed serving when file is missing."""
+    mock_file_manager.get_feed_xml_path.side_effect = FileNotFoundError("No file")
 
     response = client.get("/feeds/nonexistent_feed.xml")
 
@@ -865,17 +861,15 @@ def test_serve_image_security_validation(client: TestClient, mock_file_manager: 
     ],
 )
 def test_serve_feed_valid_ids_reach_handler(
-    client: TestClient, mock_rss_generator: Mock, feed_id: str
+    client: TestClient, mock_file_manager: Mock, feed_id: str
 ):
-    """Test that valid feed IDs pass validation and reach the RSS generator."""
-    # Valid IDs should reach the RSS generator
-    mock_rss_generator.get_feed_xml.side_effect = RSSGenerationError("Feed not found")
+    """Test that valid feed IDs pass validation and reach the FileManager."""
+    mock_file_manager.get_feed_xml_path.side_effect = FileNotFoundError("not found")
 
     response = client.get(f"/feeds/{feed_id}.xml")
     assert response.status_code == 404  # Feed not found
 
-    # Should have called the RSS generator
-    mock_rss_generator.get_feed_xml.assert_called_once_with(feed_id)
+    mock_file_manager.get_feed_xml_path.assert_called_once_with(feed_id)
 
 
 @pytest.mark.unit
@@ -898,17 +892,15 @@ def test_serve_feed_valid_ids_reach_handler(
     ],
 )
 def test_serve_feed_invalid_ids_rejected(
-    client: TestClient, mock_rss_generator: Mock, feed_id: str, expected_status: int
+    client: TestClient, mock_file_manager: Mock, feed_id: str, expected_status: int
 ):
-    """Test that invalid feed IDs are rejected before reaching the RSS generator."""
-    # Invalid IDs should not reach the RSS generator
-    mock_rss_generator.get_feed_xml.side_effect = Exception("Should not be called")
+    """Test that invalid feed IDs are rejected before reaching the FileManager."""
+    mock_file_manager.get_feed_xml_path.side_effect = Exception("Should not be called")
 
     response = client.get(f"/feeds/{feed_id}.xml")
     assert response.status_code == expected_status
 
-    # Should not have called the RSS generator
-    mock_rss_generator.get_feed_xml.assert_not_called()
+    mock_file_manager.get_feed_xml_path.assert_not_called()
 
 
 @pytest.mark.unit
