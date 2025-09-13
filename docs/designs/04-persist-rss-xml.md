@@ -91,7 +91,7 @@ async def update_feed(self, feed_id: str, feed: Feed) -> None:
     final_path = await self._paths.feed_xml_path(feed_id)
     async with aiofiles.open(tmp_path, "wb") as f:
         await f.write(xml_bytes)
-    await aiofiles.os.rename(tmp_path, final_path)
+    await aiofiles.os.replace(tmp_path, final_path)
 ```
 
 ### Static Router: `/feeds/{feed_id}.xml`

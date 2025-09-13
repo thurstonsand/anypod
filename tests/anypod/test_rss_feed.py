@@ -120,7 +120,7 @@ def capture_rss_write(monkeypatch: pytest.MonkeyPatch) -> dict[str, bytes]:
     """Capture bytes written by RSSFeedGenerator to avoid disk IO in unit tests.
 
     Patches aiofiles.open to return an async writer that buffers bytes in memory,
-    and patches aiofiles.os.rename/makedirs as no-ops.
+    and patches aiofiles.os.replace/makedirs as no-ops.
     """
     captured: dict[str, bytes] = {"data": b""}
 
@@ -141,14 +141,14 @@ def capture_rss_write(monkeypatch: pytest.MonkeyPatch) -> dict[str, bytes]:
     def _fake_open(path: Path | str, mode: str = "rb") -> _DummyWriter:  # type: ignore
         return _DummyWriter()
 
-    async def _fake_rename(src: Path | str, dst: Path | str) -> None:  # type: ignore
+    async def _fake_replace(src: Path | str, dst: Path | str) -> None:  # type: ignore
         return None
 
     async def _fake_makedirs(path: Path | str, exist_ok: bool = True) -> None:  # type: ignore
         return None
 
     monkeypatch.setattr("aiofiles.open", _fake_open)
-    monkeypatch.setattr("aiofiles.os.rename", _fake_rename)
+    monkeypatch.setattr("aiofiles.os.replace", _fake_replace)
     monkeypatch.setattr("aiofiles.os.makedirs", _fake_makedirs)
     return captured
 

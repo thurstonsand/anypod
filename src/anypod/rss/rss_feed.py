@@ -103,7 +103,7 @@ class RSSFeedGenerator:
             final_path = await self._paths.feed_xml_path(feed_id)
             async with aiofiles.open(tmp_path, "wb") as f:
                 await f.write(feed_xml)
-            await aiofiles.os.rename(tmp_path, final_path)
+            await aiofiles.os.replace(tmp_path, final_path)
         except (OSError, ValueError) as e:
             raise RSSGenerationError(
                 "Failed to persist RSS XML to disk.", feed_id=feed_id
