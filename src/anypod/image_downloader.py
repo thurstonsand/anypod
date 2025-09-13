@@ -199,7 +199,7 @@ class ImageDownloader:
             if await self._is_jpg_format(tmp_path, feed_id, url):
                 # Already JPG, just move the file
                 try:
-                    await aiofiles.os.rename(tmp_path, final_path)
+                    await aiofiles.os.replace(tmp_path, final_path)
                 except OSError as e:
                     raise ImageDownloadError(
                         "Failed to move JPG file to final location",

@@ -11,7 +11,6 @@ import pytest
 from anypod.db.download_db import DownloadDatabase
 from anypod.db.feed_db import FeedDatabase
 from anypod.file_manager import FileManager
-from anypod.rss import RSSFeedGenerator
 from anypod.server.app import create_app
 
 
@@ -19,12 +18,6 @@ from anypod.server.app import create_app
 def mock_file_manager() -> Mock:
     """Create a mock FileManager for testing."""
     return Mock(spec=FileManager)
-
-
-@pytest.fixture
-def mock_rss_generator() -> Mock:
-    """Create a mock RSSFeedGenerator for testing."""
-    return Mock(spec=RSSFeedGenerator)
 
 
 @pytest.fixture
@@ -42,13 +35,11 @@ def mock_download_database() -> Mock:
 @pytest.fixture
 def app_with_mocks(
     mock_file_manager: Mock,
-    mock_rss_generator: Mock,
     mock_feed_database: Mock,
     mock_download_database: Mock,
 ) -> FastAPI:
     """Create a FastAPI app with mocked dependencies."""
     return create_app(
-        rss_generator=mock_rss_generator,
         file_manager=mock_file_manager,
         feed_database=mock_feed_database,
         download_database=mock_download_database,
@@ -67,13 +58,11 @@ def client(app_with_mocks: FastAPI) -> TestClient:
 @pytest.mark.unit
 def test_create_app_basic_creation(
     mock_file_manager: Mock,
-    mock_rss_generator: Mock,
     mock_feed_database: Mock,
     mock_download_database: Mock,
 ):
     """Test that create_app returns a properly configured FastAPI instance."""
     app = create_app(
-        rss_generator=mock_rss_generator,
         file_manager=mock_file_manager,
         feed_database=mock_feed_database,
         download_database=mock_download_database,
@@ -87,19 +76,16 @@ def test_create_app_basic_creation(
 @pytest.mark.unit
 def test_create_app_dependencies_attached(
     mock_file_manager: Mock,
-    mock_rss_generator: Mock,
     mock_feed_database: Mock,
     mock_download_database: Mock,
 ):
     """Test that dependencies are properly attached to app state."""
     app = create_app(
-        rss_generator=mock_rss_generator,
         file_manager=mock_file_manager,
         feed_database=mock_feed_database,
         download_database=mock_download_database,
     )
 
-    assert app.state.rss_generator is mock_rss_generator
     assert app.state.file_manager is mock_file_manager
     assert app.state.feed_database is mock_feed_database
     assert app.state.download_database is mock_download_database
@@ -108,13 +94,11 @@ def test_create_app_dependencies_attached(
 @pytest.mark.unit
 def test_create_app_middleware_configured(
     mock_file_manager: Mock,
-    mock_rss_generator: Mock,
     mock_feed_database: Mock,
     mock_download_database: Mock,
 ):
     """Test that middleware is properly configured."""
     app = create_app(
-        rss_generator=mock_rss_generator,
         file_manager=mock_file_manager,
         feed_database=mock_feed_database,
         download_database=mock_download_database,

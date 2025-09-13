@@ -115,6 +115,44 @@ def rss_generator(
     return RSSFeedGenerator(mock_download_db, path_manager)
 
 
+@pytest.fixture
+def capture_rss_write(monkeypatch: pytest.MonkeyPatch) -> dict[str, bytes]:
+    """Capture bytes written by RSSFeedGenerator to avoid disk IO in unit tests.
+
+    Patches aiofiles.open to return an async writer that buffers bytes in memory,
+    and patches aiofiles.os.replace/makedirs as no-ops.
+    """
+    captured: dict[str, bytes] = {"data": b""}
+
+    class _DummyWriter:
+        def __init__(self) -> None:
+            self._buf = bytearray()
+
+        async def __aenter__(self) -> "_DummyWriter":  # type: ignore
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> bool:  # type: ignore
+            captured["data"] = bytes(self._buf)
+            return False
+
+        async def write(self, data: bytes) -> None:
+            self._buf.extend(data)
+
+    def _fake_open(path: Path | str, mode: str = "rb") -> _DummyWriter:  # type: ignore
+        return _DummyWriter()
+
+    async def _fake_replace(src: Path | str, dst: Path | str) -> None:  # type: ignore
+        return None
+
+    async def _fake_makedirs(path: Path | str, exist_ok: bool = True) -> None:  # type: ignore
+        return None
+
+    monkeypatch.setattr("aiofiles.open", _fake_open)
+    monkeypatch.setattr("aiofiles.os.replace", _fake_replace)
+    monkeypatch.setattr("aiofiles.os.makedirs", _fake_makedirs)
+    return captured
+
+
 # --- Tests for RSSFeedGenerator.update_feed ---
 
 
@@ -125,8 +163,9 @@ async def test_update_feed_success(
     mock_download_db: MagicMock,
     test_feed: Feed,
     sample_downloads: list[Download],
+    capture_rss_write: dict[str, bytes],
 ):
-    """Test successful feed generation and caching."""
+    """Test successful feed generation and file persistence."""
     feed_id = TEST_FEED_ID
     mock_download_db.get_downloads_by_status.return_value = sample_downloads
 
@@ -136,10 +175,10 @@ async def test_update_feed_success(
         status_to_filter=DownloadStatus.DOWNLOADED, feed_id=feed_id
     )
 
-    # Verify feed is cached
-    cached_xml = rss_generator.get_feed_xml(feed_id)
-    assert isinstance(cached_xml, bytes)
-    assert len(cached_xml) > 0
+    # Verify feed XML was written (captured via monkeypatch)
+    xml_bytes = capture_rss_write["data"]
+    assert isinstance(xml_bytes, bytes)
+    assert len(xml_bytes) > 0
 
 
 @pytest.mark.unit
@@ -162,19 +201,7 @@ async def test_update_feed_database_error(
     assert exc_info.value.feed_id == feed_id
 
 
-# --- Tests for RSSFeedGenerator.get_feed_xml ---
-
-
-@pytest.mark.unit
-def test_get_feed_xml_not_found(rss_generator: RSSFeedGenerator):
-    """Test retrieving XML for non-existent feed."""
-    feed_id = "nonexistent_feed"
-
-    with pytest.raises(RSSGenerationError) as exc_info:
-        rss_generator.get_feed_xml(feed_id)
-
-    assert "Feed not found in cache" in str(exc_info.value)
-    assert exc_info.value.feed_id == feed_id
+# --- Tests for RSS XML content ---
 
 
 @pytest.mark.unit
@@ -184,13 +211,14 @@ async def test_generated_xml_structure(
     mock_download_db: MagicMock,
     test_feed: Feed,
     sample_downloads: list[Download],
+    capture_rss_write: dict[str, bytes],
 ):
     """Test that generated XML has correct RSS structure and content."""
     feed_id = TEST_FEED_ID
     mock_download_db.get_downloads_by_status.return_value = sample_downloads
 
     await rss_generator.update_feed(feed_id, test_feed)
-    xml_bytes = rss_generator.get_feed_xml(feed_id)
+    xml_bytes = capture_rss_write["data"]
 
     # Parse XML and verify structure
     root = ET.fromstring(xml_bytes)
@@ -322,6 +350,7 @@ async def test_channel_and_items_use_hosted_images_when_exts_present(
     mock_download_db: MagicMock,
     test_feed: Feed,
     sample_downloads: list[Download],
+    capture_rss_write: dict[str, bytes],
 ):
     """When feed.image_ext and download.thumbnail_ext are set, hosted URLs are used."""
     feed_id = TEST_FEED_ID
@@ -334,7 +363,7 @@ async def test_channel_and_items_use_hosted_images_when_exts_present(
     mock_download_db.get_downloads_by_status.return_value = sample_downloads
 
     await rss_generator.update_feed(feed_id, test_feed)
-    xml_bytes = rss_generator.get_feed_xml(feed_id)
+    xml_bytes = capture_rss_write["data"]
 
     root = ET.fromstring(xml_bytes)
     channel = root.find("channel")
@@ -380,6 +409,7 @@ async def test_items_use_original_thumbnail_when_no_ext(
     mock_download_db: MagicMock,
     test_feed: Feed,
     sample_downloads: list[Download],
+    capture_rss_write: dict[str, bytes],
 ):
     """When thumbnail_ext is absent, original thumbnail URLs should be used."""
     feed_id = TEST_FEED_ID
@@ -390,7 +420,7 @@ async def test_items_use_original_thumbnail_when_no_ext(
     mock_download_db.get_downloads_by_status.return_value = sample_downloads
 
     await rss_generator.update_feed(feed_id, test_feed)
-    xml_bytes = rss_generator.get_feed_xml(feed_id)
+    xml_bytes = capture_rss_write["data"]
 
     root = ET.fromstring(xml_bytes)
     channel = root.find("channel")
@@ -418,13 +448,14 @@ async def test_generated_xml_enclosure_urls(
     mock_download_db: MagicMock,
     test_feed: Feed,
     sample_downloads: list[Download],
+    capture_rss_write: dict[str, bytes],
 ):
     """Test that enclosure URLs are correctly formatted."""
     feed_id = TEST_FEED_ID
     mock_download_db.get_downloads_by_status.return_value = sample_downloads
 
     await rss_generator.update_feed(feed_id, test_feed)
-    xml_bytes = rss_generator.get_feed_xml(feed_id)
+    xml_bytes = capture_rss_write["data"]
 
     root = ET.fromstring(xml_bytes)
     channel = root.find("channel")
@@ -456,6 +487,7 @@ async def test_generated_xml_mime_types(
     rss_generator: RSSFeedGenerator,
     mock_download_db: MagicMock,
     test_feed: Feed,
+    capture_rss_write: dict[str, bytes],
 ):
     """Test that MIME types are correctly preserved in enclosures."""
     feed_id = TEST_FEED_ID
@@ -493,7 +525,7 @@ async def test_generated_xml_mime_types(
     mock_download_db.get_downloads_by_status.return_value = downloads_with_various_types
 
     await rss_generator.update_feed(feed_id, test_feed)
-    xml_bytes = rss_generator.get_feed_xml(feed_id)
+    xml_bytes = capture_rss_write["data"]
 
     root = ET.fromstring(xml_bytes)
     channel = root.find("channel")
@@ -528,13 +560,14 @@ async def test_empty_downloads_list(
     rss_generator: RSSFeedGenerator,
     mock_download_db: MagicMock,
     test_feed: Feed,
+    capture_rss_write: dict[str, bytes],
 ):
     """Test RSS generation with no downloads."""
     feed_id = "empty_feed"
     mock_download_db.get_downloads_by_status.return_value = []
 
     await rss_generator.update_feed(feed_id, test_feed)
-    xml_bytes = rss_generator.get_feed_xml(feed_id)
+    xml_bytes = capture_rss_write["data"]
 
     root = ET.fromstring(xml_bytes)
     channel = root.find("channel")
@@ -580,13 +613,14 @@ async def test_channel_publication_date_set_to_newest_episode(
     mock_download_db: MagicMock,
     test_feed: Feed,
     sample_downloads: list[Download],
+    capture_rss_write: dict[str, bytes],
 ):
     """Test that channel pubDate is set to the newest episode date."""
     feed_id = TEST_FEED_ID
     mock_download_db.get_downloads_by_status.return_value = sample_downloads
 
     await rss_generator.update_feed(feed_id, test_feed)
-    xml_bytes = rss_generator.get_feed_xml(feed_id)
+    xml_bytes = capture_rss_write["data"]
 
     root = ET.fromstring(xml_bytes)
     channel = root.find("channel")
@@ -606,13 +640,14 @@ async def test_channel_publication_date_absent_when_no_episodes(
     rss_generator: RSSFeedGenerator,
     mock_download_db: MagicMock,
     test_feed: Feed,
+    capture_rss_write: dict[str, bytes],
 ):
     """Test that channel pubDate is not set when there are no episodes."""
     feed_id = TEST_FEED_ID
     mock_download_db.get_downloads_by_status.return_value = []  # No episodes
 
     await rss_generator.update_feed(feed_id, test_feed)
-    xml_bytes = rss_generator.get_feed_xml(feed_id)
+    xml_bytes = capture_rss_write["data"]
 
     root = ET.fromstring(xml_bytes)
     channel = root.find("channel")
