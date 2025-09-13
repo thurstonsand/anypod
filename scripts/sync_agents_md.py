@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Script to create AGENTS.md symlinks to CLAUDE.md files."""
 
-import os
 from pathlib import Path
 import sys
 
@@ -26,7 +25,7 @@ def main() -> int:
 
         # Create symlink from AGENTS.md to CLAUDE.md
         try:
-            os.symlink("CLAUDE.md", agents_file)
+            agents_file.symlink_to("CLAUDE.md")
             print(f"Created symlink: {agents_file} -> CLAUDE.md")
         except OSError as e:
             print(f"Error creating symlink {agents_file}: {e}", file=sys.stderr)
