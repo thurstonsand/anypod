@@ -11,7 +11,6 @@ from fastapi import Depends, Request
 from anypod.db.download_db import DownloadDatabase
 from anypod.db.feed_db import FeedDatabase
 from anypod.file_manager import FileManager
-from anypod.rss import RSSFeedGenerator
 
 
 def get_file_manager(request: Request) -> FileManager:
@@ -24,18 +23,6 @@ def get_file_manager(request: Request) -> FileManager:
         The file manager instance.
     """
     return request.app.state.file_manager
-
-
-def get_rss_generator(request: Request) -> RSSFeedGenerator:
-    """Retrieve RSS feed generator instance from app state.
-
-    Args:
-        request: The FastAPI request object.
-
-    Returns:
-        The RSS feed generator instance.
-    """
-    return request.app.state.rss_generator
 
 
 def get_feed_database(request: Request) -> FeedDatabase:
@@ -63,6 +50,6 @@ def get_download_database(request: Request) -> DownloadDatabase:
 
 
 FileManagerDep = Annotated[FileManager, Depends(get_file_manager)]
-RSSFeedGeneratorDep = Annotated[RSSFeedGenerator, Depends(get_rss_generator)]
+# RSS feed serving no longer depends on RSSFeedGenerator; feeds are served from disk
 FeedDatabaseDep = Annotated[FeedDatabase, Depends(get_feed_database)]
 DownloadDatabaseDep = Annotated[DownloadDatabase, Depends(get_download_database)]

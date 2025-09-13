@@ -290,13 +290,10 @@ async def test_serve_media_integration_with_downloads(
 def test_dependency_injection_integration(
     test_app: TestClient,
     file_manager: FileManager,
-    rss_generator: RSSFeedGenerator,
 ):
     """Test that dependency injection works correctly in integrated environment."""
     # Access the app's state to verify dependencies are properly attached
     app = test_app.app
 
     assert hasattr(app.state, "file_manager")  # type: ignore
-    assert hasattr(app.state, "rss_generator")  # type: ignore
     assert app.state.file_manager is file_manager  # type: ignore
-    assert app.state.rss_generator is rss_generator  # type: ignore

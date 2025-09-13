@@ -688,6 +688,9 @@ async def test_archive_feed_success_with_downloads(
     # Verify feed image was deleted
     mock_file_manager.delete_image.assert_called_once_with("test_feed", None, "jpg")
 
+    # Verify feed XML was deleted
+    mock_file_manager.delete_feed_xml.assert_called_once_with("test_feed")
+
     # Verify feed was disabled
     mock_feed_db.set_feed_enabled.assert_awaited_once_with("test_feed", False)
 
@@ -747,6 +750,72 @@ async def test_archive_feed_skips_archived_and_skipped_downloads(
     assert DownloadStatus.SKIPPED not in actual_statuses
 
     # Feed should still be disabled
+    mock_feed_db.set_feed_enabled.assert_awaited_once_with("test_feed", False)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_archive_feed_feed_xml_deletion_failure_raises_prune_error(
+    pruner: Pruner,
+    mock_download_db: MagicMock,
+    mock_feed_db: MagicMock,
+    mock_file_manager: AsyncMock,
+    sample_downloaded_item: Download,
+) -> None:
+    """Tests archive_feed raises PruneError when feed XML deletion fails."""
+
+    def get_downloads_by_status_fn(
+        status_to_filter: DownloadStatus, feed_id: str | None
+    ):
+        return {
+            DownloadStatus.DOWNLOADED: [sample_downloaded_item],
+            DownloadStatus.QUEUED: [],
+            DownloadStatus.UPCOMING: [],
+            DownloadStatus.ERROR: [],
+        }.get(status_to_filter, [])
+
+    mock_download_db.get_downloads_by_status.side_effect = get_downloads_by_status_fn
+
+    file_error = FileOperationError("Permission denied")
+    mock_file_manager.delete_feed_xml.side_effect = file_error
+
+    with pytest.raises(PruneError) as exc_info:
+        await pruner.archive_feed("test_feed")
+
+    assert exc_info.value.feed_id == "test_feed"
+    assert exc_info.value.__cause__ is file_error
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_archive_feed_feed_xml_not_found_continues(
+    pruner: Pruner,
+    mock_download_db: MagicMock,
+    mock_feed_db: MagicMock,
+    mock_file_manager: AsyncMock,
+    sample_downloaded_item: Download,
+) -> None:
+    """Tests archive_feed continues when feed XML not found."""
+
+    def get_downloads_by_status_fn(
+        status_to_filter: DownloadStatus, feed_id: str | None
+    ):
+        return {
+            DownloadStatus.DOWNLOADED: [sample_downloaded_item],
+            DownloadStatus.QUEUED: [],
+            DownloadStatus.UPCOMING: [],
+            DownloadStatus.ERROR: [],
+        }.get(status_to_filter, [])
+
+    mock_download_db.get_downloads_by_status.side_effect = get_downloads_by_status_fn
+    mock_download_db.count_downloads_by_status.return_value = 0
+
+    mock_file_manager.delete_feed_xml.side_effect = FileNotFoundError("XML not found")
+
+    archived_count, files_deleted_count = await pruner.archive_feed("test_feed")
+
+    assert archived_count == 1
+    assert files_deleted_count == 1
     mock_feed_db.set_feed_enabled.assert_awaited_once_with("test_feed", False)
 
 

@@ -437,6 +437,25 @@ class Pruner:
                     extra=log_params,
                 )
 
+            # Delete feed XML
+            try:
+                await self._file_manager.delete_feed_xml(feed_id)
+            except FileNotFoundError:
+                logger.debug(
+                    "No feed XML found to delete during feed archival.",
+                    extra=log_params,
+                )
+            except FileOperationError as e:
+                raise PruneError(
+                    message="Failed to delete feed XML during archival.",
+                    feed_id=feed_id,
+                ) from e
+            else:
+                logger.debug(
+                    "Feed XML deleted successfully during feed archival.",
+                    extra=log_params,
+                )
+
             # Disable the feed last
             await self._feed_db.set_feed_enabled(feed_id, False)
             await session.commit()

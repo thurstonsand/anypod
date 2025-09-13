@@ -14,7 +14,6 @@ from ..db.download_db import DownloadDatabase
 from ..db.feed_db import FeedDatabase
 from ..file_manager import FileManager
 from ..logging_config import LOGGING_CONFIG
-from ..rss import RSSFeedGenerator
 from .app import create_admin_app, create_app
 
 logger = logging.getLogger(__name__)
@@ -22,7 +21,6 @@ logger = logging.getLogger(__name__)
 
 def create_server(
     settings: AppSettings,
-    rss_generator: RSSFeedGenerator,
     file_manager: FileManager,
     feed_database: FeedDatabase,
     download_database: DownloadDatabase,
@@ -43,7 +41,6 @@ def create_server(
     """
     logger.debug("Creating FastAPI application.")
     app = create_app(
-        rss_generator=rss_generator,
         file_manager=file_manager,
         feed_database=feed_database,
         download_database=download_database,
@@ -80,7 +77,6 @@ def create_server(
 
 def create_admin_server(
     settings: AppSettings,
-    rss_generator: RSSFeedGenerator,
     file_manager: FileManager,
     feed_database: FeedDatabase,
     download_database: DownloadDatabase,
@@ -99,7 +95,6 @@ def create_admin_server(
     """
     logger.debug("Creating FastAPI admin application.")
     app = create_admin_app(
-        rss_generator=rss_generator,
         file_manager=file_manager,
         feed_database=feed_database,
         download_database=download_database,

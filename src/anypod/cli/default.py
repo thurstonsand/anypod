@@ -63,7 +63,6 @@ async def _init(
 ) -> tuple[
     SqlalchemyCore,
     FileManager,
-    RSSFeedGenerator,
     FeedDatabase,
     DownloadDatabase,
     FeedScheduler,
@@ -170,7 +169,7 @@ async def _init(
         data_coordinator=data_coordinator,
     )
 
-    return db_core, file_manager, rss_generator, feed_db, download_db, scheduler
+    return db_core, file_manager, feed_db, download_db, scheduler
 
 
 async def default(settings: AppSettings) -> None:
@@ -193,7 +192,6 @@ async def default(settings: AppSettings) -> None:
         (
             db_core,
             file_manager,
-            rss_generator,
             feed_db,
             download_db,
             scheduler,
@@ -202,7 +200,6 @@ async def default(settings: AppSettings) -> None:
         # Create HTTP server with shutdown callback
         server = create_server(
             settings=settings,
-            rss_generator=rss_generator,
             file_manager=file_manager,
             feed_database=feed_db,
             download_database=download_db,
@@ -212,7 +209,6 @@ async def default(settings: AppSettings) -> None:
         # Create admin HTTP server (no shutdown callback to avoid double-close)
         admin_server = create_admin_server(
             settings=settings,
-            rss_generator=rss_generator,
             file_manager=file_manager,
             feed_database=feed_db,
             download_database=download_db,

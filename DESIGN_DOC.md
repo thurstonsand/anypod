@@ -96,7 +96,7 @@ graph TD
 | **Database Classes**                | Persistent metadata store (status, retries, paths, etc.). Specialized classes for downloads and feeds.          | `DownloadDatabase` + `FeedDatabase` + `SqlalchemyCore`; proper state transitions.                  |
 | **`FileManager`**                   | All filesystem interaction: save/read/delete media, atomic RSS writes, directory hygiene, free‑space checks.     | Centralized path management; future back‑ends (S3/GCS) become plug‑ins.                             |
 | **`YtdlpWrapper`**                  | Thin wrapper around `yt-dlp` for fetching media metadata and downloading media content.                          | Handler-based system; abstracts `yt-dlp` specifics; provides `fetch_metadata` and `download_media`. |
-| **`FeedGen`** (rss/)**              | Generates RSS XML feed files based on current download metadata.                                                 | Manages in-memory feed cache with read/write locks; uses database classes & `FileManager`.          |
+| **`FeedGen`** (rss/)**              | Generates RSS XML feed files based on current download metadata.                                                 | Persists XML to disk atomically; uses database classes & `FileManager` for storage.                |
 | **DataCoordinator Module**          | Houses services that orchestrate data lifecycle operations using foundational components and `FeedGen`.         | Uses database classes, `FileManager`, `YtdlpWrapper`, `FeedGen`. Main class is `DataCoordinator`.   |
 |   ↳ **`DataCoordinator`**           | High-level orchestration of enqueue, download, prune, and feed generation phases.                                | Delegates to `Enqueuer`, `Downloader`, `Pruner`, and calls `FeedGen`. Ensures sequence.            |
 |   ↳ **`Enqueuer`**                  | Fetches media metadata in two phases—(1) re-poll existing 'upcoming' entries to transition them to 'queued' when VOD; (2) fetch latest feed media and insert new 'queued' or 'upcoming' entries. | Uses `YtdlpWrapper` for metadata, database classes for DB writes.                                    |
@@ -407,7 +407,7 @@ sequenceDiagram
 
   Note over DC,DB: Phase 4: RSS Generation
   DB->>DC: Pull DOWNLOADED downloads for feed
-  DC-->>DC: Generate RSS XML, cache in memory
+  DC-->>DC: Generate RSS XML, persist to disk
 ```
 
 The `Scheduler` triggers the `DataCoordinator` to process a feed, which is done with four distinct phases using specialized services:
@@ -428,8 +428,8 @@ The `Scheduler` triggers the `DataCoordinator` to process a feed, which is done 
 
 4.  **RSS Generation Phase**: The `RSSFeedGenerator` creates podcast feeds:
     - Fetches DOWNLOADED items from database
-    - Generates RSS XML and caches it in memory with thread-safe locking
-    - RSS is served from memory cache, not filesystem
+    - Generates RSS XML and persists it to disk atomically (tmp + rename)
+    - RSS is served directly from filesystem via HTTP `FileResponse`
 
 Each phase includes comprehensive error handling and retry logic. Failed operations increment retry counters and transition downloads to ERROR status when limits are exceeded.
 
@@ -457,11 +457,10 @@ This resolution logic aims to simplify configuration for the end-user, as they c
 
 ## Feed Persistence
 
-The `RSSFeedGenerator` module maintains a **write-once/read-many-locked in-memory cache**:
-- RSS XML is stored as bytes in memory keyed by `feed_id` with thread-safe read/write locking
-- When the DataCoordinator generates a feed, it replaces the cached bytes under a write lock
-- HTTP handlers retrieve cached feeds after acquiring a read lock
-- Cache population on startup will occur when the scheduler and HTTP server are implemented
+The `RSSFeedGenerator` module **persists RSS XML files to disk** under the data directory:
+- RSS XML is stored as files at `${DATA_DIR}/feeds/{feed_id}.xml` paths
+- When the DataCoordinator generates a feed, it atomically writes XML to disk using tmp + rename
+- HTTP handlers serve RSS feeds directly from the filesystem using `FileResponse`
 
 ## HTTP Endpoints
 
@@ -608,7 +607,6 @@ yt-dlp's `daterange` parameter only supports YYYYMMDD format, not hour/minute/se
 * Support "generic source" after looking at overlap from a few sources
 * crop thumbnails so they are the right ratio
 * configurable channel tab selection: allow users to specify which tab (videos, shorts, live, etc.) to use when discovering channel URLs, with /videos as default
-* just store rss feeds in the db, don't keep them in-memory (fixes race condition on boot)
 * Enable conditional conversion of file format to allow for more flexible selectors
 * handle the scenario where adding a new feed with a restrictive filter that doesn't pick up any videos (`since` too recent); in this case, it will error out because it won't have metadata to generate the rss feed. in this case, it should error, but continue generating as normal
 * combine enqueuer and downloader into 1 call -- should be possible by using something like `--no-simulate`

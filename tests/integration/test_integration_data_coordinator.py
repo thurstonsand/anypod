@@ -213,10 +213,10 @@ async def test_process_feed_complete_success(
         "Should have no queued items after successful processing"
     )
 
-    # Verify RSS feed generation
-    feed_xml = rss_generator.get_feed_xml(feed_id)
-    assert feed_xml is not None, "RSS feed should be generated"
-    assert len(feed_xml) > 0, "RSS feed should have content"
+    # Verify RSS feed generation persisted to disk
+    feed_xml_path = await file_manager.get_feed_xml_path(feed_id)
+    feed_xml = Path(feed_xml_path).read_bytes()
+    assert feed_xml, "RSS feed should be generated and have content"
     assert b"<?xml" in feed_xml, "RSS feed should be valid XML"
 
     # Verify feed sync status updated

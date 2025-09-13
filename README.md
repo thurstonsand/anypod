@@ -316,6 +316,7 @@ High‑level upcoming work. See `TASK_LIST.md` for the full checklist.
 ## FAQ / Troubleshooting
 
 - 429/403 from YouTube: back off your schedule or use cookies. Some content (e.g., YouTube Premium) may 403; cookies can also reduce available qualities.
+- If you see errors like "Playlists that require authentication may not extract correctly without a successful webpage download", add `--extractor-args youtubetab:skip=authcheck` to your feed's `yt_args`. Safe to add if you're downloading public playlists or only have cookies for one YouTube account.
 - Certain yt‑dlp flags get ignored: see the Reserved options list above.
 - Where are files and DB?
   - DB: `${DATA_DIR}/db/anypod.db`

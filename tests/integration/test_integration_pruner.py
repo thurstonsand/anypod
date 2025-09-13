@@ -6,6 +6,7 @@ from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import aiofiles
 import pytest
 import pytest_asyncio
 
@@ -853,6 +854,12 @@ async def test_archive_feed_success(
             TEST_FEED_ID, download.id, download.ext
         )
 
+    # Create a dummy feed XML file
+    xml_path = await file_manager._paths.feed_xml_path(TEST_FEED_ID)
+    async with aiofiles.open(xml_path, "w") as f:
+        await f.write("<rss></rss>")
+    assert await file_manager.feed_xml_exists(TEST_FEED_ID)
+
     # Archive the feed
     archived_count, files_deleted_count = await pruner.archive_feed(TEST_FEED_ID)
 
@@ -889,6 +896,9 @@ async def test_archive_feed_success(
                 download.feed_id, download.id, download.thumbnail_ext
             )
             assert not image_path.exists()
+
+    # Verify feed XML was deleted
+    assert not await file_manager.feed_xml_exists(TEST_FEED_ID)
 
     # Verify feed is disabled
     feed = await feed_db.get_feed_by_id(TEST_FEED_ID)

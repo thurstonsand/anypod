@@ -60,8 +60,7 @@ class PodcastExplicit(str, Enum):
         cls, source_type: Any, handler: GetCoreSchemaHandler
     ) -> CoreSchema:
         """Generate core schema for PodcastExplicit validation."""
-        # Allow validation from string values (converted to PodcastExplicit instances)
-        # and existing PodcastExplicit instances
+        # Allow parsing from str or direct values
         return core_schema.union_schema(
             [
                 core_schema.is_instance_schema(cls),
