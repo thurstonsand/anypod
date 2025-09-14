@@ -259,7 +259,7 @@ I recommend using a filter (either `since` or `keep_last`) when setting up your 
 
 ## Development
 
-Requirements: Python 3.13+, [`uv`](https://docs.astral.sh/uv/) package manager.
+Requirements: Python 3.13+, [`uv`](https://docs.astral.sh/uv/) package manager, ffmpeg and ffprobe.
 
 ```bash
 # Install deps

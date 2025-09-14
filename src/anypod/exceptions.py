@@ -337,3 +337,28 @@ class SchedulerError(AnypodError):
     ):
         super().__init__(message)
         self.feed_id = feed_id
+
+
+class FFProbeError(AnypodError):
+    """Raised when ffprobe execution fails.
+
+    Attributes:
+        stderr: Raw stderr output from the ffprobe subprocess.
+        args: Arguments used to invoke ffprobe (excluding the executable name).
+    """
+
+    def __init__(self, message: str, stderr: str | None = None):
+        super().__init__(message)
+        self.stderr = stderr
+
+
+class FFmpegError(AnypodError):
+    """Raised when ffmpeg execution fails.
+
+    Attributes:
+        stderr: Raw stderr output from the ffmpeg subprocess.
+    """
+
+    def __init__(self, message: str, stderr: str | None = None):
+        super().__init__(message)
+        self.stderr = stderr

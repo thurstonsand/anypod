@@ -207,6 +207,8 @@ anypod/
 │   │       ├── info.py          # yt-dlp info parser
 │   │       └── thumbnails.py    # yt-dlp thumbnail parser
 │   ├── exceptions.py            # Custom exceptions
+│   ├── ffmpeg.py                # FFmpeg wrapper for media processing
+│   ├── ffprobe.py               # FFprobe wrapper for media metadata
 │   ├── file_manager.py          # File operations abstraction
 │   ├── image_downloader.py      # Image downloading for feeds/thumbnails
 │   ├── logging_config.py        # Logging configuration

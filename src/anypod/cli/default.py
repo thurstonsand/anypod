@@ -15,6 +15,8 @@ from ..exceptions import (
     DatabaseOperationError,
     StateReconciliationError,
 )
+from ..ffmpeg import FFmpeg
+from ..ffprobe import FFProbe
 from ..file_manager import FileManager
 from ..image_downloader import ImageDownloader
 from ..path_manager import PathManager
@@ -105,7 +107,14 @@ async def _init(
         yt_update_freq=settings.yt_dlp_update_freq,
     )
     rss_generator = RSSFeedGenerator(download_db=download_db, paths=path_manager)
-    image_downloader = ImageDownloader(paths=path_manager, ytdlp_wrapper=ytdlp_wrapper)
+    ffprobe = FFProbe()
+    ffmpeg = FFmpeg()
+    image_downloader = ImageDownloader(
+        paths=path_manager,
+        ytdlp_wrapper=ytdlp_wrapper,
+        ffprobe=ffprobe,
+        ffmpeg=ffmpeg,
+    )
 
     # Initialize data coordinator components
     enqueuer = Enqueuer(
