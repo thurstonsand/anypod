@@ -16,6 +16,8 @@ from anypod.db import AppStateDatabase
 from anypod.db.download_db import DownloadDatabase
 from anypod.db.feed_db import FeedDatabase
 from anypod.db.sqlalchemy_core import SqlalchemyCore
+from anypod.ffmpeg import FFmpeg
+from anypod.ffprobe import FFProbe
 from anypod.file_manager import FileManager
 from anypod.image_downloader import ImageDownloader
 from anypod.path_manager import PathManager
@@ -127,15 +129,30 @@ def ytdlp_wrapper(path_manager: PathManager, db_core: SqlalchemyCore) -> YtdlpWr
 
 
 @pytest.fixture
+def ffprobe() -> FFProbe:
+    """Provide an FFProbe instance for integration tests."""
+    return FFProbe()
+
+
+@pytest.fixture
+def ffmpeg() -> FFmpeg:
+    """Provide an FFmpeg instance for integration tests."""
+    return FFmpeg()
+
+
+@pytest.fixture
 def image_downloader(
-    path_manager: PathManager, ytdlp_wrapper: YtdlpWrapper
+    path_manager: PathManager,
+    ytdlp_wrapper: YtdlpWrapper,
+    ffprobe: FFProbe,
+    ffmpeg: FFmpeg,
 ) -> ImageDownloader:
     """Provide an ImageDownloader instance with shared components.
 
     Returns:
         ImageDownloader instance configured with test path manager and ytdlp wrapper.
     """
-    return ImageDownloader(path_manager, ytdlp_wrapper)
+    return ImageDownloader(path_manager, ytdlp_wrapper, ffprobe=ffprobe, ffmpeg=ffmpeg)
 
 
 @pytest.fixture

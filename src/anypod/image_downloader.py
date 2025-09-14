@@ -1,7 +1,5 @@
 """Image downloading functionality for feed and download thumbnails."""
 
-import asyncio
-import json
 import logging
 from pathlib import Path
 
@@ -10,7 +8,9 @@ import aiofiles.os
 import httpx
 
 from .db.types import SourceType
-from .exceptions import ImageDownloadError, YtdlpApiError
+from .exceptions import FFmpegError, FFProbeError, ImageDownloadError, YtdlpApiError
+from .ffmpeg import FFmpeg
+from .ffprobe import FFProbe
 from .path_manager import PathManager
 from .ytdlp_wrapper import YtdlpWrapper
 
@@ -29,73 +29,18 @@ class ImageDownloader:
         _ytdlp_wrapper: YtdlpWrapper for yt-dlp based downloads.
     """
 
-    def __init__(self, paths: PathManager, ytdlp_wrapper: YtdlpWrapper):
+    def __init__(
+        self,
+        paths: PathManager,
+        ytdlp_wrapper: YtdlpWrapper,
+        ffprobe: FFProbe,
+        ffmpeg: FFmpeg,
+    ):
         self._paths = paths
         self._ytdlp_wrapper = ytdlp_wrapper
+        self._ffprobe = ffprobe
+        self._ffmpeg = ffmpeg
         logger.debug("ImageDownloader initialized.")
-
-    async def _is_jpg_format(self, file_path: Path, feed_id: str, url: str) -> bool:
-        """Check if a file is already in JPG format using ffprobe.
-
-        Args:
-            file_path: Path to the file to check.
-            feed_id: Feed identifier for error context.
-            url: Image URL for error context.
-
-        Returns:
-            True if the file is already in JPG format, False otherwise.
-
-        Raises:
-            ImageDownloadError: If ffprobe check fails.
-        """
-        try:
-            process = await asyncio.create_subprocess_exec(
-                "ffprobe",
-                "-v",
-                "quiet",
-                "-print_format",
-                "json",
-                "-show_streams",
-                str(file_path),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, stderr = await process.communicate()
-        except FileNotFoundError as e:
-            raise ImageDownloadError(
-                "ffprobe not found - required for format detection",
-                feed_id=feed_id,
-                url=url,
-            ) from e
-        except OSError as e:
-            raise ImageDownloadError(
-                "Failed to execute format detection",
-                feed_id=feed_id,
-                url=url,
-            ) from e
-
-        if process.returncode != 0:
-            error_msg = stderr.decode() if stderr else "Unknown ffprobe error"
-            raise ImageDownloadError(
-                f"Format detection failed: {error_msg}",
-                feed_id=feed_id,
-                url=url,
-            )
-
-        try:
-            probe_data = json.loads(stdout.decode())
-        except json.JSONDecodeError as e:
-            raise ImageDownloadError(
-                "Failed to parse format detection output",
-                feed_id=feed_id,
-                url=url,
-            ) from e
-
-        streams = probe_data.get("streams", [])
-        if streams:
-            codec_name = streams[0].get("codec_name", "").lower()
-            return codec_name == "mjpeg"
-        return False
 
     async def _convert_to_jpg(
         self, input_path: Path, output_path: Path, feed_id: str, url: str
@@ -112,38 +57,13 @@ class ImageDownloader:
             ImageDownloadError: If conversion fails.
         """
         try:
-            process = await asyncio.create_subprocess_exec(
-                "ffmpeg",
-                "-i",
-                str(input_path),
-                "-f",
-                "mjpeg",
-                "-y",  # Overwrite output file
-                str(output_path),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            _, stderr = await process.communicate()
-        except FileNotFoundError as e:
+            await self._ffmpeg.convert_image_to_jpg(input_path, output_path)
+        except FFmpegError as e:
             raise ImageDownloadError(
-                "ffmpeg not found - required for image conversion",
+                "Image conversion to JPG failed",
                 feed_id=feed_id,
                 url=url,
             ) from e
-        except OSError as e:
-            raise ImageDownloadError(
-                "Failed to execute image conversion",
-                feed_id=feed_id,
-                url=url,
-            ) from e
-
-        if process.returncode != 0:
-            error_msg = stderr.decode() if stderr else "Unknown ffmpeg error"
-            raise ImageDownloadError(
-                f"Image conversion to JPG failed: {error_msg}",
-                feed_id=feed_id,
-                url=url,
-            )
 
     async def download_feed_image_direct(self, feed_id: str, url: str) -> str | None:
         """Download feed image directly via HTTP.
@@ -196,7 +116,16 @@ class ImageDownloader:
 
         try:
             # Check if already JPG format
-            if await self._is_jpg_format(tmp_path, feed_id, url):
+            try:
+                is_jpg = await self._ffprobe.is_jpg_file(tmp_path)
+            except FFProbeError as e:
+                raise ImageDownloadError(
+                    "Format detection failed",
+                    feed_id=feed_id,
+                    url=url,
+                ) from e
+
+            if is_jpg:
                 # Already JPG, just move the file
                 try:
                     await aiofiles.os.replace(tmp_path, final_path)

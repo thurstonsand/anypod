@@ -20,6 +20,8 @@ from anypod.config.types import (
 from anypod.data_coordinator.pruner import Pruner
 from anypod.db import DownloadDatabase, FeedDatabase
 from anypod.db.types import Download, DownloadStatus, Feed, SourceType
+from anypod.ffmpeg import FFmpeg
+from anypod.ffprobe import FFProbe
 from anypod.file_manager import FileManager
 from anypod.image_downloader import ImageDownloader
 from anypod.path_manager import PathManager
@@ -43,9 +45,13 @@ def state_reconciler(
     pruner: Pruner,
     file_manager: FileManager,
     path_manager: PathManager,
+    ffprobe: FFProbe,
+    ffmpeg: FFmpeg,
 ) -> StateReconciler:
     """Provides a StateReconciler instance with real dependencies."""
-    image_downloader = ImageDownloader(path_manager, ytdlp_wrapper)
+    image_downloader = ImageDownloader(
+        path_manager, ytdlp_wrapper, ffprobe=ffprobe, ffmpeg=ffmpeg
+    )
     return StateReconciler(
         file_manager,
         image_downloader,
