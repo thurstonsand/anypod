@@ -1,5 +1,5 @@
 # Dockerfile for anypod using uv with Debian and managed Python
-FROM ghcr.io/astral-sh/uv:bookworm-slim AS builder
+FROM ghcr.io/astral-sh/uv:trixie-slim AS builder
 
 # Set environment variables for uv
 ENV UV_COMPILE_BYTECODE=1 \
@@ -27,7 +27,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev
 
 # Runtime stage - use base Debian slim and copy uv binary
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 
 ARG BGUTIL_POT_PROVIDER_VERSION=1.2.2
 

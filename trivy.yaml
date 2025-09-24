@@ -1,0 +1,24 @@
+# Trivy configuration for anypod
+# This ensures consistent scanning between CI and local development
+
+format: sarif
+output: trivy-results.sarif
+severity:
+  - CRITICAL
+  - HIGH
+scanners:
+  - vuln
+  - secret
+cache:
+  backend: fs
+exit-code: 1
+
+# Optional: timeout for scans
+timeout: 10m
+
+# Ignore vulnerability statuses that are low-risk for production
+# fix_deferred: patches exist but not backported yet (will be fixed in future updates)
+# will_not_fix: maintainer has decided not to fix (usually low impact)
+ignore-status:
+  - fix_deferred
+  - will_not_fix

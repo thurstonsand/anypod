@@ -2,8 +2,8 @@ name: Docker Publish
 
 on:
   push:
-    branches: [ main ]
-    tags: [ 'v*' ]
+    branches: [main]
+    tags: ["v*"]
 
 # Cancel any in-progress run on the same ref (branch or PR)
 concurrency:
@@ -12,7 +12,7 @@ concurrency:
 
 permissions:
   contents: read
-  packages: write        # needed to push to GHCR
+  packages: write # needed to push to GHCR
   security-events: write # needed to upload SARIF
 
 env:
@@ -53,20 +53,23 @@ jobs:
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@0.33.1
         with:
+          trivy-config: ./trivy.yaml
+          trivyignores: ./.trivyignore
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:scan-${{ github.sha }}
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-          severity: 'CRITICAL,HIGH'
-          scanners: 'vuln,secret'
-          ignore-unfixed: true
-          exit-code: '1'  # Blocking - prevents push if vulnerabilities found
+          # Override action defaults to use trivy.yaml config
+          format: "sarif"
+          output: "trivy-results.sarif"
           cache: true
-
+          version: latest
+      - name: Show table summary
+        if: always()
+        run: |
+          trivy image $REGISTRY/$IMAGE_NAME:scan-$GITHUB_SHA --format table || true
       - name: Upload Trivy scan results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v3
         if: success() || failure()
         with:
-          sarif_file: 'trivy-results.sarif'
+          sarif_file: "trivy-results.sarif"
 
       # 3) Only now build & push multi-arch (only if scan passed)
       - name: Extract metadata (tags, labels) for Docker

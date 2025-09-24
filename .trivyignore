@@ -6,3 +6,19 @@
 # from our codebase.
 aws-access-key-id **/site-packages/yt_dlp/**
 jwt-token **/site-packages/yt_dlp/**
+
+# Container vulnerability exceptions with expiration dates
+# These CVEs are currently "affected" (no fix available) but deemed low-risk for anypod's use case
+# Expiration dates ensure re-evaluation when fixes become available
+
+# CVE-2025-59375: libexpat1 - XML parsing memory allocation issue
+# Status: affected - Risk: Low (anypod uses XML only for RSS generation in controlled environment)
+CVE-2025-59375 exp:2025-10-30
+
+# CVE-2025-52194: libsndfile1 - buffer overflow in IRCAM file processing
+# Status: affected - Risk: Low (anypod doesn't process IRCAM audio files)
+CVE-2025-52194 exp:2025-10-30
+
+# CVE-2025-9900: libtiff6 - write-what-where vulnerability
+# Status: affected - Risk: Low (anypod does not process TIFF files)
+CVE-2025-9900 exp:2025-10-30
