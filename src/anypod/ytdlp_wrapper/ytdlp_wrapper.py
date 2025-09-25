@@ -9,19 +9,19 @@ from datetime import datetime, timedelta
 import logging
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import aiofiles.os
 
 from ..db.app_state_db import AppStateDatabase
 from ..db.types import Download, Feed, SourceType
 from ..exceptions import FileOperationError, YtdlpApiError
+from ..ffprobe import FFProbe
 from ..path_manager import PathManager
 from .base_handler import SourceHandlerBase
 from .core import YtdlpArgs, YtdlpCore
-from .youtube_handler import (
-    YoutubeHandler,
-    YtdlpYoutubeVideoFilteredOutError,
-)
+from .patreon_handler import PatreonHandler, YtdlpPatreonPostFilteredOutError
+from .youtube_handler import YoutubeHandler, YtdlpYoutubeVideoFilteredOutError
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +131,10 @@ class YtdlpWrapper:
         if cookies_path:
             discovery_args = discovery_args.cookies(cookies_path)
 
-        resolved_url, source_type = await self._source_handler.determine_fetch_strategy(
+        # Select handler by URL; for non-Patreon, use the injected/default handler to
+        # preserve existing test hooks and behavior
+        handler = self._select_handler(url)
+        resolved_url, source_type = await handler.determine_fetch_strategy(
             feed_id, url, discovery_args
         )
 
@@ -216,13 +219,18 @@ class YtdlpWrapper:
         if cookies_path:
             info_args = info_args.cookies(cookies_path)
 
+        # Apply platform-specific args
+        handler = self._select_handler(resolved_url)
+        if isinstance(handler, PatreonHandler):
+            info_args = info_args.referer("https://www.patreon.com")
+
         logger.debug(
             "Acquiring playlist metadata.",
             extra=log_config,
         )
         ytdlp_info = await YtdlpCore.extract_playlist_info(info_args, resolved_url)
 
-        extracted_feed = self._source_handler.extract_feed_metadata(
+        extracted_feed = handler.extract_feed_metadata(
             feed_id,
             ytdlp_info,
             source_type,
@@ -287,6 +295,11 @@ class YtdlpWrapper:
         )
         thumb_args = await self._update_to(thumb_args)
         thumb_args = self._pot_extractor_args(thumb_args)
+
+        # Apply platform-specific args
+        handler = self._select_handler(resolved_url)
+        if isinstance(handler, PatreonHandler):
+            thumb_args = thumb_args.referer("https://www.patreon.com")
 
         # For single video feeds, use the video's thumbnail as the feed image.
         if source_type == SourceType.SINGLE_VIDEO:
@@ -393,6 +406,13 @@ class YtdlpWrapper:
             extra=log_config,
         )
 
+        # Apply platform-specific args
+        handler = self._select_handler(resolved_url)
+        if isinstance(handler, PatreonHandler):
+            info_args = info_args.referer("https://www.patreon.com").match_filter(
+                "vcodec"
+            )
+
         ytdlp_infos = await YtdlpCore.extract_downloads_info(info_args, resolved_url)
 
         if not ytdlp_infos:
@@ -406,11 +426,14 @@ class YtdlpWrapper:
         parsed_downloads: list[Download] = []
         for ytdlp_info in ytdlp_infos:
             try:
-                download = self._source_handler.extract_download_metadata(
+                download = await handler.extract_download_metadata(
                     feed_id,
                     ytdlp_info,
                 )
-            except YtdlpYoutubeVideoFilteredOutError:
+            except (
+                YtdlpYoutubeVideoFilteredOutError,
+                YtdlpPatreonPostFilteredOutError,
+            ):
                 # Video was filtered out by yt-dlp, skip it
                 logger.debug(
                     "Video filtered out by yt-dlp, skipping.",
@@ -485,6 +508,10 @@ class YtdlpWrapper:
         if cookies_path:
             download_args = download_args.cookies(cookies_path)
 
+        # Apply platform-specific args for downloads (referer required by Patreon)
+        if self._is_patreon_url(download.source_url):
+            download_args = download_args.referer("https://www.patreon.com")
+
         url_to_download = download.source_url
 
         await YtdlpCore.download(download_args, url_to_download)
@@ -540,3 +567,24 @@ class YtdlpWrapper:
         )
 
         return downloaded_file
+
+    # --- Internal helpers -------------------------------------------------
+
+    def _is_patreon_url(self, url: str | None) -> bool:
+        if not url:
+            return False
+        try:
+            host = urlparse(url).hostname or ""
+        except Exception:
+            return False
+        return "patreon.com" in host
+
+    def _select_handler(self, url: str | None) -> SourceHandlerBase:
+        """Return appropriate handler. For non-Patreon, return the configured handler.
+
+        Returning the configured handler for non-Patreon URLs preserves tests and
+        any external injection of handler (e.g., mocked YoutubeHandler in tests).
+        """
+        if self._is_patreon_url(url):
+            return PatreonHandler(FFProbe())
+        return self._source_handler

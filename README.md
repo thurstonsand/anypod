@@ -266,7 +266,7 @@ Requirements: Python 3.13+, [`uv`](https://docs.astral.sh/uv/) package manager, 
 uv sync
 
 # Run full service (dev)
-timeout 30 ./scripts/run_dev.sh [--keep]
+./scripts/run_dev.sh [--keep]
 
 # Run debug component
 ./scripts/run_debug.sh <enqueuer|downloader|ytdlp> [--keep]
@@ -276,7 +276,7 @@ uv run pre-commit run --all-files
 uv run ruff check && uv run ruff format
 uv run pyright
 uv run pytest
-uv run pytest --integration
+uv run pytest --integration # will hit actual youtube endpoints
 ```
 
 Local defaults in dev scripts:
@@ -312,6 +312,8 @@ High‑level upcoming work. See `TASK_LIST.md` for the full checklist.
 - Podcast feed with an endpoint you can send videos to, to dynamically create your own playlist
   - You can recreate this functionality now by creating an unlisted youtube playlist and add videos to it
 - Support for other sources (e.g. Patreon)
+- Embed episode-specific artwork directly into media files for better podcast client compatibility (especially Pocket Casts, which requires embedded artwork for per-episode images to display properly)
+  - yt-dlp supports this
 
 ## FAQ / Troubleshooting
 

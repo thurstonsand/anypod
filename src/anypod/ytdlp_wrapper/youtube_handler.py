@@ -668,7 +668,7 @@ class YoutubeHandler:
         )
         return fetch_url, SourceType.UNKNOWN
 
-    def extract_download_metadata(
+    async def extract_download_metadata(
         self,
         feed_id: str,
         ytdlp_info: YtdlpInfo,
