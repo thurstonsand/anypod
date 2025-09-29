@@ -1,9 +1,12 @@
 name: Docker Publish
 
 on:
-  push:
+  # Wait for security scans to complete successfully before publishing
+  workflow_run:
+    workflows: ["Security Scans"]
+    types:
+      - completed
     branches: [main]
-    tags: ["v*"]
 
 # Cancel any in-progress run on the same ref (branch or PR)
 concurrency:
@@ -13,7 +16,6 @@ concurrency:
 permissions:
   contents: read
   packages: write # needed to push to GHCR
-  security-events: write # needed to upload SARIF
 
 env:
   REGISTRY: ghcr.io
@@ -23,6 +25,8 @@ jobs:
   build-and-publish:
     name: Build & Publish
     runs-on: ubuntu-latest
+    # Only publish if security scans succeeded
+    if: github.event.workflow_run.conclusion == 'success'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -36,53 +40,14 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      # 1) Build amd64 locally for scan
-      - name: Build amd64 for scan
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          platforms: linux/amd64
-          load: true
-          push: false
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:scan-${{ github.sha }}
-          cache-from: type=gha,scope=publish
-          cache-to: type=gha,mode=max,scope=publish
-
-      # 2) Scan it - this will fail the workflow if vulnerabilities are found
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@0.33.1
-        with:
-          trivy-config: ./trivy.yaml
-          trivyignores: ./.trivyignore
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:scan-${{ github.sha }}
-          # Override action defaults to use trivy.yaml config
-          format: "sarif"
-          output: "trivy-results.sarif"
-          cache: true
-          version: latest
-      - name: Show table summary
-        if: always()
-        run: |
-          trivy image $REGISTRY/$IMAGE_NAME:scan-$GITHUB_SHA --format table || true
-      - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
-        if: success() || failure()
-        with:
-          sarif_file: "trivy-results.sarif"
-
-      # 3) Only now build & push multi-arch (only if scan passed)
       - name: Extract metadata (tags, labels) for Docker
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=latest,enable=${{ github.ref_type == 'tag' }}
-            type=semver,pattern={{major}}.{{minor}},enable=${{ github.ref_type == 'tag' }}
-            type=semver,pattern={{version}},enable=${{ github.ref_type == 'tag' }}
-            type=raw,value=nightly,enable={{is_default_branch}}
-            type=sha,prefix=git-,enable={{is_default_branch}}
+            type=raw,value=nightly
+            type=sha,prefix=git-
 
       - name: Build and push multi-arch Docker image
         uses: docker/build-push-action@v6

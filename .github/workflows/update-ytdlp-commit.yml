@@ -1,9 +1,12 @@
 name: "Update yt-dlp and Commit to Main"
 
+permissions:
+  contents: write
+
 on:
   workflow_dispatch: # Allow manual triggering
   schedule:
-    - cron: '0 0 * * *' # Runs daily at midnight UTC
+    - cron: "0 0 * * *" # Runs daily at midnight UTC
 
 jobs:
   update-and-commit:

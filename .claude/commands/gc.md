@@ -1,4 +1,5 @@
 ---
+allowed-tools: Bash(git status:*), Bash(git diff:*), Bash(git branch:*), Bash(git log:*), Bash(uv run pre-commit run:*)
 description: Create a git commit
 ---
 

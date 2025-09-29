@@ -1,9 +1,12 @@
 name: "Update bgutil POT provider and Commit to Main"
 
+permissions:
+  contents: write
+
 on:
   workflow_dispatch: # Allow manual triggering
   schedule:
-    - cron: '0 1 * * *' # Runs daily at 01:00 UTC
+    - cron: "0 1 * * *" # Runs daily at 01:00 UTC
 
 jobs:
   update-and-commit:
