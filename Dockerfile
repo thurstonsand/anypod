@@ -29,6 +29,11 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Runtime stage - use base Debian slim and copy uv binary
 FROM debian:trixie-slim
 
+# Cache-busting arg for security updates (changes weekly to force package refresh)
+# Format: YYYY-WW (ISO week number)
+# Updated automatically by update-dockerfile-deps.yml workflow
+ARG CACHE_BUST_WEEK=2025-W40
+
 ARG BGUTIL_POT_PROVIDER_VERSION=1.2.2
 
 # Install curl for health check, ca-certificates for SSL verification, gosu for user switching, and yt-dlp

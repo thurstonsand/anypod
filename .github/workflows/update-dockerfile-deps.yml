@@ -1,4 +1,4 @@
-name: "Update bgutil POT provider and Commit to Main"
+name: "Update Dockerfile Dependencies"
 
 permissions:
   contents: write
@@ -17,24 +17,30 @@ jobs:
         with:
           ssh-key: ${{ secrets.ANYPOD_DEPLOY_KEY }}
 
-      - name: Update bgutil POT provider and detect changes
-        id: provider
+      - name: Update Dockerfile if needed
+        id: update
         run: |
           set -euo pipefail
+
+          # Update bgutil provider to latest version
           LATEST=$(curl -s https://api.github.com/repos/brainicism/bgutil-ytdlp-pot-provider/releases/latest | jq -r '.tag_name')
-          CURRENT=$(awk -F= '/^ARG BGUTIL_POT_PROVIDER_VERSION=/{print $2}' Dockerfile)
-          if [ "$LATEST" = "$CURRENT" ]; then
-            echo "update_needed=0" >> "$GITHUB_OUTPUT"
-            echo "No changes to Dockerfile"
+          sed -i "s/^ARG BGUTIL_POT_PROVIDER_VERSION=.*/ARG BGUTIL_POT_PROVIDER_VERSION=${LATEST}/" Dockerfile
+
+          # Update cache bust key to current week (forces package refresh)
+          CURRENT_WEEK=$(date +%Y-W%V)
+          sed -i "s/^ARG CACHE_BUST_WEEK=.*/ARG CACHE_BUST_WEEK=${CURRENT_WEEK}/" Dockerfile
+
+          # Check if anything actually changed
+          if git diff --quiet Dockerfile; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "No changes needed"
           else
-            sed -i "s/^ARG BGUTIL_POT_PROVIDER_VERSION=.*/ARG BGUTIL_POT_PROVIDER_VERSION=${LATEST}/" Dockerfile
-            echo "update_needed=1" >> "$GITHUB_OUTPUT"
-            echo "bgutil_version=${LATEST}" >> "$GITHUB_OUTPUT"
-            echo "Dockerfile updated to bgutil POT provider ${LATEST}"
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            echo "Dockerfile updated"
           fi
 
       - name: Install uv
-        if: steps.provider.outputs.update_needed == '1'
+        if: steps.update.outputs.has_changes == 'true'
         uses: astral-sh/setup-uv@v6
         with:
           version: latest
@@ -42,27 +48,24 @@ jobs:
           cache-dependency-glob: "uv.lock"
 
       - name: Run pre-commit checks
-        if: steps.provider.outputs.update_needed == '1'
+        if: steps.update.outputs.has_changes == 'true'
         uses: pre-commit/action@v3.0.1
 
       - name: Run tests
-        if: steps.provider.outputs.update_needed == '1'
+        if: steps.update.outputs.has_changes == 'true'
         run: |
           uv run pytest --cov-report xml
 
       - name: Commit and push
-        if: steps.provider.outputs.update_needed == '1'
-        env:
-          PROVIDER_VERSION: ${{ steps.provider.outputs.bgutil_version }}
+        if: steps.update.outputs.has_changes == 'true'
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add Dockerfile
-          echo "Committing Dockerfile update for bgutil POT provider ${PROVIDER_VERSION} (tests passed)"
-          git commit -m "chore(deps): update bgutil POT provider to ${PROVIDER_VERSION}
+          git commit -m "chore(deps): update dependencies and refresh package cache
 
           Auto-update performed by GitHub Actions after validating:
-            - Dockerfile version update successful
+            - Dockerfile updated successfully
             - Pre-commit checks passed
             - All tests passed"
           git push origin main
