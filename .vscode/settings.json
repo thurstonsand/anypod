@@ -1,9 +1,5 @@
 {
-    "python.testing.pytestArgs": [
-        "tests",
-        "--integration",
-        "--no-cov"
-    ],
-    "python.testing.unittestEnabled": false,
-    "python.testing.pytestEnabled": true
+  "python.testing.pytestArgs": ["tests", "--integration", "--no-cov"],
+  "python.testing.unittestEnabled": false,
+  "python.testing.pytestEnabled": true
 }

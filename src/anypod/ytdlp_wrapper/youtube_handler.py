@@ -13,6 +13,7 @@ import logging
 from ..db.types import Download, DownloadStatus, Feed, SourceType
 from ..exceptions import (
     YtdlpDataError,
+    YtdlpDownloadFilteredOutError,
     YtdlpFieldInvalidError,
     YtdlpFieldMissingError,
 )
@@ -38,7 +39,7 @@ class YtdlpYoutubeDataError(YtdlpDataError):
         self.download_id = download_id
 
 
-class YtdlpYoutubeVideoFilteredOutError(YtdlpDataError):
+class YtdlpYoutubeVideoFilteredOutError(YtdlpDownloadFilteredOutError):
     """Raised when a video is filtered out by yt-dlp.
 
     Attributes:
@@ -47,9 +48,11 @@ class YtdlpYoutubeVideoFilteredOutError(YtdlpDataError):
     """
 
     def __init__(self, feed_id: str | None = None, download_id: str | None = None):
-        self.feed_id = feed_id
-        self.download_id = download_id
-        super().__init__("YouTube: Video filtered out by yt-dlp.")
+        super().__init__(
+            "YouTube: Video filtered out by yt-dlp.",
+            feed_id=feed_id,
+            download_id=download_id,
+        )
 
 
 class YoutubeEntry:
@@ -431,71 +434,6 @@ class YoutubeHandler:
     parsing into Download objects.
     """
 
-    def extract_feed_metadata(
-        self,
-        feed_id: str,
-        ytdlp_info: YtdlpInfo,
-        source_type: SourceType,
-        source_url: str,
-    ) -> Feed:
-        """Extract feed-level metadata from yt-dlp response.
-
-        Args:
-            feed_id: The feed identifier.
-            ytdlp_info: The yt-dlp metadata information.
-            source_type: The type of source being parsed.
-            source_url: The original source URL for this feed.
-
-        Returns:
-            Feed object with extracted metadata populated.
-        """
-        logger.debug(
-            "Extracting feed metadata.",
-            extra={
-                "feed_id": feed_id,
-                "source_type": source_type,
-            },
-        )
-
-        youtube_info = YoutubeEntry(ytdlp_info, feed_id)
-
-        # Extract metadata with fallbacks
-        author = youtube_info.uploader or youtube_info.channel
-        title = youtube_info.title
-        description = youtube_info.description
-        image_url = youtube_info.thumbnail
-
-        # set to the time the request was made
-        last_successful_sync = youtube_info.epoch
-
-        feed = Feed(
-            id=feed_id,
-            is_enabled=True,
-            source_type=source_type,
-            source_url=source_url,
-            last_successful_sync=last_successful_sync,
-            title=title,
-            subtitle=None,  # Not available from yt-dlp
-            description=description,
-            language=None,  # Not available from yt-dlp
-            author=author,
-            remote_image_url=image_url,
-        )
-
-        logger.debug(
-            "Successfully extracted feed metadata.",
-            extra={
-                "feed_id": feed_id,
-                "source_type": source_type.value,
-                "title": title,
-                "author": author,
-                "has_description": description is not None,
-                "has_image_url": image_url is not None,
-            },
-        )
-
-        return feed
-
     async def determine_fetch_strategy(
         self,
         feed_id: str,
@@ -668,7 +606,93 @@ class YoutubeHandler:
         )
         return fetch_url, SourceType.UNKNOWN
 
-    def extract_download_metadata(
+    def prepare_playlist_info_args(
+        self,
+        args: YtdlpArgs,
+    ) -> YtdlpArgs:
+        """Return args unchanged for YouTube playlist metadata calls."""
+        return args
+
+    def extract_feed_metadata(
+        self,
+        feed_id: str,
+        ytdlp_info: YtdlpInfo,
+        source_type: SourceType,
+        source_url: str,
+    ) -> Feed:
+        """Extract feed-level metadata from yt-dlp response.
+
+        Args:
+            feed_id: The feed identifier.
+            ytdlp_info: The yt-dlp metadata information.
+            source_type: The type of source being parsed.
+            source_url: The original source URL for this feed.
+
+        Returns:
+            Feed object with extracted metadata populated.
+        """
+        logger.debug(
+            "Extracting feed metadata.",
+            extra={
+                "feed_id": feed_id,
+                "source_type": source_type,
+            },
+        )
+
+        youtube_info = YoutubeEntry(ytdlp_info, feed_id)
+
+        # Extract metadata with fallbacks
+        author = youtube_info.uploader or youtube_info.channel
+        title = youtube_info.title
+        description = youtube_info.description
+        image_url = youtube_info.thumbnail
+
+        # set to the time the request was made
+        last_successful_sync = youtube_info.epoch
+
+        feed = Feed(
+            id=feed_id,
+            is_enabled=True,
+            source_type=source_type,
+            source_url=source_url,
+            last_successful_sync=last_successful_sync,
+            title=title,
+            subtitle=None,  # Not available from yt-dlp
+            description=description,
+            language=None,  # Not available from yt-dlp
+            author=author,
+            remote_image_url=image_url,
+        )
+
+        logger.debug(
+            "Successfully extracted feed metadata.",
+            extra={
+                "feed_id": feed_id,
+                "source_type": source_type.value,
+                "title": title,
+                "author": author,
+                "has_description": description is not None,
+                "has_image_url": image_url is not None,
+            },
+        )
+
+        return feed
+
+    def prepare_thumbnail_args(
+        self,
+        args: YtdlpArgs,
+    ) -> YtdlpArgs:
+        """Return args unchanged for YouTube thumbnail downloads."""
+        return args
+
+    def prepare_downloads_info_args(
+        self,
+        args: YtdlpArgs,
+    ) -> YtdlpArgs:
+        """Return args unchanged for YouTube downloads metadata calls."""
+        return args
+
+    async def extract_download_metadata(
         self,
         feed_id: str,
         ytdlp_info: YtdlpInfo,
@@ -777,3 +801,10 @@ class YoutubeHandler:
             },
         )
         return parsed_download
+
+    def prepare_media_download_args(
+        self,
+        args: YtdlpArgs,
+    ) -> YtdlpArgs:
+        """Return args unchanged for YouTube media downloads."""
+        return args

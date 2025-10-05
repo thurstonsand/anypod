@@ -133,6 +133,7 @@ Download status transitions are implemented as explicit methods, not generic upd
 - Logging: Structured JSON logging with proper context propagation
 - Database: Uses `SQLModel` and `SQLAlchemy` with a custom `SqlalchemyCore` class, not raw SQLite.
 - Currently synchronous but designed for future async conversion
+- Function signatures: Default to required parameters; avoid annotating arguments as ``<type> | None`` unless ``None`` is a real, supported input path.
 
 ### Tool Configuration
 - Linting and formatting: ruff configuration in @pyproject.toml
@@ -198,7 +199,8 @@ anypod/
   │   │       └── static.py        # Static file serving and directory browsing
   │   │       └── admin.py         # Admin-only endpoints (served on private admin server)
 │   ├── ytdlp_wrapper/           # `yt-dlp` integration
-│   │   ├── base_handler.py      # Base handler interface for different source types
+│   │   ├── base_handler.py      # Base handler interface and selector for different source types
+│   │   ├── patreon_handler.py   # Patreon source handler
 │   │   ├── youtube_handler.py   # YouTube source handler
 │   │   ├── ytdlp_wrapper.py     # High-level wrapper
 │   │   └── core/                # Core yt-dlp wrapper

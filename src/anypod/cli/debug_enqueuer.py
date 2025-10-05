@@ -21,6 +21,7 @@ from ..image_downloader import ImageDownloader
 from ..path_manager import PathManager
 from ..state_reconciler import StateReconciler
 from ..ytdlp_wrapper import YtdlpWrapper
+from ..ytdlp_wrapper.base_handler import HandlerSelector
 
 logger = logging.getLogger(__name__)
 
@@ -54,15 +55,17 @@ async def run_debug_enqueuer_mode(
         download_db = DownloadDatabase(db_core)
         file_manager = FileManager(paths)
         app_state_db = AppStateDatabase(db_core)
+        ffprobe = FFProbe()
+        handler_selector = HandlerSelector(ffprobe)
         ytdlp_wrapper = YtdlpWrapper(
             paths,
             pot_provider_url=settings.pot_provider_url,
             app_state_db=app_state_db,
             yt_channel=settings.yt_channel,
             yt_update_freq=settings.yt_dlp_update_freq,
+            handler_selector=handler_selector,
         )
         pruner = Pruner(feed_db, download_db, file_manager)
-        ffprobe = FFProbe()
         ffmpeg = FFmpeg()
         image_downloader = ImageDownloader(paths, ytdlp_wrapper, ffprobe, ffmpeg)
         state_reconciler = StateReconciler(

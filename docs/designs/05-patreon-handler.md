@@ -133,15 +133,15 @@ Usage policy for Patreon:
 - [x] PatreonHandler: implement `extract_download_metadata` with extension/mime defaults and duration=0 fallback.
 - [x] Patreon errors: implement `YtdlpPatreonDataError` and `YtdlpPatreonPostFilteredOutError`.
 
-- [ ] Wrapper: add `_select_handler(url)` and use in all flows:
+- [x] Wrapper: add host-based handler selector and use in all flows:
   - [ ] `discover_feed_properties`
   - [ ] `fetch_playlist_metadata`
   - [ ] `download_feed_thumbnail`
   - [ ] `fetch_new_downloads_metadata`
   - [ ] `download_media_to_file`
-- [ ] Wrapper (Patreon): apply `referer('https://www.patreon.com')` universally.
-- [ ] Wrapper (Patreon): apply `match_filter('vcodec')` in enumeration and single-post paths.
-- [ ] Ensure YouTube behavior unchanged.
+- [x] Wrapper (Patreon): apply `referer('https://www.patreon.com')` universally.
+- [x] Wrapper (Patreon): apply `match_filter('vcodec')` in enumeration and single-post paths.
+- [x] Ensure YouTube behavior unchanged.
 
 - [ ] Partial success tolerance: experiment with yt-dlp outputs to confirm stderr/exit-code patterns.
 - [ ] Partial success tolerance: update `YtdlpCore.extract_downloads_info` to return parsed entries on non-zero exit if at least one JSON line valid; else raise.
@@ -150,8 +150,8 @@ Usage policy for Patreon:
 - [ ] Text-only posts: ensure enumeration excludes them (via match-filter) and single-post parse treats them as filtered.
 - [ ] Text-only posts: if no text-only example found on target channel, request alternative channel to test.
 
-- [ ] Tests: Patreon handler discovery classification (single/playlist/unknown) with mocked `extract_playlist_info`.
-- [ ] Tests: Patreon entry parsing (success, missing publish dt → error, missing ext + no video evidence → filtered, defaults when formats indicate video, text-only → filtered).
+- [x] Tests: Patreon handler discovery classification (single/playlist/unknown) with mocked `extract_playlist_info`.
+- [x] Tests: Patreon entry parsing (success, missing publish dt → error, missing ext → filtered, probe duration path).
 - [ ] Tests: Wrapper dispatch (URL → handler) and arg augmentation (referer/match-filter present for Patreon; YouTube unaffected).
 - [ ] Tests: Core partial success tolerance in `extract_downloads_info`.
 

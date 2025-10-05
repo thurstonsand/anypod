@@ -14,14 +14,14 @@ import aiofiles.os
 
 from ..db.app_state_db import AppStateDatabase
 from ..db.types import Download, Feed, SourceType
-from ..exceptions import FileOperationError, YtdlpApiError
-from ..path_manager import PathManager
-from .base_handler import SourceHandlerBase
-from .core import YtdlpArgs, YtdlpCore
-from .youtube_handler import (
-    YoutubeHandler,
-    YtdlpYoutubeVideoFilteredOutError,
+from ..exceptions import (
+    FileOperationError,
+    YtdlpApiError,
+    YtdlpDownloadFilteredOutError,
 )
+from ..path_manager import PathManager
+from .base_handler import HandlerSelector
+from .core import YtdlpArgs, YtdlpCore
 
 logger = logging.getLogger(__name__)
 
@@ -34,13 +34,13 @@ class YtdlpWrapper:
     and URL types.
 
     Attributes:
-        _source_handler: Source-specific handler for URL processing. For now,
-            only YoutubeHandler is implemented.
-        _app_tmp_dir: Temporary directory for yt-dlp operations.
-        _app_data_dir: Data directory for downloaded files.
+        _paths: Manages application directories for temporary and data storage.
+        _pot_provider_url: Base URL for the POT provider, or None if disabled.
+        _app_state_db: Database interface for application state management.
+        _yt_channel: YouTube channel (stable, nightly) for yt-dlp self-updates.
+        _yt_update_freq: Minimum interval between yt-dlp self-updates.
+        _handler_selector: Resolves which source handler should process a URL.
     """
-
-    _source_handler: SourceHandlerBase = YoutubeHandler()
 
     def __init__(
         self,
@@ -49,12 +49,14 @@ class YtdlpWrapper:
         app_state_db: AppStateDatabase,
         yt_channel: str,
         yt_update_freq: timedelta,
+        handler_selector: HandlerSelector,
     ):
         self._paths = paths
         self._pot_provider_url = pot_provider_url if pot_provider_url else None
         self._app_state_db = app_state_db
         self._yt_channel = yt_channel
         self._yt_update_freq = yt_update_freq
+        self._handler_selector = handler_selector
         logger.debug(
             "YtdlpWrapper initialized.",
             extra={
@@ -131,7 +133,8 @@ class YtdlpWrapper:
         if cookies_path:
             discovery_args = discovery_args.cookies(cookies_path)
 
-        resolved_url, source_type = await self._source_handler.determine_fetch_strategy(
+        handler = self._handler_selector.select(url)
+        resolved_url, source_type = await handler.determine_fetch_strategy(
             feed_id, url, discovery_args
         )
 
@@ -216,13 +219,16 @@ class YtdlpWrapper:
         if cookies_path:
             info_args = info_args.cookies(cookies_path)
 
+        handler = self._handler_selector.select(resolved_url)
+        info_args = handler.prepare_playlist_info_args(info_args)
+
         logger.debug(
             "Acquiring playlist metadata.",
             extra=log_config,
         )
         ytdlp_info = await YtdlpCore.extract_playlist_info(info_args, resolved_url)
 
-        extracted_feed = self._source_handler.extract_feed_metadata(
+        extracted_feed = handler.extract_feed_metadata(
             feed_id,
             ytdlp_info,
             source_type,
@@ -287,6 +293,9 @@ class YtdlpWrapper:
         )
         thumb_args = await self._update_to(thumb_args)
         thumb_args = self._pot_extractor_args(thumb_args)
+
+        handler = self._handler_selector.select(resolved_url)
+        thumb_args = handler.prepare_thumbnail_args(thumb_args)
 
         # For single video feeds, use the video's thumbnail as the feed image.
         if source_type == SourceType.SINGLE_VIDEO:
@@ -393,6 +402,9 @@ class YtdlpWrapper:
             extra=log_config,
         )
 
+        handler = self._handler_selector.select(resolved_url)
+        info_args = handler.prepare_downloads_info_args(info_args)
+
         ytdlp_infos = await YtdlpCore.extract_downloads_info(info_args, resolved_url)
 
         if not ytdlp_infos:
@@ -406,11 +418,11 @@ class YtdlpWrapper:
         parsed_downloads: list[Download] = []
         for ytdlp_info in ytdlp_infos:
             try:
-                download = self._source_handler.extract_download_metadata(
+                download = await handler.extract_download_metadata(
                     feed_id,
                     ytdlp_info,
                 )
-            except YtdlpYoutubeVideoFilteredOutError:
+            except YtdlpDownloadFilteredOutError:
                 # Video was filtered out by yt-dlp, skip it
                 logger.debug(
                     "Video filtered out by yt-dlp, skipping.",
@@ -484,6 +496,11 @@ class YtdlpWrapper:
 
         if cookies_path:
             download_args = download_args.cookies(cookies_path)
+
+        handler = self._handler_selector.select(download.source_url)
+        download_args = handler.prepare_media_download_args(
+            download_args,
+        )
 
         url_to_download = download.source_url
 

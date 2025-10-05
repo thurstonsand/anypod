@@ -554,6 +554,8 @@ This section details the components that manage the lifecycle of downloads, from
 - [x] make override enum settings caps agnostic (e.g. requires EPISODIC or SERIAL right now)
 - [x] create an http endpoint to reset error status videos
 - [ ] create a top-level http endpoint to reset ERROR status videos across all feeds
+- [ ] convert BACK to using yt-dlp as python package
+- [ ] is it possible to introduce tier-based filtering for patreon posts?
 
 ---
 

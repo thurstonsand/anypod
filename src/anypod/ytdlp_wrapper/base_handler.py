@@ -6,8 +6,11 @@ fetch strategy determination and metadata parsing.
 """
 
 from typing import Protocol
+from urllib.parse import urlparse
 
 from ..db.types import Download, Feed, SourceType
+from ..exceptions import YtdlpError
+from ..ffprobe import FFProbe
 from .core import YtdlpArgs, YtdlpInfo
 
 
@@ -37,6 +40,20 @@ class SourceHandlerBase(Protocol):
         """
         ...
 
+    def prepare_playlist_info_args(
+        self,
+        args: YtdlpArgs,
+    ) -> YtdlpArgs:
+        """Prepare args for playlist/feed metadata extraction.
+
+        Args:
+            args: Builder instance that will be sent to yt-dlp.
+
+        Returns:
+            The same builder instance for chaining.
+        """
+        ...
+
     def extract_feed_metadata(
         self,
         feed_id: str,
@@ -57,7 +74,35 @@ class SourceHandlerBase(Protocol):
         """
         ...
 
-    def extract_download_metadata(
+    def prepare_thumbnail_args(
+        self,
+        args: YtdlpArgs,
+    ) -> YtdlpArgs:
+        """Prepare args for thumbnail download operations.
+
+        Args:
+            args: Builder instance that will be sent to yt-dlp.
+
+        Returns:
+            The same builder instance for chaining.
+        """
+        ...
+
+    def prepare_downloads_info_args(
+        self,
+        args: YtdlpArgs,
+    ) -> YtdlpArgs:
+        """Prepare args for downloads metadata enumeration.
+
+        Args:
+            args: Builder instance that will be sent to yt-dlp.
+
+        Returns:
+            The same builder instance for chaining.
+        """
+        ...
+
+    async def extract_download_metadata(
         self,
         feed_id: str,
         ytdlp_info: YtdlpInfo,
@@ -72,3 +117,43 @@ class SourceHandlerBase(Protocol):
             A Download object parsed from the metadata.
         """
         ...
+
+    def prepare_media_download_args(
+        self,
+        args: YtdlpArgs,
+    ) -> YtdlpArgs:
+        """Prepare args for media download operations."""
+        ...
+
+
+class HandlerSelector:
+    """Resolve source handlers based on URL hostnames."""
+
+    def __init__(self, ffprobe: FFProbe):
+        from .patreon_handler import PatreonHandler
+        from .youtube_handler import YoutubeHandler
+
+        self._default_handler = YoutubeHandler()
+        self._hostname_handlers = {
+            "patreon.com": PatreonHandler(ffprobe),
+        }
+
+    def select(self, url: str) -> SourceHandlerBase:
+        """Return the registered handler for `url`.
+
+        Falls back to the default handler when no hostname-specific handler matches.
+        """
+        try:
+            hostname = urlparse(url).hostname
+        except ValueError as e:
+            raise YtdlpError(f"Invalid url found: {url}") from e
+
+        if not hostname:
+            raise YtdlpError(f"URL has no hostname: {url}")
+
+        hostname = hostname.lower()
+        for suffix, handler in self._hostname_handlers.items():
+            if hostname == suffix or hostname.endswith(f".{suffix}"):
+                return handler
+
+        return self._default_handler

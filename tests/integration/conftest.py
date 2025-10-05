@@ -23,6 +23,7 @@ from anypod.image_downloader import ImageDownloader
 from anypod.path_manager import PathManager
 from anypod.rss.rss_feed import RSSFeedGenerator
 from anypod.server.app import create_admin_app, create_app
+from anypod.ytdlp_wrapper.base_handler import HandlerSelector
 from anypod.ytdlp_wrapper.ytdlp_wrapper import YtdlpWrapper
 
 
@@ -112,7 +113,21 @@ def download_db(db_core: SqlalchemyCore) -> DownloadDatabase:
 
 
 @pytest.fixture
-def ytdlp_wrapper(path_manager: PathManager, db_core: SqlalchemyCore) -> YtdlpWrapper:
+def handler_selector(ffprobe: FFProbe) -> HandlerSelector:
+    """Provide a HandlerSelector instance with shared FFProbe.
+
+    Returns:
+        HandlerSelector instance configured with test FFProbe.
+    """
+    return HandlerSelector(ffprobe)
+
+
+@pytest.fixture
+def ytdlp_wrapper(
+    path_manager: PathManager,
+    db_core: SqlalchemyCore,
+    handler_selector: HandlerSelector,
+) -> YtdlpWrapper:
     """Provide a YtdlpWrapper instance with shared directories.
 
     Returns:
@@ -125,6 +140,7 @@ def ytdlp_wrapper(path_manager: PathManager, db_core: SqlalchemyCore) -> YtdlpWr
         app_state_db=app_state_db,
         yt_channel="stable",
         yt_update_freq=timedelta(hours=12),
+        handler_selector=handler_selector,
     )
 
 

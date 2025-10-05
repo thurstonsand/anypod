@@ -15,9 +15,11 @@ from ..db import AppStateDatabase, DownloadDatabase
 from ..db.sqlalchemy_core import SqlalchemyCore
 from ..db.types import Download, DownloadStatus
 from ..exceptions import DatabaseOperationError, DownloadError
+from ..ffprobe import FFProbe
 from ..file_manager import FileManager
 from ..path_manager import PathManager
 from ..ytdlp_wrapper import YtdlpWrapper
+from ..ytdlp_wrapper.base_handler import HandlerSelector
 
 logger = logging.getLogger(__name__)
 
@@ -53,12 +55,15 @@ async def run_debug_downloader_mode(
         file_manager = FileManager(paths)
 
         app_state_db = AppStateDatabase(db_core)
+        ffprobe = FFProbe()
+        handler_selector = HandlerSelector(ffprobe)
         ytdlp_wrapper = YtdlpWrapper(
             paths,
             pot_provider_url=settings.pot_provider_url,
             app_state_db=app_state_db,
             yt_channel=settings.yt_channel,
             yt_update_freq=settings.yt_dlp_update_freq,
+            handler_selector=handler_selector,
         )
         downloader = Downloader(download_db, file_manager, ytdlp_wrapper)
     except Exception as e:
