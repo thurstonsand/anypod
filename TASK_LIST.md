@@ -4,14 +4,16 @@ This checklist covers everything required to reach a functional MVP that aligns 
 
 ---
 
-## 0  Repo Bootstrap
+## 0 Repo Bootstrap
+
 - [x] **Init git repo** – `git init --initial-branch=main && gh repo create`.
 - [x] **`pyproject.toml`** – minimal project metadata, `uv` backend, Python ≥ 3.13.
 - [x] **`uv pip install --groups dev`** – add dev deps: `ruff`, `pytest`, `pytest-asyncio`, `mypy`, `pre-commit`.
 - [x] **Pre-commit hooks** – formatters & linter.
 - [x] **CI** – GitHub Actions workflow running `pytest` on every PR.
 
-## 1  Package Skeleton
+## 1 Package Skeleton
+
 ```text
 src/
     anypod/
@@ -42,12 +44,14 @@ src/
         integration/ # integration tests can be run with `pytest --integration`
 ```
 
-## 2  Configuration Loader
+## 2 Configuration Loader
+
 - [x] Pydantic V2 models reflecting YAML keys.
 - [x] `load_config(path) -> dict[str, FeedConfig]` (implemented via Pydantic Settings).
 - [x] Unit tests using fixture YAML.
 
-## 3  Database Layer
+## 3 Database Layer
+
 - [x] CRUD helpers:
   - [x] `add_download`
   - [x] `update_status`
@@ -61,6 +65,7 @@ src/
 - [x] Tests to make sure db access is optimized (e.g. uses indexes)
 
 ## 3.2 File Manager Layer
+
 - [x] Abstraction seam: encapsulate base directory so future S3/GCS back‑ends can subclass
 - [x] Implement `save_download_file(feed, file_name, data_stream) -> Path` (atomic write)
 - [x] Implement `delete_download_file(feed, file_name) -> bool`
@@ -70,133 +75,142 @@ src/
 - [x] Write unit tests (tmp dir fixtures)
 
 ## 3.5 Data Orchestration & Services Layer
+
 This section details the components that manage the lifecycle of downloads, from discovery to storage and pruning. They are organized into a `data_coordinator` module and related services/wrappers.
 
 ### 3.5.1 `db.py::Download` model updates
+
 - [x] `from_row(cls, db_row: sqlite3.Row) -> Download` class method for mapping.
 
 ### 3.5.2 `YtdlpWrapper` (`ytdlp_wrapper.py`)
+
 - [x] Create `ytdlp_wrapper.py` and class `YtdlpWrapper`.
 - [x] `YtdlpWrapper.fetch_metadata(feed_id: str, url: str, yt_cli_args: list[str]) -> list[Download]`: Fetches metadata for all downloads at the given URL using yt-dlp's metadata extraction capabilities.
 - [x] `YtdlpWrapper.download_media_to_file(download: Download, yt_cli_args: list[str], download_target_dir: Path) -> Path`:
-    - Purpose: Downloads media (video or audio) for the given entry to a specified directory, handling potential merges (e.g., video + audio) via `yt-dlp` and FFmpeg.
-    - Arguments:
-        - `download`: Metadata of the entry to download, used for naming and context.
-        - `yt_cli_args`: List of command-line arguments for `yt-dlp` (e.g., format selection from feed config).
-        - `download_target_dir`: The base directory where the feed-specific subfolder and media file will be created.
-    - Returns: `Path` to the successfully downloaded media file.
+  - Purpose: Downloads media (video or audio) for the given entry to a specified directory, handling potential merges (e.g., video + audio) via `yt-dlp` and FFmpeg.
+  - Arguments:
+    - `download`: Metadata of the entry to download, used for naming and context.
+    - `yt_cli_args`: List of command-line arguments for `yt-dlp` (e.g., format selection from feed config).
+    - `download_target_dir`: The base directory where the feed-specific subfolder and media file will be created.
+  - Returns: `Path` to the successfully downloaded media file.
 - [x] Sandbox test using a Creative-Commons short video, covered by integration tests using real URLs.
 - [x] Unit tests for `YtdlpWrapper`.
 
 ### 3.5.2.1 Logger Side Quest
+
 - [x] implement a global logging framework
 
 ### 3.5.3 `Enqueuer` (`data_coordinator/enqueuer.py`)
+
 - [x] Constructor accepts `DatabaseManager`, `YtdlpWrapper`.
 - [x] `enqueue_new_downloads(feed_config: FeedConfig) -> int`:
-    - Phase 1: Re-fetch metadata for existing DB entries with status 'upcoming'; update those now VOD to 'queued'.
-    - Phase 2: Fetch metadata for latest N videos via `YtdlpWrapper.fetch_metadata()`.
-        - For each download not in DB:
-            - If VOD (`live_status=='not_live'` and `is_live==False`), insert with status 'queued'.
-            - If live or scheduled (`live_status=='upcoming'` or `is_live==True`), insert with status 'upcoming'.
-        - For each existing 'upcoming' entry now VOD, update status to 'queued'.
-    - Returns count of newly enqueued or transitioned-to-queued downloads.
+  - Phase 1: Re-fetch metadata for existing DB entries with status 'upcoming'; update those now VOD to 'queued'.
+  - Phase 2: Fetch metadata for latest N videos via `YtdlpWrapper.fetch_metadata()`.
+    - For each download not in DB:
+      - If VOD (`live_status=='not_live'` and `is_live==False`), insert with status 'queued'.
+      - If live or scheduled (`live_status=='upcoming'` or `is_live==True`), insert with status 'upcoming'.
+    - For each existing 'upcoming' entry now VOD, update status to 'queued'.
+  - Returns count of newly enqueued or transitioned-to-queued downloads.
 - [x] preprocess cli args so you dont do it every time
 - [x] handle cookies differently? they need to be included even at discovery stage
   - just include all args for all stages, including discovery; user will have limitations that need to be outlined in docs
 - [x] db should not leak any details about sqlite -- should abstract all that away
-    - for example, remove all references to sqlite.Row, sqlite.Error
+  - for example, remove all references to sqlite.Row, sqlite.Error
 - [x] retries should apply more widely, and with enough failures, should transition to error state
-    - maybe db.py needs a `bump_error_count` fn that handles this - bumps it until it becomes too high, then marks as error
+  - maybe db.py needs a `bump_error_count` fn that handles this - bumps it until it becomes too high, then marks as error
 - [x] Unit tests for `Enqueuer` with mocked dependencies.
 - [ ] a couple integration tests
 
 ### 3.5.3.1 TODO Side Quest
+
 - [x] **Refactor Download Status Management (State Machine Implementation)**
-    - **Phase 1: Database Layer (`db.py`)**
-        - [x] Remove the existing `DatabaseManager.update_status` method.
-        - [x] Implement `DatabaseManager.mark_as_queued_from_upcoming(feed: str, id: str) -> None`:
-            - Checks that the current status is in fact `UPCOMING`
-            - Sets `status = QUEUED`.
-            - Preserves `retries` and `last_error`.
-        - [x] Implement `DatabaseManager.requeue_download(feed: str, id: str) -> None`:
-            - Add a note that this will happen due to:
-              - manually requeueing an ERROR'd download,
-              - manually requeueing in order to get the latest version of a download (i.e. it was previously DOWNLOAD)
-              - un-SKIPping a video
-              - don't implement this as logic, but just as a note on the docstring
-            - Sets `status = QUEUED`.
-            - Sets `retries = 0`, `last_error = NULL`.
-        - [x] Implement `DatabaseManager.mark_as_downloaded(feed: str, id: str) -> None`:
-            - Sets `status = DOWNLOADED`.
-            - Sets `retries = 0`, `last_error = NULL`.
-        - [x] Implement `DatabaseManager.skip_download(feed: str, id: str) -> None`:
-            - Sets `status = SKIPPED`.
-            - Preserves `retries` and `last_error`.
-            - Raises `DownloadNotFoundError` or `DatabaseOperationError` on failure.
-        - [x] Implement `DatabaseManager.unskip_download(feed_id: str, download_id: str) -> DownloadStatus`:
-            - Checks that the download is currently `SKIPPED`.
-            - Calls `requeue_download(feed_id, download_id)`.
-            - Returns `DownloadStatus.QUEUED`.
-            - Raises `DownloadNotFoundError` or `DatabaseOperationError` on failure.
-        - [x] Implement `DatabaseManager.archive_download(feed: str, id: str) -> None`:
-            - Sets `status = ARCHIVED`.
-            - Preserves `retries` and `last_error`.
-            - Raises `DownloadNotFoundError` or `DatabaseOperationError` on failure.
-        - [x] Modify `DatabaseManager.get_download_by_id(feed: str, id: str) -> Download`:
-            - Change return type from `Download | None` to `Download`.
-            - Raises `DownloadNotFoundError` if not found.
-            - Raises `DatabaseOperationError` for other DB issues.
-            - Raises `ValueError` if row parsing fails.
-        - [x] Verify `DatabaseManager.upsert_download` correctly handles initial setting of `UPCOMING` or `QUEUED` status based on the input `Download` object, ensuring `retries` and `last_error` are appropriate for new items.
-        - [x] Verify `DatabaseManager.bump_retries` remains the sole mechanism for incrementing retries and transitioning to `ERROR` status (and handles `DownloadNotFoundError` from `get_download_by_id`).
-    - **Phase 2: Service Layer Updates**
-        - [x] **`Enqueuer` (`data_coordinator/enqueuer.py`)**:
-            - [x] Update `_process_single_download` to correctly handle `DownloadNotFoundError` from `get_download_by_id`.
-            - [x] Refactor `_update_download_status_in_db` (or remove it) and its call sites (`_update_status_to_queued_if_vod`, `_handle_existing_fetched_download`):
-                - When an `UPCOMING` download becomes a VOD, call `download_db.mark_as_queued_from_upcoming`. Adapt to its new signature (returns `None`, raises exceptions).
-                - For other status changes previously handled by `_update_download_status_in_db` (e.g., an existing `ERROR` record being re-processed from feed and needing to be `QUEUED`), evaluate if `download_db.requeue_download` should be used or if current `upsert_download` logic in `_handle_existing_fetched_download` is sufficient.
-            - Ensure `bump_retries` calls remain correct for metadata fetch failures.
-        - [x] **`Pruner` (`data_coordinator/pruner.py`)**:
-            - When pruning items, call `download_db.archive_download`. Adapt to its new signature (returns `None`, raises exceptions). File deletion logic is already handled by `Pruner` correctly before this step.
-    - **Phase 3: Test Updates**
-        - [x] **`tests/anypod/db/test_db.py`**:
-            - Remove tests for the old `download_db.update_status`.
-            - Add/Update comprehensive unit tests for all new/modified `download_db.mark_as_*`, `download_db.requeue_*`, `download_db.unskip_download`, and `download_db.get_download_by_id` methods, including exception checking.
-            - Ensure tests for `upsert_download` cover setting initial `UPCOMING` and `QUEUED` states.
-            - Ensure tests for `bump_retries` are still valid and cover its role, especially `DownloadNotFoundError` handling.
-        - [x] **`tests/anypod/data_coordinator/test_enqueuer.py`**:
-            - Update mocks and assertions for `download_db.get_download_by_id` to reflect new exception-raising behavior.
-            - Update mocks for status update calls to the new `download_db.mark_as_queued_from_upcoming` or `download_db.requeue_download` methods. Verify correct arguments and exception handling.
-            - Verify `upsert_download` is called with correctly statused `Download` objects.
+  - **Phase 1: Database Layer (`db.py`)**
+    - [x] Remove the existing `DatabaseManager.update_status` method.
+    - [x] Implement `DatabaseManager.mark_as_queued_from_upcoming(feed: str, id: str) -> None`:
+      - Checks that the current status is in fact `UPCOMING`
+      - Sets `status = QUEUED`.
+      - Preserves `retries` and `last_error`.
+    - [x] Implement `DatabaseManager.requeue_download(feed: str, id: str) -> None`:
+      - Add a note that this will happen due to:
+        - manually requeueing an ERROR'd download,
+        - manually requeueing in order to get the latest version of a download (i.e. it was previously DOWNLOAD)
+        - un-SKIPping a video
+        - don't implement this as logic, but just as a note on the docstring
+      - Sets `status = QUEUED`.
+      - Sets `retries = 0`, `last_error = NULL`.
+    - [x] Implement `DatabaseManager.mark_as_downloaded(feed: str, id: str) -> None`:
+      - Sets `status = DOWNLOADED`.
+      - Sets `retries = 0`, `last_error = NULL`.
+    - [x] Implement `DatabaseManager.skip_download(feed: str, id: str) -> None`:
+      - Sets `status = SKIPPED`.
+      - Preserves `retries` and `last_error`.
+      - Raises `DownloadNotFoundError` or `DatabaseOperationError` on failure.
+    - [x] Implement `DatabaseManager.unskip_download(feed_id: str, download_id: str) -> DownloadStatus`:
+      - Checks that the download is currently `SKIPPED`.
+      - Calls `requeue_download(feed_id, download_id)`.
+      - Returns `DownloadStatus.QUEUED`.
+      - Raises `DownloadNotFoundError` or `DatabaseOperationError` on failure.
+    - [x] Implement `DatabaseManager.archive_download(feed: str, id: str) -> None`:
+      - Sets `status = ARCHIVED`.
+      - Preserves `retries` and `last_error`.
+      - Raises `DownloadNotFoundError` or `DatabaseOperationError` on failure.
+    - [x] Modify `DatabaseManager.get_download_by_id(feed: str, id: str) -> Download`:
+      - Change return type from `Download | None` to `Download`.
+      - Raises `DownloadNotFoundError` if not found.
+      - Raises `DatabaseOperationError` for other DB issues.
+      - Raises `ValueError` if row parsing fails.
+    - [x] Verify `DatabaseManager.upsert_download` correctly handles initial setting of `UPCOMING` or `QUEUED` status based on the input `Download` object, ensuring `retries` and `last_error` are appropriate for new items.
+    - [x] Verify `DatabaseManager.bump_retries` remains the sole mechanism for incrementing retries and transitioning to `ERROR` status (and handles `DownloadNotFoundError` from `get_download_by_id`).
+  - **Phase 2: Service Layer Updates**
+    - [x] **`Enqueuer` (`data_coordinator/enqueuer.py`)**:
+      - [x] Update `_process_single_download` to correctly handle `DownloadNotFoundError` from `get_download_by_id`.
+      - [x] Refactor `_update_download_status_in_db` (or remove it) and its call sites (`_update_status_to_queued_if_vod`, `_handle_existing_fetched_download`):
+        - When an `UPCOMING` download becomes a VOD, call `download_db.mark_as_queued_from_upcoming`. Adapt to its new signature (returns `None`, raises exceptions).
+        - For other status changes previously handled by `_update_download_status_in_db` (e.g., an existing `ERROR` record being re-processed from feed and needing to be `QUEUED`), evaluate if `download_db.requeue_download` should be used or if current `upsert_download` logic in `_handle_existing_fetched_download` is sufficient.
+      - Ensure `bump_retries` calls remain correct for metadata fetch failures.
+    - [x] **`Pruner` (`data_coordinator/pruner.py`)**:
+      - When pruning items, call `download_db.archive_download`. Adapt to its new signature (returns `None`, raises exceptions). File deletion logic is already handled by `Pruner` correctly before this step.
+  - **Phase 3: Test Updates**
+    - [x] **`tests/anypod/db/test_db.py`**:
+      - Remove tests for the old `download_db.update_status`.
+      - Add/Update comprehensive unit tests for all new/modified `download_db.mark_as_*`, `download_db.requeue_*`, `download_db.unskip_download`, and `download_db.get_download_by_id` methods, including exception checking.
+      - Ensure tests for `upsert_download` cover setting initial `UPCOMING` and `QUEUED` states.
+      - Ensure tests for `bump_retries` are still valid and cover its role, especially `DownloadNotFoundError` handling.
+    - [x] **`tests/anypod/data_coordinator/test_enqueuer.py`**:
+      - Update mocks and assertions for `download_db.get_download_by_id` to reflect new exception-raising behavior.
+      - Update mocks for status update calls to the new `download_db.mark_as_queued_from_upcoming` or `download_db.requeue_download` methods. Verify correct arguments and exception handling.
+      - Verify `upsert_download` is called with correctly statused `Download` objects.
 - [x] address various TODOs throughout code base
 
 ### 3.5.4 `Downloader` Service (`data_coordinator/downloader.py`)
+
 - [x] Constructor accepts `DatabaseManager`, `FileManager`, `YtdlpWrapper`.
 - [x] `download_queued(feed_id: str, feed_config: FeedConfig, limit: int = -1) -> tuple[int, int]`: (success_count, failure_count)
-    - Gets queued `Download` objects via `DatabaseManager.get_downloads_by_status`.
-    - For each `Download`:
-        - Call `YtdlpWrapper.download_media_to_file(download, yt_cli_args)`.
-            - Generate final file_name (e.g., using `download.title` and `updated_metadata['ext']`).
-            - Call `FileManager.save_download_file(feed_config.name, final_file_name, source_file_path=completed_file_path)`.
-                - (Note: `FileManager.save_download_file` will need to implement moving a file from `source_file_path` to its final managed location.)
-            - Update DB: status to 'downloaded', store final path from `FileManager`, update `ext`, `filesize` from `updated_metadata`.
-        - On failure:
-            - Update DB: status to 'error', log error, increment retries.
-        - Ensure cleanup of source file regardless of success/failure of the individual download.
+  - Gets queued `Download` objects via `DatabaseManager.get_downloads_by_status`.
+  - For each `Download`:
+    - Call `YtdlpWrapper.download_media_to_file(download, yt_cli_args)`.
+      - Generate final file_name (e.g., using `download.title` and `updated_metadata['ext']`).
+      - Call `FileManager.save_download_file(feed_config.name, final_file_name, source_file_path=completed_file_path)`.
+        - (Note: `FileManager.save_download_file` will need to implement moving a file from `source_file_path` to its final managed location.)
+      - Update DB: status to 'downloaded', store final path from `FileManager`, update `ext`, `filesize` from `updated_metadata`.
+    - On failure:
+      - Update DB: status to 'error', log error, increment retries.
+    - Ensure cleanup of source file regardless of success/failure of the individual download.
 - [x] Unit tests for `Downloader` (Service) with mocked dependencies.
 - [x] Debug mode for Enqueuer
 
 ### 3.5.5 `Pruner` (`data_coordinator/pruner.py`)
+
 - [x] Use old implementation for reference, but prepare for largely a full rewrite
 - [x] Constructor accepts `DatabaseManager`, `FileManager`.
 - [x] `prune_feed_downloads(feed_id: str, keep_last: int | None, prune_before_date: datetime | None) -> tuple[int, int]`: (archived_count, files_deleted_count)
-    - Uses `DatabaseManager` to get candidates
-    - Uses `FileManager.delete_download_file()` for download.
-    - Uses `DatabaseManager.archive_download()` to archive.
+  - Uses `DatabaseManager` to get candidates
+  - Uses `FileManager.delete_download_file()` for download.
+  - Uses `DatabaseManager.archive_download()` to archive.
 - [x] Unit tests for `Pruner` with mocked dependencies.
 
 ### 3.5.5.1 Database Refactoring & Feed Table
+
 - [x] **Split database classes**: Refactor `src/anypod/db/db.py` into separate modules:
   - [x] `DownloadDatabase` class for download-level operations (keep existing methods)
   - [x] `FeedDatabase` class for feed-level operations (new functionality)
@@ -231,27 +245,30 @@ This section details the components that manage the lifecycle of downloads, from
 - [x] ensure there aren't any read/modify/write loops that arent protected by a transaction
 
 ### 3.5.6 `DataCoordinator` Orchestrator (`data_coordinator/coordinator.py`)
+
 - [x] Create `data_coordinator/types/` folder with `__init__.py` and `processing_results.py`
 - [x] Create `ProcessingResults` dataclass with counts, error tracking, status, and timing
 - [x] Add `archive_feed()` method to `Pruner` class (sets `is_enabled=False`)
 - [x] Constructor accepts `Enqueuer`, `Downloader`, `Pruner`, `RSSFeedGenerator`, `FeedDatabase`
 - [x] `process_feed(feed_id: str, feed_config: FeedConfig) -> ProcessingResults`:
-    - Calculate `fetch_since_date` from `feed.last_successful_sync` (NOT feed_config.since)
-    - Execute phases in sequence: enqueue → download → prune → RSS generation
-    - Inline error handling with graceful degradation between phases
-    - Update `last_successful_sync` or `last_failed_sync` based on outcome
-    - Return comprehensive `ProcessingResults` with all counts and errors
+  - Calculate `fetch_since_date` from `feed.last_successful_sync` (NOT feed_config.since)
+  - Execute phases in sequence: enqueue → download → prune → RSS generation
+  - Inline error handling with graceful degradation between phases
+  - Update `last_successful_sync` or `last_failed_sync` based on outcome
+  - Return comprehensive `ProcessingResults` with all counts and errors
 - [x] Update `data_coordinator/__init__.py` to export `DataCoordinator`
 - [x] Integration tests for `DataCoordinator` focusing on full process_feed flow
 
 ### 3.5.7 Discrepancy Detection (in `Pruner` or new service)
+
 - [ ] Implement discrepancy detection logic:
   - [ ] Find DB entries with `DOWNLOADED` status but no corresponding download file.
   - [ ] Find download files on disk with no corresponding `DOWNLOADED` DB entry.
   - [ ] (Optional) Automated resolution strategies or reporting for discrepancies.
 - [ ] Unit tests for discrepancy detection logic.
 
-## 4  Feed Generation
+## 4 Feed Generation
+
 - [x] Determine if a [read/write lock](https://pypi.org/project/readerwriterlock/) for in-memory feed XML cache is needed for concurrency
 - [x] add new fields to Download
   - this will also involve potentially changing how i update values, since some (like title) might get changed down the line. so we should try to store the most recent value
@@ -262,6 +279,7 @@ This section details the components that manage the lifecycle of downloads, from
 - [x] duration should be an int
 
 ## 4.1 Path Management Centralization
+
 - [x] **PathManager Implementation** – Create centralized path/URL coordination class:
   - [x] Single source of truth for file system paths and URLs based on feed_id + download_id
   - [x] Consistent 1:1 mapping between network paths and file paths
@@ -272,9 +290,10 @@ This section details the components that manage the lifecycle of downloads, from
 - [x] `RSSFeedGenerator` refactor
 - [x] tests refactor
 
-## 5  Scheduler
+## 5 Scheduler
 
 ### 5.1 Create Scheduler Module (`src/anypod/schedule/`)
+
 - [x] Core scheduler implementation:
   - [x] Add `apscheduler` to dependencies in pyproject.toml
   - [x] Create type-safe APScheduler wrapper (`apscheduler_core.py`)
@@ -290,10 +309,11 @@ This section details the components that manage the lifecycle of downloads, from
   - [x] remove explicit references to monkeypatch
 
 #### 5.1.1 yt-dlp Day-Level Date Precision Accommodation
+
 - [x] **Date Window Calculation Logic (`DataCoordinator`)**:
   - [x] Replace `_calculate_fetch_until_date` with day-aligned logic
   - [x] `fetch_since_date` should still be `last_successful_sync`
-  - [x] `fetch_until_date` should just be now(); let's simplify this logic, no 2 * cron tick or anything. we can remove that from coordinator.py and debug_enqueuer.py
+  - [x] `fetch_until_date` should just be now(); let's simplify this logic, no 2 \* cron tick or anything. we can remove that from coordinator.py and debug_enqueuer.py
   - [x] that may mean that most of the time, these values will fall on the same day. that's fine, and we will dedup results later
   - [x] Update `last_successful_sync` to `fetch_until_date` to ensure full coverage (was previously `now()`)
   - [x] Enhanced logging: log both high-resolution calculated window and day-aligned yt-dlp window while in the context of ytdlp_wrapper
@@ -317,6 +337,7 @@ This section details the components that manage the lifecycle of downloads, from
 ### 5.2 Init State Reconciliation
 
 #### 5.2.1 Create State Reconciler Module (`src/anypod/state_reconciler.py`)
+
 - [x] Startup reconciliation implementation:
   - [x] Compare config feeds with database feeds
   - [x] Handle **new feeds**: insert into DB and set initial `last_successful_sync`
@@ -327,6 +348,7 @@ This section details the components that manage the lifecycle of downloads, from
   - [x] time box the sync time -- currently only has start time, but will also need end time
 
 #### 5.2.2 Config Change Handling
+
 - [x] Detect and apply changes to:
   - [x] `enabled`: Update feed's `is_enabled` in database, add/remove from scheduler, trigger initial sync if false->true
     - [x] `last_successful_sync` does not need to be optional as it is set proactively on new feed creation
@@ -346,6 +368,7 @@ This section details the components that manage the lifecycle of downloads, from
   - [x] `metadata` changes: Update feed table immediately (title, subtitle, description, language, author, image_url, categories, explicit), trigger RSS regeneration
 
 ### 5.3 Dependencies and Testing
+
 - [x] Unit tests for scheduler with mocked jobs
 - [x] Unit tests for state reconciler covering:
   - [x] New feed addition
@@ -356,6 +379,7 @@ This section details the components that manage the lifecycle of downloads, from
 - [x] Tests for graceful shutdown handling
 
 ### 5.4 Update CLI Default Mode (`src/anypod/cli/default.py`)
+
 - [x] Main service orchestration:
   - [x] Initialize all components (databases, services)
   - [x] Run state reconciler on startup
@@ -384,6 +408,7 @@ This section details the components that manage the lifecycle of downloads, from
 **Context/Goals**: Convert anypod from sync to async to enable cancellable long-running operations (especially yt-dlp calls). Currently yt-dlp operations block and can't be interrupted. The async conversion will wrap yt-dlp in subprocess calls that can be properly cancelled, and ripple async throughout the codebase. Key insight: keep CLI args as `list[str]` instead of converting to dict, eliminating complex dict→CLI conversion.
 
 **Implementation Tasks**:
+
 - [x] **CLI Args Strategy**: Remove dict conversion in `feed_config.py` - keep `yt_args` as `list[str]` throughout pipeline
 - [x] **YtdlpCore Async**: Implement subprocess calls with `--dump-single-json --flat-playlist` for metadata, parse JSON to `YtdlpInfo`
 - [x] **Cancellation**: Proper subprocess cleanup (`proc.kill()` + `await proc.wait()` on `CancelledError`)
@@ -398,6 +423,7 @@ This section details the components that manage the lifecycle of downloads, from
   - this includes during init when we're not in APScheduler yet (maybe we should be?)
 
 #### 5.4.2 Use SQLAlchemy AsyncIO
+
 - [x] **Phase 1: Environment Setup & Dependencies**
   - [x] Add `sqlalchemy[asyncio]`, `sqlmodel`, `aiosqlite`, and `alembic` to `pyproject.toml` using `uv add`.
 - [x] **Phase 2: Refactor Models to SQLModel**
@@ -427,22 +453,24 @@ This section details the components that manage the lifecycle of downloads, from
   - [x] Review and apply the initial migration: `alembic upgrade head`.
 
 #### 5.4.3 Use aiofiles for file operations
+
 - [x] Add aiofiles dependency and convert FileManager to use async file operations
   - [x] **Dependencies**: Add `aiofiles` for async file operations
   - [x] **File Operations**: Use `aiofiles.os` to replace path operations
 
-
 ### 5.5 Initial Sync Strategy
+
 - [x] After reconciliation, trigger immediate sync:
   - [x] Process all enabled feeds to populate RSS
   - [/] Ensure RSS feeds available before HTTP server starts
   - [x] Handle failures gracefully without blocking startup, unless config is wrong -- that should cause failure until fixed
 
-## 6  HTTP Server
+## 6 HTTP Server
 
 - [ ] how do i break out the api and static serving? different ports? for security reasons, we need to expose static but not apis
 
 ### 6.1 Project Structure Setup
+
 - [ ] Create new HTTP server module at `src/anypod/server/`
   - [x] `__init__.py` - Server module exports
   - [x] `app.py` - FastAPI application factory
@@ -457,6 +485,7 @@ This section details the components that manage the lifecycle of downloads, from
 - [ ] download and host images locally
 
 ### 6.2 FastAPI Application Setup
+
 - [x] Add `fastapi`, `uvicorn` to dependencies in pyproject.toml
 - [x] Create FastAPI app factory with proper dependency injection
 - [x] Set up CORS, logging, and error handling middleware
@@ -464,6 +493,7 @@ This section details the components that manage the lifecycle of downloads, from
 - [ ] Configure OpenAPI documentation with proper metadata
 
 ### 6.3 API Models (Pydantic)
+
 - [ ] `FeedResponse` - Feed data for API responses
 - [ ] `FeedCreateRequest`/`FeedUpdateRequest` - Feed modification requests
 - [ ] `DownloadResponse` - Download data for API responses
@@ -472,48 +502,51 @@ This section details the components that manage the lifecycle of downloads, from
 - [ ] `ErrorResponse` - Standardized error responses
 
 ### 6.4 Router Implementation
+
 - [ ] `feeds.py` - All feed management endpoints
-  - [ ] `GET    /api/feeds`                   - List all feeds with pagination, filtering, and sorting
-  - [ ] `POST   /api/feeds`                   - Create new feed, will write to config file
-  - [ ] `GET    /api/feeds/{feed_id}`         - Get detailed feed information
-  - [ ] `PUT    /api/feeds/{feed_id}`         - Update feed configuration by modifying config file
-  - [ ] `DELETE /api/feeds/{feed_id}`         - Disables feed and archives all downloads
-  - [ ] `POST   /api/feeds/{feed_id}/enable`  - Enable feed processing
+  - [ ] `GET    /api/feeds` - List all feeds with pagination, filtering, and sorting
+  - [ ] `POST   /api/feeds` - Create new feed, will write to config file
+  - [ ] `GET    /api/feeds/{feed_id}` - Get detailed feed information
+  - [ ] `PUT    /api/feeds/{feed_id}` - Update feed configuration by modifying config file
+  - [ ] `DELETE /api/feeds/{feed_id}` - Disables feed and archives all downloads
+  - [ ] `POST   /api/feeds/{feed_id}/enable` - Enable feed processing
   - [ ] `POST   /api/feeds/{feed_id}/disable` - Disable feed processing
-  - [ ] `POST   /api/feeds/{feed_id}/sync`    - Trigger manual sync/processing
-  - [ ] `GET    /api/feeds/valid`             - Validate feed config before writing to config file
+  - [ ] `POST   /api/feeds/{feed_id}/sync` - Trigger manual sync/processing
+  - [ ] `GET    /api/feeds/valid` - Validate feed config before writing to config file
 - [ ] `downloads.py` - Download management endpoints
-  - [ ] `GET    /api/feeds/{feed_id}/downloads`                      - List downloads for feed (paginated, filtered)
-  - [ ] `GET    /api/feeds/{feed_id}/downloads/{download_id}`        - Get specific download details
-  - [ ] `POST   /api/feeds/{feed_id}/downloads/{download_id}/retry`  - Retry failed download
-  - [ ] `POST   /api/feeds/{feed_id}/downloads/{download_id}/skip`   - Mark download as skipped
+  - [ ] `GET    /api/feeds/{feed_id}/downloads` - List downloads for feed (paginated, filtered)
+  - [ ] `GET    /api/feeds/{feed_id}/downloads/{download_id}` - Get specific download details
+  - [ ] `POST   /api/feeds/{feed_id}/downloads/{download_id}/retry` - Retry failed download
+  - [ ] `POST   /api/feeds/{feed_id}/downloads/{download_id}/skip` - Mark download as skipped
   - [ ] `POST   /api/feeds/{feed_id}/downloads/{download_id}/unskip` - Remove skip status
-  - [ ] `DELETE /api/feeds/{feed_id}/downloads/{download_id}`        - Archive download and delete file
+  - [ ] `DELETE /api/feeds/{feed_id}/downloads/{download_id}` - Archive download and delete file
 - [ ] `stats.py` - Statistics and monitoring endpoints
   - [ ] `GET    /api/feeds/{feed_id}/stats` - Detailed feed statistics
-  - [ ] `GET    /api/stats/summary`         - System-wide statistics summary including storage
+  - [ ] `GET    /api/stats/summary` - System-wide statistics summary including storage
 - [x] `health.py` - Health check endpoints
   - [x] `GET    /api/health` - Application health check
 - [ ] `static.py` - Content delivery endpoints
-  - [x] `GET    /feeds`                                  - List all rss feeds in directory
-  - [x] `GET    /feeds/{feed_id}.xml`                    - RSS feed XML
-  - [x] `GET    /media`                                  - List all feeds in directory
-  - [x] `GET    /media/{feed_id}`                        - List all files for a feed in directory
-  - [x] `GET    /media/{feed_id}/{filename}.{ext}`       - Media file download
-  - [ ] `GET    /thumbnails`                             - List all feeds in directory
-  - [ ] `GET    /thumbnails/{feed_id}`                   - List all thumbnails for a feed in directory
-  - [ ] `GET    /thumbnails/{feed_id}/{filename}.{ext}`  - Thumbnail images
+  - [x] `GET    /feeds` - List all rss feeds in directory
+  - [x] `GET    /feeds/{feed_id}.xml` - RSS feed XML
+  - [x] `GET    /media` - List all feeds in directory
+  - [x] `GET    /media/{feed_id}` - List all files for a feed in directory
+  - [x] `GET    /media/{feed_id}/{filename}.{ext}` - Media file download
+  - [ ] `GET    /thumbnails` - List all feeds in directory
+  - [ ] `GET    /thumbnails/{feed_id}` - List all thumbnails for a feed in directory
+  - [ ] `GET    /thumbnails/{feed_id}/{filename}.{ext}` - Thumbnail images
 - [ ] Unit tests with `TestClient` for all API endpoints
 - [ ] Integration tests with actual database operations
 - [ ] maybe enforce feed id must align with same regex as is in validation.py
 
 ### 6.5 Integration with Existing Components
+
 - [ ] Create service layer to bridge HTTP API with existing DataCoordinator
 - [ ] Extend FeedDatabase/DownloadDatabase with new query methods for API needs
 - [ ] Add config file read/write utilities for feed CRUD operations
 - [x] Implement proper error mapping from domain exceptions to HTTP responses
 
 ### 6.6 Key Features Implementation
+
 - [ ] **Pagination**: Implement cursor-based or offset-based pagination
 - [ ] **Filtering**: Add query parameters for status, date ranges, search
 - [ ] **Sorting**: Support multiple sort fields and directions
@@ -521,15 +554,18 @@ This section details the components that manage the lifecycle of downloads, from
 - [ ] **Error Handling**: Consistent error responses with proper HTTP status codes
 
 ### 6.7 CLI Integration
+
 - [x] Configure server host/port via environment variables
 - [x] Ensure proper graceful shutdown handling
 - [x] Entry in `default.py` to start `uvicorn`
 
 ### 6.8 Documentation
+
 - [ ] Comprehensive OpenAPI documentation
   - [ ] Example requests/responses for all endpoints
 
-## 7  CLI & Flags
+## 7 CLI & Flags
+
 - [ ] `python -m anypod` parses flags: `--ignore-startup-errors`, `--retry-failed`, `--log-level`.
 - [ ] Docstrings and `argparse` help messages.
 - [ ] Evaluate logged statements and make sure that only relevant things get logged
@@ -539,18 +575,20 @@ This section details the components that manage the lifecycle of downloads, from
   - outline limitations with using ytdlp flags -- which ones do you have to avoid using?
   - look up some well established open source projects and follow their documentation style
 
-## 8  Docker & Dev Flow
+## 8 Docker & Dev Flow
+
 - [x] `Dockerfile` (debian:bookworm-slim, default root, overridable UID/GID).
 - [x] `.dockerignore` to exclude tests, .git, caches.
 - [ ] set up a dev env with containers.
 
-## 9  Release Automation
+## 9 Release Automation
+
 - [x] GH Action `release-yt-dlp.yaml`: on yt-dlp tag → rebuild, test, draft release.
 - [x] GH Action `deps-bump.yaml`: weekly minor‑bump PR; require manual approval for major
   - done with dependabot instead
 
-
 ## 10 Extraneous
+
 - [x] make override enum settings caps agnostic (e.g. requires EPISODIC or SERIAL right now)
 - [x] create an http endpoint to reset error status videos
 - [ ] create a top-level http endpoint to reset ERROR status videos across all feeds

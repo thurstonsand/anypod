@@ -35,7 +35,6 @@ Your self-hosted, YAML-driven bridge from yt-dlp–supported sources (YouTube ch
   - [Roadmap](#roadmap)
   - [FAQ / Troubleshooting](#faq--troubleshooting)
 
-
 ## High Level
 
 Anypod is a thin Python wrapper around `yt‑dlp` that turns any `yt‑dlp`–supported source into an RSS feed consumable by podcast players. You declare feeds in YAML with a cron schedule and optional `yt‑dlp` format rules; Anypod periodically:
@@ -77,8 +76,8 @@ services:
       PUID: 1000
       PGID: 1000
 
-      SERVER_PORT: 8024                      # Public server port
-      ADMIN_SERVER_PORT: 8025                # Admin server port (keep private)
+      SERVER_PORT: 8024 # Public server port
+      ADMIN_SERVER_PORT: 8025 # Admin server port (keep private)
 
       # External URL (set when behind a reverse proxy)
       # BASE_URL: https://reverseproxy.example
@@ -122,7 +121,6 @@ docker compose up -d
 - See all available feeds at `https://reverseproxy.example/feeds`
 - Subscribe in your podcast app to `https://reverseproxy.example/feeds/<feed_id>.xml`
 
-
 ### Using Docker directly
 
 ```bash
@@ -134,7 +132,6 @@ docker run -d \
   -v ./cookies.txt:/cookies/cookies.txt \
   ghcr.io/thurstonsand/anypod:latest # or nightly
 ```
-
 
 ## Configuration
 
@@ -199,10 +196,10 @@ All can be provided via env or CLI flags (kebab‑case). Common ones:
 | `PUID`                   | `1000`                             | Container user                                                                                                                                            |
 | `PGID`                   | `1000`                             | Container group                                                                                                                                           |
 
-
 ## HTTP endpoints
 
 ### Public endpoints
+
 - `GET /feeds` – directory listing of feeds
 - `GET /feeds/{feed_id}.xml` – podcast RSS
 - `GET /media` – directory listing of feeds with media
@@ -213,6 +210,7 @@ All can be provided via env or CLI flags (kebab‑case). Common ones:
 - `GET /api/health` – health check
 
 ### Admin endpoints (trusted/local access only)
+
 - `POST /admin/feeds/{feed_id}/reset-errors` – reset all ERROR downloads for a feed to QUEUED status
 - `GET /api/health` – health check
 
@@ -241,8 +239,8 @@ In order to get cookies, I have successfully followed these instructions:
 - specifically, I've used the [Get cookies.txt LOCALLY](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc) Chrome extension to retrieve them in a file
 - if you are on Windows, watch out for the newlines. The Docker container will expect `LF`, and Windows might default to `CRLF`
 - With youtube cookies, I have seen that this actually blocks you from even seeing "Premium" (enhanced bitrate) videos; this is a known problem
-    - There might be a way around it if you use a PO Token Provider, but it is nontrivial; see [yt-dlp docs](https://github.com/yt-dlp/yt-dlp/wiki/PO-Token-Guide) and [recommended provider](https://github.com/Brainicism/bgutil-ytdlp-pot-provider)
-    - Probably best to just choose from whatever options you do get -- even without cookies, I mostly just got 403's when trying to download Premium anyway
+- PO Tokens might also help. See the section below on how to set those up
+- even without cookies, I mostly just got 403's when trying to download Premium anyway
 
 ### PO Tokens (YouTube)
 

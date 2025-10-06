@@ -43,14 +43,17 @@ RUN apt-get update && \
         curl \
         ca-certificates \
         gosu \
-        ffmpeg && \
+        ffmpeg \
+        p7zip && \
     # Install yt-dlp binary with write permissions for updates
     curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp && \
     chmod a+rwx /usr/local/bin/yt-dlp && \
     # Install bgutil POT provider plugin (zip) into yt-dlp system plugins dir
     mkdir -p /etc/yt-dlp/plugins && \
     curl -L https://github.com/brainicism/bgutil-ytdlp-pot-provider/releases/download/${BGUTIL_POT_PROVIDER_VERSION}/bgutil-ytdlp-pot-provider.zip -o /etc/yt-dlp/plugins/bgutil-ytdlp-pot-provider.zip && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* && \
+    # Install Deno for yt-dlp JavaScript runtime support
+    curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh
 
 # Set working directory
 WORKDIR /app
