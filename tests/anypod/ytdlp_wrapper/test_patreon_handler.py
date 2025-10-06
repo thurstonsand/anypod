@@ -8,7 +8,7 @@ import pytest
 from anypod.db.types import SourceType
 from anypod.ffprobe import FFProbe
 from anypod.ytdlp_wrapper.core import YtdlpArgs, YtdlpCore, YtdlpInfo
-from anypod.ytdlp_wrapper.patreon_handler import (
+from anypod.ytdlp_wrapper.handlers import (
     PatreonHandler,
     YtdlpPatreonDataError,
     YtdlpPatreonPostFilteredOutError,

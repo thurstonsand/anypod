@@ -29,6 +29,7 @@ Your self-hosted, YAML-driven bridge from yt-dlp–supported sources (YouTube ch
     - [Pocket Casts](#pocket-casts)
     - [Filtering](#filtering)
     - [Patreon (Beta)](#patreon-beta)
+    - [Error Handling and Logging](#error-handling-and-logging)
   - [Development](#development)
   - [Architecture](#architecture)
   - [Roadmap](#roadmap)
@@ -274,6 +275,16 @@ Patreon creator pages and individual posts are supported with the following cons
 - **Cookies required**: Patreon content typically requires authentication via cookies.txt for access to paywalled content
 - **Video-only by default**: Audio-only posts are filtered out automatically (configurable in future releases)
 - Limited testing across creator tiers; some edge cases may exist
+
+### Error Handling and Logging
+
+**Current behavior**: Anypod uses lenient error handling for yt-dlp operations. When yt-dlp encounters errors (e.g., inaccessible content, authentication issues), Anypod logs warnings but continues processing whatever content is available. This means:
+
+- **Partial failures are tolerated**: If some posts/videos are inaccessible but others succeed, the feed will be updated with the accessible content
+- **No exceptions raised**: Failed downloads won't stop feed processing
+- **Check your logs**: Since errors don't stop processing, you should monitor logs to identify issues like missing credentials, rate limiting, or content access problems
+
+**Future improvement**: Error handling will be enhanced to better distinguish between temporary failures (worth retrying) and permanent errors (should skip). Until then, reviewing logs regularly is recommended to catch configuration or access issues early.
 
 ## Development
 

@@ -10,15 +10,15 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 import logging
 
-from ..db.types import Download, DownloadStatus, Feed, SourceType
-from ..exceptions import (
+from ...db.types import Download, DownloadStatus, Feed, SourceType
+from ...exceptions import (
     YtdlpDataError,
     YtdlpDownloadFilteredOutError,
     YtdlpFieldInvalidError,
     YtdlpFieldMissingError,
 )
-from ..mimetypes import mimetypes
-from .core import YtdlpArgs, YtdlpCore, YtdlpInfo
+from ...mimetypes import mimetypes
+from ..core import YtdlpArgs, YtdlpCore, YtdlpInfo
 
 logger = logging.getLogger(__name__)
 
@@ -291,18 +291,18 @@ class YoutubeEntry:
         """Get the video duration in seconds as an int."""
         # Explicitly check for bool first, as bool is a subclass of int
         raw_duration = self._ytdlp_info.get_raw("duration")
-        if isinstance(raw_duration, bool):
-            raise YtdlpYoutubeDataError(
-                f"Duration had unexpected type: '({type(raw_duration)}){raw_duration}'.",
-                feed_id=self.feed_id,
-                download_id=self.download_id,
-            )
-
-        # Now the normal extraction
         with self._annotate_exceptions():
-            match self._ytdlp_info.required("duration", (float, int, str)):
-                case float() | int() as duration:
+            match self._ytdlp_info.get_raw("duration"):
+                case bool():  # special case for int vs bool type confusion
+                    raise YtdlpYoutubeDataError(
+                        f"Duration had unexpected type: '({type(raw_duration)}){raw_duration}'.",
+                        feed_id=self.feed_id,
+                        download_id=self.download_id,
+                    )
+                case float() as duration:
                     return int(duration)
+                case int() as duration:
+                    return duration
                 case str() as duration_str:
                     try:
                         return int(float(duration_str))
@@ -312,6 +312,12 @@ class YoutubeEntry:
                             feed_id=self.feed_id,
                             download_id=self.download_id,
                         ) from e
+                case _:  # including None
+                    raise YtdlpYoutubeDataError(
+                        "Missing duration.",
+                        feed_id=self.feed_id,
+                        download_id=self.download_id,
+                    )
 
     @property
     def thumbnail(self) -> str | None:

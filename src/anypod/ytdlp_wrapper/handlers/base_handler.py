@@ -6,12 +6,9 @@ fetch strategy determination and metadata parsing.
 """
 
 from typing import Protocol
-from urllib.parse import urlparse
 
-from ..db.types import Download, Feed, SourceType
-from ..exceptions import YtdlpError
-from ..ffprobe import FFProbe
-from .core import YtdlpArgs, YtdlpInfo
+from ...db.types import Download, Feed, SourceType
+from ..core import YtdlpArgs, YtdlpInfo
 
 
 class SourceHandlerBase(Protocol):
@@ -124,36 +121,3 @@ class SourceHandlerBase(Protocol):
     ) -> YtdlpArgs:
         """Prepare args for media download operations."""
         ...
-
-
-class HandlerSelector:
-    """Resolve source handlers based on URL hostnames."""
-
-    def __init__(self, ffprobe: FFProbe):
-        from .patreon_handler import PatreonHandler
-        from .youtube_handler import YoutubeHandler
-
-        self._default_handler = YoutubeHandler()
-        self._hostname_handlers = {
-            "patreon.com": PatreonHandler(ffprobe),
-        }
-
-    def select(self, url: str) -> SourceHandlerBase:
-        """Return the registered handler for `url`.
-
-        Falls back to the default handler when no hostname-specific handler matches.
-        """
-        try:
-            hostname = urlparse(url).hostname
-        except ValueError as e:
-            raise YtdlpError(f"Invalid url found: {url}") from e
-
-        if not hostname:
-            raise YtdlpError(f"URL has no hostname: {url}")
-
-        hostname = hostname.lower()
-        for suffix, handler in self._hostname_handlers.items():
-            if hostname == suffix or hostname.endswith(f".{suffix}"):
-                return handler
-
-        return self._default_handler

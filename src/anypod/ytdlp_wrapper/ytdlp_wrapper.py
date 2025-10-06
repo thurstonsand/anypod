@@ -15,13 +15,15 @@ import aiofiles.os
 from ..db.app_state_db import AppStateDatabase
 from ..db.types import Download, Feed, SourceType
 from ..exceptions import (
+    FFmpegError,
     FileOperationError,
     YtdlpApiError,
     YtdlpDownloadFilteredOutError,
 )
+from ..ffmpeg import FFmpeg
 from ..path_manager import PathManager
-from .base_handler import HandlerSelector
 from .core import YtdlpArgs, YtdlpCore
+from .handlers import HandlerSelector
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +51,7 @@ class YtdlpWrapper:
         app_state_db: AppStateDatabase,
         yt_channel: str,
         yt_update_freq: timedelta,
+        ffmpeg: FFmpeg,
         handler_selector: HandlerSelector,
     ):
         self._paths = paths
@@ -56,6 +59,7 @@ class YtdlpWrapper:
         self._app_state_db = app_state_db
         self._yt_channel = yt_channel
         self._yt_update_freq = yt_update_freq
+        self._ffmpeg = ffmpeg
         self._handler_selector = handler_selector
         logger.debug(
             "YtdlpWrapper initialized.",
@@ -242,6 +246,61 @@ class YtdlpWrapper:
 
         return extracted_feed
 
+    async def _convert_thumbnail_to_jpg_if_needed(
+        self, feed_id: str, log_config: dict[str, Any]
+    ) -> str | None:
+        """Convert downloaded thumbnail to JPG if needed.
+
+        WORKAROUND: yt-dlp ignores --convert-thumbnails for playlist thumbnails.
+        This function finds the downloaded file and converts it to JPG using ffmpeg.
+        Remove this when yt-dlp fixes playlist thumbnail conversion.
+
+        Args:
+            feed_id: The feed identifier.
+            log_config: Logging context dictionary.
+
+        Returns:
+            "jpg" if successful, None if failed.
+        """
+        # Find the downloaded thumbnail file
+        downloaded_ext = None
+        downloaded_path = None
+        for ext in ["jpg", "png", "webp"]:
+            path = await self._paths.image_path(feed_id, None, ext)
+            if await aiofiles.os.path.isfile(path):
+                downloaded_ext = ext
+                downloaded_path = path
+                break
+
+        if not downloaded_path or not downloaded_ext:
+            logger.warning(
+                "Feed thumbnail download appeared to succeed but file not found.",
+                extra=log_config,
+            )
+            return None
+
+        # Convert to JPG if needed (required for podcast players)
+        if downloaded_ext != "jpg":
+            try:
+                jpg_path = await self._paths.image_path(feed_id, None, "jpg")
+                await self._ffmpeg.convert_image_to_jpg(downloaded_path, jpg_path)
+                # Remove the original non-JPG file
+                await aiofiles.os.remove(downloaded_path)
+                logger.debug(
+                    "Feed thumbnail converted to JPG.",
+                    extra={**log_config, "original_ext": downloaded_ext},
+                )
+            except (FFmpegError, ValueError, OSError) as e:
+                logger.warning(
+                    "Failed to convert thumbnail to JPG.",
+                    extra={**log_config, "original_ext": downloaded_ext},
+                    exc_info=e,
+                )
+                return None
+
+        logger.debug("Feed thumbnail downloaded successfully.", extra=log_config)
+        return "jpg"
+
     async def download_feed_thumbnail(
         self,
         feed_id: str,
@@ -312,30 +371,8 @@ class YtdlpWrapper:
 
         await YtdlpCore.download(thumb_args, resolved_url)
 
-        # Verify the file was created successfully
-        try:
-            image_path = await self._paths.image_path(feed_id, None, "jpg")
-        except ValueError:
-            logger.warning(
-                "Failed to get image path for verification.", extra=log_config
-            )
-            return None
-
-        try:
-            file_exists = await aiofiles.os.path.isfile(image_path)
-        except OSError:
-            logger.warning("Failed to check if image file exists.", extra=log_config)
-            return None
-
-        if file_exists:
-            logger.debug("Feed thumbnail downloaded successfully.", extra=log_config)
-            return "jpg"
-        else:
-            logger.warning(
-                "Feed thumbnail download appeared to succeed but file not found.",
-                extra=log_config,
-            )
-            return None
+        # Convert thumbnail to JPG if needed (yt-dlp bug workaround)
+        return await self._convert_thumbnail_to_jpg_if_needed(feed_id, log_config)
 
     async def fetch_new_downloads_metadata(
         self,

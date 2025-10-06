@@ -9,11 +9,11 @@ import pytest
 
 from anypod.db.app_state_db import AppStateDatabase
 from anypod.db.types import Download, DownloadStatus, Feed, SourceType
+from anypod.ffmpeg import FFmpeg
 from anypod.path_manager import PathManager
 from anypod.ytdlp_wrapper import YtdlpWrapper
-from anypod.ytdlp_wrapper.base_handler import HandlerSelector
 from anypod.ytdlp_wrapper.core import YtdlpArgs, YtdlpCore, YtdlpInfo
-from anypod.ytdlp_wrapper.youtube_handler import YoutubeHandler
+from anypod.ytdlp_wrapper.handlers import HandlerSelector, YoutubeHandler
 
 
 def _return_same_args(args: YtdlpArgs) -> YtdlpArgs:
@@ -54,11 +54,18 @@ def handler_selector_mock() -> MagicMock:
 
 
 @pytest.fixture
+def ffmpeg_mock() -> MagicMock:
+    """Provide a mocked FFmpeg instance."""
+    return MagicMock(spec=FFmpeg)
+
+
+@pytest.fixture
 def ytdlp_wrapper_with_provider(
     paths: PathManager,
     app_state_db_mock: MagicMock,
     mock_youtube_handler: MagicMock,
     handler_selector_mock: MagicMock,
+    ffmpeg_mock: MagicMock,
 ) -> YtdlpWrapper:
     """YtdlpWrapper configured with a provider URL and mocked handler."""
     provider_url = "http://bgutil-provider:4416"
@@ -69,6 +76,7 @@ def ytdlp_wrapper_with_provider(
         app_state_db=app_state_db_mock,
         yt_channel="stable",
         yt_update_freq=timedelta(hours=12),
+        ffmpeg=ffmpeg_mock,
         handler_selector=handler_selector_mock,
     )
     return wrapper
@@ -80,6 +88,7 @@ def ytdlp_wrapper(
     app_state_db_mock: MagicMock,
     mock_youtube_handler: MagicMock,
     handler_selector_mock: MagicMock,
+    ffmpeg_mock: MagicMock,
 ) -> YtdlpWrapper:
     """YtdlpWrapper with a mocked YoutubeHandler and shared paths/app state."""
     handler_selector_mock.select.return_value = mock_youtube_handler
@@ -89,6 +98,7 @@ def ytdlp_wrapper(
         app_state_db=app_state_db_mock,
         yt_channel="stable",
         yt_update_freq=timedelta(hours=12),
+        ffmpeg=ffmpeg_mock,
         handler_selector=handler_selector_mock,
     )
     return wrapper
@@ -381,7 +391,8 @@ async def test_download_feed_thumbnail_success_return_value(
 
     assert result == "jpg"
     mock_ytdlcore_download.assert_called_once()
-    mock_is_file.assert_called_once()
+    # Checks jpg first and finds it
+    assert mock_is_file.call_count == 1
 
 
 @pytest.mark.unit
@@ -406,7 +417,8 @@ async def test_download_feed_thumbnail_file_not_found(
 
     assert result is None
     mock_ytdlcore_download.assert_called_once()
-    mock_is_file.assert_called_once()
+    # Tries jpg, png, webp (3 calls total)
+    assert mock_is_file.call_count == 3
 
 
 # --- Tests for YtdlpWrapper.download_media_to_file ---

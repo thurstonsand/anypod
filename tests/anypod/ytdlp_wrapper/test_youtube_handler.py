@@ -10,7 +10,7 @@ import pytest
 
 from anypod.db.types import Download, DownloadStatus, SourceType
 from anypod.ytdlp_wrapper.core import YtdlpArgs, YtdlpCore
-from anypod.ytdlp_wrapper.youtube_handler import (
+from anypod.ytdlp_wrapper.handlers.youtube_handler import (
     YoutubeEntry,
     YoutubeHandler,
     YtdlpInfo,
@@ -455,9 +455,9 @@ async def test_parse_single_video_entry_error_missing_extension(
     "bad_duration, expected_msg_part",
     [
         ("not-a-float", "Unparsable duration"),
-        (None, "Failed to parse YouTube entry."),
+        (None, "Missing duration"),
         (True, "Duration had unexpected type"),
-        ({"value": 60}, "Failed to parse YouTube entry."),
+        ({"value": 60}, "Missing duration"),
     ],
 )
 @pytest.mark.asyncio
@@ -594,7 +594,7 @@ async def test_determine_fetch_strategy_channel_main_page_no_videos_tab(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-@patch("anypod.ytdlp_wrapper.youtube_handler.YtdlpCore.extract_playlist_info")
+@patch("anypod.ytdlp_wrapper.handlers.youtube_handler.YtdlpCore.extract_playlist_info")
 async def test_determine_fetch_strategy_channel_videos_tab_direct(
     mock_extract_playlist_info: AsyncMock,
     youtube_handler: YoutubeHandler,
@@ -652,7 +652,7 @@ async def test_determine_fetch_strategy_playlist_url(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-@patch("anypod.ytdlp_wrapper.youtube_handler.YtdlpCore.extract_playlist_info")
+@patch("anypod.ytdlp_wrapper.handlers.youtube_handler.YtdlpCore.extract_playlist_info")
 async def test_determine_fetch_strategy_playlists_tab_error(
     mock_extract_playlist_info: AsyncMock,
     youtube_handler: YoutubeHandler,

@@ -7,7 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 DATA_DIR="$PROJECT_ROOT/tmpdata"
 CONFIG_FILE="local_feeds.yaml"
-COOKIES_PATH="cookies.txt"
+COOKIES_PATH="$PROJECT_ROOT/cookies.txt"
 
 usage() {
     echo "Usage: $0 [--keep]"
