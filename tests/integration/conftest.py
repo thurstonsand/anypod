@@ -16,11 +16,14 @@ from anypod.db import AppStateDatabase
 from anypod.db.download_db import DownloadDatabase
 from anypod.db.feed_db import FeedDatabase
 from anypod.db.sqlalchemy_core import SqlalchemyCore
+from anypod.ffmpeg import FFmpeg
+from anypod.ffprobe import FFProbe
 from anypod.file_manager import FileManager
 from anypod.image_downloader import ImageDownloader
 from anypod.path_manager import PathManager
 from anypod.rss.rss_feed import RSSFeedGenerator
 from anypod.server.app import create_admin_app, create_app
+from anypod.ytdlp_wrapper.handlers import HandlerSelector
 from anypod.ytdlp_wrapper.ytdlp_wrapper import YtdlpWrapper
 
 
@@ -110,7 +113,34 @@ def download_db(db_core: SqlalchemyCore) -> DownloadDatabase:
 
 
 @pytest.fixture
-def ytdlp_wrapper(path_manager: PathManager, db_core: SqlalchemyCore) -> YtdlpWrapper:
+def ffmpeg() -> FFmpeg:
+    """Provide an FFmpeg instance for integration tests."""
+    return FFmpeg()
+
+
+@pytest.fixture
+def ffprobe() -> FFProbe:
+    """Provide an FFProbe instance for integration tests."""
+    return FFProbe()
+
+
+@pytest.fixture
+def handler_selector(ffprobe: FFProbe) -> HandlerSelector:
+    """Provide a HandlerSelector instance with shared FFProbe.
+
+    Returns:
+        HandlerSelector instance configured with test FFProbe.
+    """
+    return HandlerSelector(ffprobe)
+
+
+@pytest.fixture
+def ytdlp_wrapper(
+    path_manager: PathManager,
+    db_core: SqlalchemyCore,
+    handler_selector: HandlerSelector,
+    ffmpeg: FFmpeg,
+) -> YtdlpWrapper:
     """Provide a YtdlpWrapper instance with shared directories.
 
     Returns:
@@ -123,19 +153,24 @@ def ytdlp_wrapper(path_manager: PathManager, db_core: SqlalchemyCore) -> YtdlpWr
         app_state_db=app_state_db,
         yt_channel="stable",
         yt_update_freq=timedelta(hours=12),
+        ffmpeg=ffmpeg,
+        handler_selector=handler_selector,
     )
 
 
 @pytest.fixture
 def image_downloader(
-    path_manager: PathManager, ytdlp_wrapper: YtdlpWrapper
+    path_manager: PathManager,
+    ytdlp_wrapper: YtdlpWrapper,
+    ffprobe: FFProbe,
+    ffmpeg: FFmpeg,
 ) -> ImageDownloader:
     """Provide an ImageDownloader instance with shared components.
 
     Returns:
         ImageDownloader instance configured with test path manager and ytdlp wrapper.
     """
-    return ImageDownloader(path_manager, ytdlp_wrapper)
+    return ImageDownloader(path_manager, ytdlp_wrapper, ffprobe=ffprobe, ffmpeg=ffmpeg)
 
 
 @pytest.fixture

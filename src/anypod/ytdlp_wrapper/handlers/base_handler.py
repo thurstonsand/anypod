@@ -7,8 +7,8 @@ fetch strategy determination and metadata parsing.
 
 from typing import Protocol
 
-from ..db.types import Download, Feed, SourceType
-from .core import YtdlpArgs, YtdlpInfo
+from ...db.types import Download, Feed, SourceType
+from ..core import YtdlpArgs, YtdlpInfo
 
 
 class SourceHandlerBase(Protocol):
@@ -37,6 +37,20 @@ class SourceHandlerBase(Protocol):
         """
         ...
 
+    def prepare_playlist_info_args(
+        self,
+        args: YtdlpArgs,
+    ) -> YtdlpArgs:
+        """Prepare args for playlist/feed metadata extraction.
+
+        Args:
+            args: Builder instance that will be sent to yt-dlp.
+
+        Returns:
+            The same builder instance for chaining.
+        """
+        ...
+
     def extract_feed_metadata(
         self,
         feed_id: str,
@@ -57,7 +71,35 @@ class SourceHandlerBase(Protocol):
         """
         ...
 
-    def extract_download_metadata(
+    def prepare_thumbnail_args(
+        self,
+        args: YtdlpArgs,
+    ) -> YtdlpArgs:
+        """Prepare args for thumbnail download operations.
+
+        Args:
+            args: Builder instance that will be sent to yt-dlp.
+
+        Returns:
+            The same builder instance for chaining.
+        """
+        ...
+
+    def prepare_downloads_info_args(
+        self,
+        args: YtdlpArgs,
+    ) -> YtdlpArgs:
+        """Prepare args for downloads metadata enumeration.
+
+        Args:
+            args: Builder instance that will be sent to yt-dlp.
+
+        Returns:
+            The same builder instance for chaining.
+        """
+        ...
+
+    async def extract_download_metadata(
         self,
         feed_id: str,
         ytdlp_info: YtdlpInfo,
@@ -71,4 +113,11 @@ class SourceHandlerBase(Protocol):
         Returns:
             A Download object parsed from the metadata.
         """
+        ...
+
+    def prepare_media_download_args(
+        self,
+        args: YtdlpArgs,
+    ) -> YtdlpArgs:
+        """Prepare args for media download operations."""
         ...

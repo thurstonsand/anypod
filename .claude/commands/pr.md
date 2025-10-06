@@ -1,5 +1,6 @@
 ---
 description: Create a pull request from the current branch
+allowed-tools: Bash(git status:*), Bash(git diff:*), Bash(git branch:*), Bash(git log:*), Bash(git rev-parse:*)
 ---
 
 ## Context

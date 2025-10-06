@@ -14,11 +14,14 @@ from ..db import AppStateDatabase, DownloadDatabase, FeedDatabase
 from ..db.sqlalchemy_core import SqlalchemyCore
 from ..db.types import Download, DownloadStatus
 from ..exceptions import DatabaseOperationError, EnqueueError, StateReconciliationError
+from ..ffmpeg import FFmpeg
+from ..ffprobe import FFProbe
 from ..file_manager import FileManager
 from ..image_downloader import ImageDownloader
 from ..path_manager import PathManager
 from ..state_reconciler import StateReconciler
 from ..ytdlp_wrapper import YtdlpWrapper
+from ..ytdlp_wrapper.handlers import HandlerSelector
 
 logger = logging.getLogger(__name__)
 
@@ -52,15 +55,20 @@ async def run_debug_enqueuer_mode(
         download_db = DownloadDatabase(db_core)
         file_manager = FileManager(paths)
         app_state_db = AppStateDatabase(db_core)
+        ffmpeg = FFmpeg()
+        ffprobe = FFProbe()
+        handler_selector = HandlerSelector(ffprobe)
         ytdlp_wrapper = YtdlpWrapper(
             paths,
             pot_provider_url=settings.pot_provider_url,
             app_state_db=app_state_db,
             yt_channel=settings.yt_channel,
             yt_update_freq=settings.yt_dlp_update_freq,
+            ffmpeg=ffmpeg,
+            handler_selector=handler_selector,
         )
         pruner = Pruner(feed_db, download_db, file_manager)
-        image_downloader = ImageDownloader(paths, ytdlp_wrapper)
+        image_downloader = ImageDownloader(paths, ytdlp_wrapper, ffprobe, ffmpeg)
         state_reconciler = StateReconciler(
             file_manager,
             image_downloader,

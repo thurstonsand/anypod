@@ -133,6 +133,7 @@ Download status transitions are implemented as explicit methods, not generic upd
 - Logging: Structured JSON logging with proper context propagation
 - Database: Uses `SQLModel` and `SQLAlchemy` with a custom `SqlalchemyCore` class, not raw SQLite.
 - Currently synchronous but designed for future async conversion
+- Function signatures: Default to required parameters; avoid annotating arguments as ``<type> | None`` unless ``None`` is a real, supported input path.
 
 ### Tool Configuration
 - Linting and formatting: ruff configuration in @pyproject.toml
@@ -198,15 +199,20 @@ anypod/
   │   │       └── static.py        # Static file serving and directory browsing
   │   │       └── admin.py         # Admin-only endpoints (served on private admin server)
 │   ├── ytdlp_wrapper/           # `yt-dlp` integration
-│   │   ├── base_handler.py      # Base handler interface for different source types
-│   │   ├── youtube_handler.py   # YouTube source handler
 │   │   ├── ytdlp_wrapper.py     # High-level wrapper
-│   │   └── core/                # Core yt-dlp wrapper
-│   │       ├── args.py          # yt-dlp argument builder
-│   │       ├── core.py          # yt-dlp core runner
-│   │       ├── info.py          # yt-dlp info parser
-│   │       └── thumbnails.py    # yt-dlp thumbnail parser
+│   │   ├── core/                # Core yt-dlp wrapper
+│   │   │   ├── args.py          # yt-dlp argument builder
+│   │   │   ├── core.py          # yt-dlp core runner
+│   │   │   ├── info.py          # yt-dlp info parser
+│   │   │   └── thumbnails.py    # yt-dlp thumbnail parser
+│   │   └── handlers/            # Source-specific handlers
+│   │       ├── base_handler.py      # Base handler interface
+│   │       ├── handler_selector.py  # Handler selection logic
+│   │       ├── patreon_handler.py   # Patreon source handler
+│   │       └── youtube_handler.py   # YouTube source handler
 │   ├── exceptions.py            # Custom exceptions
+│   ├── ffmpeg.py                # FFmpeg wrapper for media processing
+│   ├── ffprobe.py               # FFprobe wrapper for media metadata
 │   ├── file_manager.py          # File operations abstraction
 │   ├── image_downloader.py      # Image downloading for feeds/thumbnails
 │   ├── logging_config.py        # Logging configuration

@@ -206,6 +206,26 @@ class YtdlpDataError(YtdlpError):
     """Raised when yt-dlp data extraction fails."""
 
 
+class YtdlpDownloadFilteredOutError(YtdlpDataError):
+    """Raised when yt-dlp filters out an item during processing.
+
+    Attributes:
+        feed_id: The associated feed identifier, when available.
+        download_id: The filtered download identifier, when available.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        feed_id: str | None = None,
+        download_id: str | None = None,
+    ):
+        super().__init__(message)
+        self.feed_id = feed_id
+        self.download_id = download_id
+
+
 class YtdlpFieldMissingError(YtdlpDataError):
     """Raised when a required field is missing from yt-dlp data.
 
@@ -337,3 +357,28 @@ class SchedulerError(AnypodError):
     ):
         super().__init__(message)
         self.feed_id = feed_id
+
+
+class FFProbeError(AnypodError):
+    """Raised when ffprobe execution fails.
+
+    Attributes:
+        stderr: Raw stderr output from the ffprobe subprocess.
+        args: Arguments used to invoke ffprobe (excluding the executable name).
+    """
+
+    def __init__(self, message: str, stderr: str | None = None):
+        super().__init__(message)
+        self.stderr = stderr
+
+
+class FFmpegError(AnypodError):
+    """Raised when ffmpeg execution fails.
+
+    Attributes:
+        stderr: Raw stderr output from the ffmpeg subprocess.
+    """
+
+    def __init__(self, message: str, stderr: str | None = None):
+        super().__init__(message)
+        self.stderr = stderr

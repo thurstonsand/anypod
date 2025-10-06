@@ -290,7 +290,6 @@ class AppSettings(BaseSettings):
         env_prefix="",
         env_nested_delimiter="__",
         # yaml_file=None, # Removed as we handle YAML via YamlFileFromFieldSource
-        # yaml_file_encoding="utf-8",
         cli_parse_args=True,
         cli_ignore_unknown_args=True,
         cli_kebab_case=True,

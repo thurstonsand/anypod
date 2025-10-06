@@ -6,14 +6,19 @@ Covers direct HTTP image downloads and yt-dlp-backed feed thumbnail downloads.
 """
 
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
 import respx
 
 from anypod.db.types import SourceType
-from anypod.exceptions import ImageDownloadError, YtdlpApiError
+from anypod.exceptions import (
+    ImageDownloadError,
+    YtdlpApiError,
+)
+from anypod.ffmpeg import FFmpeg
+from anypod.ffprobe import FFProbe
 from anypod.image_downloader import ImageDownloader
 from anypod.path_manager import PathManager
 from anypod.ytdlp_wrapper import YtdlpWrapper
@@ -37,11 +42,28 @@ def ytdlp_wrapper_mock() -> MagicMock:
 
 
 @pytest.fixture
+def ffprobe_mock() -> MagicMock:
+    """Provide a MagicMock for FFProbe."""
+    return MagicMock(spec=FFProbe)
+
+
+@pytest.fixture
+def ffmpeg_mock() -> MagicMock:
+    """Provide a MagicMock for FFmpeg."""
+    return MagicMock(spec=FFmpeg)
+
+
+@pytest.fixture
 def image_downloader(
-    path_manager: PathManager, ytdlp_wrapper_mock: MagicMock
+    path_manager: PathManager,
+    ytdlp_wrapper_mock: MagicMock,
+    ffprobe_mock: MagicMock,
+    ffmpeg_mock: MagicMock,
 ) -> ImageDownloader:
     """Provide an ImageDownloader instance using temp paths and mocked yt-dlp wrapper."""
-    return ImageDownloader(path_manager, ytdlp_wrapper_mock)
+    return ImageDownloader(
+        path_manager, ytdlp_wrapper_mock, ffprobe=ffprobe_mock, ffmpeg=ffmpeg_mock
+    )
 
 
 # --- Tests: download_feed_image_direct ---
@@ -157,82 +179,3 @@ async def test_download_feed_image_ytdlp_wraps_error(
         )
     assert exc.value.feed_id == "feed"
     assert exc.value.url == "https://yt/watch?v=abc"
-
-
-# --- Tests: format detection and conversion ---
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_is_jpg_format_ffprobe_error(
-    image_downloader: ImageDownloader,
-    tmp_path: Path,
-) -> None:
-    """Format detection raises ImageDownloadError when ffprobe fails."""
-    test_file = tmp_path / "test.jpg"
-    test_file.write_bytes(b"fake image data")
-
-    mock_process = AsyncMock()
-    mock_process.returncode = 1
-    mock_process.communicate.return_value = (b"", b"ffprobe error")
-
-    with patch("asyncio.create_subprocess_exec", return_value=mock_process):
-        with pytest.raises(ImageDownloadError) as exc:
-            await image_downloader._is_jpg_format(
-                test_file, "test_feed", "http://example.com/test.jpg"
-            )
-
-        assert exc.value.feed_id == "test_feed"
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_convert_to_jpg_ffmpeg_not_found(
-    image_downloader: ImageDownloader, tmp_path: Path
-) -> None:
-    """Conversion raises ImageDownloadError when ffmpeg not found."""
-    input_path = tmp_path / "input.png"
-    output_path = tmp_path / "converted.jpg"
-    input_path.write_bytes(b"fake png data")
-
-    with patch("asyncio.create_subprocess_exec") as mock_subprocess:
-        mock_subprocess.side_effect = FileNotFoundError("ffmpeg not found")
-
-        with pytest.raises(ImageDownloadError) as exc:
-            await image_downloader._convert_to_jpg(
-                input_path,
-                output_path,
-                "test_feed",
-                "http://example.com/test.png",
-            )
-
-        assert "ffmpeg not found" in str(exc.value)
-        assert exc.value.feed_id == "test_feed"
-        assert exc.value.url == "http://example.com/test.png"
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_convert_to_jpg_ffmpeg_error(
-    image_downloader: ImageDownloader, tmp_path: Path
-) -> None:
-    """Conversion raises ImageDownloadError when ffmpeg fails."""
-    input_path = tmp_path / "input.png"
-    output_path = tmp_path / "converted.jpg"
-    input_path.write_bytes(b"fake png data")
-
-    mock_process = AsyncMock()
-    mock_process.returncode = 1
-    mock_process.communicate.return_value = (b"", b"conversion failed")
-
-    with patch("asyncio.create_subprocess_exec", return_value=mock_process):
-        with pytest.raises(ImageDownloadError) as exc:
-            await image_downloader._convert_to_jpg(
-                input_path,
-                output_path,
-                "test_feed",
-                "http://example.com/test.png",
-            )
-
-        assert "Image conversion to JPG failed" in str(exc.value)
-        assert exc.value.feed_id == "test_feed"

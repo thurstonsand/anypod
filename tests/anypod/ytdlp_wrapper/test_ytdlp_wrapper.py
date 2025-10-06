@@ -9,16 +9,26 @@ import pytest
 
 from anypod.db.app_state_db import AppStateDatabase
 from anypod.db.types import Download, DownloadStatus, Feed, SourceType
+from anypod.ffmpeg import FFmpeg
 from anypod.path_manager import PathManager
 from anypod.ytdlp_wrapper import YtdlpWrapper
 from anypod.ytdlp_wrapper.core import YtdlpArgs, YtdlpCore, YtdlpInfo
-from anypod.ytdlp_wrapper.youtube_handler import YoutubeHandler
+from anypod.ytdlp_wrapper.handlers import HandlerSelector, YoutubeHandler
+
+
+def _return_same_args(args: YtdlpArgs) -> YtdlpArgs:
+    """Return the provided YtdlpArgs instance unchanged."""
+    return args
 
 
 @pytest.fixture
 def mock_youtube_handler() -> MagicMock:
     """Fixture to provide a mocked YoutubeHandler."""
     handler = MagicMock(spec=YoutubeHandler)
+    handler.prepare_playlist_info_args.side_effect = _return_same_args
+    handler.prepare_thumbnail_args.side_effect = _return_same_args
+    handler.prepare_downloads_info_args.side_effect = _return_same_args
+    handler.prepare_media_download_args.side_effect = _return_same_args
     return handler
 
 
@@ -38,19 +48,37 @@ def paths(tmp_path_factory: pytest.TempPathFactory) -> PathManager:
 
 
 @pytest.fixture
+def handler_selector_mock() -> MagicMock:
+    """Provide a handler selector mock."""
+    return MagicMock(spec=HandlerSelector)
+
+
+@pytest.fixture
+def ffmpeg_mock() -> MagicMock:
+    """Provide a mocked FFmpeg instance."""
+    return MagicMock(spec=FFmpeg)
+
+
+@pytest.fixture
 def ytdlp_wrapper_with_provider(
-    paths: PathManager, app_state_db_mock: MagicMock, mock_youtube_handler: MagicMock
+    paths: PathManager,
+    app_state_db_mock: MagicMock,
+    mock_youtube_handler: MagicMock,
+    handler_selector_mock: MagicMock,
+    ffmpeg_mock: MagicMock,
 ) -> YtdlpWrapper:
     """YtdlpWrapper configured with a provider URL and mocked handler."""
     provider_url = "http://bgutil-provider:4416"
+    handler_selector_mock.select.return_value = mock_youtube_handler
     wrapper = YtdlpWrapper(
         paths,
         provider_url,
         app_state_db=app_state_db_mock,
         yt_channel="stable",
         yt_update_freq=timedelta(hours=12),
+        ffmpeg=ffmpeg_mock,
+        handler_selector=handler_selector_mock,
     )
-    wrapper._source_handler = mock_youtube_handler
     return wrapper
 
 
@@ -59,16 +87,20 @@ def ytdlp_wrapper(
     paths: PathManager,
     app_state_db_mock: MagicMock,
     mock_youtube_handler: MagicMock,
+    handler_selector_mock: MagicMock,
+    ffmpeg_mock: MagicMock,
 ) -> YtdlpWrapper:
     """YtdlpWrapper with a mocked YoutubeHandler and shared paths/app state."""
+    handler_selector_mock.select.return_value = mock_youtube_handler
     wrapper = YtdlpWrapper(
         paths,
         None,
         app_state_db=app_state_db_mock,
         yt_channel="stable",
         yt_update_freq=timedelta(hours=12),
+        ffmpeg=ffmpeg_mock,
+        handler_selector=handler_selector_mock,
     )
-    wrapper._source_handler = mock_youtube_handler
     return wrapper
 
 
@@ -81,11 +113,10 @@ def ytdlp_wrapper(
 async def test_extractor_args_default_none_sets_fetch_pot_never(
     mock_extract_playlist_info: AsyncMock,
     ytdlp_wrapper: YtdlpWrapper,
+    mock_youtube_handler: MagicMock,
 ):
     """Verify default behavior injects fetch_pot=never when URL is not set."""
-    ytdlp_wrapper._source_handler.extract_feed_metadata = MagicMock(
-        return_value=MagicMock()
-    )
+    mock_youtube_handler.extract_feed_metadata = MagicMock(return_value=MagicMock())
 
     mock_extract_playlist_info.return_value = YtdlpInfo({"id": "x", "title": "t"})
 
@@ -115,12 +146,11 @@ async def test_extractor_args_default_none_sets_fetch_pot_never(
 async def test_extractor_args_with_provider_url_sets_http_base_url(
     mock_extract_playlist_info: AsyncMock,
     ytdlp_wrapper_with_provider: YtdlpWrapper,
+    mock_youtube_handler: MagicMock,
 ):
     """Verify provider URL injects youtubepot-bgutilhttp base_url extractor arg."""
     provider_url = "http://bgutil-provider:4416"
-    ytdlp_wrapper_with_provider._source_handler.extract_feed_metadata = MagicMock(
-        return_value=MagicMock()
-    )
+    mock_youtube_handler.extract_feed_metadata = MagicMock(return_value=MagicMock())
 
     mock_extract_playlist_info.return_value = YtdlpInfo({"id": "x", "title": "t"})
 
@@ -361,7 +391,8 @@ async def test_download_feed_thumbnail_success_return_value(
 
     assert result == "jpg"
     mock_ytdlcore_download.assert_called_once()
-    mock_is_file.assert_called_once()
+    # Checks jpg first and finds it
+    assert mock_is_file.call_count == 1
 
 
 @pytest.mark.unit
@@ -386,7 +417,8 @@ async def test_download_feed_thumbnail_file_not_found(
 
     assert result is None
     mock_ytdlcore_download.assert_called_once()
-    mock_is_file.assert_called_once()
+    # Tries jpg, png, webp (3 calls total)
+    assert mock_is_file.call_count == 3
 
 
 # --- Tests for YtdlpWrapper.download_media_to_file ---

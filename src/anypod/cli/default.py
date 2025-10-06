@@ -15,6 +15,8 @@ from ..exceptions import (
     DatabaseOperationError,
     StateReconciliationError,
 )
+from ..ffmpeg import FFmpeg
+from ..ffprobe import FFProbe
 from ..file_manager import FileManager
 from ..image_downloader import ImageDownloader
 from ..path_manager import PathManager
@@ -23,6 +25,7 @@ from ..schedule import FeedScheduler
 from ..server import create_admin_server, create_server
 from ..state_reconciler import StateReconciler
 from ..ytdlp_wrapper import YtdlpWrapper
+from ..ytdlp_wrapper.handlers import HandlerSelector
 
 logger = logging.getLogger(__name__)
 
@@ -97,15 +100,25 @@ async def _init(
     download_db = DownloadDatabase(db_core)
 
     # Initialize application components
+    ffmpeg = FFmpeg()
+    ffprobe = FFProbe()
+    handler_selector = HandlerSelector(ffprobe)
     ytdlp_wrapper = YtdlpWrapper(
         paths=path_manager,
         pot_provider_url=settings.pot_provider_url,
         app_state_db=app_state_db,
         yt_channel=settings.yt_channel,
         yt_update_freq=settings.yt_dlp_update_freq,
+        ffmpeg=ffmpeg,
+        handler_selector=handler_selector,
     )
     rss_generator = RSSFeedGenerator(download_db=download_db, paths=path_manager)
-    image_downloader = ImageDownloader(paths=path_manager, ytdlp_wrapper=ytdlp_wrapper)
+    image_downloader = ImageDownloader(
+        paths=path_manager,
+        ytdlp_wrapper=ytdlp_wrapper,
+        ffprobe=ffprobe,
+        ffmpeg=ffmpeg,
+    )
 
     # Initialize data coordinator components
     enqueuer = Enqueuer(

@@ -155,13 +155,6 @@ class YtdlpCore:
             },
         )
 
-        # 101 means "Download cancelled by some flag, e.g. --break-match-filter etc" - treat as success
-        if proc.returncode != 0 and proc.returncode != 101:
-            raise YtdlpApiError(
-                message=f"yt-dlp completed with error {proc.returncode}: {stderr.decode('utf-8', errors='replace')}",
-                url=url,
-            )
-
         stdout_text = stdout.decode("utf-8").strip()
 
         # Parse multiple JSON objects (one per video)
@@ -176,6 +169,31 @@ class YtdlpCore:
             except json.JSONDecodeError:
                 logger.warning(f"Failed to parse JSON line: {line[:100]}")
                 continue
+
+        # Handle non-zero exit codes - log errors but don't fail
+        # TODO: find a way to handle this more intelligently; find specific things to error on
+        if proc.returncode != 0:
+            stderr_text = stderr.decode("utf-8", errors="replace")
+
+            # Log each yt-dlp error line at warning level
+            if stderr_text.strip():
+                for line in stderr_text.strip().split("\n"):
+                    if line.strip():
+                        logger.warning(
+                            f"yt-dlp error: ${line.strip()}",
+                            extra={
+                                "exit_code": proc.returncode,
+                            },
+                        )
+
+            if not entries:
+                logger.warning(
+                    "yt-dlp completed with errors and extracted no entries.",
+                    extra={
+                        "exit_code": proc.returncode,
+                        "url": url,
+                    },
+                )
 
         return entries
 

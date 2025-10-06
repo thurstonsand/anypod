@@ -10,8 +10,11 @@ from ..db import AppStateDatabase
 from ..db.sqlalchemy_core import SqlalchemyCore
 from ..db.types import DownloadStatus
 from ..exceptions import YtdlpApiError
+from ..ffmpeg import FFmpeg
+from ..ffprobe import FFProbe
 from ..path_manager import PathManager
 from ..ytdlp_wrapper import YtdlpWrapper
+from ..ytdlp_wrapper.handlers import HandlerSelector
 
 logger = logging.getLogger(__name__)
 
@@ -35,12 +38,17 @@ async def run_debug_ytdlp_mode(settings: AppSettings, paths: PathManager) -> Non
 
     db_core = SqlalchemyCore(await paths.db_dir())
     app_state_db = AppStateDatabase(db_core)
+    ffmpeg = FFmpeg()
+    ffprobe = FFProbe()
+    handler_selector = HandlerSelector(ffprobe)
     ytdlp_wrapper = YtdlpWrapper(
         paths,
         pot_provider_url=settings.pot_provider_url,
         app_state_db=app_state_db,
         yt_channel=settings.yt_channel,
         yt_update_freq=settings.yt_dlp_update_freq,
+        ffmpeg=ffmpeg,
+        handler_selector=handler_selector,
     )
 
     for feed_id, feed_config in settings.feeds.items():

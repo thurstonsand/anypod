@@ -9,20 +9,31 @@ Your self-hosted, YAML-driven bridge from yt-dlp–supported sources (YouTube ch
 
 ## Table of contents
 
-- [High Level](#high-level)
-- [Features](#features)
-- [Quick start](#quick-start)
-- [Configuration](#configuration)
-- [Environment variables](#environment-variables)
-- [HTTP endpoints](#http-endpoints)
-- [Reverse proxies](#reverse-proxies)
-- [Limitations and notes](#limitations-and-notes)
-- [Development](#development)
-- [Architecture](#architecture)
-- [Roadmap](#roadmap)
-- [FAQ / Troubleshooting](#faq--troubleshooting)
-- [License](#license)
-- [Acknowledgements](#acknowledgements)
+- [Anypod](#anypod)
+  - [Table of contents](#table-of-contents)
+  - [High Level](#high-level)
+  - [Features](#features)
+  - [Quick start](#quick-start)
+    - [Using Docker Compose (recommended)](#using-docker-compose-recommended)
+    - [Using Docker directly](#using-docker-directly)
+  - [Configuration](#configuration)
+  - [Environment variables](#environment-variables)
+  - [HTTP endpoints](#http-endpoints)
+    - [Public endpoints](#public-endpoints)
+    - [Admin endpoints (trusted/local access only)](#admin-endpoints-trustedlocal-access-only)
+  - [Reverse proxies](#reverse-proxies)
+  - [Limitations and Notes](#limitations-and-notes)
+    - [Scheduling and Rate Limiting](#scheduling-and-rate-limiting)
+    - [Cookies](#cookies)
+    - [PO Tokens (YouTube)](#po-tokens-youtube)
+    - [Pocket Casts](#pocket-casts)
+    - [Filtering](#filtering)
+    - [Patreon (Beta)](#patreon-beta)
+    - [Error Handling and Logging](#error-handling-and-logging)
+  - [Development](#development)
+  - [Architecture](#architecture)
+  - [Roadmap](#roadmap)
+  - [FAQ / Troubleshooting](#faq--troubleshooting)
 
 
 ## High Level
@@ -37,7 +48,7 @@ Anypod is a thin Python wrapper around `yt‑dlp` that turns any `yt‑dlp`–su
 ## Features
 
 - Simple YAML config with per‑feed schedules
-- Works with YouTube channels and playlists
+- Works with YouTube channels and playlists, Patreon creator pages and posts (beta)
 - Feed metadata overrides (title, description, artwork, categories, explicit, etc.)
 - Thumbnail hosting: Downloads and serves feed artwork and episode thumbnails locally
 - Retention policies: keep the last N items and/or only since YYYYMMDD
@@ -172,21 +183,21 @@ Reserved/managed `yt‑dlp` options (set by Anypod, do not override):
 
 All can be provided via env or CLI flags (kebab‑case). Common ones:
 
-| Name | Default | Description |
-| ---- | ------- | ----------- |
-| `BASE_URL` | `http://reverseproxy.example:8024` | Public base URL for feed/media links (set this behind a reverse proxy) |
-| `SERVER_PORT` | `8024` | Bind port for public server |
-| `ADMIN_SERVER_PORT` | `8025` | Bind port for admin server (should not be exposed publicly) |
-| `TRUSTED_PROXIES` | unset | List of local IPs or networks allowed to access the server, mainly for reverse proxy use (e.g. `["192.168.1.0/24"]`) |
-| `TZ` | unset | Your timezone (set if you don't want to mount `/etc/localtime`) |
-| `LOG_FORMAT` | `json` | `human` or `json` |
-| `LOG_LEVEL` | `INFO` | Log level |
-| `LOG_INCLUDE_STACKTRACE` | `false` | Include stack traces in error logs |
-| `POT_PROVIDER_URL` | unset | Base URL for a bgutil POT provider. When set, yt-dlp will be configured to use this provider for YouTube PO Tokens; when unset, POT fetching is disabled. |
-| `YT_CHANNEL` | `stable` | yt-dlp update channel: stable, nightly, master, or version |
-| `YT_DLP_UPDATE_FREQ` | `12h` | Minimum interval between yt-dlp --update-to invocations |
-| `PUID` | `1000` | Container user |
-| `PGID` | `1000` | Container group |
+| Name                     | Default                            | Description                                                                                                                                               |
+| ------------------------ | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BASE_URL`               | `http://reverseproxy.example:8024` | Public base URL for feed/media links (set this behind a reverse proxy)                                                                                    |
+| `SERVER_PORT`            | `8024`                             | Bind port for public server                                                                                                                               |
+| `ADMIN_SERVER_PORT`      | `8025`                             | Bind port for admin server (should not be exposed publicly)                                                                                               |
+| `TRUSTED_PROXIES`        | unset                              | List of local IPs or networks allowed to access the server, mainly for reverse proxy use (e.g. `["192.168.1.0/24"]`)                                      |
+| `TZ`                     | unset                              | Your timezone (set if you don't want to mount `/etc/localtime`)                                                                                           |
+| `LOG_FORMAT`             | `json`                             | `human` or `json`                                                                                                                                         |
+| `LOG_LEVEL`              | `INFO`                             | Log level                                                                                                                                                 |
+| `LOG_INCLUDE_STACKTRACE` | `false`                            | Include stack traces in error logs                                                                                                                        |
+| `POT_PROVIDER_URL`       | unset                              | Base URL for a bgutil POT provider. When set, yt-dlp will be configured to use this provider for YouTube PO Tokens; when unset, POT fetching is disabled. |
+| `YT_CHANNEL`             | `stable`                           | yt-dlp update channel: stable, nightly, master, or version                                                                                                |
+| `YT_DLP_UPDATE_FREQ`     | `12h`                              | Minimum interval between yt-dlp --update-to invocations                                                                                                   |
+| `PUID`                   | `1000`                             | Container user                                                                                                                                            |
+| `PGID`                   | `1000`                             | Container group                                                                                                                                           |
 
 
 ## HTTP endpoints
@@ -257,16 +268,34 @@ If you do want to test you have everything configured correctly (which I recomme
 
 I recommend using a filter (either `since` or `keep_last`) when setting up your feed, otherwise Anypod will download EVERY video in the playlist. On that note, `yt-dlp` only allows for day precision filtering (YYYYMMDD), tho this should be sufficient for most people.
 
+### Patreon (Beta)
+
+Patreon creator pages and individual posts are supported with the following considerations:
+
+- **Cookies required**: Patreon content typically requires authentication via cookies.txt for access to paywalled content
+- **Video-only by default**: Audio-only posts are filtered out automatically (configurable in future releases)
+- Limited testing across creator tiers; some edge cases may exist
+
+### Error Handling and Logging
+
+**Current behavior**: Anypod uses lenient error handling for yt-dlp operations. When yt-dlp encounters errors (e.g., inaccessible content, authentication issues), Anypod logs warnings but continues processing whatever content is available. This means:
+
+- **Partial failures are tolerated**: If some posts/videos are inaccessible but others succeed, the feed will be updated with the accessible content
+- **No exceptions raised**: Failed downloads won't stop feed processing
+- **Check your logs**: Since errors don't stop processing, you should monitor logs to identify issues like missing credentials, rate limiting, or content access problems
+
+**Future improvement**: Error handling will be enhanced to better distinguish between temporary failures (worth retrying) and permanent errors (should skip). Until then, reviewing logs regularly is recommended to catch configuration or access issues early.
+
 ## Development
 
-Requirements: Python 3.13+, [`uv`](https://docs.astral.sh/uv/) package manager.
+Requirements: Python 3.13+, [`uv`](https://docs.astral.sh/uv/) package manager, ffmpeg and ffprobe.
 
 ```bash
 # Install deps
 uv sync
 
 # Run full service (dev)
-timeout 30 ./scripts/run_dev.sh [--keep]
+./scripts/run_dev.sh [--keep]
 
 # Run debug component
 ./scripts/run_debug.sh <enqueuer|downloader|ytdlp> [--keep]
@@ -276,7 +305,7 @@ uv run pre-commit run --all-files
 uv run ruff check && uv run ruff format
 uv run pyright
 uv run pytest
-uv run pytest --integration
+uv run pytest --integration # will hit actual youtube endpoints
 ```
 
 Local defaults in dev scripts:
@@ -311,7 +340,10 @@ High‑level upcoming work. See `TASK_LIST.md` for the full checklist.
 - Integrate sponsorblock to automatically cut out or add chapter markers for ads
 - Podcast feed with an endpoint you can send videos to, to dynamically create your own playlist
   - You can recreate this functionality now by creating an unlisted youtube playlist and add videos to it
-- Support for other sources (e.g. Patreon)
+- Expand Patreon support (audio-only posts, improved tier handling)
+- Support for additional sources beyond YouTube and Patreon
+- Embed episode-specific artwork directly into media files for better podcast client compatibility (especially Pocket Casts, which requires embedded artwork for per-episode images to display properly)
+  - yt-dlp supports this
 
 ## FAQ / Troubleshooting
 

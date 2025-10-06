@@ -14,14 +14,16 @@ import aiofiles.os
 
 from ..db.app_state_db import AppStateDatabase
 from ..db.types import Download, Feed, SourceType
-from ..exceptions import FileOperationError, YtdlpApiError
-from ..path_manager import PathManager
-from .base_handler import SourceHandlerBase
-from .core import YtdlpArgs, YtdlpCore
-from .youtube_handler import (
-    YoutubeHandler,
-    YtdlpYoutubeVideoFilteredOutError,
+from ..exceptions import (
+    FFmpegError,
+    FileOperationError,
+    YtdlpApiError,
+    YtdlpDownloadFilteredOutError,
 )
+from ..ffmpeg import FFmpeg
+from ..path_manager import PathManager
+from .core import YtdlpArgs, YtdlpCore
+from .handlers import HandlerSelector
 
 logger = logging.getLogger(__name__)
 
@@ -34,13 +36,13 @@ class YtdlpWrapper:
     and URL types.
 
     Attributes:
-        _source_handler: Source-specific handler for URL processing. For now,
-            only YoutubeHandler is implemented.
-        _app_tmp_dir: Temporary directory for yt-dlp operations.
-        _app_data_dir: Data directory for downloaded files.
+        _paths: Manages application directories for temporary and data storage.
+        _pot_provider_url: Base URL for the POT provider, or None if disabled.
+        _app_state_db: Database interface for application state management.
+        _yt_channel: YouTube channel (stable, nightly) for yt-dlp self-updates.
+        _yt_update_freq: Minimum interval between yt-dlp self-updates.
+        _handler_selector: Resolves which source handler should process a URL.
     """
-
-    _source_handler: SourceHandlerBase = YoutubeHandler()
 
     def __init__(
         self,
@@ -49,12 +51,16 @@ class YtdlpWrapper:
         app_state_db: AppStateDatabase,
         yt_channel: str,
         yt_update_freq: timedelta,
+        ffmpeg: FFmpeg,
+        handler_selector: HandlerSelector,
     ):
         self._paths = paths
         self._pot_provider_url = pot_provider_url if pot_provider_url else None
         self._app_state_db = app_state_db
         self._yt_channel = yt_channel
         self._yt_update_freq = yt_update_freq
+        self._ffmpeg = ffmpeg
+        self._handler_selector = handler_selector
         logger.debug(
             "YtdlpWrapper initialized.",
             extra={
@@ -131,7 +137,8 @@ class YtdlpWrapper:
         if cookies_path:
             discovery_args = discovery_args.cookies(cookies_path)
 
-        resolved_url, source_type = await self._source_handler.determine_fetch_strategy(
+        handler = self._handler_selector.select(url)
+        resolved_url, source_type = await handler.determine_fetch_strategy(
             feed_id, url, discovery_args
         )
 
@@ -216,13 +223,16 @@ class YtdlpWrapper:
         if cookies_path:
             info_args = info_args.cookies(cookies_path)
 
+        handler = self._handler_selector.select(resolved_url)
+        info_args = handler.prepare_playlist_info_args(info_args)
+
         logger.debug(
             "Acquiring playlist metadata.",
             extra=log_config,
         )
         ytdlp_info = await YtdlpCore.extract_playlist_info(info_args, resolved_url)
 
-        extracted_feed = self._source_handler.extract_feed_metadata(
+        extracted_feed = handler.extract_feed_metadata(
             feed_id,
             ytdlp_info,
             source_type,
@@ -235,6 +245,61 @@ class YtdlpWrapper:
         )
 
         return extracted_feed
+
+    async def _convert_thumbnail_to_jpg_if_needed(
+        self, feed_id: str, log_config: dict[str, Any]
+    ) -> str | None:
+        """Convert downloaded thumbnail to JPG if needed.
+
+        WORKAROUND: yt-dlp ignores --convert-thumbnails for playlist thumbnails.
+        This function finds the downloaded file and converts it to JPG using ffmpeg.
+        Remove this when yt-dlp fixes playlist thumbnail conversion.
+
+        Args:
+            feed_id: The feed identifier.
+            log_config: Logging context dictionary.
+
+        Returns:
+            "jpg" if successful, None if failed.
+        """
+        # Find the downloaded thumbnail file
+        downloaded_ext = None
+        downloaded_path = None
+        for ext in ["jpg", "png", "webp"]:
+            path = await self._paths.image_path(feed_id, None, ext)
+            if await aiofiles.os.path.isfile(path):
+                downloaded_ext = ext
+                downloaded_path = path
+                break
+
+        if not downloaded_path or not downloaded_ext:
+            logger.warning(
+                "Feed thumbnail download appeared to succeed but file not found.",
+                extra=log_config,
+            )
+            return None
+
+        # Convert to JPG if needed (required for podcast players)
+        if downloaded_ext != "jpg":
+            try:
+                jpg_path = await self._paths.image_path(feed_id, None, "jpg")
+                await self._ffmpeg.convert_image_to_jpg(downloaded_path, jpg_path)
+                # Remove the original non-JPG file
+                await aiofiles.os.remove(downloaded_path)
+                logger.debug(
+                    "Feed thumbnail converted to JPG.",
+                    extra={**log_config, "original_ext": downloaded_ext},
+                )
+            except (FFmpegError, ValueError, OSError) as e:
+                logger.warning(
+                    "Failed to convert thumbnail to JPG.",
+                    extra={**log_config, "original_ext": downloaded_ext},
+                    exc_info=e,
+                )
+                return None
+
+        logger.debug("Feed thumbnail downloaded successfully.", extra=log_config)
+        return "jpg"
 
     async def download_feed_thumbnail(
         self,
@@ -288,6 +353,9 @@ class YtdlpWrapper:
         thumb_args = await self._update_to(thumb_args)
         thumb_args = self._pot_extractor_args(thumb_args)
 
+        handler = self._handler_selector.select(resolved_url)
+        thumb_args = handler.prepare_thumbnail_args(thumb_args)
+
         # For single video feeds, use the video's thumbnail as the feed image.
         if source_type == SourceType.SINGLE_VIDEO:
             thumb_args.paths_thumbnail(feed_images_dir).output_thumbnail(
@@ -303,30 +371,8 @@ class YtdlpWrapper:
 
         await YtdlpCore.download(thumb_args, resolved_url)
 
-        # Verify the file was created successfully
-        try:
-            image_path = await self._paths.image_path(feed_id, None, "jpg")
-        except ValueError:
-            logger.warning(
-                "Failed to get image path for verification.", extra=log_config
-            )
-            return None
-
-        try:
-            file_exists = await aiofiles.os.path.isfile(image_path)
-        except OSError:
-            logger.warning("Failed to check if image file exists.", extra=log_config)
-            return None
-
-        if file_exists:
-            logger.debug("Feed thumbnail downloaded successfully.", extra=log_config)
-            return "jpg"
-        else:
-            logger.warning(
-                "Feed thumbnail download appeared to succeed but file not found.",
-                extra=log_config,
-            )
-            return None
+        # Convert thumbnail to JPG if needed (yt-dlp bug workaround)
+        return await self._convert_thumbnail_to_jpg_if_needed(feed_id, log_config)
 
     async def fetch_new_downloads_metadata(
         self,
@@ -393,6 +439,9 @@ class YtdlpWrapper:
             extra=log_config,
         )
 
+        handler = self._handler_selector.select(resolved_url)
+        info_args = handler.prepare_downloads_info_args(info_args)
+
         ytdlp_infos = await YtdlpCore.extract_downloads_info(info_args, resolved_url)
 
         if not ytdlp_infos:
@@ -406,11 +455,11 @@ class YtdlpWrapper:
         parsed_downloads: list[Download] = []
         for ytdlp_info in ytdlp_infos:
             try:
-                download = self._source_handler.extract_download_metadata(
+                download = await handler.extract_download_metadata(
                     feed_id,
                     ytdlp_info,
                 )
-            except YtdlpYoutubeVideoFilteredOutError:
+            except YtdlpDownloadFilteredOutError:
                 # Video was filtered out by yt-dlp, skip it
                 logger.debug(
                     "Video filtered out by yt-dlp, skipping.",
@@ -484,6 +533,11 @@ class YtdlpWrapper:
 
         if cookies_path:
             download_args = download_args.cookies(cookies_path)
+
+        handler = self._handler_selector.select(download.source_url)
+        download_args = handler.prepare_media_download_args(
+            download_args,
+        )
 
         url_to_download = download.source_url
 

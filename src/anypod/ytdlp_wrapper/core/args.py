@@ -78,6 +78,10 @@ class YtdlpArgs:
         # Extractor args
         self._extractor_args: list[str] = []
 
+        # Networking / filtering
+        self._referer: str | None = None
+        self._match_filter: str | None = None
+
     def quiet(self) -> "YtdlpArgs":
         """Enable quiet mode (suppress verbose output)."""
         self._quiet = True
@@ -219,6 +223,30 @@ class YtdlpArgs:
         self._break_match_filters = filter_expr
         return self
 
+    def referer(self, url: str) -> "YtdlpArgs":
+        """Set the HTTP Referer header for requests.
+
+        Args:
+            url: The referer URL to pass to yt-dlp (e.g., "https://www.patreon.com").
+
+        Returns:
+            The builder instance for chaining.
+        """
+        self._referer = url
+        return self
+
+    def match_filter(self, filter_expr: str) -> "YtdlpArgs":
+        """Include only entries matching the filter expression.
+
+        Args:
+            filter_expr: A yt-dlp match filter expression (e.g., "vcodec").
+
+        Returns:
+            The builder instance for chaining.
+        """
+        self._match_filter = filter_expr
+        return self
+
     def update_to(self, channel: str) -> "YtdlpArgs":
         """Update to a specific channel or version.
 
@@ -332,6 +360,12 @@ class YtdlpArgs:
         # Extractor args
         for ex_arg in self._extractor_args:
             cmd.extend(["--extractor-args", ex_arg])
+
+        # Networking / filtering
+        if self._referer is not None:
+            cmd.extend(["--referer", self._referer])
+        if self._match_filter is not None:
+            cmd.extend(["--match-filter", self._match_filter])
 
         # Update control - skip in pytest to avoid issues with pip-installed yt-dlp
         if self._update_to is not None and not self._running_under_pytest():
