@@ -130,6 +130,7 @@ async def test_extract_download_metadata_success_with_duration(
     assert download.id == valid_video_entry_data["id"]
     assert download.duration == valid_video_entry_data["duration"]
     ffprobe_mock.get_duration_seconds_from_url.assert_not_called()
+    assert download.source_url == valid_video_entry_data["webpage_url"]
 
 
 @pytest.mark.unit

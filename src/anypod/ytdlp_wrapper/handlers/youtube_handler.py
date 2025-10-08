@@ -811,6 +811,15 @@ class YoutubeHandler:
     def prepare_media_download_args(
         self,
         args: YtdlpArgs,
+        download: Download,
     ) -> YtdlpArgs:
-        """Return args unchanged for YouTube media downloads."""
+        """Return args unchanged for YouTube media downloads.
+
+        Args:
+            args: Base YtdlpArgs to modify.
+            download: The Download object being processed.
+
+        Returns:
+            Unmodified YtdlpArgs.
+        """
         return args

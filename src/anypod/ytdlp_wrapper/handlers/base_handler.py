@@ -118,6 +118,15 @@ class SourceHandlerBase(Protocol):
     def prepare_media_download_args(
         self,
         args: YtdlpArgs,
+        download: Download,
     ) -> YtdlpArgs:
-        """Prepare args for media download operations."""
+        """Prepare args for media download operations.
+
+        Args:
+            args: Builder instance that will be sent to yt-dlp.
+            download: The Download object being processed.
+
+        Returns:
+            The same builder instance for chaining.
+        """
         ...
