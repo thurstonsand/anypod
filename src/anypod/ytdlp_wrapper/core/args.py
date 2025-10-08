@@ -48,7 +48,7 @@ class YtdlpArgs:
         # Playlist control
         self._flat_playlist = False
         self._lazy_playlist = False
-        self._playlist_limit: int | None = None
+        self._playlist_items: str | None = None
         self._break_match_filters: str | None = None
 
         # Date filtering
@@ -102,9 +102,25 @@ class YtdlpArgs:
         self._flat_playlist = True
         return self
 
-    def playlist_limit(self, limit: int) -> "YtdlpArgs":
-        """Limit playlist items (e.g., "1-5")."""
-        self._playlist_limit = limit
+    def playlist_items(self, item_spec: str | int) -> "YtdlpArgs":
+        """Select specific playlist items using --playlist-items flag.
+
+        Args:
+            item_spec: Playlist item specification. Can be:
+                - Single index (int or str): "2" or 2
+                - Range: "1:5"
+                - Multiple: "1,3,5"
+                - Complex: "1:5,7,9:11"
+
+        Examples:
+            args.playlist_items(2)          # Download item 2
+            args.playlist_items("1:5")      # Download items 1-5
+            args.playlist_items("1,3,5")    # Download items 1, 3, and 5
+
+        Returns:
+            Self for chaining.
+        """
+        self._playlist_items = str(item_spec)
         return self
 
     def dateafter(self, date: datetime) -> "YtdlpArgs":
@@ -318,8 +334,8 @@ class YtdlpArgs:
             cmd.append("--flat-playlist")
         if self._lazy_playlist:
             cmd.append("--lazy-playlist")
-        if self._playlist_limit is not None:
-            cmd.extend(["--playlist-items", f":{self._playlist_limit}"])
+        if self._playlist_items is not None:
+            cmd.extend(["--playlist-items", self._playlist_items])
         if self._break_match_filters is not None:
             cmd.extend(["--break-match-filters", self._break_match_filters])
 

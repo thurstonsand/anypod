@@ -36,6 +36,7 @@ class Download(SQLModel, table=True):
             thumbnail_ext: Optional hosted thumbnail file extension.
             description: Optional description of the download.
             quality_info: Optional quality information for the download.
+            playlist_index: Optional 1-based index of item within a multi-attachment post.
 
         Error Tracking:
             retries: Number of retry attempts.
@@ -91,6 +92,7 @@ class Download(SQLModel, table=True):
     thumbnail_ext: str | None = None
     description: str | None = None
     quality_info: str | None = None
+    playlist_index: int | None = None
 
     # Error tracking
     retries: int = Field(

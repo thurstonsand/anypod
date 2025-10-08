@@ -124,6 +124,17 @@ class PatreonEntry:
             return extractor.lower() if extractor else None
 
     @property
+    def playlist_index(self) -> int | None:
+        """Get the 1-based playlist index for this entry.
+
+        For multi-attachment posts, this indicates which item this entry represents
+        within the playlist (e.g., audio vs video). Used to select specific items
+        during download with yt-dlp's --playlist-items flag.
+        """
+        with self._annotate_exceptions():
+            return self._ytdlp_info.get("playlist_index", int)
+
+    @property
     def type(self) -> str | None:
         """Get the entry type from yt-dlp metadata."""
         with self._annotate_exceptions():
@@ -606,6 +617,7 @@ class PatreonHandler:
             remote_thumbnail_url=entry.thumbnail,
             description=entry.description,
             quality_info=entry.quality_info,
+            playlist_index=entry.playlist_index,
         )
 
         logger.debug(
@@ -621,6 +633,21 @@ class PatreonHandler:
     def prepare_media_download_args(
         self,
         args: YtdlpArgs,
+        download: Download,
     ) -> YtdlpArgs:
-        """Apply Patreon referer for media download requests."""
-        return args.referer(_PATREON_REFERER)
+        """Apply Patreon referer and playlist item selection for media downloads.
+
+        Args:
+            args: Base YtdlpArgs to modify.
+            download: The Download object being processed.
+
+        Returns:
+            Modified YtdlpArgs for the download operation.
+        """
+        args = args.referer(_PATREON_REFERER)
+
+        # Use playlist_index to download specific item from multi-attachment posts, if they are one
+        if download.playlist_index is not None:
+            args = args.playlist_items(download.playlist_index)
+
+        return args
