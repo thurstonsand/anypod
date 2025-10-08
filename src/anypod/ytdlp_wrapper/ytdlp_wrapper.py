@@ -364,7 +364,7 @@ class YtdlpWrapper:
         else:
             thumb_args.paths_pl_thumbnail(feed_images_dir).output_pl_thumbnail(
                 f"{feed_id}.%(ext)s"
-            ).output_thumbnail("").playlist_limit(0)
+            ).output_thumbnail("").playlist_items(":0")
 
         if cookies_path:
             thumb_args = thumb_args.cookies(cookies_path)
@@ -420,7 +420,7 @@ class YtdlpWrapper:
         # Apply filtering for playlists/channels
         if source_type != SourceType.SINGLE_VIDEO:
             if keep_last:
-                info_args.playlist_limit(keep_last)
+                info_args.playlist_items(f":{keep_last}")
                 log_config["keep_last"] = keep_last
             if fetch_since_date:
                 # Use lazy_playlist with break_match_filters for early termination
@@ -524,6 +524,9 @@ class YtdlpWrapper:
             .write_thumbnail()
             .paths_thumbnail(thumbnails_dir)
             .output_thumbnail(f"{download.id}.%(ext)s")
+            # For single posts that are playlist items (e.g., multi-attachment Patreon posts)
+            .paths_pl_thumbnail(thumbnails_dir)
+            .output_pl_thumbnail(f"{download.id}.%(ext)s")
             .output(f"{download.id}.%(ext)s")
             .paths_temp(download_temp_dir)
             .paths_home(download_data_dir)
@@ -537,6 +540,7 @@ class YtdlpWrapper:
         handler = self._handler_selector.select(download.source_url)
         download_args = handler.prepare_media_download_args(
             download_args,
+            download,
         )
 
         url_to_download = download.source_url

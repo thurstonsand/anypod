@@ -9,6 +9,7 @@ import pytest
 
 from anypod.db.app_state_db import AppStateDatabase
 from anypod.db.types import Download, DownloadStatus, Feed, SourceType
+from anypod.exceptions import YtdlpApiError
 from anypod.ffmpeg import FFmpeg
 from anypod.path_manager import PathManager
 from anypod.ytdlp_wrapper import YtdlpWrapper
@@ -16,8 +17,18 @@ from anypod.ytdlp_wrapper.core import YtdlpArgs, YtdlpCore, YtdlpInfo
 from anypod.ytdlp_wrapper.handlers import HandlerSelector, YoutubeHandler
 
 
-def _return_same_args(args: YtdlpArgs) -> YtdlpArgs:
+def _return_same_args(
+    args: YtdlpArgs,
+) -> YtdlpArgs:
     """Return the provided YtdlpArgs instance unchanged."""
+    return args
+
+
+def _mock_prepare_media_download_args(
+    args: YtdlpArgs,
+    _download: Download,
+) -> YtdlpArgs:
+    """Mock implementation of prepare_media_download_args that returns args unchanged."""
     return args
 
 
@@ -28,7 +39,7 @@ def mock_youtube_handler() -> MagicMock:
     handler.prepare_playlist_info_args.side_effect = _return_same_args
     handler.prepare_thumbnail_args.side_effect = _return_same_args
     handler.prepare_downloads_info_args.side_effect = _return_same_args
-    handler.prepare_media_download_args.side_effect = _return_same_args
+    handler.prepare_media_download_args.side_effect = _mock_prepare_media_download_args
     return handler
 
 
@@ -496,6 +507,56 @@ async def test_download_media_to_file_success_simplified(
 
     assert mock_is_file.call_count >= 1
     assert mock_stat.call_count >= 1
+
+
+@pytest.mark.unit
+@patch.object(YtdlpCore, "download")
+@patch("aiofiles.os.path.isfile", return_value=True)
+@patch("aiofiles.os.stat")
+@patch.object(YtdlpWrapper, "_prepare_download_dir")
+@patch("aiofiles.os.wrap")
+@pytest.mark.asyncio
+async def test_download_media_to_file_propagates_error_when_no_file(
+    mock_aiofiles_wrap: MagicMock,
+    mock_prep_dl_dir: AsyncMock,
+    mock_stat: AsyncMock,
+    mock_is_file: AsyncMock,
+    mock_ytdlcore_download: AsyncMock,
+    ytdlp_wrapper: YtdlpWrapper,
+):
+    """Ensure yt-dlp errors still raise when no downloaded file is present."""
+    feed_id = "test_feed_error"
+    download_id = "test_id_error"
+
+    dummy_download = Download(
+        feed_id=feed_id,
+        id=download_id,
+        source_url="http://example.com/video_error",
+        title="Test Error Video",
+        published=datetime(2023, 4, 1, 0, 0, 0, tzinfo=UTC),
+        ext="mp4",
+        mime_type="video/mp4",
+        filesize=0,
+        duration=0,
+        status=DownloadStatus.QUEUED,
+    )
+    yt_cli_args: list[str] = []
+
+    feed_temp_path = ytdlp_wrapper._paths.base_tmp_dir / feed_id
+    feed_home_path = ytdlp_wrapper._paths.base_data_dir / feed_id
+
+    mock_prep_dl_dir.return_value = (feed_temp_path, feed_home_path)
+
+    download_failure = YtdlpApiError("exit code 1")
+    mock_ytdlcore_download.side_effect = download_failure
+
+    with pytest.raises(YtdlpApiError) as exc_info:
+        await ytdlp_wrapper.download_media_to_file(dummy_download, yt_cli_args)
+
+    assert exc_info.value is download_failure
+    mock_aiofiles_wrap.assert_not_called()
+    mock_is_file.assert_not_called()
+    mock_stat.assert_not_called()
 
 
 # --- Tests for date filtering behavior ---
