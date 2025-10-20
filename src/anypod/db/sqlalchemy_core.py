@@ -8,7 +8,7 @@ import sqlite3
 from typing import Any
 
 from sqlalchemy import event
-from sqlalchemy.engine import CursorResult, Engine
+from sqlalchemy.engine import CursorResult, Engine, Result
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -60,20 +60,40 @@ class SqlalchemyCore:
         await self.engine.dispose()
 
     @staticmethod
+    def as_cursor_result(result: Result[Any]) -> CursorResult[Any]:
+        """Coerce a Result to a CursorResult.
+
+        Args:
+            result: Result object returned by ``AsyncSession.execute``.
+
+        Returns:
+            The result coerced to :class:`CursorResult` so row-level metadata is available.
+
+        Raises:
+            DatabaseOperationError: If the result is not backed by a cursor.
+        """
+        if isinstance(result, CursorResult):
+            return result
+        raise DatabaseOperationError(
+            f"Expected cursor-backed SQLAlchemy result, got {type(result).__name__}.",
+        )
+
+    @staticmethod
     def assert_exactly_one_row_affected(
-        result: CursorResult[Any], **identifiers: str | None
+        result: Result[Any], **identifiers: str | None
     ) -> None:
         """Validate that exactly one row was affected by an update operation.
 
         Args:
-            result: The cursor result from the update operation.
+            result: The result from the update operation.
             **identifiers: Key-value pairs identifying the entity (e.g., feed_id="test").
 
         Raises:
             NotFoundError: If no rows were affected.
             DatabaseOperationError: If more than one row was affected.
         """
-        match result.rowcount:
+        cursor_result = SqlalchemyCore.as_cursor_result(result)
+        match cursor_result.rowcount:
             case 0:
                 raise NotFoundError("Record not found.")
             case 1:

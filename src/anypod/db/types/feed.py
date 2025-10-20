@@ -1,3 +1,6 @@
+# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false
+# TODO: drop once SQLModel ships Field(Column[Any]) fix (fastapi/sqlmodel#797)
+
 """Feed table mapped with SQLModel."""
 
 from datetime import datetime

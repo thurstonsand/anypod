@@ -1,3 +1,6 @@
+# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false
+# TODO: drop once SQLModel ships Field(Column[Any]) fix (fastapi/sqlmodel#797)
+
 """Application-wide state table.
 
 This module defines the AppState table used to persist global state such as the

@@ -575,7 +575,7 @@ All CLI flags can alternatively be set via environment variables using uppercase
 - **Package Management:** **uv** with `pyproject.toml` + `uv.lock` for reproducible builds
 - **Core Dependencies:** pydantic, SQLModel, SQLAlchemy, feedgen, yt-dlp (pinned to minimum version), APScheduler
 - **System Dependencies:** ffmpeg and ffprobe (for image format detection and conversion)
-- **Development Tools:** ruff (linting/formatting), pyright (type checking), pytest ecosystem (testing), pre-commit (git hooks)
+- **Development Tools:** ruff (linting/formatting), basedpyright (type checking), pytest ecosystem (testing), pre-commit (git hooks)
 
 ---
 
