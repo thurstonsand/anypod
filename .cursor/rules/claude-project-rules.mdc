@@ -65,7 +65,7 @@ timeout 30 ./scripts/run_dev.sh [--keep] # Run full anypod service (scheduler + 
 # Linting and type checking
 uv run ruff check                               # Lint code
 uv run ruff format                              # Format code
-uv run pyright                                  # Type checking
+uv run basedpyright                             # Type checking
 uv run pre-commit run --all-files               # All of the above, prefer to use this one when confirming your code is good
 
 # Testing
@@ -143,7 +143,7 @@ Download status transitions are implemented as explicit methods, not generic upd
 
 ### Tool Configuration
 - Linting and formatting: ruff configuration in @pyproject.toml
-- Type checking: pyright configuration in @pyproject.toml
+- Type checking: basedpyright configuration in @pyproject.toml
 - Testing: pytest configuration in @pyproject.toml
 
 ## File Structure
