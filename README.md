@@ -301,7 +301,7 @@ uv sync
 # Lint/format/type-check/tests
 uv run pre-commit run --all-files
 uv run ruff check && uv run ruff format
-uv run pyright
+uv run basedpyright
 uv run pytest
 uv run pytest --integration # will hit actual youtube endpoints
 ```

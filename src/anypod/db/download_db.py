@@ -137,7 +137,7 @@ class DownloadDatabase:
             res = await session.execute(stmt)
             await session.commit()
 
-        match res.rowcount:
+        match self._db.as_cursor_result(res).rowcount:
             case 0:
                 raise DownloadNotFoundError(
                     "Download not found.", feed_id=feed_id, download_id=download_id
@@ -223,19 +223,20 @@ class DownloadDatabase:
                 )
             )
             result = await session.execute(stmt)
+            cursor_result = self._db.as_cursor_result(result)
 
-            if expected_count is not None and expected_count != result.rowcount:
+            if expected_count is not None and expected_count != cursor_result.rowcount:
                 raise DatabaseOperationError(
-                    f"Expected to requeue {expected_count} downloads but only {result.rowcount} were updated. "
+                    f"Expected to requeue {expected_count} downloads but only {cursor_result.rowcount} were updated. "
                     f"Some downloads may not exist or may not have the expected status. Rolling back changes.",
                 )
             await session.commit()
 
         logger.debug(
             "Downloads requeued.",
-            extra={**log_params, "count_requeued": result.rowcount},
+            extra={**log_params, "count_requeued": cursor_result.rowcount},
         )
-        return result.rowcount
+        return cursor_result.rowcount
 
     @handle_download_db_errors("mark download as DOWNLOADED")
     async def mark_as_downloaded(
@@ -275,7 +276,7 @@ class DownloadDatabase:
                 )
             )
             result = await session.execute(stmt)
-            match result.rowcount:
+            match self._db.as_cursor_result(result).rowcount:
                 case 0:
                     raise DownloadNotFoundError(
                         "Download not found.", feed_id=feed_id, download_id=download_id
