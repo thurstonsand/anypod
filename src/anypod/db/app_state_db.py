@@ -69,4 +69,5 @@ class AppStateDatabase:
             )
             result = await session.execute(stmt)
             await session.commit()
-            return result.rowcount > 0
+            cursor_result = self._db.as_cursor_result(result)
+            return cursor_result.rowcount > 0

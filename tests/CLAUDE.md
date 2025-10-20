@@ -5,7 +5,7 @@
 ### Test Structure and Organization
 - Unit tests should mirror source structure (found in `src/anypod`) in `/tests/anypod/`
 - Integration tests go in `/tests/integration/` with `integration_test_` prefix - run with `--integration` flag
-- Add `# pyright: reportPrivateUsage=false` to test files for protected method access
+- Add `# pyright: reportPrivateUsage=false` to test files for protected method access (basedpyright continues to honor `pyright:` inline directives)
 - Use pytest markers: either `@pytest.mark.unit` or `@pytest.mark.integration` for all tests
 - Import packages like `from anypod.db import Database`, not `from src.anypod`
 - When adding new tests to an existing file:
