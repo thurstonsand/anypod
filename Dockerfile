@@ -45,9 +45,10 @@ RUN apt-get update && \
         gosu \
         ffmpeg \
         p7zip && \
-    # Install yt-dlp binary with write permissions for updates
-    curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp && \
-    chmod a+rwx /usr/local/bin/yt-dlp && \
+    # Install yt-dlp binary into dedicated writable directory
+    mkdir -p /app/bin && \
+    curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /app/bin/yt-dlp && \
+    chmod 0775 /app/bin/yt-dlp && \
     # Install bgutil POT provider plugin (zip) into yt-dlp system plugins dir
     mkdir -p /etc/yt-dlp/plugins && \
     curl -L https://github.com/brainicism/bgutil-ytdlp-pot-provider/releases/download/${BGUTIL_POT_PROVIDER_VERSION}/bgutil-ytdlp-pot-provider.zip -o /etc/yt-dlp/plugins/bgutil-ytdlp-pot-provider.zip && \
@@ -71,7 +72,7 @@ EXPOSE 8024
 # Expose admin port
 EXPOSE 8025
 
-ENV PATH="/app/.venv/bin:$PATH" \
+ENV PATH="/app/bin:/app/.venv/bin:$PATH" \
     CONFIG_FILE=/config/feeds.yaml \
     DATA_DIR=/data \
     COOKIE_PATH=/cookies/cookies.txt \

@@ -8,7 +8,7 @@ if [ "$(id -u)" = '0' ]; then
 
     # Ensure data directories exist and have correct permissions
     mkdir -p /config /data /cookies
-    chown -R "${TARGET_USER_ID}:${TARGET_GROUP_ID}" /config /data
+    chown -R "${TARGET_USER_ID}:${TARGET_GROUP_ID}" /config /data /app/bin
 
     # Re-exec this script as the target user
     exec gosu "${TARGET_USER_ID}:${TARGET_GROUP_ID}" "$0" "$@"
