@@ -10,6 +10,16 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 
 from alembic import op
+from alembic_helpers.triggers import (  # pyright: ignore[reportMissingImports]
+    create_download_triggers,  # pyright: ignore[reportUnknownVariableType]
+    create_download_triggers_v2,  # pyright: ignore[reportUnknownVariableType]
+    create_feed_triggers,  # pyright: ignore[reportUnknownVariableType]
+    create_feed_triggers_v2,  # pyright: ignore[reportUnknownVariableType]
+    drop_download_triggers,  # pyright: ignore[reportUnknownVariableType]
+    drop_download_triggers_v2,  # pyright: ignore[reportUnknownVariableType]
+    drop_feed_triggers,  # pyright: ignore[reportUnknownVariableType]
+    drop_feed_triggers_v2,  # pyright: ignore[reportUnknownVariableType]
+)
 
 # revision identifiers, used by Alembic.
 revision: str = "329f6c9ad1b2"
@@ -20,6 +30,11 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     """Upgrade schema."""
+    # Drop existing triggers before renaming columns
+    # SQLite doesn't update trigger definitions when columns are renamed
+    drop_feed_triggers()
+    drop_download_triggers()
+
     # Rename download.thumbnail -> download.remote_thumbnail_url
     op.execute("ALTER TABLE download RENAME COLUMN thumbnail TO remote_thumbnail_url")
 
@@ -38,9 +53,17 @@ def upgrade() -> None:
         sa.Column("image_ext", sa.String(), nullable=True),
     )
 
+    # Recreate triggers with updated column names
+    create_feed_triggers_v2()
+    create_download_triggers_v2()
+
 
 def downgrade() -> None:
     """Downgrade schema."""
+    # Drop v2 triggers before reverting column names
+    drop_feed_triggers_v2()
+    drop_download_triggers_v2()
+
     # Drop download.thumbnail_ext column
     op.drop_column("download", "thumbnail_ext")
 
@@ -52,3 +75,7 @@ def downgrade() -> None:
 
     # Drop feed.image_ext column
     op.drop_column("feed", "image_ext")
+
+    # Recreate v1 triggers with original column names
+    create_feed_triggers()
+    create_download_triggers()
