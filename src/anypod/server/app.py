@@ -7,6 +7,7 @@ the FastAPI application instance with all necessary middleware and routers.
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 import logging
+from pathlib import Path
 
 from fastapi import FastAPI
 
@@ -15,9 +16,14 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.requests import Request
 from starlette.responses import Response
 
+from ..config import FeedConfig
+from ..data_coordinator import DataCoordinator
 from ..db.download_db import DownloadDatabase
 from ..db.feed_db import FeedDatabase
 from ..file_manager import FileManager
+from ..manual_feed_runner import ManualFeedRunner
+from ..manual_submission_service import ManualSubmissionService
+from ..ytdlp_wrapper import YtdlpWrapper
 from .routers import admin, health, static
 
 logger = logging.getLogger(__name__)
@@ -65,6 +71,12 @@ def create_app(
     file_manager: FileManager,
     feed_database: FeedDatabase,
     download_database: DownloadDatabase,
+    feed_configs: dict[str, FeedConfig],
+    data_coordinator: DataCoordinator,
+    ytdlp_wrapper: YtdlpWrapper,
+    manual_feed_runner: ManualFeedRunner,
+    manual_submission_service: ManualSubmissionService,
+    cookies_path: Path | None = None,
     shutdown_callback: Callable[[], Awaitable[None]] | None = None,
 ) -> FastAPI:
     """Create and configure a FastAPI application instance.
@@ -76,6 +88,12 @@ def create_app(
         file_manager: The file manager instance.
         feed_database: The feed database instance.
         download_database: The download database instance.
+        feed_configs: The feed configurations.
+        data_coordinator: The data coordinator instance.
+        ytdlp_wrapper: The yt-dlp wrapper instance.
+        manual_feed_runner: The manual feed runner instance.
+        manual_submission_service: Service for manual submission metadata fetches.
+        cookies_path: Path to cookies.txt file for authentication.
         shutdown_callback: Optional callback function for graceful shutdown.
 
     Returns:
@@ -115,6 +133,12 @@ def create_app(
     app.state.file_manager = file_manager
     app.state.feed_database = feed_database
     app.state.download_database = download_database
+    app.state.feed_configs = feed_configs
+    app.state.data_coordinator = data_coordinator
+    app.state.ytdlp_wrapper = ytdlp_wrapper
+    app.state.manual_feed_runner = manual_feed_runner
+    app.state.manual_submission_service = manual_submission_service
+    app.state.cookies_path = cookies_path
 
     # Include public routers
     app.include_router(static.router, tags=["static"])
@@ -129,6 +153,12 @@ def create_admin_app(
     file_manager: FileManager,
     feed_database: FeedDatabase,
     download_database: DownloadDatabase,
+    feed_configs: dict[str, FeedConfig],
+    data_coordinator: DataCoordinator,
+    ytdlp_wrapper: YtdlpWrapper,
+    manual_feed_runner: ManualFeedRunner,
+    manual_submission_service: ManualSubmissionService,
+    cookies_path: Path | None = None,
 ) -> FastAPI:
     """Create and configure the admin FastAPI application instance.
 
@@ -141,6 +171,12 @@ def create_admin_app(
         file_manager: The file manager instance.
         feed_database: The feed database instance.
         download_database: The download database instance.
+        feed_configs: The feed configurations.
+        data_coordinator: The data coordinator instance.
+        ytdlp_wrapper: The yt-dlp wrapper instance.
+        manual_feed_runner: The manual feed runner instance.
+        manual_submission_service: Service for manual submission metadata fetches.
+        cookies_path: Path to cookies.txt file for authentication.
 
     Returns:
         Configured FastAPI application instance for admin APIs.
@@ -158,6 +194,12 @@ def create_admin_app(
     app.state.file_manager = file_manager
     app.state.feed_database = feed_database
     app.state.download_database = download_database
+    app.state.feed_configs = feed_configs
+    app.state.data_coordinator = data_coordinator
+    app.state.ytdlp_wrapper = ytdlp_wrapper
+    app.state.manual_feed_runner = manual_feed_runner
+    app.state.manual_submission_service = manual_submission_service
+    app.state.cookies_path = cookies_path
 
     # Include admin and health routers
     app.include_router(admin.router, tags=["admin"])

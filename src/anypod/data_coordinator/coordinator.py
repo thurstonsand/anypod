@@ -395,7 +395,9 @@ class DataCoordinator:
         start_time = datetime.now(UTC)
         log_params: dict[str, Any] = {
             "feed_id": feed_id,
-            "schedule": feed_config.schedule.cron_str,
+            "schedule": (
+                feed_config.schedule.cron_str if feed_config.schedule else "manual"
+            ),
         }
         if feed_config.keep_last:
             log_params["keep_last"] = feed_config.keep_last

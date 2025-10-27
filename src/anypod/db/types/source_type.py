@@ -13,6 +13,7 @@ class SourceType(Enum):
     CHANNEL = "CHANNEL"
     PLAYLIST = "PLAYLIST"
     SINGLE_VIDEO = "SINGLE_VIDEO"
+    MANUAL = "MANUAL"
     UNKNOWN = "UNKNOWN"
 
     def __str__(self) -> str:

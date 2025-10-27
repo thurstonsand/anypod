@@ -5,6 +5,7 @@
 Anypod converts yt-dlp-supported sources (YouTube channels, playlists) into RSS podcast feeds. It runs as a long-lived service that periodically fetches metadata, downloads media files, and generates podcast-consumable RSS feeds.
 
 ### Project Scope & Intent
+
 This is a **self-hosted, small-scale solution** designed for personal use or small groups (typically 1-5 users). Key characteristics:
 
 - **Self-hosted only**: Not intended for public cloud deployment or multi-tenant use
@@ -26,6 +27,7 @@ see @DESIGN_DOC.md for in depth design doc.
 5. **Balance context size**: Start narrowly (using cues such as file names, directory hints, or explicit function/class usages) but do not limit so much that reasoning/implementation is disconnected from the intended change.
 
 **Example workflow:**
+
 - User asks about a function: Load the file(s) where that function/class is implemented; load related imports/types only if clearly required.
 - If asked about architecture: Prefer documentation files (README, DESIGN_DOC.md) and top-level source structure, not all code files.
 - When a question seems ambiguous, request the user to specify file or module names before loading the entire codebase.
@@ -87,6 +89,7 @@ uvx --from ast-grep-cli sg # Syntax-aware code search for exploring codebase str
 ```
 
 ### Docker Deployment Commands
+
 ```bash
 # Build Docker image locally
 docker build -t anypod:local .
@@ -101,6 +104,7 @@ docker run -d -p 8024:8024 -v ./config:/config -v ./data:/data -v ./cookies:/coo
 ## Architecture
 
 ### Core Components
+
 - **Configuration** (`config/`): Pydantic-based multi-source config (env vars → CLI → YAML)
 - **Database** (`db/`): SQLite with `SQLModel` and `SQLAlchemy`, manages download state machine
 - **Data Coordinator** (`data_coordinator/`): Orchestrates the download lifecycle
@@ -112,6 +116,7 @@ docker run -d -p 8024:8024 -v ./config:/config -v ./data:/data -v ./cookies:/coo
 - **RSS Generation** (`rss/`): feedgen-based RSS feed creation
 
 ### Database Schema
+
 - **Tables**:
   - `feed`: Stores feed metadata
   - `download`: Stores download information and status
@@ -120,22 +125,26 @@ docker run -d -p 8024:8024 -v ./config:/config -v ./data:/data -v ./cookies:/coo
 - Critical indexes: `idx_feed_status`, `idx_feed_published`
 
 ### State Management
+
 Download status transitions are implemented as explicit methods, not generic updates. Always use proper state transition methods in `db/download_db.py` and `db/feed_db.py`.
 
 ## Development Notes
 
 ### Requirements
+
 - Python 3.13+ (uses modern match/case syntax)
 - Package manager: `uv` (not pip/poetry) - use modern `uv add`, `uv sync` commands, not legacy `uv pip`
 
 ### Code Patterns
+
 - Error handling: Structured exceptions with context (e.g. feed_id, download_id)
 - Logging: Structured JSON logging with proper context propagation
 - Database: Uses `SQLModel` and `SQLAlchemy` with a custom `SqlalchemyCore` class, not raw SQLite.
 - Currently synchronous but designed for future async conversion
-- Function signatures: Default to required parameters; avoid annotating arguments as ``<type> | None`` unless ``None`` is a real, supported input path.
+- Function signatures: Default to required parameters; avoid annotating arguments as `<type> | None` unless `None` is a real, supported input path.
 
 ### Tool Configuration
+
 - Linting and formatting: ruff configuration in @pyproject.toml
 - Type checking: basedpyright configuration in @pyproject.toml
 - Testing: pytest configuration in @pyproject.toml
@@ -163,7 +172,8 @@ anypod/
 │   │       ├── cron_expression.py         # Cron expression type
 │   │       ├── feed_metadata_overrides.py # Feed metadata overrides
 │   │       ├── podcast_categories.py      # Podcast categories
-│   │       └── podcast_explicit.py        # Podcast explicit flag
+│   │       ├── podcast_explicit.py        # Podcast explicit flag
+│   │       └── podcast_type.py            # Podcast episodic/serial enum
 │   ├── data_coordinator/        # Core orchestration logic
 │   │   ├── coordinator.py       # Main coordinator
 │   │   ├── downloader.py        # Download logic
@@ -173,11 +183,13 @@ anypod/
 │   │       ├── phase_result.py       # Result of a single phase
 │   │       └── processing_results.py # Overall processing results
 │   ├── db/                      # Database layer
+│   │   ├── app_state_db.py      # Global application state persistence
 │   │   ├── decorators.py        # DB error handling decorators
 │   │   ├── download_db.py       # Download-specific operations
 │   │   ├── feed_db.py           # Feed-specific operations
 │   │   ├── sqlalchemy_core.py   # SQLAlchemy core
 │   │   └── types/               # Database types
+│   │       ├── app_state.py               # Global application state model
 │   │       ├── download.py                # Download model
 │   │       ├── download_status.py         # Download status enum
 │   │       ├── feed.py                    # Feed model
@@ -195,9 +207,9 @@ anypod/
 │   │   ├── server.py            # HTTP server configuration
 │   │   ├── validation.py        # Input validation utilities for endpoints
 │   │   └── routers/             # API routers
-  │   │       ├── health.py        # Health check endpoint
-  │   │       └── static.py        # Static file serving and directory browsing
-  │   │       └── admin.py         # Admin-only endpoints (served on private admin server)
+│   │       ├── admin.py         # Admin-only endpoints (served on private admin server)
+│   │       ├── health.py        # Health check endpoint
+│   │       └── static.py        # Static file serving and directory browsing
 │   ├── ytdlp_wrapper/           # `yt-dlp` integration
 │   │   ├── ytdlp_wrapper.py     # High-level wrapper
 │   │   ├── core/                # Core yt-dlp wrapper
@@ -216,9 +228,16 @@ anypod/
 │   ├── file_manager.py          # File operations abstraction
 │   ├── image_downloader.py      # Image downloading for feeds/thumbnails
 │   ├── logging_config.py        # Logging configuration
+│   ├── mimetypes.py             # Static mimetype overrides for served media
+│   ├── manual_feed_runner.py    # Manual feed trigger orchestrator sharing scheduler limits
+│   ├── manual_submission_service.py  # Manual submission validation and metadata extraction
 │   ├── metadata.py              # Metadata utility functions
 │   ├── path_manager.py          # Path resolution logic
 │   └── state_reconciler.py      # State reconciliation between config and database
+├── alembic/                     # Database migration project
+│   ├── env.py                   # Alembic environment configuration
+│   ├── script.py.mako           # Alembic migration template
+│   └── versions/                # Individual migration revisions
 ├── pyproject.toml               # Package configuration
 ├── uv.lock                      # Dependency lock file
 ├── example_feeds.yaml           # Example configuration
@@ -244,18 +263,18 @@ feeds:
     url: https://www.youtube.com/@premium/videos
     schedule: "0 6 * * *"
     metadata:
-      title: "My Premium Podcast"                                 # Override feed title
-      subtitle: "Daily insights and discussions"                  # Feed subtitle
+      title: "My Premium Podcast" # Override feed title
+      subtitle: "Daily insights and discussions" # Feed subtitle
       description: "A daily podcast about technology and culture" # Feed description
-      language: "en"                                              # Language code (e.g., 'en', 'es', 'fr')
-      author: "John Doe"                                          # Podcast author
-      author_email: "john@example.com"                            # Podcast author email
-      image_url: "https://example.com/podcast-art.jpg"            # Original podcast artwork URL (min 1400x1400px, will be downloaded and hosted locally)
-      podcast_type: "episodic"                                    # Podcast type: "episodic" or "serial"
-      explicit: "no"                                              # Explicit content: "yes", "no", or "clean"
-      category:                                                   # Apple Podcasts categories (max 2)
-        - "Technology"                                            # Main category only
-        - "Business > Entrepreneurship"                           # Main > Sub category
+      language: "en" # Language code (e.g., 'en', 'es', 'fr')
+      author: "John Doe" # Podcast author
+      author_email: "john@example.com" # Podcast author email
+      image_url: "https://example.com/podcast-art.jpg" # Original podcast artwork URL (min 1400x1400px, will be downloaded and hosted locally)
+      podcast_type: "episodic" # Podcast type: "episodic" or "serial"
+      explicit: "no" # Explicit content: "yes", "no", or "clean"
+      category: # Apple Podcasts categories (max 2)
+        - "Technology" # Main category only
+        - "Business > Entrepreneurship" # Main > Sub category
         # Alternative formats:
         # - {"main": "Technology"}
         # - {"main": "Business", "sub": "Entrepreneurship"}
@@ -263,7 +282,9 @@ feeds:
 ```
 
 #### Environment Variables
+
 Configure global application settings via environment variables:
+
 ```bash
 DEBUG_MODE=enqueuer                    # Debug mode: ytdlp, enqueuer, downloader
 LOG_FORMAT=json                        # Log format: human, json (default: human)
@@ -272,7 +293,7 @@ LOG_INCLUDE_STACKTRACE=true           # Include stack traces in logs (default: f
 BASE_URL=https://podcasts.example.com  # Base URL for feeds/media (default: http://localhost:8024)
 DATA_DIR=/path/to/data                # Root directory for all application data (default: /data)
 CONFIG_FILE=/path/to/feeds.yaml       # Config file path (default: /config/feeds.yaml)
-COOKIES_PATH=/path/to/cookies.txt     # Optional cookies.txt file for yt-dlp authentication (default: /cookies/cookies.txt)
+COOKIES_PATH=/path/to/cookies.txt     # Optional cookies.txt file for yt-dlp authentication (default: unset)
 SERVER_HOST=0.0.0.0                   # HTTP server host (default: 0.0.0.0)
 SERVER_PORT=8024                      # HTTP server port (default: 8024)
 ADMIN_SERVER_PORT=8025                 # Admin HTTP server port (default: 8025)
@@ -285,6 +306,7 @@ YT_DLP_UPDATE_FREQ=12h                 # Minimum interval between yt-dlp --updat
 ## Code Style Guidelines
 
 ### General Principles
+
 - **Follow existing codebase style above all else**
 - **Following style applies even when editing non-code as well. In all scenarios, follow existing style**
 - Focus on requested functionality - avoid unnecessary refactoring of existing code
@@ -300,6 +322,7 @@ YT_DLP_UPDATE_FREQ=12h                 # Minimum interval between yt-dlp --updat
 - Imports should always be at the top of the file, unless you are specifically trying to lazy load
 
 ### Docstring Guidelines
+
 - All functions, methods, classes, and tops of files require Google-style docstrings:
 
 ```python
@@ -323,4 +346,4 @@ def fetch_metadata(
     """
 ```
 
-- When writing docstrings, never write one for __init__ fns, since this should be covered by the class level docstring
+- When writing docstrings, never write one for `__init__` fns, since this should be covered by the class level docstring

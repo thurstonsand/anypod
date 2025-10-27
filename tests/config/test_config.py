@@ -13,6 +13,7 @@ import pytest
 import yaml
 
 from anypod.config.config import AppSettings, FeedConfig, YamlFileFromFieldSource
+from anypod.config.types import FeedMetadataOverrides
 from anypod.exceptions import ConfigLoadError
 
 # --- Tests for AppSettings configuration loading ---
@@ -194,6 +195,53 @@ def test_override_location_with_init_arg(sample_config_file: Path):
         settings.feeds["podcast2"].keep_last
         == SAMPLE_FEEDS_DATA["feeds"]["podcast2"]["keep_last"]
     )
+
+
+@pytest.mark.unit
+def test_manual_feed_requires_title():
+    """Schedule 'manual' enforces metadata title override."""
+    with pytest.raises(ValidationError):
+        FeedConfig(
+            url="https://example.com/manual",
+            schedule="manual",  # type: ignore[arg-type]
+            metadata=None,
+        )
+
+
+@pytest.mark.unit
+def test_manual_feed_parses_successfully_when_title_present():
+    """Manual feeds accept schedule sentinel and expose helper flag."""
+    cfg = FeedConfig(
+        url="https://example.com/manual",
+        schedule="manual",  # type: ignore[arg-type]
+        metadata=FeedMetadataOverrides(title="Manual"),
+    )
+    assert cfg.is_manual is True
+    assert cfg.metadata is not None
+    assert cfg.metadata.title == "Manual"
+
+
+@pytest.mark.unit
+def test_manual_feed_url_optional_stays_none():
+    """Manual feeds may omit the URL entirely."""
+    cfg = FeedConfig(
+        url=None,
+        schedule="manual",  # type: ignore[arg-type]
+        metadata=FeedMetadataOverrides(title="Manual"),
+    )
+    assert cfg.url is None
+
+
+@pytest.mark.unit
+def test_scheduled_feed_requires_url():
+    """Non-manual feeds must define `url`."""
+    with pytest.raises(ValidationError):
+        FeedConfig(
+            url=None,
+            schedule="0 3 * * *",  # type: ignore[arg-type]
+            yt_args=None,  # type: ignore[arg-type]
+            metadata=None,
+        )
 
 
 @pytest.mark.unit

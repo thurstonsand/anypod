@@ -11,7 +11,7 @@ import shlex
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from .types import CronExpression, FeedMetadataOverrides
 
@@ -35,13 +35,20 @@ class FeedConfig(BaseModel):
         default=True,
         description="Whether the feed is enabled. If disabled, the feed will not be processed.",
     )
-    url: str = Field(..., min_length=1, description="Feed source URL")
+    url: str | None = Field(
+        default=None,
+        description="Feed source URL (exclude for manual feeds)",
+        min_length=1,
+    )
     yt_args: list[str] = Field(
         default_factory=list[str],
         description="Command-line arguments for yt-dlp, parsed from user-provided string in config.",
     )
-    schedule: CronExpression = Field(
-        ..., description="Cron schedule expression (supports seconds)"
+    schedule: CronExpression | None = Field(
+        ...,
+        description=(
+            "Cron schedule expression (supports seconds) or the string 'manual' to disable scheduling."
+        ),
     )
     keep_last: int | None = Field(
         None, ge=1, description="Prune policy - number of latest downloads to keep"
@@ -88,7 +95,7 @@ class FeedConfig(BaseModel):
 
     @field_validator("schedule", mode="before")
     @classmethod
-    def parse_schedule(cls, v: Any) -> CronExpression:
+    def parse_schedule(cls, v: Any) -> CronExpression | None:
         """Parse schedule into a CronExpression.
 
         Args:
@@ -104,6 +111,8 @@ class FeedConfig(BaseModel):
         match v:
             case CronExpression():
                 return v
+            case str() if v.strip() == "manual":
+                return None
             case str() if v.strip():
                 return CronExpression(v.strip())
             case str():  # Empty string
@@ -112,7 +121,7 @@ class FeedConfig(BaseModel):
                 raise ValueError("Schedule is required")
             case _:
                 raise TypeError(
-                    f"schedule must be a string or CronExpression, got {type(v).__name__}"
+                    f"schedule must be 'manual', a string cron expression, or CronExpression, got {type(v).__name__}"
                 )
 
     @staticmethod
@@ -186,3 +195,23 @@ class FeedConfig(BaseModel):
                 raise TypeError(
                     f"since must be a string in YYYYMMDD format or None, got {type(v).__name__}"
                 )
+
+    @model_validator(mode="after")
+    def validate_manual_feed(self) -> "FeedConfig":
+        """Ensure manual feeds provide required metadata overrides."""
+        if self.schedule is None:
+            title_override = (
+                self.metadata.title if self.metadata and self.metadata.title else None
+            )
+            if not title_override:
+                raise ValueError(
+                    "Manual feeds require metadata.title when schedule is set to 'manual'."
+                )
+        elif not self.url:
+            raise ValueError("Feed URL is required for scheduled feeds.")
+        return self
+
+    @property
+    def is_manual(self) -> bool:
+        """Return True when the feed runs via manual submissions only."""
+        return self.schedule is None

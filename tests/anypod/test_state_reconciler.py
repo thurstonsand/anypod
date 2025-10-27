@@ -412,6 +412,7 @@ async def test_handle_existing_feed_disable(
 async def test_handle_existing_feed_url_change(
     state_reconciler: StateReconciler,
     mock_feed_db: MagicMock,
+    mock_ytdlp_wrapper: MagicMock,
     base_feed_config: FeedConfig,
 ) -> None:
     """URL change resets error state."""
@@ -421,6 +422,10 @@ async def test_handle_existing_feed_url_change(
 
     config = deepcopy(base_feed_config)
     config.url = "https://new.example.com/feed"
+
+    new_feed_metadata = deepcopy(MOCK_FEED)
+    new_feed_metadata.source_url = config.url
+    mock_ytdlp_wrapper.fetch_playlist_metadata.return_value = new_feed_metadata
 
     result = await state_reconciler._handle_existing_feed(
         FEED_ID, config, existing_feed
@@ -1330,23 +1335,28 @@ async def test_handle_image_url_changes_ytdlp_download_failure(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_handle_image_url_changes_direct_download_returns_none(
+async def test_handle_image_url_changes_direct_download_error(
     state_reconciler: StateReconciler,
     mock_image_downloader: MagicMock,
     base_feed_config: FeedConfig,
 ) -> None:
-    """Direct image download returns None (no image found)."""
+    """Direct image download failures bubble up as ImageDownloadError and are handled."""
     # Setup config with new image URL
+    image_url = "https://example.com/image.jpg"
     config = deepcopy(base_feed_config)
     config.metadata = FeedMetadataOverrides(  # type: ignore # fields default to None
-        image_url="https://example.com/image.jpg",
+        image_url=image_url,
     )
 
     db_feed = deepcopy(MOCK_FEED)
     updated_feed = deepcopy(db_feed)
-    updated_feed.remote_image_url = "https://example.com/image.jpg"
+    updated_feed.remote_image_url = image_url
 
-    mock_image_downloader.download_feed_image_direct.return_value = None
+    mock_image_downloader.download_feed_image_direct.side_effect = ImageDownloadError(
+        "download failed",
+        feed_id=FEED_ID,
+        url=image_url,
+    )
 
     result = await state_reconciler._handle_image_url_changes(
         FEED_ID, config, db_feed, updated_feed
@@ -1396,6 +1406,7 @@ async def test_reconcile_startup_state_all_scenarios(
     mock_feed_db: MagicMock,
     mock_download_db: MagicMock,
     mock_pruner: MagicMock,
+    mock_ytdlp_wrapper: MagicMock,
     base_feed_config: FeedConfig,
 ) -> None:
     """Full startup reconciliation with new, existing, and removed feeds."""
@@ -1419,6 +1430,15 @@ async def test_reconcile_startup_state_all_scenarios(
     # Mock behaviors
     mock_download_db.count_downloads_by_status.return_value = 0
     mock_download_db.get_downloads_by_status.return_value = []
+
+    def _mock_fetch_playlist_metadata(*, source_url: str, **_: object) -> Feed:
+        feed = deepcopy(MOCK_FEED)
+        feed.source_url = source_url
+        return feed
+
+    mock_ytdlp_wrapper.fetch_playlist_metadata.side_effect = (
+        _mock_fetch_playlist_metadata
+    )
 
     # Execute
     ready_feeds = await state_reconciler.reconcile_startup_state(config_feeds)
@@ -1509,3 +1529,106 @@ async def test_reconcile_startup_state_continues_on_individual_errors(
     # Only the successful feed should be ready
     assert ready_feeds == [NEW_FEED_ID]
     assert mock_feed_db.upsert_feed.call_count == 2
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_manual_feed_not_scheduled_but_inserted(
+    state_reconciler: StateReconciler,
+    mock_feed_db: MagicMock,
+    mock_ytdlp_wrapper: MagicMock,
+) -> None:
+    """Manual feeds skip discovery and are excluded from scheduler."""
+    mock_feed_db.get_feeds.return_value = []
+    manual_config = FeedConfig(
+        url=None,
+        schedule="manual",  # type: ignore[arg-type]
+        metadata=FeedMetadataOverrides(title="Manual Feed"),
+    )
+
+    ready = await state_reconciler.reconcile_startup_state({"manual": manual_config})
+
+    assert ready == []
+    mock_ytdlp_wrapper.discover_feed_properties.assert_not_called()
+    inserted_feed = mock_feed_db.upsert_feed.await_args[0][0]
+    assert inserted_feed.id == "manual"
+    assert inserted_feed.source_type == SourceType.MANUAL
+    assert inserted_feed.source_url is None
+    assert inserted_feed.title == "Manual Feed"
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_fetch_feed_metadata_manual_skips_discovery(
+    state_reconciler: StateReconciler,
+    mock_ytdlp_wrapper: MagicMock,
+) -> None:
+    """Manual feeds synthesize metadata without yt-dlp discovery."""
+    manual_config = FeedConfig(
+        url=None,
+        schedule="manual",  # type: ignore[arg-type]
+        metadata=FeedMetadataOverrides(title="Manual Feed", description="Desc"),
+    )
+
+    result = await state_reconciler._fetch_feed_metadata(
+        "manual", manual_config, None, cookies_path=None
+    )
+
+    assert result.source_type == SourceType.MANUAL
+    assert result.title == "Manual Feed"
+    mock_ytdlp_wrapper.discover_feed_properties.assert_not_called()
+    mock_ytdlp_wrapper.fetch_playlist_metadata.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_handle_existing_manual_feed_updates_metadata_and_image(
+    state_reconciler: StateReconciler,
+    mock_feed_db: MagicMock,
+    mock_image_downloader: MagicMock,
+    mock_ytdlp_wrapper: MagicMock,
+) -> None:
+    """Existing manual feeds update metadata and image via overrides."""
+    manual_config = FeedConfig(
+        url=None,
+        schedule="manual",  # type: ignore[arg-type]
+        metadata=FeedMetadataOverrides(
+            title="Updated Manual Feed",
+            description="Fresh description",
+            image_url="https://example.com/manual-new.jpg",
+        ),
+    )
+    db_feed = Feed(
+        id="manual",
+        title="Old Manual Feed",
+        subtitle=None,
+        description="Old description",
+        language=None,
+        author=None,
+        author_email=None,
+        remote_image_url="https://example.com/manual-old.jpg",
+        image_ext="png",
+        is_enabled=True,
+        source_type=SourceType.MANUAL,
+        source_url=None,
+        resolved_url=None,
+        last_successful_sync=BASE_TIME,
+        since=None,
+        keep_last=None,
+    )
+    mock_image_downloader.download_feed_image_direct.return_value = "jpg"
+
+    result = await state_reconciler._handle_existing_feed(
+        "manual", manual_config, db_feed
+    )
+
+    assert result is True
+    mock_image_downloader.download_feed_image_direct.assert_called_once_with(
+        "manual", "https://example.com/manual-new.jpg"
+    )
+    updated_feed = mock_feed_db.upsert_feed.await_args[0][0]
+    assert updated_feed.title == "Updated Manual Feed"
+    assert updated_feed.description == "Fresh description"
+    assert updated_feed.image_ext == "jpg"
+    mock_ytdlp_wrapper.discover_feed_properties.assert_not_called()
+    mock_ytdlp_wrapper.fetch_playlist_metadata.assert_not_called()

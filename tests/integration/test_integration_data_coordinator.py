@@ -152,6 +152,9 @@ async def test_process_feed_complete_success(
     feed_id = "test_complete_success"
     feed_config = create_feed_config()
 
+    assert feed_config.url is not None, (
+        "Scheduled feed configuration must define 'url'."
+    )
     # Setup feed with initial sync timestamp
     await setup_feed_with_initial_sync(
         feed_db, feed_id, feed_config.url, SourceType.SINGLE_VIDEO
@@ -241,6 +244,9 @@ async def test_process_feed_incremental_processing(
     feed_id = "test_incremental"
     feed_config = create_feed_config()
 
+    assert feed_config.url is not None, (
+        "Scheduled feed configuration must define 'url'."
+    )
     # Setup feed with initial sync timestamp
     await setup_feed_with_initial_sync(
         feed_db, feed_id, feed_config.url, SourceType.SINGLE_VIDEO
@@ -322,6 +328,9 @@ async def test_process_feed_idempotency(
     feed_id = "test_idempotency"
     feed_config = create_feed_config()
 
+    assert feed_config.url is not None, (
+        "Scheduled feed configuration must define 'url'."
+    )
     # Setup feed with initial sync timestamp
     await setup_feed_with_initial_sync(
         feed_db, feed_id, feed_config.url, SourceType.SINGLE_VIDEO
@@ -403,6 +412,9 @@ async def test_process_feed_with_retention_pruning(
         keep_last=1,  # Keep only the most recent item
     )
 
+    assert feed_config.url is not None, (
+        "Scheduled feed configuration must define 'url'."
+    )
     # Setup feed with channel sync timestamp (for 2024 videos)
     await setup_feed_with_channel_sync(
         feed_db, feed_id, feed_config.url, SourceType.PLAYLIST, feed_config.url

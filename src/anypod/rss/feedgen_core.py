@@ -52,12 +52,13 @@ class FeedgenCore:
                 "Invalid feed identifier for RSS URL.",
                 feed_id=feed_id,
             ) from e
+        self._source_url = feed.source_url or feed_self_url
 
         fg.title(feed.title)  # type: ignore
         if feed.subtitle:
             fg.podcast.itunes_subtitle(feed.subtitle)  # type: ignore
         fg.link(href=feed_self_url, rel="self")  # type: ignore
-        fg.link(href=feed.source_url, rel="alternate")  # type: ignore
+        fg.link(href=self._source_url, rel="alternate")  # type: ignore
         # Use a default description if "" to satisfy feedgen requirements
         description = feed.description or "No description available"
         fg.description(description)  # type: ignore
@@ -83,7 +84,7 @@ class FeedgenCore:
             fg.image(  # type: ignore
                 url=hosted_feed_image_url,
                 title=feed.title,
-                link=feed.source_url,
+                link=self._source_url,
                 description=f"Artwork for {feed.title}",
             )
         elif feed.remote_image_url:
@@ -91,7 +92,7 @@ class FeedgenCore:
             fg.image(  # type: ignore
                 url=feed.remote_image_url,
                 title=feed.title,
-                link=feed.source_url,
+                link=self._source_url,
                 description=f"Artwork for {feed.title}",
             )
         if feed.author:
@@ -186,7 +187,7 @@ class FeedgenCore:
             fe.link(href=download.source_url, rel="alternate")  # type: ignore
             fe.published(download.published)  # type: ignore
             fe.source(  # type: ignore
-                url=self._feed.source_url,
+                url=self._source_url,
                 title=self._feed.title,
             )
             fe.podcast.itunes_duration(self._format_duration(download.duration))  # type: ignore

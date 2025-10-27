@@ -52,6 +52,12 @@ async def run_debug_ytdlp_mode(settings: AppSettings, paths: PathManager) -> Non
     )
 
     for feed_id, feed_config in settings.feeds.items():
+        if not feed_config.url:
+            logger.warning(
+                "debug_ytdlp requires a concrete feed URL; skipping manual feed.",
+                extra={"feed_id": feed_id},
+            )
+            continue
         logger.info(
             "Fetching metadata for feed.",
             extra={"feed_url": feed_config.url, "feed_id": feed_id},

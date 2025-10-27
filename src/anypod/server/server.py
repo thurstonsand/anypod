@@ -6,14 +6,19 @@ with the FastAPI application and all necessary dependencies.
 
 from collections.abc import Awaitable, Callable
 import logging
+from pathlib import Path
 
 import uvicorn
 
-from ..config import AppSettings
+from ..config import AppSettings, FeedConfig
+from ..data_coordinator import DataCoordinator
 from ..db.download_db import DownloadDatabase
 from ..db.feed_db import FeedDatabase
 from ..file_manager import FileManager
 from ..logging_config import LOGGING_CONFIG
+from ..manual_feed_runner import ManualFeedRunner
+from ..manual_submission_service import ManualSubmissionService
+from ..ytdlp_wrapper import YtdlpWrapper
 from .app import create_admin_app, create_app
 
 logger = logging.getLogger(__name__)
@@ -24,16 +29,27 @@ def create_server(
     file_manager: FileManager,
     feed_database: FeedDatabase,
     download_database: DownloadDatabase,
+    data_coordinator: DataCoordinator,
+    ytdlp_wrapper: YtdlpWrapper,
+    manual_feed_runner: ManualFeedRunner,
+    manual_submission_service: ManualSubmissionService,
+    feed_configs: dict[str, FeedConfig],
+    cookies_path: Path | None,
     shutdown_callback: Callable[[], Awaitable[None]] | None = None,
 ) -> uvicorn.Server:
     """Create and configure a uvicorn HTTP server with FastAPI app.
 
     Args:
         settings: Application settings containing server configuration.
-        rss_generator: The RSS feed generator instance.
         file_manager: The file manager instance.
         feed_database: The feed database instance.
         download_database: The download database instance.
+        data_coordinator: The data coordinator instance.
+        ytdlp_wrapper: The yt-dlp wrapper instance.
+        manual_feed_runner: Shared manual feed runner.
+        manual_submission_service: Service for manual submission metadata lookups.
+        feed_configs: The feed configurations.
+        cookies_path: Path to cookies.txt file for authentication.
         shutdown_callback: Optional callback to execute during shutdown.
 
     Returns:
@@ -44,6 +60,12 @@ def create_server(
         file_manager=file_manager,
         feed_database=feed_database,
         download_database=download_database,
+        feed_configs=feed_configs,
+        data_coordinator=data_coordinator,
+        ytdlp_wrapper=ytdlp_wrapper,
+        manual_feed_runner=manual_feed_runner,
+        manual_submission_service=manual_submission_service,
+        cookies_path=cookies_path,
         shutdown_callback=shutdown_callback,
     )
 
@@ -80,15 +102,26 @@ def create_admin_server(
     file_manager: FileManager,
     feed_database: FeedDatabase,
     download_database: DownloadDatabase,
+    data_coordinator: DataCoordinator,
+    ytdlp_wrapper: YtdlpWrapper,
+    manual_feed_runner: ManualFeedRunner,
+    manual_submission_service: ManualSubmissionService,
+    feed_configs: dict[str, FeedConfig],
+    cookies_path: Path | None,
 ) -> uvicorn.Server:
     """Create and configure a uvicorn HTTP server for the admin FastAPI app.
 
     Args:
         settings: Application settings containing admin server configuration.
-        rss_generator: The RSS feed generator instance.
         file_manager: The file manager instance.
         feed_database: The feed database instance.
         download_database: The download database instance.
+        data_coordinator: The data coordinator instance.
+        ytdlp_wrapper: The yt-dlp wrapper instance.
+        manual_feed_runner: Shared manual feed runner.
+        manual_submission_service: Service for manual submission metadata lookups.
+        feed_configs: The feed configurations.
+        cookies_path: Path to cookies.txt file for authentication.
 
     Returns:
         Configured uvicorn server ready to run the admin app.
@@ -98,6 +131,12 @@ def create_admin_server(
         file_manager=file_manager,
         feed_database=feed_database,
         download_database=download_database,
+        feed_configs=feed_configs,
+        data_coordinator=data_coordinator,
+        ytdlp_wrapper=ytdlp_wrapper,
+        manual_feed_runner=manual_feed_runner,
+        manual_submission_service=manual_submission_service,
+        cookies_path=cookies_path,
     )
 
     config = uvicorn.Config(

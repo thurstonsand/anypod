@@ -99,7 +99,10 @@ class Feed(SQLModel, table=True):
     )
 
     source_type: SourceType = Field(sa_column=Column(Enum(SourceType), nullable=False))
-    source_url: str
+    source_url: str | None = Field(
+        default=None,
+        sa_column=Column(String, nullable=True),
+    )
     resolved_url: str | None = None
 
     # ----------------------------------------------------- time keeping ----

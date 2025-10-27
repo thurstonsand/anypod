@@ -51,3 +51,9 @@ feeds:
     metadata:
       title: "High Quality Converted Podcast"
       subtitle: "Automatically converts to H.265/AAC for optimal streaming"
+
+  manual_dropbox:
+    schedule: "manual"
+    metadata:
+      title: "Manual Drops"
+      description: "Sample feed that only ingests URLs you POST to the admin API"

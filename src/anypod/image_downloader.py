@@ -65,7 +65,7 @@ class ImageDownloader:
                 url=url,
             ) from e
 
-    async def download_feed_image_direct(self, feed_id: str, url: str) -> str | None:
+    async def download_feed_image_direct(self, feed_id: str, url: str) -> str:
         """Download feed image directly via HTTP.
 
         Args:
@@ -73,7 +73,10 @@ class ImageDownloader:
             url: Image URL to download.
 
         Returns:
-            Extension string (e.g., "jpg") if successful, None if failed.
+            Extension string (e.g., "jpg").
+
+        Raises:
+            ImageDownloadError: If the image cannot be downloaded or stored.
         """
         log_params = {"feed_id": feed_id, "url": url}
         logger.debug("Starting direct HTTP feed image download.", extra=log_params)

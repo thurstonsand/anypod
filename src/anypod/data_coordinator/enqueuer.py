@@ -553,8 +553,12 @@ class Enqueuer:
         feed_log_params = {"feed_id": feed.id}
         logger.debug("Handling remaining upcoming downloads.", extra=feed_log_params)
 
+        feed_url = feed_config.url
+        # This is guaranteed by earlier filtering
+        assert feed_url is not None, "Scheduled feeds must define url"
+
         upcoming_db_downloads = await self._get_upcoming_downloads_for_feed(
-            feed.id, feed_config.url
+            feed.id, feed_url
         )
 
         if not upcoming_db_downloads:
@@ -639,6 +643,8 @@ class Enqueuer:
         # Use this time for last_successful_sync
         sync_timestamp = datetime.now(UTC)
         try:
+            # this is guaranteed by earlier filtering
+            assert feed.source_url is not None
             # Fetch filtered video metadata for enqueuing
             all_fetched_downloads = (
                 await self._ytdlp_wrapper.fetch_new_downloads_metadata(
@@ -719,6 +725,13 @@ class Enqueuer:
         """
         feed_log_params = {"feed_id": feed_id, "feed_url": feed_config.url}
         logger.debug("Starting enqueue_new_downloads process.", extra=feed_log_params)
+
+        if feed_config.is_manual:
+            logger.debug(
+                "Manual feed configured for manual submissions only; skipping metadata fetch.",
+                extra=feed_log_params,
+            )
+            return 0, datetime.now(UTC)
 
         # Fetch feed from database to get source_type and resolved_url
         try:

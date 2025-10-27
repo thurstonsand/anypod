@@ -7,6 +7,7 @@ for managing scheduled feed processing jobs using APScheduler with async support
 graceful error handling, and proper lifecycle management.
 """
 
+from asyncio import Semaphore
 from datetime import UTC, datetime
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -240,7 +241,10 @@ async def test_process_feed_with_context_sets_context_and_calls_coordinator(
 ):
     """Test that _process_feed_with_context sets context ID and calls data coordinator."""
     result = await FeedScheduler._process_feed_with_context(
-        mock_data_coordinator, "test_feed", sample_feed_config
+        mock_data_coordinator,
+        "test_feed",
+        sample_feed_config,
+        Semaphore(1),
     )
 
     # Verify context ID was set

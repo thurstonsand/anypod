@@ -359,6 +359,28 @@ class SchedulerError(AnypodError):
         self.feed_id = feed_id
 
 
+class ManualSubmissionError(AnypodError):
+    """Raised when a manual submission fails validation."""
+
+    def __init__(
+        self,
+        message: str,
+        feed_id: str | None = None,
+        url: str | None = None,
+    ):
+        super().__init__(message)
+        self.feed_id = feed_id
+        self.url = url
+
+
+class ManualSubmissionUnavailableError(ManualSubmissionError):
+    """Raised when manual submission points to unavailable content."""
+
+
+class ManualSubmissionUnsupportedURLError(ManualSubmissionError):
+    """Raised when manual submission URL cannot be processed."""
+
+
 class FFProbeError(AnypodError):
     """Raised when ffprobe execution fails.
 

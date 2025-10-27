@@ -14,13 +14,12 @@ from .config import FeedConfig
 from .data_coordinator import Pruner
 from .db import DownloadDatabase
 from .db.feed_db import FeedDatabase
-from .db.types import DownloadStatus, Feed
+from .db.types import DownloadStatus, Feed, SourceType
 from .exceptions import (
     DatabaseOperationError,
     ImageDownloadError,
     PruneError,
     StateReconciliationError,
-    YtdlpApiError,
 )
 from .file_manager import FileManager
 from .image_downloader import ImageDownloader
@@ -65,6 +64,72 @@ class StateReconciler:
         self._pruner = pruner
         logger.debug("StateReconciler initialized.")
 
+    async def _fetch_feed_metadata(
+        self,
+        feed_id: str,
+        feed_config: FeedConfig,
+        db_feed: Feed | None,
+        cookies_path: Path | None,
+    ) -> Feed:
+        """Return feed metadata derived from either config or yt-dlp."""
+        if feed_config.is_manual:
+            return self._build_manual_feed_metadata(feed_id, feed_config)
+
+        assert feed_config.url is not None  # Scheduled feeds validated earlier
+        source_url = feed_config.url
+
+        if (
+            db_feed is None
+            or db_feed.source_url != source_url
+            or (not db_feed.is_enabled and feed_config.enabled)
+        ):
+            # Needs discovery
+            (
+                source_type,
+                resolved_url,
+            ) = await self._ytdlp_wrapper.discover_feed_properties(feed_id, source_url)
+        else:
+            source_type = db_feed.source_type
+            resolved_url = db_feed.resolved_url
+
+        fetched_feed = await self._ytdlp_wrapper.fetch_playlist_metadata(
+            feed_id=feed_id,
+            source_type=source_type,
+            source_url=source_url,
+            resolved_url=resolved_url,
+            user_yt_cli_args=feed_config.yt_args,
+            cookies_path=cookies_path,
+        )
+        return fetched_feed
+
+    def _build_manual_feed_metadata(
+        self, feed_id: str, feed_config: FeedConfig
+    ) -> Feed:
+        """Synthesize metadata for manual feeds from config overrides."""
+        overrides = feed_config.metadata
+        assert overrides is not None  # Enforced during validation
+
+        manual_feed = Feed(
+            id=feed_id,
+            is_enabled=True,
+            source_type=SourceType.MANUAL,
+            source_url=feed_config.url,
+            resolved_url=None,
+            last_successful_sync=MIN_SYNC_DATE,
+        )
+
+        manual_feed.title = overrides.title
+        manual_feed.subtitle = overrides.subtitle
+        manual_feed.description = overrides.description
+        manual_feed.language = overrides.language
+        manual_feed.author = overrides.author
+        manual_feed.author_email = overrides.author_email
+        manual_feed.remote_image_url = overrides.image_url
+        manual_feed.category = overrides.category or manual_feed.category
+        manual_feed.podcast_type = overrides.podcast_type or manual_feed.podcast_type
+        manual_feed.explicit = overrides.explicit or manual_feed.explicit
+        return manual_feed
+
     async def _handle_new_feed(
         self, feed_id: str, feed_config: FeedConfig, cookies_path: Path | None = None
     ) -> None:
@@ -78,96 +143,39 @@ class StateReconciler:
         Raises:
             StateReconciliationError: If database operations fail.
         """
-        log_params = {"feed_id": feed_id, "feed_url": feed_config.url}
+        log_params = {
+            "feed_id": feed_id,
+        }
+        if feed_config.url:
+            log_params["feed_url"] = feed_config.url
         logger.info("Processing new feed.", extra=log_params)
 
         # Set initial sync timestamp to 'since' if provided, otherwise use min
         initial_sync = feed_config.since if feed_config.since else MIN_SYNC_DATE
 
-        # Discover feed properties (source type and resolved URL)
-        try:
-            (
-                source_type,
-                resolved_url,
-            ) = await self._ytdlp_wrapper.discover_feed_properties(
-                feed_id, feed_config.url
-            )
-        except YtdlpApiError as e:
-            raise StateReconciliationError(
-                "Failed to discover feed properties during feed creation.",
-                feed_id=feed_id,
-            ) from e
-        else:
-            logger.debug(
-                "Feed discovery completed.",
-                extra={
-                    **log_params,
-                    "discovered_source_type": source_type.value,
-                    "discovered_resolved_url": resolved_url,
-                },
-            )
-
-        # Fetch and merge feed metadata
-        try:
-            fetched_feed = await self._ytdlp_wrapper.fetch_playlist_metadata(
-                feed_id=feed_id,
-                source_type=source_type,
-                source_url=feed_config.url,
-                resolved_url=resolved_url,
-                user_yt_cli_args=feed_config.yt_args,
-                cookies_path=cookies_path,
-            )
-        except YtdlpApiError as e:
-            raise StateReconciliationError(
-                "Failed to fetch and merge feed metadata during feed creation.",
-                feed_id=feed_id,
-            ) from e
+        fetched_feed = await self._fetch_feed_metadata(
+            feed_id, feed_config, None, cookies_path
+        )
 
         merged_metadata = merge_feed_metadata(fetched_feed, feed_config)
         new_feed = Feed(
             id=feed_id,
             is_enabled=feed_config.enabled,
             source_type=fetched_feed.source_type,
-            source_url=feed_config.url,
-            resolved_url=resolved_url,
+            source_url=fetched_feed.source_url,
+            resolved_url=fetched_feed.resolved_url,
             last_successful_sync=initial_sync,
             since=feed_config.since,
             keep_last=feed_config.keep_last,
             **merged_metadata,
         )
 
-        # Download feed image - try override first, fallback to yt-dlp natural image
-        image_ext = None
-        if feed_config.metadata and feed_config.metadata.image_url:
-            # Try direct download from override URL
-            try:
-                image_ext = await self._image_downloader.download_feed_image_direct(
-                    feed_id, feed_config.metadata.image_url
-                )
-            except ImageDownloadError as e:
-                logger.warning(
-                    "Failed to download feed image from override URL.",
-                    extra={**log_params, "image_url": feed_config.metadata.image_url},
-                    exc_info=e,
-                )
-
-        if not image_ext:
-            # Fallback to yt-dlp natural image download
-            try:
-                image_ext = await self._image_downloader.download_feed_image_ytdlp(
-                    feed_id=feed_id,
-                    source_type=new_feed.source_type,
-                    source_url=new_feed.source_url,
-                    resolved_url=resolved_url,
-                    user_yt_cli_args=feed_config.yt_args,
-                    cookies_path=cookies_path,
-                )
-            except ImageDownloadError as e:
-                logger.warning(
-                    "Failed to download natural feed image via yt-dlp.",
-                    extra=log_params,
-                    exc_info=e,
-                )
+        if feed_config.is_manual:
+            image_ext = await self._download_manual_image_override(feed_id, feed_config)
+        else:
+            image_ext = await self._download_initial_feed_image(
+                feed_id, feed_config, fetched_feed, cookies_path
+            )
 
         if image_ext:
             new_feed.image_ext = image_ext
@@ -183,6 +191,82 @@ class StateReconciler:
                 "Failed to insert new feed into database.",
                 feed_id=feed_id,
             ) from e
+
+    async def _download_manual_image_override(
+        self,
+        feed_id: str,
+        feed_config: FeedConfig,
+        existing_feed: Feed | None = None,
+    ) -> str | None:
+        """Download image override for manual feeds, if configured."""
+        override_url = feed_config.metadata.image_url if feed_config.metadata else None
+        if not override_url:
+            return None
+
+        if existing_feed and existing_feed.remote_image_url == override_url:
+            return existing_feed.image_ext
+
+        try:
+            result = await self._image_downloader.download_feed_image_direct(
+                feed_id, override_url
+            )
+        except ImageDownloadError as e:
+            logger.warning(
+                "Failed to download manual feed image override.",
+                extra={"feed_id": feed_id, "image_url": override_url},
+                exc_info=e,
+            )
+            return None
+
+        logger.debug(
+            "Downloaded manual feed image override.",
+            extra={"feed_id": feed_id, "image_ext": result},
+        )
+        return result
+
+    async def _download_initial_feed_image(
+        self,
+        feed_id: str,
+        feed_config: FeedConfig,
+        fetched_feed: Feed,
+        cookies_path: Path | None,
+    ) -> str | None:
+        """Download the image for newly created scheduled feeds."""
+        image_ext = None
+        override_url = feed_config.metadata.image_url if feed_config.metadata else None
+        if override_url:
+            try:
+                image_ext = await self._image_downloader.download_feed_image_direct(
+                    feed_id, override_url
+                )
+            except ImageDownloadError as e:
+                logger.warning(
+                    "Failed to download feed image from override URL.",
+                    extra={"feed_id": feed_id, "image_url": override_url},
+                    exc_info=e,
+                )
+
+        if image_ext:
+            return image_ext
+
+        try:
+            # this is guaranteed by earlier filtering
+            assert fetched_feed.source_url is not None
+            return await self._image_downloader.download_feed_image_ytdlp(
+                feed_id=feed_id,
+                source_type=fetched_feed.source_type,
+                source_url=fetched_feed.source_url,
+                resolved_url=fetched_feed.resolved_url,
+                user_yt_cli_args=feed_config.yt_args,
+                cookies_path=cookies_path,
+            )
+        except ImageDownloadError as e:
+            logger.warning(
+                "Failed to download natural feed image via yt-dlp.",
+                extra={"feed_id": feed_id},
+                exc_info=e,
+            )
+            return None
 
     async def _handle_constraint_changes(
         self,
@@ -453,6 +537,8 @@ class StateReconciler:
         if should_download:
             try:
                 if download_by_ytdlp:
+                    # this is guaranteed by earlier filtering
+                    assert updated_feed.source_url is not None
                     result = await self._image_downloader.download_feed_image_ytdlp(
                         feed_id=feed_id,
                         source_type=updated_feed.source_type,
@@ -513,83 +599,36 @@ class StateReconciler:
         """
         log_params = {"feed_id": feed_id}
 
-        updated_feed = db_feed.model_copy()
-
-        match db_feed, feed_config:
-            # Feed is being re-enabled or URL has changed, re-discover feed properties, reset stats
-            case (
-                Feed(is_enabled=old_enabled, source_url=old_url),
-                FeedConfig(enabled=new_enabled, url=new_url),
-            ) if (not old_enabled and new_enabled) or (old_url != new_url):
-                if not old_enabled and new_enabled:
-                    logger.info(
-                        "Feed has been enabled.",
-                        extra=log_params,
-                    )
-                elif old_url != new_url:
-                    logger.info(
-                        "Feed URL has changed.",
-                        extra=log_params,
-                    )
-                try:
-                    (
-                        updated_source_type,
-                        updated_resolved_url,
-                    ) = await self._ytdlp_wrapper.discover_feed_properties(
-                        feed_id, new_url
-                    )
-                except YtdlpApiError as e:
-                    raise StateReconciliationError(
-                        "Failed to re-discover feed properties when re-enabling feed.",
-                        feed_id=feed_id,
-                    ) from e
-                updated_feed.is_enabled = new_enabled
-                updated_feed.source_type = updated_source_type
-                updated_feed.source_url = new_url
-                updated_feed.resolved_url = updated_resolved_url
-                updated_feed.last_successful_sync = (
-                    feed_config.since if feed_config.since else MIN_SYNC_DATE
-                )
-                updated_feed.last_failed_sync = None
-                updated_feed.consecutive_failures = 0
-            # Feed has been disabled
-            case (Feed(is_enabled=True), FeedConfig(enabled=False)):
-                logger.info(
-                    "Feed has been disabled.",
-                    extra=log_params,
-                )
-                updated_feed.is_enabled = False
-            # Feed status has not changed
-            case _:
-                pass
-
-        try:
-            # Get playlist metadata for existing feed
-            fetched_feed = await self._ytdlp_wrapper.fetch_playlist_metadata(
-                feed_id=feed_id,
-                source_type=updated_feed.source_type,
-                source_url=feed_config.url,
-                resolved_url=updated_feed.resolved_url,
-                user_yt_cli_args=feed_config.yt_args,
-                cookies_path=cookies_path,
-            )
-        except YtdlpApiError as e:
-            raise StateReconciliationError(
-                "Failed to fetch fresh metadata for existing feed.",
-                feed_id=feed_id,
-            ) from e
+        fetched_feed = await self._fetch_feed_metadata(
+            feed_id, feed_config, db_feed, cookies_path
+        )
 
         merged_metadata = merge_feed_metadata(fetched_feed, feed_config)
-        updated_feed = updated_feed.model_copy(
+        updated_feed = db_feed.model_copy(
             update={
                 **merged_metadata,
+                "is_enabled": feed_config.enabled,
+                "source_type": fetched_feed.source_type,
+                "source_url": fetched_feed.source_url,
+                "resolved_url": fetched_feed.resolved_url,
                 "since": feed_config.since,
                 "keep_last": feed_config.keep_last,
             }
         )
 
-        # Reset last_successful_sync to MIN_SYNC_DATE when 'since' filter is removed
-        # This ensures the enqueuer will fetch all videos from the beginning of time
+        if (
+            not db_feed.is_enabled and feed_config.enabled
+        ) or db_feed.source_url != fetched_feed.source_url:
+            logger.info(
+                "Feed metadata reset due to enablement or URL change.",
+                extra=log_params,
+            )
+            updated_feed.last_successful_sync = (
+                feed_config.since if feed_config.since else MIN_SYNC_DATE
+            )
+            updated_feed.last_failed_sync = None
+            updated_feed.consecutive_failures = 0
+
         if db_feed.since is not None and feed_config.since is None:
             logger.info(
                 "'since' constraint removed, resetting last_successful_sync to allow re-fetching all videos.",
@@ -603,10 +642,14 @@ class StateReconciler:
         if new_sync is not None:
             updated_feed.last_successful_sync = new_sync
 
-        # Handle image URL override changes
-        new_image_ext = await self._handle_image_url_changes(
-            feed_id, feed_config, db_feed, updated_feed, cookies_path
-        )
+        if feed_config.is_manual:
+            new_image_ext = await self._download_manual_image_override(
+                feed_id, feed_config, existing_feed=db_feed
+            )
+        else:
+            new_image_ext = await self._handle_image_url_changes(
+                feed_id, feed_config, db_feed, updated_feed, cookies_path
+            )
         if new_image_ext is not None:
             updated_feed.image_ext = new_image_ext
 
@@ -620,9 +663,9 @@ class StateReconciler:
                     feed_id=feed_id,
                 ) from e
             return True
-        else:
-            logger.debug("No feed configuration changes detected.", extra=log_params)
-            return False
+
+        logger.debug("No feed configuration changes detected.", extra=log_params)
+        return False
 
     async def _handle_removed_feed(self, feed_id: str) -> None:
         """Handle a removed feed by marking it as disabled in the database.
@@ -703,7 +746,7 @@ class StateReconciler:
                     )
                 else:
                     new_count += 1
-                    if feed_config.enabled:
+                    if feed_config.enabled and not feed_config.is_manual:
                         ready_feeds.append(feed_id)
             else:
                 # Existing feed - check for changes
@@ -721,7 +764,7 @@ class StateReconciler:
                         exc_info=e,
                     )
                 else:
-                    if feed_config.enabled:
+                    if feed_config.enabled and not feed_config.is_manual:
                         ready_feeds.append(feed_id)
 
         # Handle removed feeds - only those that are enabled in DB but not in config
