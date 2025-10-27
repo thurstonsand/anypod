@@ -12,8 +12,8 @@ import sqlalchemy as sa
 
 from alembic import op
 from alembic_helpers.triggers import (  # pyright: ignore[reportMissingImports]
-    create_feed_triggers,  # pyright: ignore[reportUnknownVariableType]
-    drop_feed_triggers,  # pyright: ignore[reportUnknownVariableType]
+    create_feed_triggers_v2,  # pyright: ignore[reportUnknownVariableType]
+    drop_feed_triggers_v2,  # pyright: ignore[reportUnknownVariableType]
 )
 
 # revision identifiers, used by Alembic.
@@ -25,14 +25,14 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    drop_feed_triggers()
+    drop_feed_triggers_v2()
     with op.batch_alter_table("feed") as batch_op:
         batch_op.alter_column(
             "source_url",
             existing_type=sa.String(),
             nullable=True,
         )
-    create_feed_triggers()
+    create_feed_triggers_v2()
 
 
 def downgrade() -> None:
@@ -42,7 +42,7 @@ def downgrade() -> None:
     synthetic source URLs are not valid yt-dlp sources. If you re-upgrade,
     you'll need to re-enable them manually in the configuration.
     """
-    drop_feed_triggers()
+    drop_feed_triggers_v2()
     op.execute(
         sa.text(
             "UPDATE feed SET source_url = 'manual:' || id, is_enabled = 0 "
@@ -55,4 +55,4 @@ def downgrade() -> None:
             existing_type=sa.String(),
             nullable=False,
         )
-    create_feed_triggers()
+    create_feed_triggers_v2()
