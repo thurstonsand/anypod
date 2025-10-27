@@ -1,6 +1,7 @@
 """Shared fixtures for integration tests."""
 
-from collections.abc import AsyncGenerator
+from asyncio import Semaphore
+from collections.abc import AsyncGenerator, Iterator
 from datetime import timedelta
 from pathlib import Path
 
@@ -9,6 +10,8 @@ from helpers.alembic import run_migrations
 import pytest
 import pytest_asyncio
 
+from anypod.config import FeedConfig
+from anypod.data_coordinator import DataCoordinator
 from anypod.data_coordinator.downloader import Downloader
 from anypod.data_coordinator.enqueuer import Enqueuer
 from anypod.data_coordinator.pruner import Pruner
@@ -20,6 +23,8 @@ from anypod.ffmpeg import FFmpeg
 from anypod.ffprobe import FFProbe
 from anypod.file_manager import FileManager
 from anypod.image_downloader import ImageDownloader
+from anypod.manual_feed_runner import ManualFeedRunner
+from anypod.manual_submission_service import ManualSubmissionService
 from anypod.path_manager import PathManager
 from anypod.rss.rss_feed import RSSFeedGenerator
 from anypod.server.app import create_admin_app, create_app
@@ -110,6 +115,12 @@ def download_db(db_core: SqlalchemyCore) -> DownloadDatabase:
         DownloadDatabase instance that gets properly closed after test.
     """
     return DownloadDatabase(db_core)
+
+
+@pytest.fixture
+def feed_configs() -> dict[str, FeedConfig]:
+    """Provide mutable feed configuration mapping for app state."""
+    return {}
 
 
 @pytest.fixture
@@ -243,12 +254,54 @@ def rss_generator(
 
 
 @pytest.fixture
-def test_app(
-    file_manager: FileManager,
+def data_coordinator(
+    enqueuer: Enqueuer,
+    downloader: Downloader,
+    pruner: Pruner,
     rss_generator: RSSFeedGenerator,
     feed_db: FeedDatabase,
+    cookies_path: Path | None,
+) -> DataCoordinator:
+    """Provide a DataCoordinator instance for server fixtures."""
+    return DataCoordinator(
+        enqueuer=enqueuer,
+        downloader=downloader,
+        pruner=pruner,
+        rss_generator=rss_generator,
+        feed_db=feed_db,
+        cookies_path=cookies_path,
+    )
+
+
+@pytest.fixture
+def manual_feed_runner(
+    data_coordinator: DataCoordinator,
+    feed_configs: dict[str, FeedConfig],
+) -> ManualFeedRunner:
+    """Provide ManualFeedRunner with shared feed config mapping."""
+    return ManualFeedRunner(data_coordinator, feed_configs, Semaphore(1))
+
+
+@pytest.fixture
+def manual_submission_service(
+    ytdlp_wrapper: YtdlpWrapper,
+) -> ManualSubmissionService:
+    """Provide ManualSubmissionService backed by the shared wrapper."""
+    return ManualSubmissionService(ytdlp_wrapper)
+
+
+@pytest.fixture
+def test_app(
+    file_manager: FileManager,
+    feed_db: FeedDatabase,
     download_db: DownloadDatabase,
-) -> TestClient:
+    data_coordinator: DataCoordinator,
+    ytdlp_wrapper: YtdlpWrapper,
+    manual_feed_runner: ManualFeedRunner,
+    manual_submission_service: ManualSubmissionService,
+    feed_configs: dict[str, FeedConfig],
+    cookies_path: Path | None,
+) -> Iterator[TestClient]:
     """Create a FastAPI test client with real dependencies.
 
     Returns:
@@ -258,17 +311,32 @@ def test_app(
         file_manager=file_manager,
         feed_database=feed_db,
         download_database=download_db,
+        feed_configs=feed_configs,
+        data_coordinator=data_coordinator,
+        ytdlp_wrapper=ytdlp_wrapper,
+        manual_feed_runner=manual_feed_runner,
+        manual_submission_service=manual_submission_service,
+        cookies_path=cookies_path,
     )
-    return TestClient(app)
+    client = TestClient(app)
+    try:
+        yield client
+    finally:
+        client.close()
 
 
 @pytest.fixture
 def admin_test_app(
     file_manager: FileManager,
-    rss_generator: RSSFeedGenerator,
     feed_db: FeedDatabase,
     download_db: DownloadDatabase,
-) -> TestClient:
+    data_coordinator: DataCoordinator,
+    ytdlp_wrapper: YtdlpWrapper,
+    manual_feed_runner: ManualFeedRunner,
+    manual_submission_service: ManualSubmissionService,
+    feed_configs: dict[str, FeedConfig],
+    cookies_path: Path | None,
+) -> Iterator[TestClient]:
     """Create a FastAPI admin test client with real dependencies.
 
     Returns:
@@ -278,5 +346,15 @@ def admin_test_app(
         file_manager=file_manager,
         feed_database=feed_db,
         download_database=download_db,
+        feed_configs=feed_configs,
+        data_coordinator=data_coordinator,
+        ytdlp_wrapper=ytdlp_wrapper,
+        manual_feed_runner=manual_feed_runner,
+        manual_submission_service=manual_submission_service,
+        cookies_path=cookies_path,
     )
-    return TestClient(app)
+    client = TestClient(app)
+    try:
+        yield client
+    finally:
+        client.close()

@@ -1,48 +1,12 @@
-# Anypod – Phase 1 Task List
+# Anypod – Task List
 
-This checklist covers everything required to reach a functional MVP that aligns with the design document. Tasks are ordered to minimise back-tracking and maximise fast feedback while you work in **Cursor**.
-
----
-
-## 0 Repo Bootstrap
+## 1 Repo Bootstrap
 
 - [x] **Init git repo** – `git init --initial-branch=main && gh repo create`.
 - [x] **`pyproject.toml`** – minimal project metadata, `uv` backend, Python ≥ 3.13.
 - [x] **`uv pip install --groups dev`** – add dev deps: `ruff`, `pytest`, `pytest-asyncio`, `mypy`, `pre-commit`.
 - [x] **Pre-commit hooks** – formatters & linter.
 - [x] **CI** – GitHub Actions workflow running `pytest` on every PR.
-
-## 1 Package Skeleton
-
-```text
-src/
-    anypod/
-        __init__.py
-        cli.py                # entry‑point
-        config.py             # Pydantic models & loader
-        db.py                 # SQLite helpers & migrations, Download model (with from_row)
-        file_manager.py       # FileManager implementation
-        data_coordinator/     # Orchestrates DB + FS + Download operations
-            __init__.py
-            coordinator.py      # Main DataCoordinator class (orchestrator)
-            enqueuer.py         # Enqueuer class (fetches metadata & enqueues)
-            downloader.py       # Downloader class (processes download queue)
-            pruner.py           # Pruner class (handles pruning logic)
-        ytdlp_wrapper.py      # yt‑dlp direct wrapper
-        schedule/             # Scheduled feed processing
-            apscheduler_core.py # Type-safe APScheduler wrapper
-            scheduler.py      # Main feed scheduler using APScheduler
-        feedgen.py            # thin wrapper
-        http.py               # FastAPI app + routing
-        utils.py              # misc helpers
-        exceptions.py         # Custom exceptions
-```
-
-```
- tests/
-    anypod/ # tests mirror the src/anypod structure
-        integration/ # integration tests can be run with `pytest --integration`
-```
 
 ## 2 Configuration Loader
 
@@ -462,12 +426,13 @@ This section details the components that manage the lifecycle of downloads, from
 
 - [x] After reconciliation, trigger immediate sync:
   - [x] Process all enabled feeds to populate RSS
-  - [/] Ensure RSS feeds available before HTTP server starts
+  - [x] Ensure RSS feeds available before HTTP server starts
   - [x] Handle failures gracefully without blocking startup, unless config is wrong -- that should cause failure until fixed
 
 ## 6 HTTP Server
 
-- [ ] how do i break out the api and static serving? different ports? for security reasons, we need to expose static but not apis
+- [x] how do i break out the api and static serving? different ports? for security reasons, we need to expose static but not apis
+  - Went with different ports
 
 ### 6.1 Project Structure Setup
 
@@ -482,7 +447,7 @@ This section details the components that manage the lifecycle of downloads, from
 
 - [x] first check on getting the full filepath in there
   - `https://i.ytimg.com/pl_c/PL8mG-RkN2uTw7PhlnAr4pZZz2QubIbujH/studio_square_thumbnail.jpg` isn't enough, you need the extra `?sqp=CNnJ9cQG-oaymwEICOADEOADSFqi85f_AwYIwe77sQY%3D&rs=AOn4CLB5y7iZmQcD8vHcdJ4WtzLCK_wOuQ` on the end
-- [ ] download and host images locally
+- [x] download and host images locally
 
 ### 6.2 FastAPI Application Setup
 
@@ -571,7 +536,7 @@ This section details the components that manage the lifecycle of downloads, from
 - [ ] Evaluate logged statements and make sure that only relevant things get logged
 - [ ] when using `--retry-failed`, should also include a date so that we disregard VERY old failures
   - errors will be common because live videos may be deleted and reuploaded as regular VODs
-- [ ] write README
+- [x] write README
   - outline limitations with using ytdlp flags -- which ones do you have to avoid using?
   - look up some well established open source projects and follow their documentation style
 
@@ -592,8 +557,13 @@ This section details the components that manage the lifecycle of downloads, from
 - [x] make override enum settings caps agnostic (e.g. requires EPISODIC or SERIAL right now)
 - [x] create an http endpoint to reset error status videos
 - [ ] create a top-level http endpoint to reset ERROR status videos across all feeds
-- [ ] convert BACK to using yt-dlp as python package
 - [ ] is it possible to introduce tier-based filtering for patreon posts?
+
+## 11 manual feeds
+
+- [ ] delete a download from a feed?
+- [ ] optional (additional?) yt args override in req
+- [ ] endpoint for manually triggering a feed
 
 ---
 

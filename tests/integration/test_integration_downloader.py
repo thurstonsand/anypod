@@ -101,7 +101,11 @@ async def enqueue_test_items(
         fetch_since_date = datetime.min.replace(tzinfo=UTC)
 
     # Create feed in database first
-    await create_test_feed(feed_db, feed_id, feed_config.url, source_type, resolved_url)
+    assert feed_config.url is not None, (
+        "Scheduled feed configuration must define 'url'."
+    )
+    source_url = feed_config.url
+    await create_test_feed(feed_db, feed_id, source_url, source_type, resolved_url)
 
     newly_queued_count, _ = await enqueuer.enqueue_new_downloads(
         feed_id=feed_id,
@@ -346,6 +350,9 @@ async def test_download_queued_handles_invalid_urls(
     feed_config = INVALID_FEED_CONFIG
 
     # Create the feed first
+    assert feed_config.url is not None, (
+        "Scheduled feed configuration must define 'url'."
+    )
     feed = Feed(
         id=feed_id,
         is_enabled=True,
@@ -422,6 +429,9 @@ async def test_download_queued_retry_logic_max_errors(
     )
 
     # Create the feed first
+    assert feed_config.url is not None, (
+        "Scheduled feed configuration must define 'url'."
+    )
     feed = Feed(
         id=feed_id,
         is_enabled=True,

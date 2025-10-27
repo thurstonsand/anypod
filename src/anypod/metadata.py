@@ -11,7 +11,9 @@ from .config import FeedConfig
 from .db.types import Feed
 
 
-def merge_feed_metadata(fetched_feed: Feed, feed_config: FeedConfig) -> dict[str, Any]:
+def merge_feed_metadata(
+    fetched_feed: Feed | None, feed_config: FeedConfig
+) -> dict[str, Any]:
     """Merge config overrides with fetched feed metadata.
 
     Configuration overrides take precedence over extracted values.
@@ -31,35 +33,37 @@ def merge_feed_metadata(fetched_feed: Feed, feed_config: FeedConfig) -> dict[str
         else {}
     )
 
-    # Fill in missing values from fetched feed (fallback for fields not overridden)
-    candidate_metadata["title"] = candidate_metadata.get("title") or fetched_feed.title
-    candidate_metadata["subtitle"] = (
-        candidate_metadata.get("subtitle") or fetched_feed.subtitle
-    )
-    candidate_metadata["description"] = (
-        candidate_metadata.get("description") or fetched_feed.description
-    )
-    candidate_metadata["language"] = (
-        candidate_metadata.get("language") or fetched_feed.language
-    )
-    candidate_metadata["author"] = (
-        candidate_metadata.get("author") or fetched_feed.author
-    )
-    candidate_metadata["author_email"] = (
-        candidate_metadata.get("author_email") or fetched_feed.author_email
-    )
-    candidate_metadata["remote_image_url"] = (
-        candidate_metadata.get("remote_image_url") or fetched_feed.remote_image_url
-    )
-    candidate_metadata["category"] = (
-        candidate_metadata.get("category") or fetched_feed.category
-    )
-    candidate_metadata["podcast_type"] = (
-        candidate_metadata.get("podcast_type") or fetched_feed.podcast_type
-    )
-    candidate_metadata["explicit"] = (
-        candidate_metadata.get("explicit") or fetched_feed.explicit
-    )
+    if fetched_feed:
+        candidate_metadata["title"] = (
+            candidate_metadata.get("title") or fetched_feed.title
+        )
+        candidate_metadata["subtitle"] = (
+            candidate_metadata.get("subtitle") or fetched_feed.subtitle
+        )
+        candidate_metadata["description"] = (
+            candidate_metadata.get("description") or fetched_feed.description
+        )
+        candidate_metadata["language"] = (
+            candidate_metadata.get("language") or fetched_feed.language
+        )
+        candidate_metadata["author"] = (
+            candidate_metadata.get("author") or fetched_feed.author
+        )
+        candidate_metadata["author_email"] = (
+            candidate_metadata.get("author_email") or fetched_feed.author_email
+        )
+        candidate_metadata["remote_image_url"] = (
+            candidate_metadata.get("remote_image_url") or fetched_feed.remote_image_url
+        )
+        candidate_metadata["category"] = (
+            candidate_metadata.get("category") or fetched_feed.category
+        )
+        candidate_metadata["podcast_type"] = (
+            candidate_metadata.get("podcast_type") or fetched_feed.podcast_type
+        )
+        candidate_metadata["explicit"] = (
+            candidate_metadata.get("explicit") or fetched_feed.explicit
+        )
 
     # Remove None values to avoid overwriting defaults
     return {k: v for k, v in candidate_metadata.items() if v is not None}

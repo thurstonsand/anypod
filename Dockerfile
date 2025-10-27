@@ -18,9 +18,10 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     uv sync --locked --no-install-project --no-dev
 
+COPY alembic_helpers/ ./alembic_helpers/
+COPY alembic/ ./alembic/
 COPY src/ ./src/
 COPY pyproject.toml uv.lock alembic.ini README.md ./
-COPY alembic/ ./alembic/
 
 # Install the project itself
 RUN --mount=type=cache,target=/root/.cache/uv \
@@ -75,7 +76,6 @@ EXPOSE 8025
 ENV PATH="/app/bin:/app/.venv/bin:$PATH" \
     CONFIG_FILE=/config/feeds.yaml \
     DATA_DIR=/data \
-    COOKIE_PATH=/cookies/cookies.txt \
     SERVER_HOST=0.0.0.0 \
     SERVER_PORT=8024 \
     ADMIN_SERVER_PORT=8025 \

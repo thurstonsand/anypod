@@ -31,28 +31,33 @@ class FeedScheduler:
         _global_feed_semaphore: Global semaphore to limit concurrent feed processing.
     """
 
-    # Global semaphore to ensure only one feed processes at a time across all jobs
-    _global_feed_semaphore = asyncio.Semaphore(1)
-
     def __init__(
         self,
         ready_feed_ids: list[str],
         feed_configs: dict[str, FeedConfig],
         data_coordinator: DataCoordinator,
+        feed_semaphore: asyncio.Semaphore | None = None,
     ):
         self._scheduler = APSchedulerCore()
+        self._feed_semaphore = feed_semaphore or asyncio.Semaphore(1)
 
         for ready_feed_id in ready_feed_ids:
+            feed_config = feed_configs[ready_feed_id]
+            assert feed_config.schedule is not None, (
+                "Manual feeds should not be scheduled"
+            )
+
             self._scheduler.schedule_job(
                 job_id=FeedScheduler._feed_to_job_id(ready_feed_id),
-                cron_expression=feed_configs[ready_feed_id].schedule,
+                cron_expression=feed_config.schedule,
                 # TODO: evaluate if we want jitter
                 jitter=0,
                 callback=FeedScheduler._process_feed_with_context,
                 run_immediately=True,
                 data_coordinator=data_coordinator,
                 feed_id=ready_feed_id,
-                feed_config=feed_configs[ready_feed_id],
+                feed_config=feed_config,
+                feed_semaphore=self._feed_semaphore,
             )
 
         # Register event listeners
@@ -102,6 +107,11 @@ class FeedScheduler:
         """
         return self._scheduler.running
 
+    @property
+    def feed_semaphore(self) -> asyncio.Semaphore:
+        """Return the shared feed semaphore used for manual triggers."""
+        return self._feed_semaphore
+
     def get_scheduled_feed_ids(self) -> list[str]:
         """Get list of currently scheduled feed IDs.
 
@@ -145,7 +155,10 @@ class FeedScheduler:
 
     @staticmethod
     async def _process_feed_with_context(
-        data_coordinator: DataCoordinator, feed_id: str, feed_config: FeedConfig
+        data_coordinator: DataCoordinator,
+        feed_id: str,
+        feed_config: FeedConfig,
+        feed_semaphore: asyncio.Semaphore,
     ) -> ProcessingResults:
         """Process a feed with context ID set for logging.
 
@@ -153,6 +166,7 @@ class FeedScheduler:
             data_coordinator: The DataCoordinator instance.
             feed_id: The feed identifier.
             feed_config: The feed configuration.
+            feed_semaphore: The global feed processing semaphore.
 
         Returns:
             ProcessingResults from the DataCoordinator.
@@ -172,7 +186,7 @@ class FeedScheduler:
         )
 
         # Execute the main feed processing logic with global rate limiting
-        async with FeedScheduler._global_feed_semaphore:
+        async with feed_semaphore:
             logger.debug(
                 "Acquired global feed processing semaphore.",
                 extra={

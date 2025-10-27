@@ -141,6 +141,10 @@ feeds:
         # Or as comma-separated string: "Technology, Business > Entrepreneurship"
 ```
 
+### Manual submission feeds
+
+Set `schedule: "manual"` when you want to bypass discovery/scheduling and push individual URLs yourself. Manual feeds require `metadata.title` and uses the admin endpoint `POST /admin/feeds/{feed_id}/downloads`. Each submission stores the download, requeues it through the normal coordinator pipeline, and triggers a background task that shares the scheduler semaphore so manual work never overlaps with scheduled jobs.
+
 ### Environment Variables
 
 Configure global application settings via environment variables:
@@ -153,7 +157,7 @@ LOG_INCLUDE_STACKTRACE=true           # Include stack traces in logs (default: f
 BASE_URL=https://podcasts.example.com  # Base URL for feeds/media (default: http://localhost:8024)
 CONFIG_FILE=/path/to/feeds.yaml       # Config file path (default: /config/feeds.yaml)
 DATA_DIR=/path/to/data                # Root directory for all application data (default: /data)
-COOKIES_PATH=/path/to/cookies.txt     # Optional cookies.txt file for yt-dlp authentication (default: /cookies/cookies.txt)
+COOKIES_PATH=/path/to/cookies.txt     # Optional cookies.txt file for yt-dlp authentication (default: unset)
 TZ=America/New_York                    # Timezone for date parsing (default: system timezone)
 SERVER_HOST=0.0.0.0                   # HTTP server host (default: 0.0.0.0)
 SERVER_PORT=8024                      # HTTP server port (default: 8024)
@@ -506,6 +510,7 @@ The `RSSFeedGenerator` module **persists RSS XML files to disk** under the data 
 | Path                                       | Description                                           |
 | ------------------------------------------ | ----------------------------------------------------- |
 | `POST /admin/feeds/{feed_id}/reset-errors` | Reset all ERROR downloads for a feed to QUEUED status |
+| `POST /admin/feeds/{feed_id}/downloads`    | Queue a single URL for manual feeds                   |
 
 ---
 

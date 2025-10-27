@@ -250,7 +250,7 @@ class AppSettings(BaseSettings):
         description="Path to the YAML config file.",
     )
     cookies_path: Path | None = Field(
-        default=Path("/cookies/cookies.txt"),
+        default=None,
         validation_alias="COOKIES_PATH",
         description="Optional path to the cookies.txt file for yt-dlp authentication.",
     )
@@ -325,6 +325,25 @@ class AppSettings(BaseSettings):
                     ) from e
             case _:
                 raise TypeError(f"tz must be a string, got {type(v).__name__}")
+
+    @field_validator("cookies_path", mode="before")
+    @classmethod
+    def normalize_cookies_path(cls, v: Any) -> Any:
+        """Treat blank cookie paths as unset.
+
+        Args:
+            v: Value to parse, can be string or None.
+
+        Returns:
+            Path to the cookies.txt file, or None if not provided.
+        """
+        match v:
+            case None:
+                return None
+            case str() as s if not s.strip():
+                return None
+            case _:
+                return v
 
     @classmethod
     def settings_customise_sources(

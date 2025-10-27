@@ -73,11 +73,13 @@ SAMPLE_FEED_CONFIG = FeedConfig(
 async def create_test_feed(
     feed_db: FeedDatabase,
     feed_id: str,
-    url: str,
+    url: str | None,
     source_type: SourceType,
     resolved_url: str | None = None,
 ) -> Feed:
     """Create a test feed in the database with specified properties."""
+    assert url is not None, "create_test_feed requires a concrete source URL."
+
     feed = Feed(
         id=feed_id,
         is_enabled=True,

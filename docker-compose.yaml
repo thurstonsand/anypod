@@ -16,7 +16,7 @@ services:
       - ./test-data:/data
 
       # Optional: cookies.txt for authentication
-      - ./cookies.txt:/cookies/cookies.txt
+      # - ./cookies.txt:/cookies/cookies.txt
 
       # System timezone
       - /etc/localtime:/etc/localtime:ro
@@ -26,8 +26,11 @@ services:
       PUID: 501
       PGID: 20
 
-      SERVER_PORT: 8024                      # Public server port
-      ADMIN_SERVER_PORT: 8025                # Admin server port (keep private)
+      SERVER_PORT: 8024 # Public server port
+      ADMIN_SERVER_PORT: 8025 # Admin server port (keep private)
+
+      # Optional: point to mounted cookies file for authenticated feeds
+      # COOKIES_PATH: /cookies/cookies.txt
 
       # External URL (set when behind a reverse proxy)
       # BASE_URL: https://reverseproxy.example

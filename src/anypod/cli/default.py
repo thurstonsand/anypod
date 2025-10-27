@@ -19,6 +19,8 @@ from ..ffmpeg import FFmpeg
 from ..ffprobe import FFProbe
 from ..file_manager import FileManager
 from ..image_downloader import ImageDownloader
+from ..manual_feed_runner import ManualFeedRunner
+from ..manual_submission_service import ManualSubmissionService
 from ..path_manager import PathManager
 from ..rss import RSSFeedGenerator
 from ..schedule import FeedScheduler
@@ -32,12 +34,14 @@ logger = logging.getLogger(__name__)
 
 async def graceful_shutdown(
     scheduler: FeedScheduler | None,
+    manual_feed_runner: ManualFeedRunner | None,
     db_core: SqlalchemyCore | None,
 ) -> None:
     """Perform graceful shutdown of all components in correct order.
 
     Args:
         scheduler: The feed scheduler instance to shutdown.
+        manual_feed_runner: The manual feed runner instance to shutdown.
         db_core: The database core instance to close.
     """
     logger.info("Shutdown signal received.")
@@ -50,7 +54,15 @@ async def graceful_shutdown(
         except Exception as e:
             logger.error("Error shutting down scheduler.", exc_info=e)
 
-    # Step 2: Close database connections
+    # Step 2: Cancel manual feed tasks
+    if manual_feed_runner:
+        try:
+            await manual_feed_runner.shutdown()
+            logger.info("Manual feed runner shutdown completed.")
+        except Exception as e:
+            logger.error("Error shutting down manual feed runner.", exc_info=e)
+
+    # Step 3: Close database connections
     if db_core:
         try:
             await db_core.close()
@@ -69,6 +81,10 @@ async def _init(
     FeedDatabase,
     DownloadDatabase,
     FeedScheduler,
+    DataCoordinator,
+    YtdlpWrapper,
+    ManualFeedRunner,
+    ManualSubmissionService,
 ]:
     # Initialize path manager
     path_manager = PathManager(
@@ -161,9 +177,13 @@ async def _init(
         logger.error("State reconciliation failed, cannot continue.", exc_info=e)
         raise
 
-    if not ready_feeds:
+    manual_feed_ids = [
+        fid for fid, cfg in settings.feeds.items() if cfg.enabled and cfg.is_manual
+    ]
+
+    if not ready_feeds and not manual_feed_ids:
         logger.warning(
-            "No enabled feeds found after reconciliation, exiting.",
+            "No enabled feeds ready after reconciliation, exiting.",
             extra={"configured_feeds": len(settings.feeds)},
         )
         raise RuntimeError(
@@ -172,17 +192,41 @@ async def _init(
             f"Check the logs above for specific errors (e.g., yt-dlp, network, or configuration issues)."
         )
 
+    if not ready_feeds and manual_feed_ids:
+        logger.info(
+            "All enabled feeds are manual; scheduler will stay idle until manual submissions arrive.",
+            extra={"manual_feeds": manual_feed_ids},
+        )
+
     # Initialize and start scheduler
     logger.debug(
         "Initializing feed scheduler.", extra={"ready_feeds": len(ready_feeds)}
     )
+    feed_semaphore = asyncio.Semaphore(1)
+    manual_feed_runner = ManualFeedRunner(
+        data_coordinator=data_coordinator,
+        feed_configs=settings.feeds,
+        feed_semaphore=feed_semaphore,
+    )
+    manual_submission_service = ManualSubmissionService(ytdlp_wrapper)
     scheduler = FeedScheduler(
         ready_feed_ids=ready_feeds,
         feed_configs=settings.feeds,
         data_coordinator=data_coordinator,
+        feed_semaphore=feed_semaphore,
     )
 
-    return db_core, file_manager, feed_db, download_db, scheduler
+    return (
+        db_core,
+        file_manager,
+        feed_db,
+        download_db,
+        scheduler,
+        data_coordinator,
+        ytdlp_wrapper,
+        manual_feed_runner,
+        manual_submission_service,
+    )
 
 
 async def default(settings: AppSettings) -> None:
@@ -201,6 +245,7 @@ async def default(settings: AppSettings) -> None:
 
     db_core: SqlalchemyCore | None = None
     scheduler: FeedScheduler | None = None
+    manual_feed_runner: ManualFeedRunner | None = None
     try:
         (
             db_core,
@@ -208,6 +253,10 @@ async def default(settings: AppSettings) -> None:
             feed_db,
             download_db,
             scheduler,
+            data_coordinator,
+            ytdlp_wrapper,
+            manual_feed_runner,
+            manual_submission_service,
         ) = await _init(settings)
 
         # Create HTTP server with shutdown callback
@@ -216,7 +265,15 @@ async def default(settings: AppSettings) -> None:
             file_manager=file_manager,
             feed_database=feed_db,
             download_database=download_db,
-            shutdown_callback=lambda: graceful_shutdown(scheduler, db_core),
+            data_coordinator=data_coordinator,
+            ytdlp_wrapper=ytdlp_wrapper,
+            manual_feed_runner=manual_feed_runner,
+            manual_submission_service=manual_submission_service,
+            feed_configs=settings.feeds,
+            cookies_path=settings.cookies_path,
+            shutdown_callback=lambda: graceful_shutdown(
+                scheduler, manual_feed_runner, db_core
+            ),
         )
 
         # Create admin HTTP server (no shutdown callback to avoid double-close)
@@ -225,6 +282,12 @@ async def default(settings: AppSettings) -> None:
             file_manager=file_manager,
             feed_database=feed_db,
             download_database=download_db,
+            data_coordinator=data_coordinator,
+            ytdlp_wrapper=ytdlp_wrapper,
+            manual_feed_runner=manual_feed_runner,
+            manual_submission_service=manual_submission_service,
+            feed_configs=settings.feeds,
+            cookies_path=settings.cookies_path,
         )
 
         logger.info(
@@ -243,4 +306,4 @@ async def default(settings: AppSettings) -> None:
         await asyncio.gather(server.serve(), admin_server.serve())
     except Exception as e:
         logger.error("Unexpected error during execution.", exc_info=e)
-        await graceful_shutdown(scheduler, db_core)
+        await graceful_shutdown(scheduler, manual_feed_runner, db_core)

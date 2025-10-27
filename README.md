@@ -17,6 +17,7 @@ Your self-hosted, YAML-driven bridge from yt-dlp–supported sources (YouTube ch
     - [Using Docker Compose (recommended)](#using-docker-compose-recommended)
     - [Using Docker directly](#using-docker-directly)
   - [Configuration](#configuration)
+    - [Manual feeds \& submissions](#manual-feeds--submissions)
   - [Environment variables](#environment-variables)
   - [HTTP endpoints](#http-endpoints)
     - [Public endpoints](#public-endpoints)
@@ -51,6 +52,7 @@ Anypod is a thin Python wrapper around `yt‑dlp` that turns any `yt‑dlp`–su
 - Feed metadata overrides (title, description, artwork, categories, explicit, etc.)
 - Thumbnail hosting: Downloads and serves feed artwork and episode thumbnails locally
 - Retention policies: keep the last N items and/or only since YYYYMMDD
+- Manual submission feeds: declare `schedule: "manual"` and push ad-hoc URLs via the admin API
 - Docker image with non‑root (PUID/PGID) support
 
 ## Quick start
@@ -69,7 +71,7 @@ services:
     volumes:
       - ./example_feeds.yaml:/config/feeds.yaml
       - ./data:/data
-      - ./cookies.txt:/cookies/cookies.txt # optional
+      # - ./cookies.txt:/cookies/cookies.txt # optional; mount only if you need cookies
       - /etc/localtime:/etc/localtime:ro
     environment:
       # Identity / permissions
@@ -78,6 +80,8 @@ services:
 
       SERVER_PORT: 8024 # Public server port
       ADMIN_SERVER_PORT: 8025 # Admin server port (keep private)
+
+      # COOKIES_PATH: /cookies/cookies.txt # optional; only set if mounting the cookie file
 
       # External URL (set when behind a reverse proxy)
       # BASE_URL: https://reverseproxy.example
@@ -129,7 +133,8 @@ docker run -d \
   -p 8024:8024 \
   -v ./example_feeds.yaml:/config/feeds.yaml \
   -v ./data:/data \
-  -v ./cookies.txt:/cookies/cookies.txt \
+  # Uncomment the next line if you need cookies for authenticated feeds
+  # -e COOKIES_PATH=/cookies/cookies.txt -v ./cookies.txt:/cookies/cookies.txt \
   ghcr.io/thurstonsand/anypod:latest # or nightly
 ```
 
@@ -167,6 +172,27 @@ Notes:
 - `since` must be in the format `YYYYMMDD` (day‑precision; see Limitation below).
 - `image_url` allows you to override the feed artwork. Anypod will download and host this image locally for better reliability and performance.
 - `yt_args` are passed directly to the [`yt-dlp` program](https://github.com/yt-dlp/yt-dlp); see their docs for full options, keeping note of the options below you cannot use (or risk breaking Anypod)
+
+#### Manual feeds & submissions
+
+For ad-hoc drops, set `schedule: "manual"` and provide at least a `metadata.title`. Manual feeds skip yt-dlp discovery and the scheduler; they only process downloads you submit.
+
+```yaml
+feeds:
+  manual_drop:
+    schedule: "manual"
+    metadata:
+      title: "Manual Drops"
+      description: "Episodes arrive when we say so"
+```
+
+Manual feed workflow:
+
+1. Configure feed as shown above (you can still use `yt_args`, retention policies, etc.).
+2. POST each URL to `POST /admin/feeds/{feed_id}/downloads` with `{"url": "<video url>"}`.
+3. The admin handler stores the download, queues it via the normal pipeline, and fires the background runner.
+
+If the video was already downloaded, the endpoint responds with `new: false` and skips scheduling.
 
 Reserved/managed `yt‑dlp` options (set by Anypod, do not override):
 
@@ -212,6 +238,7 @@ All can be provided via env or CLI flags (kebab‑case). Common ones:
 ### Admin endpoints (trusted/local access only)
 
 - `POST /admin/feeds/{feed_id}/reset-errors` – reset all ERROR downloads for a feed to QUEUED status
+- `POST /admin/feeds/{feed_id}/downloads` – queue a single URL for manual feeds (`schedule: "manual"`)
 - `GET /api/health` – health check
 
 Admin endpoints run on a separate server. No authentication is implemented. Only expose the public server publicly.
