@@ -26,12 +26,16 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     """Upgrade schema."""
     drop_feed_triggers_v2()
-    with op.batch_alter_table("feed") as batch_op:
-        batch_op.alter_column(
-            "source_url",
-            existing_type=sa.String(),
-            nullable=True,
-        )
+    op.execute(sa.text("PRAGMA foreign_keys=OFF"))
+    try:
+        with op.batch_alter_table("feed") as batch_op:
+            batch_op.alter_column(
+                "source_url",
+                existing_type=sa.String(),
+                nullable=True,
+            )
+    finally:
+        op.execute(sa.text("PRAGMA foreign_keys=ON"))
     create_feed_triggers_v2()
 
 
@@ -49,10 +53,14 @@ def downgrade() -> None:
             "WHERE source_url IS NULL"
         )
     )
-    with op.batch_alter_table("feed") as batch_op:
-        batch_op.alter_column(
-            "source_url",
-            existing_type=sa.String(),
-            nullable=False,
-        )
+    op.execute(sa.text("PRAGMA foreign_keys=OFF"))
+    try:
+        with op.batch_alter_table("feed") as batch_op:
+            batch_op.alter_column(
+                "source_url",
+                existing_type=sa.String(),
+                nullable=False,
+            )
+    finally:
+        op.execute(sa.text("PRAGMA foreign_keys=ON"))
     create_feed_triggers_v2()
