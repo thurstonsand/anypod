@@ -558,6 +558,7 @@ This section details the components that manage the lifecycle of downloads, from
 - [x] create an http endpoint to reset error status videos
 - [ ] create a top-level http endpoint to reset ERROR status videos across all feeds
 - [ ] is it possible to introduce tier-based filtering for patreon posts?
+- [ ] capture logs from yt-dlp and store alongside download for later inspection
 
 ## 11 manual feeds
 

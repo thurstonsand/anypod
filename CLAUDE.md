@@ -73,8 +73,18 @@ uv run pytest --integration
 # Run tests with coverage reporting, including integration tests; use sparingly, and only when running ALL tests
 uv run pytest --integration --cov=src --cov-report=html --cov-report=term-missing
 
-# tool use
-uvx yt-dlp # Can research/view real data from youtube videos for research. see @example_feeds.yaml for real links
+# RSS Feed Validation
+# Validate generated RSS feeds against W3C Feed Validator and podcast specifications
+# This catches common RSS/podcast spec violations like:
+#   - Invalid iTunes namespace usage (e.g., itunes:summary exceeding 4000 chars)
+#   - Malformed HTML entities in descriptions
+#   - Missing required podcast elements
+#   - Invalid category mappings
+# Usage: Replace <feed> with your feed_id from feeds.yaml
+curl "https://validator.w3.org/feed/check.cgi?url=https://anypod.thurstons.house/feeds/<feed>.xml"
+
+# Research and debugging tools
+uvx yt-dlp # Research real YouTube video data; see @example_feeds.yaml for test URLs
 
 # Key patterns for codebase exploration:
 # - Function calls: `sg -p 'function_name($$$ARGS)' -l python src/`
