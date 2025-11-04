@@ -203,15 +203,35 @@ class YoutubeEntry:
     def filesize(self) -> int:
         """Get the file size for the video.
 
-        Uses filesize_approx as fallback when filesize is None.
-        Defaults to 0 if neither are present.
+        Uses filesize_approx as fallback when filesize is None. Returns a placeholder
+        value of 1 if filesize metadata is unavailable, since actual filesize will be
+        determined during download.
+
+        Raises:
+            YtdlpYoutubeDataError: When filesize is invalid (≤0).
         """
         with self._annotate_exceptions():
-            return (
-                self._ytdlp_info.get("filesize", int)
-                or self._ytdlp_info.get("filesize_approx", int)
-                or 0
-            )
+            raw_filesize = self._ytdlp_info.get(
+                "filesize", (int, float)
+            ) or self._ytdlp_info.get("filesize_approx", (int, float))
+            if raw_filesize is None:
+                logger.warning(
+                    "YouTube metadata missing filesize; using placeholder.",
+                    extra={
+                        "feed_id": self.feed_id,
+                        "download_id": self.download_id,
+                    },
+                )
+                return 1
+
+            normalized_size = int(raw_filesize)
+            if normalized_size <= 0:
+                raise YtdlpYoutubeDataError(
+                    f"Invalid filesize: {raw_filesize}.",
+                    feed_id=self.feed_id,
+                    download_id=self.download_id,
+                )
+            return normalized_size
 
     @property
     def timestamp(self) -> datetime | None:

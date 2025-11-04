@@ -46,6 +46,7 @@ def valid_video_entry_data() -> dict[str, Any]:
         "thumbnail": "https://example.com/thumb.jpg",
         "description": "This is a test video description",
         "epoch": 1678886400,  # yt-dlp request timestamp
+        "filesize": 1_234_567,
     }
 
 
@@ -168,7 +169,7 @@ async def test_parse_single_video_entry_success_basic(
     assert download.remote_thumbnail_url == valid_video_entry_data["thumbnail"]
     assert download.description == valid_video_entry_data["description"]
     assert download.mime_type == "video/mp4"  # Based on ext="mp4"
-    assert download.filesize == 0  # Default for QUEUED status
+    assert download.filesize == valid_video_entry_data["filesize"]
     assert download.feed_id == FEED_ID
 
 
@@ -184,6 +185,38 @@ async def test_parse_single_video_entry_success_no_description(
     download = await youtube_handler.extract_download_metadata(FEED_ID, ytdlp_info)
 
     assert download.description is None
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_parse_single_video_entry_error_when_filesize_missing(
+    youtube_handler: YoutubeHandler, valid_video_entry_data: dict[str, Any]
+) -> None:
+    """Tests error when filesize metadata is missing."""
+    valid_video_entry_data.pop("filesize")
+    ytdlp_info = YtdlpInfo(valid_video_entry_data)
+
+    with pytest.raises(YtdlpYoutubeDataError) as exc_info:
+        await youtube_handler.extract_download_metadata(FEED_ID, ytdlp_info)
+
+    assert exc_info.value.feed_id == FEED_ID
+    assert exc_info.value.download_id == valid_video_entry_data["id"]
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_parse_single_video_entry_error_when_filesize_non_positive(
+    youtube_handler: YoutubeHandler, valid_video_entry_data: dict[str, Any]
+) -> None:
+    """Tests error when filesize metadata resolves to a non-positive value."""
+    valid_video_entry_data["filesize"] = 0
+    ytdlp_info = YtdlpInfo(valid_video_entry_data)
+
+    with pytest.raises(YtdlpYoutubeDataError) as exc_info:
+        await youtube_handler.extract_download_metadata(FEED_ID, ytdlp_info)
+
+    assert exc_info.value.feed_id == FEED_ID
+    assert exc_info.value.download_id == valid_video_entry_data["id"]
 
 
 @pytest.mark.unit
@@ -289,7 +322,7 @@ async def test_parse_single_video_entry_live_upcoming_video(
     assert download.ext == "live"
     assert download.duration == 0
     assert download.mime_type == "application/octet-stream"  # Special case for live
-    assert download.filesize == 0
+    assert download.filesize == valid_video_entry_data["filesize"]
 
 
 @pytest.mark.unit
