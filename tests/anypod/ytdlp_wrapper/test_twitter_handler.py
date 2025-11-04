@@ -172,6 +172,23 @@ async def test_extract_download_metadata_success(
 
 
 @pytest.mark.unit
+@pytest.mark.asyncio
+async def test_extract_download_metadata_missing_filesize(
+    twitter_handler: TwitterHandler,
+    entry_payload: dict[str, Any],
+) -> None:
+    """Missing filesize fields fall back to placeholder value."""
+    payload = {**entry_payload}
+    payload.pop("filesize")
+    payload.pop("filesize_approx")
+    download = await twitter_handler.extract_download_metadata(
+        FEED_ID, YtdlpInfo(payload)
+    )
+
+    assert download.filesize == 1
+
+
+@pytest.mark.unit
 def test_prepare_methods_return_unchanged(twitter_handler: TwitterHandler) -> None:
     """Prepare helpers are pass-through for Twitter."""
     base_args = YtdlpArgs()

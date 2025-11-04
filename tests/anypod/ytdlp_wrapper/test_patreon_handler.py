@@ -46,6 +46,7 @@ def minimal_entry_data() -> dict[str, Any]:
         "title": "Test Post Title",
         "timestamp": 1700000000,
         "epoch": 1700000000,
+        "filesize": 2_000_000,
     }
 
 
@@ -61,6 +62,7 @@ def valid_video_entry_data(minimal_entry_data: dict[str, Any]) -> dict[str, Any]
             "thumbnail": "https://example.com/thumb.jpg",
             "description": "Test description",
             "channel": "Creator Channel",
+            "filesize": 3_000_000,
         }
     )
     return data
@@ -135,6 +137,40 @@ async def test_extract_download_metadata_success_with_duration(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+async def test_extract_download_metadata_error_when_filesize_missing(
+    patreon_handler: PatreonHandler,
+    valid_video_entry_data: dict[str, Any],
+) -> None:
+    """Test that missing filesize metadata raises."""
+    valid_video_entry_data.pop("filesize")
+    download_info = YtdlpInfo(valid_video_entry_data)
+
+    with pytest.raises(YtdlpPatreonDataError) as exc_info:
+        await patreon_handler.extract_download_metadata(FEED_ID, download_info)
+
+    assert exc_info.value.feed_id == FEED_ID
+    assert exc_info.value.download_id == valid_video_entry_data["id"]
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_extract_download_metadata_error_when_filesize_non_positive(
+    patreon_handler: PatreonHandler,
+    valid_video_entry_data: dict[str, Any],
+) -> None:
+    """Test that non-positive filesize values raise."""
+    valid_video_entry_data["filesize"] = 0
+    download_info = YtdlpInfo(valid_video_entry_data)
+
+    with pytest.raises(YtdlpPatreonDataError) as exc_info:
+        await patreon_handler.extract_download_metadata(FEED_ID, download_info)
+
+    assert exc_info.value.feed_id == FEED_ID
+    assert exc_info.value.download_id == valid_video_entry_data["id"]
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 async def test_extract_download_metadata_probes_duration_when_missing(
     patreon_handler: PatreonHandler,
     ffprobe_mock: MagicMock,
@@ -150,6 +186,7 @@ async def test_extract_download_metadata_probes_duration_when_missing(
             "requested_downloads": [
                 {"url": "https://mux.com/video.mp4"},
             ],
+            "filesize": 3_100_000,
         }
     )
     ffprobe_mock.get_duration_seconds_from_url = AsyncMock(return_value=234)
