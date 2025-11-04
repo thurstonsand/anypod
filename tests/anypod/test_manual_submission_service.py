@@ -171,6 +171,28 @@ async def test_fetch_submission_download_upcoming_status_raises_unavailable(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+async def test_fetch_submission_download_allows_non_queued_status(
+    manual_submission_service: ManualSubmissionService,
+    mock_ytdlp_wrapper: MagicMock,
+    feed_config: FeedConfig,
+    sample_download: Download,
+) -> None:
+    """Non-upcoming statuses proceed with a warning instead of failing."""
+    sample_download.status = DownloadStatus.DOWNLOADED
+    mock_ytdlp_wrapper.fetch_new_downloads_metadata.return_value = [sample_download]
+
+    result = await manual_submission_service.fetch_submission_download(
+        feed_id=FEED_ID,
+        feed_config=feed_config,
+        url=TEST_URL,
+        cookies_path=None,
+    )
+
+    assert result == sample_download
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 async def test_fetch_submission_download_uses_first_result_when_multiple(
     manual_submission_service: ManualSubmissionService,
     mock_ytdlp_wrapper: MagicMock,
