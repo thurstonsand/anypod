@@ -3,7 +3,7 @@
 [![License](https://img.shields.io/github/license/thurstonsand/anypod)](LICENSE)
 [![CI](https://img.shields.io/github/actions/workflow/status/thurstonsand/anypod/ci.yml?branch=main)](https://github.com/thurstonsand/anypod/actions/workflows/ci.yml)
 
-Your self-hosted, YAML-driven bridge from yt-dlp–supported sources (YouTube channels and playlists) to podcast‑consumable RSS feeds. Runs as a long‑lived service that periodically downloads media and serves RSS and media over HTTP.
+Your self-hosted, YAML-driven bridge from yt-dlp–supported sources (YouTube channels/playlists, Patreon posts, X/Twitter video statuses) to podcast‑consumable RSS feeds. Runs as a long‑lived service that periodically downloads media and serves RSS and media over HTTP.
 
 > Designed for small, self‑hosted deployments. Admin is private/trusted; only RSS and media endpoints are for public access.
 
@@ -17,7 +17,7 @@ Your self-hosted, YAML-driven bridge from yt-dlp–supported sources (YouTube ch
     - [Using Docker Compose (recommended)](#using-docker-compose-recommended)
     - [Using Docker directly](#using-docker-directly)
   - [Configuration](#configuration)
-    - [Manual feeds \& submissions](#manual-feeds--submissions)
+      - [Manual feeds \& submissions](#manual-feeds--submissions)
   - [Environment variables](#environment-variables)
   - [HTTP endpoints](#http-endpoints)
     - [Public endpoints](#public-endpoints)
@@ -29,6 +29,7 @@ Your self-hosted, YAML-driven bridge from yt-dlp–supported sources (YouTube ch
     - [PO Tokens (YouTube)](#po-tokens-youtube)
     - [Pocket Casts](#pocket-casts)
     - [Filtering](#filtering)
+    - [X / Twitter](#x--twitter)
     - [Patreon (Beta)](#patreon-beta)
     - [Error Handling and Logging](#error-handling-and-logging)
   - [Development](#development)
@@ -48,7 +49,7 @@ Anypod is a thin Python wrapper around `yt‑dlp` that turns any `yt‑dlp`–su
 ## Features
 
 - Simple YAML config with per‑feed schedules
-- Works with YouTube channels and playlists, Patreon creator pages and posts (beta)
+- Works with YouTube channels/playlists, Patreon creator pages/posts (beta), and public X/Twitter video posts (beta)
 - Feed metadata overrides (title, description, artwork, categories, explicit, etc.)
 - Thumbnail hosting: Downloads and serves feed artwork and episode thumbnails locally
 - Retention policies: keep the last N items and/or only since YYYYMMDD
@@ -293,6 +294,13 @@ If you do want to test you have everything configured correctly (which I recomme
 
 I recommend using a filter (either `since` or `keep_last`) when setting up your feed, otherwise Anypod will download EVERY video in the playlist. On that note, `yt-dlp` only allows for day precision filtering (YYYYMMDD), tho this should be sufficient for most people.
 
+### X / Twitter
+
+Public X/Twitter video posts are supported with the following constraints:
+
+- Only direct status URLs (`https://x.com/<handle>/status/<id>` or `https://twitter.com/<handle>/status/<id>`) are recognized; profile or timeline URLs are not supported.
+- supply `cookies.txt` if you follow private or member-only posts.
+
 ### Patreon (Beta)
 
 Patreon creator pages and individual posts are supported with the following considerations:
@@ -366,7 +374,7 @@ High‑level upcoming work. See `TASK_LIST.md` for the full checklist.
 - Podcast feed with an endpoint you can send videos to, to dynamically create your own playlist
   - You can recreate this functionality now by creating an unlisted youtube playlist and add videos to it
 - Expand Patreon support (audio-only posts, improved tier handling)
-- Support for additional sources beyond YouTube and Patreon
+- Support for additional sources beyond YouTube, Patreon, and X/Twitter
 - Embed episode-specific artwork directly into media files for better podcast client compatibility (especially Pocket Casts, which requires embedded artwork for per-episode images to display properly)
   - yt-dlp supports this
 

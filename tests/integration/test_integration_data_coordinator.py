@@ -29,6 +29,7 @@ BIG_BUCK_BUNNY_TITLE = (
 BIG_BUCK_BUNNY_PUBLISHED = datetime(2014, 11, 10, 14, 5, 55, tzinfo=UTC)
 
 COLETDJNZ_CHANNEL_VIDEOS = "https://www.youtube.com/@coletdjnz/videos"
+TWITTER_SINGLE_URL = "https://x.com/ActuallyNPH/status/560049149836808192"
 # Test playlist URL - small playlist with known content for date filtering tests
 TEST_PLAYLIST_URL = (
     "https://youtube.com/playlist?list=PLt5yu3-wZAlQAaPZ5Z-rJoTdbT-45Q7c0"
@@ -532,6 +533,15 @@ async def test_process_feed_with_retention_pruning(
             datetime(2014, 11, 10, 12, 0, 0, tzinfo=UTC),
             1,
             "Single video should be downloaded when in date range (but still ignores date filtering)",
+        ),
+        (
+            "twitter_single_video_ignores_date_filter",
+            TWITTER_SINGLE_URL,
+            SourceType.SINGLE_VIDEO,
+            None,
+            datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+            1,
+            "Twitter single video should download regardless of sync timestamp",
         ),
         # Channel tests - should respect date filtering (@coletdjnz has videos from 2024-07-10, 2024-03-08, 2022-07-29)
         (

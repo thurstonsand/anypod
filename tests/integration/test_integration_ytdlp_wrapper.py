@@ -80,6 +80,13 @@ TEST_URLS_PARAMS = [
         "VFX Artists React to Bad and Great CGi 173",
         "https://www.youtube.com/watch?v=ZY6TS8Q4C8s",
     ),
+    (
+        "twitter_single_video",
+        "https://x.com/ActuallyNPH/status/560049149836808192",
+        SourceType.SINGLE_VIDEO,
+        "Neil Patrick Harris",
+        "https://x.com/ActuallyNPH/status/560049149836808192",
+    ),
 ]
 
 # --- Tests for YtdlpWrapper integration ---

@@ -11,6 +11,7 @@ from ...exceptions import YtdlpError
 from ...ffprobe import FFProbe
 from .base_handler import SourceHandlerBase
 from .patreon_handler import PatreonHandler
+from .twitter_handler import TwitterHandler
 from .youtube_handler import YoutubeHandler
 
 
@@ -21,6 +22,8 @@ class HandlerSelector:
         self._default_handler = YoutubeHandler()
         self._hostname_handlers = {
             "patreon.com": PatreonHandler(ffprobe),
+            "x.com": TwitterHandler(),
+            "twitter.com": TwitterHandler(),
         }
 
     def select(self, url: str) -> SourceHandlerBase:

@@ -26,6 +26,7 @@ BIG_BUCK_BUNNY_PUBLISHED = datetime(2014, 11, 10, 14, 5, 55, tzinfo=UTC)
 BIG_BUCK_BUNNY_DURATION = 635.0
 
 COLETDJNZ_CHANNEL_VIDEOS = "https://www.youtube.com/@coletdjnz/videos"
+TWITTER_SINGLE_URL = "https://x.com/ActuallyNPH/status/560049149836808192"
 INVALID_VIDEO_URL = "https://www.youtube.com/watch?v=thisvideodoesnotexistxyz"
 
 # CLI args for minimal quality downloads as a string
@@ -54,6 +55,25 @@ CHANNEL_FEED_CONFIG = FeedConfig(
     since=None,
     max_errors=MAX_ERRORS,
 )
+
+TWITTER_FEED_CONFIG = FeedConfig(
+    url=TWITTER_SINGLE_URL,
+    yt_args=YT_DLP_MINIMAL_ARGS_STR,  # type: ignore
+    schedule=TEST_CRON_SCHEDULE,
+    keep_last=None,
+    since=None,
+    max_errors=MAX_ERRORS,
+)
+
+TEST_SINGLE_VIDEO_CASES: list[tuple[str, FeedConfig, SourceType, str | None]] = [
+    ("test_single_video", SAMPLE_FEED_CONFIG, SourceType.SINGLE_VIDEO, None),
+    (
+        "test_twitter_single_video",
+        TWITTER_FEED_CONFIG,
+        SourceType.SINGLE_VIDEO,
+        TWITTER_SINGLE_URL,
+    ),
+]
 
 INVALID_FEED_CONFIG = FeedConfig(
     url=INVALID_VIDEO_URL,
@@ -118,6 +138,9 @@ async def enqueue_test_items(
 
 @pytest.mark.integration
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "feed_id, feed_config, source_type, resolved_url", TEST_SINGLE_VIDEO_CASES
+)
 async def test_download_queued_single_video_success(
     enqueuer: Enqueuer,
     feed_db: FeedDatabase,
@@ -125,18 +148,20 @@ async def test_download_queued_single_video_success(
     download_db: DownloadDatabase,
     file_manager: FileManager,
     cookies_path: Path | None,
-):
+    feed_id: str,
+    feed_config: FeedConfig,
+    source_type: SourceType,
+    resolved_url: str | None,
+) -> None:
     """Tests successful download of a single queued video."""
-    feed_id = "test_single_video"
-    feed_config = SAMPLE_FEED_CONFIG
-
     # First, use enqueuer to populate database with a real entry
     queued_count = await enqueue_test_items(
         enqueuer,
         feed_db,
         feed_id,
         feed_config,
-        SourceType.SINGLE_VIDEO,
+        source_type,
+        resolved_url,
         cookies_path=cookies_path,
     )
     assert queued_count >= 1, "Expected at least 1 item to be queued by enqueuer"

@@ -4,6 +4,11 @@ from .patreon_handler import (
     YtdlpPatreonDataError,
     YtdlpPatreonPostFilteredOutError,
 )
+from .twitter_handler import (
+    TwitterHandler,
+    YtdlpTwitterDataError,
+    YtdlpTwitterPostFilteredOutError,
+)
 from .youtube_handler import (
     YoutubeHandler,
     YtdlpYoutubeDataError,
@@ -13,9 +18,12 @@ from .youtube_handler import (
 __all__ = [
     "HandlerSelector",
     "PatreonHandler",
+    "TwitterHandler",
     "YoutubeHandler",
     "YtdlpPatreonDataError",
     "YtdlpPatreonPostFilteredOutError",
+    "YtdlpTwitterDataError",
+    "YtdlpTwitterPostFilteredOutError",
     "YtdlpYoutubeDataError",
     "YtdlpYoutubeVideoFilteredOutError",
 ]

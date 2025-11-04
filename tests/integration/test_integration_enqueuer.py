@@ -41,6 +41,12 @@ TEST_URLS_SINGLE_AND_PLAYLIST = [
         SourceType.PLAYLIST,
         None,
     ),
+    (
+        "twitter_single_video",
+        "https://x.com/ActuallyNPH/status/560049149836808192",
+        SourceType.SINGLE_VIDEO,
+        None,
+    ),
 ]
 
 TEST_URLS_PARAMS = [
