@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Anypod converts yt-dlp-supported sources (YouTube channels, playlists) into RSS podcast feeds. It runs as a long-lived service that periodically fetches metadata, downloads media files, and generates podcast-consumable RSS feeds.
+Anypod converts yt-dlp-supported sources (YouTube channels/playlists, Patreon posts, X/Twitter video statuses) into RSS podcast feeds. It runs as a long-lived service that periodically fetches metadata, downloads media files, and generates podcast-consumable RSS feeds.
 
 ### Project Scope & Intent
 
