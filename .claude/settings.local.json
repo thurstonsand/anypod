@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Skill(project-management-plugin:git-commit-helper)",
+      "Bash(git log:*)",
+      "Bash(ssh truenas docker logs:*)",
+      "Bash(docker build:*)",
+      "Bash(uvx yt-dlp:*)",
+      "Bash(python3:*)",
+      "Bash(./scripts/run_dev.sh:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
