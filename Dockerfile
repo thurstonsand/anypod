@@ -37,15 +37,17 @@ ARG CACHE_BUST_WEEK=2025-W45
 
 ARG BGUTIL_POT_PROVIDER_VERSION=1.2.2
 
+# Copy deno binary from official image
+COPY --from=denoland/deno:bin /deno /usr/local/bin/deno
+
 # Install curl for health check, ca-certificates for SSL verification, gosu for user switching, and yt-dlp
 RUN apt-get update && \
     apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
-        curl \
-        ca-certificates \
-        gosu \
-        ffmpeg \
-        p7zip && \
+    curl \
+    ca-certificates \
+    gosu \
+    ffmpeg && \
     # Install yt-dlp binary into dedicated writable directory
     mkdir -p /app/bin && \
     curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /app/bin/yt-dlp && \
@@ -53,9 +55,7 @@ RUN apt-get update && \
     # Install bgutil POT provider plugin (zip) into yt-dlp system plugins dir
     mkdir -p /etc/yt-dlp/plugins && \
     curl -L https://github.com/brainicism/bgutil-ytdlp-pot-provider/releases/download/${BGUTIL_POT_PROVIDER_VERSION}/bgutil-ytdlp-pot-provider.zip -o /etc/yt-dlp/plugins/bgutil-ytdlp-pot-provider.zip && \
-    rm -rf /var/lib/apt/lists/* && \
-    # Install Deno for yt-dlp JavaScript runtime support
-    curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh
+    rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /app
