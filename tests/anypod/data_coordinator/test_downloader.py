@@ -54,6 +54,7 @@ def mock_download_db() -> MagicMock:
     mock.upsert_download = AsyncMock()
     mock.mark_as_downloaded = AsyncMock()
     mock.bump_retries = AsyncMock()
+    mock.set_download_logs = AsyncMock()
     return mock
 
 
@@ -236,7 +237,10 @@ async def test_process_single_download_success_flow(
 ):
     """Tests the success path of _process_single_download."""
     downloaded_path = Path("/final/video.mp4")
-    mock_ytdlp_wrapper.download_media_to_file.return_value = downloaded_path
+    mock_ytdlp_wrapper.download_media_to_file.return_value = (
+        downloaded_path,
+        "yt-dlp stdout/stderr",
+    )
 
     await downloader._process_single_download(sample_download, sample_feed_config)
 
@@ -246,6 +250,12 @@ async def test_process_single_download_success_flow(
         cookies_path=None,
     )
     mock_handle_success.assert_called_once_with(sample_download, downloaded_path)
+
+    downloader.download_db.set_download_logs.assert_awaited_once_with(  # type: ignore[attr-defined] this is an AsyncMock
+        feed_id=sample_download.feed_id,
+        download_id=sample_download.id,
+        logs="yt-dlp stdout/stderr",
+    )
 
 
 @pytest.mark.unit
@@ -258,7 +268,10 @@ async def test_process_single_download_ytdlp_failure_raises_downloader_error(
 ):
     """Tests that YtdlpApiError during download raises DownloadError."""
     original_ytdlp_error = YtdlpApiError(
-        "yt-dlp failed", feed_id="test_feed", download_id="test_dl_id_1"
+        message="yt-dlp failed",
+        feed_id=sample_download.feed_id,
+        download_id=sample_download.id,
+        logs="stderr output",
     )
     mock_ytdlp_wrapper.download_media_to_file.side_effect = original_ytdlp_error
 
@@ -268,6 +281,11 @@ async def test_process_single_download_ytdlp_failure_raises_downloader_error(
     assert exc_info.value.feed_id == sample_download.feed_id
     assert exc_info.value.download_id == sample_download.id
     assert exc_info.value.__cause__ is original_ytdlp_error
+    downloader.download_db.set_download_logs.assert_awaited_once_with(  # type: ignore[attr-defined] this is an AsyncMock
+        feed_id=sample_download.feed_id,
+        download_id=sample_download.id,
+        logs="stderr output",
+    )
 
 
 # --- Tests for download_queued ---

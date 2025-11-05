@@ -293,6 +293,51 @@ class DownloadDatabase:
 
         logger.debug("Download marked as DOWNLOADED.", extra=log_params)
 
+    @handle_download_db_errors("set download logs")
+    async def set_download_logs(
+        self, feed_id: str, download_id: str, logs: str
+    ) -> None:
+        """Persist the most recent yt-dlp logs for a download.
+
+        Args:
+            feed_id: The feed identifier.
+            download_id: The download identifier.
+            logs: Combined stdout/stderr log output.
+
+        Raises:
+            DownloadNotFoundError: If the download cannot be located.
+            DatabaseOperationError: If the update fails.
+        """
+        log_params = {"feed_id": feed_id, "download_id": download_id}
+        logger.debug("Updating stored download logs.", extra=log_params)
+
+        async with self._db.session() as session:
+            stmt = (
+                update(Download)
+                .where(
+                    col(Download.feed_id) == feed_id,
+                    col(Download.id) == download_id,
+                )
+                .values(download_logs=logs)
+            )
+            result = await session.execute(stmt)
+            match self._db.as_cursor_result(result).rowcount:
+                case 0:
+                    raise DownloadNotFoundError(
+                        "Download not found.", feed_id=feed_id, download_id=download_id
+                    )
+                case 1:
+                    pass
+                case _ as row_count:
+                    raise DatabaseOperationError(
+                        f"Update affected {row_count} rows, expected 1. Rolling back transaction.",
+                        feed_id=feed_id,
+                        download_id=download_id,
+                    )
+            await session.commit()
+
+        logger.debug("Download logs updated.", extra=log_params)
+
     @handle_download_db_errors("set thumbnail extension for download")
     async def set_thumbnail_extension(
         self, feed_id: str, download_id: str, thumbnail_ext: str | None

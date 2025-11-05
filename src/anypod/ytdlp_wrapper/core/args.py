@@ -39,6 +39,7 @@ class YtdlpArgs:
         # Output control
         self._quiet = False
         self._no_warnings = False
+        self._no_progress = False
         self._dump_single_json = False
         self._dump_json = False
 
@@ -90,6 +91,11 @@ class YtdlpArgs:
     def no_warnings(self) -> "YtdlpArgs":
         """Suppress warning messages."""
         self._no_warnings = True
+        return self
+
+    def no_progress(self) -> "YtdlpArgs":
+        """Disable interactive progress output."""
+        self._no_progress = True
         return self
 
     def skip_download(self) -> "YtdlpArgs":
@@ -320,6 +326,8 @@ class YtdlpArgs:
             cmd.append("--quiet")
         if self._no_warnings:
             cmd.append("--no-warnings")
+        if self._no_progress:
+            cmd.append("--no-progress")
         if self._dump_single_json:
             cmd.append("--dump-single-json")
         if self._dump_json:

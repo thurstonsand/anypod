@@ -9,11 +9,11 @@ from contextlib import asynccontextmanager
 import logging
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exception_handlers import http_exception_handler
 
 # from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
-from starlette.requests import Request
 from starlette.responses import Response
 
 from ..config import FeedConfig
@@ -65,6 +65,38 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         )
 
         return response
+
+
+async def log_http_exception(request: Request, exc: Exception) -> Response:
+    """Log HTTPExceptions before returning them to the client.
+
+    This handler logs all HTTP exceptions with appropriate severity levels:
+    - 5xx errors: ERROR level
+    - 4xx errors: WARNING level
+
+    Args:
+        request: The incoming HTTP request.
+        exc: The exception that was raised (must be HTTPException).
+
+    Returns:
+        The HTTP exception response with proper JSON formatting.
+    """
+    # Type guard - this handler should only receive HTTPException instances
+    if not isinstance(exc, HTTPException):
+        raise exc
+
+    level = logging.ERROR if exc.status_code >= 500 else logging.WARNING
+    logger.log(
+        level,
+        "HTTPException raised",
+        extra={
+            "method": request.method,
+            "path": request.url.path,
+            "status_code": exc.status_code,
+        },
+        exc_info=exc,
+    )
+    return await http_exception_handler(request, exc)
 
 
 def create_app(
@@ -129,6 +161,9 @@ def create_app(
     # Add custom logging middleware
     app.add_middleware(LoggingMiddleware)
 
+    # Register exception handlers
+    app.add_exception_handler(HTTPException, log_http_exception)
+
     # Attach dependencies to app state
     app.state.file_manager = file_manager
     app.state.feed_database = feed_database
@@ -189,6 +224,9 @@ def create_admin_app(
 
     # Reuse logging middleware for consistency
     app.add_middleware(LoggingMiddleware)
+
+    # Register exception handlers
+    app.add_exception_handler(HTTPException, log_http_exception)
 
     # Attach dependencies to app state
     app.state.file_manager = file_manager

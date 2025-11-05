@@ -8,10 +8,10 @@ or port, and not exposed on the public internet.
 import logging
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from ...db.types import DownloadStatus
+from ...db.types import Download, DownloadStatus
 from ...exceptions import (
     DatabaseOperationError,
     DownloadNotFoundError,
@@ -227,4 +227,73 @@ async def submit_manual_download(
         status=final_status,
         new=is_new,
         message=message,
+    )
+
+
+EXCLUDED_FIELD_NAMES = frozenset({"feed", "id"})
+DOWNLOAD_FIELD_NAMES = frozenset(
+    field_name
+    for field_name in Download.model_fields
+    if field_name not in EXCLUDED_FIELD_NAMES
+)
+
+
+class DownloadFieldsResponse(BaseModel):
+    """Provide the requested fields for a download record."""
+
+    feed_id: str
+    download_id: str
+    download: dict[str, Any]
+
+
+@router.get(
+    "/feeds/{feed_id}/downloads/{download_id}",
+    response_model=DownloadFieldsResponse,
+)
+async def get_download_fields(
+    feed_id: ValidatedFeedId,
+    download_id: str,
+    download_db: DownloadDatabaseDep,
+    fields: str | None = Query(
+        default=None,
+        description=(
+            "Comma-separated list of download fields to include. "
+            "Defaults to all columns."
+        ),
+    ),
+) -> DownloadFieldsResponse:
+    """Retrieve selected fields for a download record."""
+    if fields:
+        requested_fields = [
+            field.strip() for field in fields.split(",") if field.strip()
+        ]
+        if not requested_fields:
+            raise HTTPException(status_code=400, detail="No fields specified")
+    else:
+        requested_fields = sorted(DOWNLOAD_FIELD_NAMES)
+
+    invalid_fields = [
+        field for field in requested_fields if field not in DOWNLOAD_FIELD_NAMES
+    ]
+    if invalid_fields:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported field(s) requested: {', '.join(sorted(invalid_fields))}",
+        )
+
+    try:
+        download = await download_db.get_download_by_id(feed_id, download_id)
+    except DownloadNotFoundError as e:
+        raise HTTPException(status_code=404, detail="Download not found") from e
+    except DatabaseOperationError as e:
+        raise HTTPException(status_code=500, detail="Database error") from e
+
+    filtered_data = download.model_dump(
+        mode="json", include=set(requested_fields), exclude=set(EXCLUDED_FIELD_NAMES)
+    )
+
+    return DownloadFieldsResponse(
+        feed_id=feed_id,
+        download_id=download_id,
+        download=filtered_data,
     )

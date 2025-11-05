@@ -485,7 +485,7 @@ class YtdlpWrapper:
         download: Download,
         user_yt_cli_args: list[str],
         cookies_path: Path | None = None,
-    ) -> Path:
+    ) -> tuple[Path, str]:
         """Download the media for a given Download to a target directory.
 
         yt-dlp will place the final file in a feed-specific subdirectory within
@@ -497,7 +497,7 @@ class YtdlpWrapper:
             cookies_path: Path to cookies.txt file for authentication, or None if not needed.
 
         Returns:
-            The absolute path to the successfully downloaded media file.
+            Tuple containing the downloaded file path and combined stdout/stderr logs.
 
         Raises:
             YtdlpApiError: If the download fails or the downloaded file is not found.
@@ -545,7 +545,7 @@ class YtdlpWrapper:
 
         url_to_download = download.source_url
 
-        await YtdlpCore.download(download_args, url_to_download)
+        download_logs = await YtdlpCore.download(download_args, url_to_download)
 
         downloaded_files = list(
             await aiofiles.os.wrap(download_data_dir.glob)(f"{download.id}.*")
@@ -597,4 +597,4 @@ class YtdlpWrapper:
             },
         )
 
-        return downloaded_file
+        return downloaded_file, download_logs

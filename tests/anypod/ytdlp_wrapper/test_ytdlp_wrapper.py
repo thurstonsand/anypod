@@ -473,7 +473,7 @@ async def test_download_media_to_file_success_simplified(
 
     expected_final_file = feed_home_path / f"{download_id}.{dummy_download.ext}"
 
-    mock_ytdlcore_download.return_value = None
+    mock_ytdlcore_download.return_value = "STDOUT:\nprogress line\n"
 
     expected_final_file.parent.mkdir(parents=True, exist_ok=True)
     expected_final_file.touch()
@@ -485,11 +485,12 @@ async def test_download_media_to_file_success_simplified(
     mock_glob = AsyncMock(return_value=[expected_final_file])
     mock_aiofiles_wrap.return_value = mock_glob
 
-    returned_path = await ytdlp_wrapper.download_media_to_file(
+    returned_path, returned_logs = await ytdlp_wrapper.download_media_to_file(
         dummy_download, yt_cli_args
     )
 
     assert returned_path == expected_final_file
+    assert returned_logs == "STDOUT:\nprogress line\n"
 
     mock_prep_dl_dir.assert_called_once_with(feed_id)
 
@@ -547,13 +548,14 @@ async def test_download_media_to_file_propagates_error_when_no_file(
 
     mock_prep_dl_dir.return_value = (feed_temp_path, feed_home_path)
 
-    download_failure = YtdlpApiError("exit code 1")
+    download_failure = YtdlpApiError("exit code 1", logs="STDERR:\nerror line\n")
     mock_ytdlcore_download.side_effect = download_failure
 
     with pytest.raises(YtdlpApiError) as exc_info:
         await ytdlp_wrapper.download_media_to_file(dummy_download, yt_cli_args)
 
     assert exc_info.value is download_failure
+    assert exc_info.value.logs == "STDERR:\nerror line\n"
     mock_aiofiles_wrap.assert_not_called()
     mock_is_file.assert_not_called()
     mock_stat.assert_not_called()

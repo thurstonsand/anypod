@@ -130,12 +130,23 @@ async def run_debug_ytdlp_mode(settings: AppSettings, paths: PathManager) -> Non
                     if download.status == DownloadStatus.QUEUED:
                         try:
                             logger.info(f"Attempting to download: {download.title}")
-                            download_path = await ytdlp_wrapper.download_media_to_file(
+                            (
+                                downloaded_file_path,
+                                download_logs,
+                            ) = await ytdlp_wrapper.download_media_to_file(
                                 download,
                                 feed_config.yt_args,
                                 cookies_path=settings.cookies_path,
                             )
-                            logger.info(f"Download successful: {download_path}")
+                            logger.info(
+                                "Download successful: %s",
+                                downloaded_file_path,
+                            )
+                            logger.debug(
+                                "yt-dlp logs for %s:\n%s",
+                                download.id,
+                                download_logs,
+                            )
                             downloadable_count += 1
                         except YtdlpApiError as download_error:
                             logger.warning(

@@ -10,7 +10,11 @@ import pytest
 
 from anypod.db import DownloadDatabase, FeedDatabase
 from anypod.db.types import DownloadStatus
-from anypod.exceptions import DatabaseOperationError, FeedNotFoundError
+from anypod.exceptions import (
+    DatabaseOperationError,
+    DownloadNotFoundError,
+    FeedNotFoundError,
+)
 from anypod.server.routers.admin import router
 
 # Shared test constants
@@ -104,6 +108,159 @@ def test_reset_errors_db_error_on_requeue(
     )
 
     response = client.post(f"{ADMIN_PREFIX}/feeds/{FEED_ID}/reset-errors")
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "Database error"
+
+
+@pytest.mark.unit
+def test_get_download_fields_success_default_fields(
+    client: TestClient,
+    mock_download_database: Mock,
+) -> None:
+    """Returns download data for all fields when no field filter is provided."""
+    download_id = "dl-123"
+    download = Mock()
+
+    dump = {
+        "status": DownloadStatus.QUEUED.value,
+        "download_logs": "log contents",
+    }
+
+    def model_dump_mock(
+        *, mode: str, include: set[str], exclude: set[str]
+    ) -> dict[str, str]:
+        assert mode == "json"
+        assert "feed" not in include
+        assert exclude == {"feed", "id"}
+        return dump
+
+    download.model_dump.side_effect = model_dump_mock
+    mock_download_database.get_download_by_id.return_value = download
+
+    response = client.get(f"{ADMIN_PREFIX}/feeds/{FEED_ID}/downloads/{download_id}")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "feed_id": FEED_ID,
+        "download_id": download_id,
+        "download": dump,
+    }
+    mock_download_database.get_download_by_id.assert_awaited_once_with(
+        FEED_ID, download_id
+    )
+    download.model_dump.assert_called_once()
+
+
+@pytest.mark.unit
+def test_get_download_fields_success_with_filter(
+    client: TestClient,
+    mock_download_database: Mock,
+) -> None:
+    """Returns only requested fields when query parameter is used."""
+    download_id = "dl-456"
+    download = Mock()
+
+    dump = {
+        "download_logs": "log contents",
+        "last_error": "boom",
+    }
+
+    def model_dump_mock(
+        *, mode: str, include: set[str], exclude: set[str]
+    ) -> dict[str, str]:
+        assert include == {"download_logs", "last_error"}
+        return dump
+
+    download.model_dump.side_effect = model_dump_mock
+    mock_download_database.get_download_by_id.return_value = download
+
+    response = client.get(
+        f"{ADMIN_PREFIX}/feeds/{FEED_ID}/downloads/{download_id}",
+        params={"fields": "download_logs,last_error"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "feed_id": FEED_ID,
+        "download_id": download_id,
+        "download": dump,
+    }
+    mock_download_database.get_download_by_id.assert_awaited_once_with(
+        FEED_ID, download_id
+    )
+    download.model_dump.assert_called_once()
+
+
+@pytest.mark.unit
+def test_get_download_fields_invalid_field_returns_400(
+    client: TestClient,
+    mock_download_database: Mock,
+) -> None:
+    """400 when unsupported fields are requested."""
+    download_id = "dl-789"
+
+    response = client.get(
+        f"{ADMIN_PREFIX}/feeds/{FEED_ID}/downloads/{download_id}",
+        params={"fields": "download_logs,not_a_column"},
+    )
+
+    assert response.status_code == 400
+    assert "not_a_column" in response.json()["detail"]
+    mock_download_database.get_download_by_id.assert_not_called()
+
+
+@pytest.mark.unit
+def test_get_download_fields_empty_fields_returns_400(
+    client: TestClient,
+    mock_download_database: Mock,
+) -> None:
+    """400 when fields query resolves to an empty list."""
+    download_id = "dl-999"
+
+    response = client.get(
+        f"{ADMIN_PREFIX}/feeds/{FEED_ID}/downloads/{download_id}",
+        params={"fields": " , , "},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "No fields specified"
+    mock_download_database.get_download_by_id.assert_not_called()
+
+
+@pytest.mark.unit
+def test_get_download_fields_not_found_returns_404(
+    client: TestClient,
+    mock_download_database: Mock,
+) -> None:
+    """404 when the download cannot be located."""
+    download_id = "missing"
+    mock_download_database.get_download_by_id.side_effect = DownloadNotFoundError(
+        "missing", feed_id=FEED_ID, download_id=download_id
+    )
+
+    response = client.get(
+        f"{ADMIN_PREFIX}/feeds/{FEED_ID}/downloads/{download_id}",
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Download not found"
+
+
+@pytest.mark.unit
+def test_get_download_fields_database_error_returns_500(
+    client: TestClient,
+    mock_download_database: Mock,
+) -> None:
+    """500 when the database raises an unexpected error."""
+    download_id = "db-error"
+    mock_download_database.get_download_by_id.side_effect = DatabaseOperationError(
+        "db error"
+    )
+
+    response = client.get(
+        f"{ADMIN_PREFIX}/feeds/{FEED_ID}/downloads/{download_id}",
+    )
 
     assert response.status_code == 500
     assert response.json()["detail"] == "Database error"
