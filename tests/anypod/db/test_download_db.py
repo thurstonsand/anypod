@@ -426,6 +426,66 @@ async def test_set_thumbnail_extension_nonexistent_download(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+async def test_set_download_logs_persists_value(
+    download_db: DownloadDatabase, sample_download_queued: Download
+):
+    """set_download_logs stores the provided log content for a download."""
+    await download_db.upsert_download(sample_download_queued)
+
+    logs = "yt-dlp log output"
+    await download_db.set_download_logs(
+        sample_download_queued.feed_id,
+        sample_download_queued.id,
+        logs,
+    )
+
+    stored = await download_db.get_download_by_id(
+        sample_download_queued.feed_id,
+        sample_download_queued.id,
+    )
+    assert stored.download_logs == logs
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_set_download_logs_overwrites_existing_value(
+    download_db: DownloadDatabase, sample_download_queued: Download
+):
+    """set_download_logs replaces previously stored log content."""
+    await download_db.upsert_download(sample_download_queued)
+
+    logs1 = "initial logs"
+    logs2 = "updated logs"
+    await download_db.set_download_logs(
+        sample_download_queued.feed_id,
+        sample_download_queued.id,
+        logs1,
+    )
+    await download_db.set_download_logs(
+        sample_download_queued.feed_id,
+        sample_download_queued.id,
+        logs2,
+    )
+
+    stored = await download_db.get_download_by_id(
+        sample_download_queued.feed_id,
+        sample_download_queued.id,
+    )
+    assert stored.download_logs == logs2
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_set_download_logs_nonexistent_download_raises(
+    download_db: DownloadDatabase,
+):
+    """set_download_logs raises DownloadNotFoundError when the row is missing."""
+    with pytest.raises(DownloadNotFoundError):
+        await download_db.set_download_logs("missing_feed", "missing_id", "logs")
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 async def test_requeue_downloads_multi(
     feed_db: FeedDatabase, download_db: DownloadDatabase
 ):

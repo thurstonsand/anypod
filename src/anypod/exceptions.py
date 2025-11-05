@@ -283,11 +283,13 @@ class YtdlpApiError(YtdlpError):
         feed_id: str | None = None,
         download_id: str | None = None,
         url: str | None = None,
+        logs: str | None = None,
     ):
         super().__init__(message)
         self.feed_id = feed_id
         self.download_id = download_id
         self.url = url
+        self.logs = logs
 
 
 class RSSGenerationError(AnypodError):

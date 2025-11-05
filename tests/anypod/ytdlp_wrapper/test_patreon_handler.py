@@ -137,36 +137,32 @@ async def test_extract_download_metadata_success_with_duration(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_extract_download_metadata_error_when_filesize_missing(
+async def test_extract_download_metadata_uses_placeholder_when_filesize_missing(
     patreon_handler: PatreonHandler,
     valid_video_entry_data: dict[str, Any],
 ) -> None:
-    """Test that missing filesize metadata raises."""
+    """Missing filesize metadata should fall back to placeholder size."""
     valid_video_entry_data.pop("filesize")
     download_info = YtdlpInfo(valid_video_entry_data)
 
-    with pytest.raises(YtdlpPatreonDataError) as exc_info:
-        await patreon_handler.extract_download_metadata(FEED_ID, download_info)
+    download = await patreon_handler.extract_download_metadata(FEED_ID, download_info)
 
-    assert exc_info.value.feed_id == FEED_ID
-    assert exc_info.value.download_id == valid_video_entry_data["id"]
+    assert download.filesize == 1
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_extract_download_metadata_error_when_filesize_non_positive(
+async def test_extract_download_metadata_uses_placeholder_when_filesize_zero(
     patreon_handler: PatreonHandler,
     valid_video_entry_data: dict[str, Any],
 ) -> None:
-    """Test that non-positive filesize values raise."""
+    """Zero filesize should be treated as missing and fall back to placeholder."""
     valid_video_entry_data["filesize"] = 0
     download_info = YtdlpInfo(valid_video_entry_data)
 
-    with pytest.raises(YtdlpPatreonDataError) as exc_info:
-        await patreon_handler.extract_download_metadata(FEED_ID, download_info)
+    download = await patreon_handler.extract_download_metadata(FEED_ID, download_info)
 
-    assert exc_info.value.feed_id == FEED_ID
-    assert exc_info.value.download_id == valid_video_entry_data["id"]
+    assert download.filesize == 1
 
 
 @pytest.mark.unit

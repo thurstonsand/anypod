@@ -44,6 +44,7 @@ class Download(SQLModel, table=True):
         Error Tracking:
             retries: Number of retry attempts.
             last_error: Last error message if any.
+            download_logs: yt-dlp execution logs.
 
         Processing Timestamps:
             downloaded_at: When the download was completed (UTC).
@@ -102,6 +103,7 @@ class Download(SQLModel, table=True):
         default=0, sa_column=Column(Integer, nullable=False, server_default="0")
     )
     last_error: str | None = None
+    download_logs: str | None = None
 
     # When the file was actually downloaded
     downloaded_at: datetime | None = Field(

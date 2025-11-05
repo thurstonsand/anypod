@@ -189,34 +189,30 @@ async def test_parse_single_video_entry_success_no_description(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_parse_single_video_entry_error_when_filesize_missing(
+async def test_parse_single_video_entry_uses_placeholder_when_filesize_missing(
     youtube_handler: YoutubeHandler, valid_video_entry_data: dict[str, Any]
 ) -> None:
-    """Tests error when filesize metadata is missing."""
+    """Missing filesize metadata should fall back to placeholder size."""
     valid_video_entry_data.pop("filesize")
     ytdlp_info = YtdlpInfo(valid_video_entry_data)
 
-    with pytest.raises(YtdlpYoutubeDataError) as exc_info:
-        await youtube_handler.extract_download_metadata(FEED_ID, ytdlp_info)
+    download = await youtube_handler.extract_download_metadata(FEED_ID, ytdlp_info)
 
-    assert exc_info.value.feed_id == FEED_ID
-    assert exc_info.value.download_id == valid_video_entry_data["id"]
+    assert download.filesize == 1
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_parse_single_video_entry_error_when_filesize_non_positive(
+async def test_parse_single_video_entry_uses_placeholder_when_filesize_zero(
     youtube_handler: YoutubeHandler, valid_video_entry_data: dict[str, Any]
 ) -> None:
-    """Tests error when filesize metadata resolves to a non-positive value."""
+    """Zero filesize should be treated as missing and fall back to placeholder size."""
     valid_video_entry_data["filesize"] = 0
     ytdlp_info = YtdlpInfo(valid_video_entry_data)
 
-    with pytest.raises(YtdlpYoutubeDataError) as exc_info:
-        await youtube_handler.extract_download_metadata(FEED_ID, ytdlp_info)
+    download = await youtube_handler.extract_download_metadata(FEED_ID, ytdlp_info)
 
-    assert exc_info.value.feed_id == FEED_ID
-    assert exc_info.value.download_id == valid_video_entry_data["id"]
+    assert download.filesize == 1
 
 
 @pytest.mark.unit

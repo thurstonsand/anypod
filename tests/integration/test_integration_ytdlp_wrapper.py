@@ -465,7 +465,7 @@ async def test_download_media_to_file_success(
     # Use the same minimal args as other tests, could be customized if needed
     cli_args = YT_DLP_MINIMAL_ARGS
 
-    downloaded_file_path = await ytdlp_wrapper.download_media_to_file(
+    downloaded_file_path, download_logs = await ytdlp_wrapper.download_media_to_file(
         download=download,
         user_yt_cli_args=cli_args,
         cookies_path=cookies_path,
@@ -475,6 +475,11 @@ async def test_download_media_to_file_success(
         f"Downloaded file does not exist at {downloaded_file_path}"
     )
     assert downloaded_file_path.is_file(), f"Path {downloaded_file_path} is not a file"
+
+    assert download_logs.strip() != "STDOUT:", (
+        "yt-dlp logs should include more than the header"
+    )
+    assert len([line for line in download_logs.splitlines() if line.strip()]) > 1
 
     # Verify download-level thumbnail was downloaded and converted to JPG
     # downloads_images_dir = await path_manager.download_images_dir(download.feed_id)

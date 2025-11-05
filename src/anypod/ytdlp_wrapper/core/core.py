@@ -11,6 +11,16 @@ from .info import YtdlpInfo
 logger = logging.getLogger(__name__)
 
 
+def _format_run_output(stdout: str, stderr: str) -> str:
+    """Format stdout and stderr content with section headers."""
+    sections: list[str] = []
+    if stdout:
+        sections.append(f"STDOUT:\n{stdout}")
+    if stderr:
+        sections.append(f"STDERR:\n{stderr}")
+    return "\n\n".join(sections)
+
+
 class YtdlpCore:
     """Static methods for core yt-dlp operations.
 
@@ -198,18 +208,21 @@ class YtdlpCore:
         return entries
 
     @staticmethod
-    async def download(args: YtdlpArgs, url: str) -> None:
+    async def download(args: YtdlpArgs, url: str) -> str:
         """Download media from a URL using yt-dlp subprocess.
 
         Args:
             args: YtdlpArgs object containing command-line arguments for yt-dlp.
             url: URL to download media from.
 
+        Returns:
+            Combined stdout/stderr log text emitted by yt-dlp.
+
         Raises:
             YtdlpApiError: If download fails or returns a non-zero exit code.
         """
         # Build subprocess command:
-        cli_cmd_prefix = args.quiet().no_warnings().to_list()
+        cli_cmd_prefix = args.no_warnings().no_progress().to_list()
         cmd = [*cli_cmd_prefix, url]
 
         logger.debug("Running yt-dlp for download", extra={"cmd": cmd})
@@ -227,7 +240,7 @@ class YtdlpCore:
             ) from e
 
         try:
-            _, stderr = await proc.communicate()
+            stdout, stderr = await proc.communicate()
         except asyncio.CancelledError:
             # Ensure subprocess cleanup on cancellation
             proc.kill()
@@ -235,8 +248,16 @@ class YtdlpCore:
         finally:
             await proc.wait()
 
+        stdout_text = stdout.decode("utf-8", errors="replace") if stdout else ""
+        stderr_text = stderr.decode("utf-8", errors="replace") if stderr else ""
+        combined_logs = _format_run_output(stdout_text, stderr_text)
+
         if proc.returncode != 0:
             raise YtdlpApiError(
-                message=f"Download failed with exit code {proc.returncode}: {stderr.decode('utf-8', errors='replace')}",
+                message=(
+                    f"Download failed with exit code {proc.returncode}: {stderr_text}"
+                ),
                 url=url,
+                logs=combined_logs or None,
             )
+        return combined_logs

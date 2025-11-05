@@ -142,6 +142,28 @@ class Downloader:
                 extra={"feed_id": download.feed_id, "download_id": download.id},
             )
 
+    async def _persist_download_logs(self, download: Download, logs: str) -> None:
+        """Persist yt-dlp logs for a download when available."""
+        log_params = {"feed_id": download.feed_id, "download_id": download.id}
+        try:
+            await self.download_db.set_download_logs(
+                feed_id=download.feed_id,
+                download_id=download.id,
+                logs=logs,
+            )
+        except DownloadNotFoundError as e:
+            logger.warning(
+                "Download disappeared before logs could be stored.",
+                extra=log_params,
+                exc_info=e,
+            )
+        except DatabaseOperationError as e:
+            logger.warning(
+                "Failed to store yt-dlp logs for download.",
+                extra=log_params,
+                exc_info=e,
+            )
+
     async def _process_single_download(
         self,
         download_to_process: Download,
@@ -169,20 +191,24 @@ class Downloader:
         logger.debug("Processing single download.", extra=log_params)
 
         try:
-            downloaded_file_path = await self.ytdlp_wrapper.download_media_to_file(
+            (
+                downloaded_file_path,
+                download_logs,
+            ) = await self.ytdlp_wrapper.download_media_to_file(
                 download_to_process,
                 feed_config.yt_args,
                 cookies_path=cookies_path,
             )
-            await self._handle_download_success(
-                download_to_process, downloaded_file_path
-            )
         except YtdlpApiError as e:
+            await self._persist_download_logs(download_to_process, e.logs or "")
             raise DownloadError(
                 message="Failed to download media to file.",
                 feed_id=download_to_process.feed_id,
                 download_id=download_to_process.id,
             ) from e
+
+        await self._persist_download_logs(download_to_process, download_logs)
+        await self._handle_download_success(download_to_process, downloaded_file_path)
 
     # TODO: do i need to think about race conditions for retrieve/modify/update?
     async def download_queued(
