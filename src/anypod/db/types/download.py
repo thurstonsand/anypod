@@ -6,7 +6,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import Column, Enum, Index, Integer, text
+from sqlalchemy import Column, Enum, Index, Integer, Text, text
 from sqlalchemy.sql.schema import FetchedValue
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -103,7 +103,7 @@ class Download(SQLModel, table=True):
         default=0, sa_column=Column(Integer, nullable=False, server_default="0")
     )
     last_error: str | None = None
-    download_logs: str | None = None
+    download_logs: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
 
     # When the file was actually downloaded
     downloaded_at: datetime | None = Field(
