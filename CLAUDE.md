@@ -62,6 +62,7 @@ timeout 30 ./scripts/run_dev.sh [--keep] # Run full anypod service (scheduler + 
 uv run ruff check                               # Lint code
 uv run ruff format                              # Format code
 uv run basedpyright                             # Type checking
+bash scripts/check_migrations.sh                # Check for schema drift between models and migrations
 uv run pre-commit run --all-files               # All of the above, prefer to use this one when confirming your code is good
 
 # Testing
@@ -130,6 +131,21 @@ Download status transitions are implemented as explicit methods, not generic upd
 
 ## Development Notes
 
+### Database Migrations
+
+When changing database models in `src/anypod/db/types/`, you must create a corresponding Alembic migration:
+
+1. Make your changes to the SQLModel classes
+2. Generate a migration: `uv run alembic revision --autogenerate -m "describe your changes"`
+3. Review the generated migration in `alembic/versions/`
+4. Test the migration: `bash scripts/check_migrations.sh`
+
+The migration check script (`scripts/check_migrations.sh`) runs automatically in pre-commit hooks and will fail if:
+- You've modified a database model without creating a migration
+- The migration doesn't match the current model definition
+
+**Important**: Always use explicit SQLAlchemy column types (like `sa.Text()`, `sa.Integer()`) instead of relying on SQLModel's `AutoString()` to avoid type drift issues. This ensures migrations are predictable and consistent.
+
 ### Requirements
 
 - Python 3.13+ (uses modern match/case syntax)
@@ -157,6 +173,8 @@ Whenever you add a new file, or notice a file that is missing from this list, pr
 
 ```
 anypod/
+├── scripts/
+│   └── check_migrations.sh      # Check for schema drift between models and migrations
 ├── src/anypod/
 │   ├── __main__.py              # Entry point
 │   ├── cli/                     # CLI interface and debug modes
