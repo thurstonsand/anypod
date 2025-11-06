@@ -1,6 +1,7 @@
 """Core yt-dlp wrapper functionality and typed data access."""
 
 import asyncio
+from dataclasses import dataclass
 import json
 import logging
 
@@ -21,6 +22,14 @@ def _format_run_output(stdout: str, stderr: str) -> str:
     return "\n\n".join(sections)
 
 
+@dataclass(slots=True)
+class YtdlpRunResult[T]:
+    """Container for yt-dlp subprocess payloads and raw log output."""
+
+    payload: T
+    logs: str | None
+
+
 class YtdlpCore:
     """Static methods for core yt-dlp operations.
 
@@ -30,20 +39,21 @@ class YtdlpCore:
     """
 
     @staticmethod
-    async def extract_playlist_info(args: YtdlpArgs, url: str) -> YtdlpInfo:
-        """Extract playlist metadata only -- no download metadata.
+    async def extract_playlist_info(
+        args: YtdlpArgs, url: str
+    ) -> YtdlpRunResult[YtdlpInfo]:
+        """Extract playlist metadata without downloading media.
 
         Args:
             args: YtdlpArgs object containing command-line arguments for yt-dlp.
             url: URL to extract information from.
 
         Returns:
-            YtdlpInfo object with extracted playlist metadata.
+            YtdlpRunResult containing playlist metadata and raw yt-dlp logs.
 
         Raises:
             YtdlpApiError: If extraction fails or an unexpected error occurs.
         """
-        # Build subprocess command
         cli_cmd_prefix = (
             args.quiet()
             .no_warnings()
@@ -73,13 +83,11 @@ class YtdlpCore:
         try:
             stdout, stderr = await proc.communicate()
         except asyncio.CancelledError:
-            # Ensure subprocess cleanup on cancellation
             proc.kill()
             raise
         finally:
             await proc.wait()
 
-        # Parse JSON output first - yt-dlp can produce valid output even with non-zero exit codes
         logger.debug(
             "yt-dlp process completed.",
             extra={
@@ -90,42 +98,53 @@ class YtdlpCore:
             },
         )
 
-        if proc.returncode != 0:
+        stdout_text = stdout.decode("utf-8", errors="replace") if stdout else ""
+        stderr_text = stderr.decode("utf-8", errors="replace") if stderr else ""
+        combined_logs = _format_run_output(stdout_text, stderr_text)
+
+        if proc.returncode != 0 and proc.returncode != 101:
             raise YtdlpApiError(
-                message=f"yt-dlp completed with error {proc.returncode}: {stderr.decode('utf-8', errors='replace')}",
+                message=f"yt-dlp completed with error {proc.returncode}: {stderr_text}",
                 url=url,
+                logs=combined_logs,
             )
-        elif not stdout:
+        if not stdout_text:
             raise YtdlpApiError(
                 message="yt-dlp did not produce any output",
                 url=url,
+                logs=combined_logs,
             )
 
         try:
-            extracted_info = json.loads(stdout.decode("utf-8"))
+            extracted_info = json.loads(stdout_text)
         except json.JSONDecodeError as e:
             raise YtdlpApiError(
                 message="Failed to parse yt-dlp JSON output",
                 url=url,
+                logs=combined_logs,
             ) from e
 
-        return YtdlpInfo(extracted_info)  # type: ignore
+        return YtdlpRunResult(
+            payload=YtdlpInfo(extracted_info),
+            logs=combined_logs,
+        )
 
     @staticmethod
-    async def extract_downloads_info(args: YtdlpArgs, url: str) -> list[YtdlpInfo]:
-        """Extract download metadata only -- no playlist or channel metadata.
+    async def extract_downloads_info(
+        args: YtdlpArgs, url: str
+    ) -> YtdlpRunResult[list[YtdlpInfo]]:
+        """Extract download metadata without downloading media content.
 
         Args:
             args: YtdlpArgs object containing command-line arguments for yt-dlp.
             url: URL to extract information from.
 
         Returns:
-            List of YtdlpInfo objects, each representing a download.
+            YtdlpRunResult containing downloads metadata and raw yt-dlp logs.
 
         Raises:
             YtdlpApiError: If extraction fails or an unexpected error occurs.
         """
-        # Build subprocess command
         cli_cmd_prefix = (
             args.quiet().no_warnings().dump_json().skip_download().to_list()
         )
@@ -165,38 +184,34 @@ class YtdlpCore:
             },
         )
 
-        stdout_text = stdout.decode("utf-8").strip()
+        stdout_text = stdout.decode("utf-8", errors="replace").strip()
+        stderr_text = stderr.decode("utf-8", errors="replace") if stderr else ""
+        combined_logs = _format_run_output(stdout_text, stderr_text)
 
-        # Parse multiple JSON objects (one per video)
         entries: list[YtdlpInfo] = []
-        for line in stdout_text.split("\n"):
-            line = line.strip()
-            if not line:
+        for line in stdout_text.splitlines():
+            stripped_line = line.strip()
+            if not stripped_line:
                 continue
             try:
-                entry = json.loads(line)
-                entries.append(YtdlpInfo(entry))  # type: ignore
+                entry = json.loads(stripped_line)
+                entries.append(YtdlpInfo(entry))
             except json.JSONDecodeError:
-                logger.warning(f"Failed to parse JSON line: {line[:100]}")
+                logger.warning(f"Failed to parse JSON line: {stripped_line[:100]}")
                 continue
 
-        # Handle non-zero exit codes - log errors but don't fail
-        # TODO: find a way to handle this more intelligently; find specific things to error on
         if proc.returncode != 0:
-            stderr_text = stderr.decode("utf-8", errors="replace")
-
-            # Log each yt-dlp error line at warning level
             if stderr_text.strip():
-                for line in stderr_text.strip().split("\n"):
-                    if line.strip():
+                for line in stderr_text.strip().splitlines():
+                    clean_line = line.strip()
+                    if clean_line:
                         logger.warning(
-                            f"yt-dlp error: ${line.strip()}",
+                            f"yt-dlp error: ${clean_line}",
                             extra={
                                 "exit_code": proc.returncode,
                             },
                         )
-
-            if not entries:
+            if not entries and proc.returncode != 101:  # 101 == filtered out
                 logger.warning(
                     "yt-dlp completed with errors and extracted no entries.",
                     extra={
@@ -205,7 +220,7 @@ class YtdlpCore:
                     },
                 )
 
-        return entries
+        return YtdlpRunResult(payload=entries, logs=combined_logs)
 
     @staticmethod
     async def download(args: YtdlpArgs, url: str) -> str:

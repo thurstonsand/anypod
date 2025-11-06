@@ -396,36 +396,35 @@ class PatreonHandler:
         Returns:
             Tuple of (final_url_to_fetch, source_type).
         """
-        logger.debug(
-            "Determining Patreon fetch strategy.", extra={"initial_url": initial_url}
-        )
+        log_params = {"feed_id": feed_id, "initial_url": initial_url}
+        logger.debug("Determining Patreon fetch strategy.", extra=log_params)
 
         discovery_args = (
             base_args.skip_download().flat_playlist().referer("https://www.patreon.com")
         )
 
-        discovery_info = await YtdlpCore.extract_playlist_info(
+        discovery_result = await YtdlpCore.extract_playlist_info(
             discovery_args, initial_url
         )
-        if not discovery_info:
-            logger.warning(
-                "Patreon discovery returned no info; defaulting to UNKNOWN.",
-                extra={"initial_url": initial_url},
+        discovery_logs = discovery_result.logs
+        if discovery_logs:
+            logger.debug(
+                "yt-dlp Patreon discovery logs.",
+                extra={**log_params, "ytdlp_logs": discovery_logs},
             )
-            return initial_url, SourceType.UNKNOWN
 
+        discovery_info = discovery_result.payload
         entry = PatreonEntry(discovery_info, feed_id)
         fetch_url = entry.webpage_url or initial_url
 
-        logger.debug(
-            "Patreon discovery call successful.",
-            extra={
-                "initial_url": initial_url,
-                "fetch_url": fetch_url,
-                "extractor": entry.extractor,
-                "resolved_type": entry.type or "<unknown>",
-            },
-        )
+        log_params = {
+            **log_params,
+            "fetch_url": fetch_url,
+            "extractor": entry.extractor,
+            "resolved_type": entry.type or "<unknown>",
+            "ytdlp_logs": discovery_logs,
+        }
+        logger.debug("Patreon discovery call successful.", extra=log_params)
 
         # Classify by extractor/type
         if entry.type == "playlist" or entry.extractor == "patreon:campaign":
@@ -435,12 +434,7 @@ class PatreonHandler:
 
         logger.warning(
             "Unhandled Patreon URL classification. Defaulting to UNKNOWN.",
-            extra={
-                "initial_url": initial_url,
-                "fetch_url": fetch_url,
-                "extractor": entry.extractor,
-                "type": entry.type,
-            },
+            extra={**log_params, "type": entry.type},
         )
         return fetch_url, SourceType.UNKNOWN
 

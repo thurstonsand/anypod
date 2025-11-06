@@ -230,7 +230,13 @@ class YtdlpWrapper:
             "Acquiring playlist metadata.",
             extra=log_config,
         )
-        ytdlp_info = await YtdlpCore.extract_playlist_info(info_args, resolved_url)
+        playlist_result = await YtdlpCore.extract_playlist_info(info_args, resolved_url)
+        if playlist_result.logs:
+            logger.debug(
+                "yt-dlp playlist metadata logs.",
+                extra={**log_config, "ytdlp_logs": playlist_result.logs},
+            )
+        ytdlp_info = playlist_result.payload
 
         extracted_feed = handler.extract_feed_metadata(
             feed_id,
@@ -442,7 +448,16 @@ class YtdlpWrapper:
         handler = self._handler_selector.select(resolved_url)
         info_args = handler.prepare_downloads_info_args(info_args)
 
-        ytdlp_infos = await YtdlpCore.extract_downloads_info(info_args, resolved_url)
+        downloads_result = await YtdlpCore.extract_downloads_info(
+            info_args, resolved_url
+        )
+        if downloads_result.logs:
+            logger.debug(
+                "yt-dlp downloads metadata logs.",
+                extra={**log_config, "ytdlp_logs": downloads_result.logs},
+            )
+
+        ytdlp_infos = downloads_result.payload
 
         if not ytdlp_infos:
             logger.debug(

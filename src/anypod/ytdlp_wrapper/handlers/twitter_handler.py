@@ -347,61 +347,46 @@ class TwitterHandler:
         Returns:
             Tuple of (final_url_to_fetch, source_type).
         """
-        logger.debug(
-            "Determining Twitter fetch strategy.", extra={"initial_url": initial_url}
-        )
+        log_params = {"feed_id": feed_id, "initial_url": initial_url}
+        logger.debug("Determining Twitter fetch strategy.", extra=log_params)
 
         # Add Twitter-specific discovery options
         discovery_args = base_args.skip_download().flat_playlist()
 
-        logger.debug(
-            "Performing discovery call.",
-            extra={"initial_url": initial_url},
-        )
-        discovery_info = await YtdlpCore.extract_playlist_info(
+        logger.debug("Performing discovery call.", extra=log_params)
+        discovery_result = await YtdlpCore.extract_playlist_info(
             discovery_args, initial_url
         )
+        discovery_logs = discovery_result.logs
+        if discovery_logs:
+            log_params["ytdlp_logs"] = discovery_logs
+            logger.debug("yt-dlp Twitter discovery logs.", extra=log_params)
 
-        if not discovery_info:
-            logger.warning(
-                "Twitter discovery returned no info; defaulting to UNKNOWN.",
-                extra={"initial_url": initial_url},
-            )
-            return initial_url, SourceType.UNKNOWN
-
+        discovery_info = discovery_result.payload
         twitter_info = TwitterEntry(discovery_info, feed_id)
 
         fetch_url = twitter_info.webpage_url or initial_url
         discovery_type = twitter_info.type or "<unknown>"
-        logger.debug(
-            "Twitter discovery call successful.",
-            extra={
-                "initial_url": initial_url,
-                "fetch_url": fetch_url,
-                "extractor": twitter_info.extractor,
-                "resolved_type": discovery_type,
-            },
-        )
+        log_params = {
+            **log_params,
+            "fetch_url": fetch_url,
+            "extractor": twitter_info.extractor,
+            "resolved_type": discovery_type,
+        }
+        logger.debug("Twitter discovery call successful.", extra=log_params)
 
         # Twitter URLs are always single videos (status posts)
         if twitter_info.extractor == "twitter":
             logger.debug(
                 "Resolved as single Twitter video.",
-                extra={
-                    "initial_url": initial_url,
-                    "fetch_url": fetch_url,
-                    "source_type": SourceType.SINGLE_VIDEO,
-                    "extractor": twitter_info.extractor,
-                },
+                extra={**log_params, "source_type": SourceType.SINGLE_VIDEO},
             )
             return fetch_url, SourceType.SINGLE_VIDEO
 
         logger.warning(
             "Unhandled Twitter URL classification. Defaulting to UNKNOWN.",
             extra={
-                "initial_url": initial_url,
-                "fetch_url": fetch_url,
-                "extractor": twitter_info.extractor,
+                **log_params,
                 "type": twitter_info.type,
                 "source_type": SourceType.UNKNOWN,
             },
