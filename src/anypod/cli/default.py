@@ -143,9 +143,10 @@ async def _init(
         feed_db=feed_db,
     )
     downloader = Downloader(
-        ytdlp_wrapper=ytdlp_wrapper,
         download_db=download_db,
         file_manager=file_manager,
+        ytdlp_wrapper=ytdlp_wrapper,
+        ffprobe=ffprobe,
     )
     pruner = Pruner(feed_db=feed_db, download_db=download_db, file_manager=file_manager)
 

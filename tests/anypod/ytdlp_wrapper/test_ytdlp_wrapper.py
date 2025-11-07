@@ -13,7 +13,7 @@ from anypod.exceptions import YtdlpApiError
 from anypod.ffmpeg import FFmpeg
 from anypod.path_manager import PathManager
 from anypod.ytdlp_wrapper import YtdlpWrapper
-from anypod.ytdlp_wrapper.core import YtdlpArgs, YtdlpCore, YtdlpInfo
+from anypod.ytdlp_wrapper.core import YtdlpArgs, YtdlpCore, YtdlpInfo, YtdlpRunResult
 from anypod.ytdlp_wrapper.handlers import HandlerSelector, YoutubeHandler
 
 
@@ -129,7 +129,10 @@ async def test_extractor_args_default_none_sets_fetch_pot_never(
     """Verify default behavior injects fetch_pot=never when URL is not set."""
     mock_youtube_handler.extract_feed_metadata = MagicMock(return_value=MagicMock())
 
-    mock_extract_playlist_info.return_value = YtdlpInfo({"id": "x", "title": "t"})
+    mock_extract_playlist_info.return_value = YtdlpRunResult(
+        payload=YtdlpInfo({"id": "x", "title": "t"}),
+        logs=None,
+    )
 
     await ytdlp_wrapper.fetch_playlist_metadata(
         feed_id="f",
@@ -163,7 +166,10 @@ async def test_extractor_args_with_provider_url_sets_http_base_url(
     provider_url = "http://bgutil-provider:4416"
     mock_youtube_handler.extract_feed_metadata = MagicMock(return_value=MagicMock())
 
-    mock_extract_playlist_info.return_value = YtdlpInfo({"id": "x", "title": "t"})
+    mock_extract_playlist_info.return_value = YtdlpRunResult(
+        payload=YtdlpInfo({"id": "x", "title": "t"}),
+        logs=None,
+    )
 
     await ytdlp_wrapper_with_provider.fetch_playlist_metadata(
         feed_id="f",
@@ -227,7 +233,10 @@ async def test_fetch_playlist_metadata_returns_feed(
     mock_playlist_ytdlp_info = YtdlpInfo(
         {"id": "test_channel", "title": "Test Channel"}
     )
-    mock_extract_playlist_info.return_value = mock_playlist_ytdlp_info
+    mock_extract_playlist_info.return_value = YtdlpRunResult(
+        payload=mock_playlist_ytdlp_info,
+        logs=None,
+    )
 
     # Create expected Feed object that the handler will return
     expected_feed = Feed(
@@ -279,7 +288,10 @@ async def test_fetch_new_downloads_metadata_returns_downloads(
 
     # Mock the downloads info call to return valid data
     mock_video_info = YtdlpInfo({"id": "test123", "title": "Test Video"})
-    mock_extract_downloads_info.return_value = [mock_video_info]
+    mock_extract_downloads_info.return_value = YtdlpRunResult(
+        payload=[mock_video_info],
+        logs=None,
+    )
 
     # Create expected Download object that the handler will return
     expected_download = Download(
@@ -590,11 +602,9 @@ async def test_date_filtering_behavior_by_reference_type(
     """
     feed_id = "test_feed"
 
-    # Mock the extract_downloads_info call to avoid actual yt-dlp calls
-    mock_extract_downloads_info.return_value = []
+    mock_extract_downloads_info.return_value = YtdlpRunResult(payload=[], logs=None)
     mock_youtube_handler.extract_download_metadata.return_value = MagicMock()
 
-    # Call fetch_new_downloads_metadata with date filtering parameters
     fetch_since_date = datetime(2023, 1, 1, tzinfo=UTC)
 
     await ytdlp_wrapper.fetch_new_downloads_metadata(
@@ -606,20 +616,15 @@ async def test_date_filtering_behavior_by_reference_type(
         fetch_since_date=fetch_since_date,
     )
 
-    # Verify date filtering is applied in CLI args based on source type
+    call_args = mock_extract_downloads_info.call_args[0]
+    ytdlp_args = call_args[0]
+    cli_args = ytdlp_args.to_list()
+
     if should_call_set_date_range:
-        # Check that extract_downloads_info was called with CLI args containing optimization flags
-        call_args = mock_extract_downloads_info.call_args[0]
-        ytdlp_args = call_args[0]
-        cli_args = ytdlp_args.to_list()
         assert "--lazy-playlist" in cli_args
         assert "--break-match-filters" in cli_args
         assert "upload_date >= 20230101" in cli_args
     else:
-        # For single videos, optimization should not be applied
-        call_args = mock_extract_downloads_info.call_args[0]
-        ytdlp_args = call_args[0]
-        cli_args = ytdlp_args.to_list()
         assert "--lazy-playlist" not in cli_args
         assert "--break-match-filters" not in cli_args
 
@@ -654,11 +659,9 @@ async def test_keep_last_filtering_behavior_by_reference_type(
     feed_id = "test_feed"
     keep_last = 5
 
-    # Mock the extract_downloads_info call to avoid actual yt-dlp calls
-    mock_extract_downloads_info.return_value = []
+    mock_extract_downloads_info.return_value = YtdlpRunResult(payload=[], logs=None)
     mock_youtube_handler.extract_download_metadata.return_value = MagicMock()
 
-    # Call fetch_new_downloads_metadata with keep_last parameter
     await ytdlp_wrapper.fetch_new_downloads_metadata(
         feed_id=feed_id,
         source_type=source_type,
@@ -668,19 +671,14 @@ async def test_keep_last_filtering_behavior_by_reference_type(
         keep_last=keep_last,
     )
 
-    # Verify playlist limit is applied in CLI args based on source type
+    call_args = mock_extract_downloads_info.call_args[0]
+    ytdlp_args = call_args[0]
+    cli_args = ytdlp_args.to_list()
+
     if should_call_set_playlist_limit:
-        # Check that extract_downloads_info was called with CLI args containing playlist limit
-        call_args = mock_extract_downloads_info.call_args[0]
-        ytdlp_args = call_args[0]
-        cli_args = ytdlp_args.to_list()
         assert "--playlist-items" in cli_args
         assert f":{keep_last}" in cli_args
     else:
-        # For single videos, playlist limiting should not be applied
-        call_args = mock_extract_downloads_info.call_args[0]
-        ytdlp_args = call_args[0]
-        cli_args = ytdlp_args.to_list()
         assert "--playlist-items" not in cli_args
 
 

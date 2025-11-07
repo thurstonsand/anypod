@@ -65,7 +65,7 @@ async def _get_direct_media_url_for_video(video_url: str) -> str:
     sufficient for duration probing purposes.
     """
     args = YtdlpArgs().skip_download().dump_json()
-    infos = await YtdlpCore.extract_downloads_info(args, video_url)
+    infos = (await YtdlpCore.extract_downloads_info(args, video_url)).payload
     assert infos, "yt-dlp did not return any entries for the video URL"
     info = infos[0]
     formats = info.get("formats", list[dict[str, Any]])

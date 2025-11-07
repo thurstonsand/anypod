@@ -215,11 +215,12 @@ async def test_status_transitions(
     assert download.last_error is None  # Preserved from initial UPCOMING
 
     # QUEUED -> DOWNLOADED
-    await download_db.mark_as_downloaded(feed_id, dl_id, "mp4", 1024)
+    await download_db.mark_as_downloaded(feed_id, dl_id, "mp4", 1024, duration=987)
     download = await download_db.get_download_by_id(feed_id, dl_id)
     assert download.status == DownloadStatus.DOWNLOADED
     assert download.retries == 0, "Retries should be reset on DOWNLOADED"
     assert download.last_error is None, "Error should be cleared on DOWNLOADED"
+    assert download.duration == 987, "Duration should be updated when provided"
 
     # Attempt to bump retries on DOWNLOADED: should increment retries, set last_error, but NOT change status to ERROR
     await download_db.bump_retries(

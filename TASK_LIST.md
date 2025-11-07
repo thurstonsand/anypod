@@ -558,6 +558,7 @@ This section details the components that manage the lifecycle of downloads, from
 - [x] create an http endpoint to reset error status videos
 - [ ] create a top-level http endpoint to reset ERROR status videos across all feeds
 - [ ] is it possible to introduce tier-based filtering for patreon posts?
+- [ ] Support an "after-download metadata refresh" workflow: allow a download to be flagged for delayed re-processing so we can re-sync title/description/duration later without requeueing the media. Provide CLI/API controls plus scheduler hooks to re-pull metadata (e.g., for YouTube description edits) while keeping the original enclosure stable.
 
 ## 11 manual feeds
 

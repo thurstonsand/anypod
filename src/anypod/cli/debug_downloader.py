@@ -68,7 +68,12 @@ async def run_debug_downloader_mode(
             ffmpeg=ffmpeg,
             handler_selector=handler_selector,
         )
-        downloader = Downloader(download_db, file_manager, ytdlp_wrapper)
+        downloader = Downloader(
+            download_db=download_db,
+            file_manager=file_manager,
+            ytdlp_wrapper=ytdlp_wrapper,
+            ffprobe=ffprobe,
+        )
     except Exception as e:
         logger.critical(
             "Failed to initialize components for Downloader debug mode.", exc_info=e

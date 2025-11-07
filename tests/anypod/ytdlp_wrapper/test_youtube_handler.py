@@ -9,7 +9,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from anypod.db.types import Download, DownloadStatus, SourceType
-from anypod.ytdlp_wrapper.core import YtdlpArgs, YtdlpCore
+from anypod.exceptions import YtdlpApiError
+from anypod.ytdlp_wrapper.core import YtdlpArgs, YtdlpCore, YtdlpRunResult
 from anypod.ytdlp_wrapper.handlers.youtube_handler import (
     YoutubeEntry,
     YoutubeHandler,
@@ -526,7 +527,9 @@ async def test_determine_fetch_strategy_single_video(
         }
     )
 
-    mock_extract_playlist_info.return_value = mock_extract_info_return
+    mock_extract_playlist_info.return_value = YtdlpRunResult(
+        mock_extract_info_return, None
+    )
 
     fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
         FEED_ID, initial_url, base_args
@@ -548,30 +551,33 @@ async def test_determine_fetch_strategy_channel_main_page_finds_videos_tab(
     """Tests strategy for a main channel page, successfully finding the 'Videos' tab."""
     initial_url = "https://www.youtube.com/@channelhandle"
     videos_tab_url = "https://www.youtube.com/@channelhandle/videos"
-    mock_extract_playlist_info.return_value = YtdlpInfo(
-        {
-            "extractor": "youtube:tab",
-            "_type": "playlist",
-            "webpage_url": initial_url,  # or some resolved channel URL
-            "id": "channelhandle_id",  # Main ID for YoutubeEntry
-            "entries": [
-                {
-                    "_type": "playlist",
-                    "id": "shorts_tab_id",
-                    "webpage_url": "https://www.youtube.com/@channelhandle/shorts",
-                },
-                {
-                    "_type": "playlist",
-                    "id": "videos_tab_id",
-                    "webpage_url": videos_tab_url,
-                },
-                {
-                    "_type": "playlist",
-                    "id": "playlists_tab_id",
-                    "webpage_url": "https://www.youtube.com/@channelhandle/playlists",
-                },
-            ],
-        }
+    mock_extract_playlist_info.return_value = YtdlpRunResult(
+        YtdlpInfo(
+            {
+                "extractor": "youtube:tab",
+                "_type": "playlist",
+                "webpage_url": initial_url,  # or some resolved channel URL
+                "id": "channelhandle_id",  # Main ID for YoutubeEntry
+                "entries": [
+                    {
+                        "_type": "playlist",
+                        "id": "shorts_tab_id",
+                        "webpage_url": "https://www.youtube.com/@channelhandle/shorts",
+                    },
+                    {
+                        "_type": "playlist",
+                        "id": "videos_tab_id",
+                        "webpage_url": videos_tab_url,
+                    },
+                    {
+                        "_type": "playlist",
+                        "id": "playlists_tab_id",
+                        "webpage_url": "https://www.youtube.com/@channelhandle/playlists",
+                    },
+                ],
+            }
+        ),
+        None,
     )
 
     fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
@@ -596,21 +602,24 @@ async def test_determine_fetch_strategy_channel_main_page_no_videos_tab(
     resolved_channel_url = (
         "https://www.youtube.com/channel/UCxxxx/resolved"  # Mock a resolved URL
     )
-    mock_extract_playlist_info.return_value = YtdlpInfo(
-        {
-            "extractor": "youtube:tab",
-            "_type": "playlist",
-            "webpage_url": resolved_channel_url,
-            "id": "UCxxxx_id",
-            "entries": [
-                {
-                    "_type": "playlist",
-                    "id": "UCxxxx_shorts_id",
-                    "webpage_url": "https://www.youtube.com/channel/UCxxxx/shorts",
-                },
-                # No "/videos" tab
-            ],
-        }
+    mock_extract_playlist_info.return_value = YtdlpRunResult(
+        YtdlpInfo(
+            {
+                "extractor": "youtube:tab",
+                "_type": "playlist",
+                "webpage_url": resolved_channel_url,
+                "id": "UCxxxx_id",
+                "entries": [
+                    {
+                        "_type": "playlist",
+                        "id": "UCxxxx_shorts_id",
+                        "webpage_url": "https://www.youtube.com/channel/UCxxxx/shorts",
+                    },
+                    # No "/videos" tab
+                ],
+            }
+        ),
+        None,
     )
 
     fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
@@ -631,14 +640,17 @@ async def test_determine_fetch_strategy_channel_videos_tab_direct(
 ):
     """Tests strategy for a direct URL to a channel's 'Videos' tab."""
     initial_url = "https://www.youtube.com/@channelhandle/videos"
-    mock_extract_playlist_info.return_value = YtdlpInfo(
-        {
-            "extractor": "youtube:tab",
-            "_type": "playlist",
-            "webpage_url": initial_url,
-            "id": "videos_page_id",
-            "entries": [{"id": "v1"}, {"id": "v2"}],
-        }
+    mock_extract_playlist_info.return_value = YtdlpRunResult(
+        YtdlpInfo(
+            {
+                "extractor": "youtube:tab",
+                "_type": "playlist",
+                "webpage_url": initial_url,
+                "id": "videos_page_id",
+                "entries": [{"id": "v1"}, {"id": "v2"}],
+            }
+        ),
+        None,
     )
 
     fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
@@ -668,7 +680,9 @@ async def test_determine_fetch_strategy_playlist_url(
     with patch.object(
         YtdlpCore, "extract_playlist_info", new_callable=AsyncMock
     ) as mock_extract_playlist_info:
-        mock_extract_playlist_info.return_value = mock_extract_info_return
+        mock_extract_playlist_info.return_value = YtdlpRunResult(
+            payload=mock_extract_info_return, logs=None
+        )
 
         fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
             FEED_ID, initial_url, base_args
@@ -689,12 +703,15 @@ async def test_determine_fetch_strategy_playlists_tab_error(
 ):
     """Tests that a 'playlists' tab URL raises YtdlpYoutubeDataError."""
     initial_url = "https://www.youtube.com/@channelhandle/playlists"
-    mock_extract_playlist_info.return_value = YtdlpInfo(
-        {
-            "extractor": "youtube:tab",
-            "webpage_url": initial_url,
-            "id": "playlists_page_id",
-        }
+    mock_extract_playlist_info.return_value = YtdlpRunResult(
+        YtdlpInfo(
+            {
+                "extractor": "youtube:tab",
+                "webpage_url": initial_url,
+                "id": "playlists_page_id",
+            }
+        ),
+        None,
     )
     with pytest.raises(YtdlpYoutubeDataError):
         await youtube_handler.determine_fetch_strategy(FEED_ID, initial_url, base_args)
@@ -708,16 +725,15 @@ async def test_determine_fetch_strategy_discovery_fails(
     youtube_handler: YoutubeHandler,
     base_args: YtdlpArgs,
 ):
-    """Tests strategy when discovery (ydl_caller) returns None."""
+    """Tests that yt-dlp discovery failures propagate as API errors."""
     initial_url = "https://www.youtube.com/some_unresolvable_url"
-    mock_extract_playlist_info.return_value = None
-
-    fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
-        FEED_ID, initial_url, base_args
+    mock_extract_playlist_info.side_effect = YtdlpApiError(
+        message="yt-dlp discovery failed",
+        url=initial_url,
     )
 
-    assert fetch_url == initial_url
-    assert ref_type == SourceType.UNKNOWN
+    with pytest.raises(YtdlpApiError):
+        await youtube_handler.determine_fetch_strategy(FEED_ID, initial_url, base_args)
 
 
 @pytest.mark.unit
@@ -731,12 +747,15 @@ async def test_determine_fetch_strategy_unknown_extractor(
     """Tests strategy for an unhandled extractor type."""
     initial_url = "https://some.other.video.site/video1"
     resolved_url_from_yt_dlp = "https://resolved.other.site/video1"
-    mock_extract_playlist_info.return_value = YtdlpInfo(
-        {
-            "extractor": "someother:extractor",
-            "webpage_url": resolved_url_from_yt_dlp,
-            "id": "other_site_video_id",
-        }
+    mock_extract_playlist_info.return_value = YtdlpRunResult(
+        YtdlpInfo(
+            {
+                "extractor": "someother:extractor",
+                "webpage_url": resolved_url_from_yt_dlp,
+                "id": "other_site_video_id",
+            }
+        ),
+        None,
     )
 
     fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
@@ -758,26 +777,29 @@ async def test_determine_fetch_strategy_channel_with_no_videos_but_has_entries(
     """Tests channel identification when entries exist but Videos tab is not found."""
     initial_url = "https://www.youtube.com/@newchannel"
     resolved_channel_url = "https://www.youtube.com/@newchannel/featured"
-    mock_extract_playlist_info.return_value = YtdlpInfo(
-        {
-            "extractor": "youtube:tab",
-            "_type": "playlist",
-            "webpage_url": resolved_channel_url,
-            "id": "newchannel_id",
-            "entries": [
-                {
-                    "_type": "playlist",
-                    "id": "shorts_tab_id",
-                    "webpage_url": "https://www.youtube.com/@newchannel/shorts",
-                },
-                {
-                    "_type": "playlist",
-                    "id": "community_tab_id",
-                    "webpage_url": "https://www.youtube.com/@newchannel/community",
-                },
-                # No videos tab
-            ],
-        }
+    mock_extract_playlist_info.return_value = YtdlpRunResult(
+        YtdlpInfo(
+            {
+                "extractor": "youtube:tab",
+                "_type": "playlist",
+                "webpage_url": resolved_channel_url,
+                "id": "newchannel_id",
+                "entries": [
+                    {
+                        "_type": "playlist",
+                        "id": "shorts_tab_id",
+                        "webpage_url": "https://www.youtube.com/@newchannel/shorts",
+                    },
+                    {
+                        "_type": "playlist",
+                        "id": "community_tab_id",
+                        "webpage_url": "https://www.youtube.com/@newchannel/community",
+                    },
+                    # No videos tab
+                ],
+            }
+        ),
+        None,
     )
 
     fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
@@ -800,14 +822,17 @@ async def test_determine_fetch_strategy_channel_with_empty_entries(
     """Tests channel identification when channel has no entries (empty/new channel)."""
     initial_url = "https://www.youtube.com/@emptychannel"
     resolved_channel_url = "https://www.youtube.com/@emptychannel/featured"
-    mock_extract_playlist_info.return_value = YtdlpInfo(
-        {
-            "extractor": "youtube:tab",
-            "_type": "playlist",
-            "webpage_url": resolved_channel_url,
-            "id": "emptychannel_id",
-            "entries": [],  # Empty channel
-        }
+    mock_extract_playlist_info.return_value = YtdlpRunResult(
+        YtdlpInfo(
+            {
+                "extractor": "youtube:tab",
+                "_type": "playlist",
+                "webpage_url": resolved_channel_url,
+                "id": "emptychannel_id",
+                "entries": [],  # Empty channel
+            }
+        ),
+        None,
     )
 
     fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
@@ -829,14 +854,20 @@ async def test_determine_fetch_strategy_existing_channel_tab_not_main_page(
 ):
     """Tests that existing channel tabs are not treated as main channel pages."""
     initial_url = "https://www.youtube.com/@channel/shorts"
-    mock_extract_playlist_info.return_value = YtdlpInfo(
-        {
-            "extractor": "youtube:tab",
-            "_type": "playlist",
-            "webpage_url": initial_url,  # Already a specific tab
-            "id": "channel_shorts_id",
-            "entries": [{"id": "short1"}, {"id": "short2"}],
-        }
+    mock_extract_playlist_info.return_value = YtdlpRunResult(
+        YtdlpInfo(
+            {
+                "extractor": "youtube:tab",
+                "_type": "playlist",
+                "webpage_url": initial_url,
+                "id": "channel_shorts_id",
+                "entries": [
+                    {"id": "short1"},
+                    {"id": "short2"},
+                ],
+            }
+        ),
+        None,
     )
 
     fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
@@ -868,32 +899,41 @@ async def test_determine_fetch_strategy_preserves_channel_classification(
     videos_tab_url = "https://www.youtube.com/@testchannel/videos"
 
     # Mock yt-dlp discovery response for a channel with videos tab
-    mock_extract_playlist_info.return_value = YtdlpInfo(
-        {
-            "extractor": "youtube:tab",
-            "_type": "playlist",
-            "webpage_url": initial_url,
-            "id": "testchannel_main_id",
-            "title": "Test Channel",
-            "description": "A test channel description",
-            "uploader": "Test Channel Creator",
-            "thumbnail": "https://yt3.googleusercontent.com/testchannel_image",
-            "epoch": 1678886400,  # yt-dlp request timestamp
-            "entries": [
-                {
-                    "_type": "playlist",
-                    "id": "testchannel_videos_id",
-                    "webpage_url": videos_tab_url,
-                    "title": "Videos",
-                },
-                {
-                    "_type": "playlist",
-                    "id": "testchannel_shorts_id",
-                    "webpage_url": "https://www.youtube.com/@testchannel/shorts",
-                    "title": "Shorts",
-                },
-            ],
-        }
+    mock_extract_playlist_info.return_value = YtdlpRunResult(
+        YtdlpInfo(
+            {
+                "extractor": "youtube:tab",
+                "_type": "playlist",
+                "webpage_url": initial_url,
+                "id": "testchannel_main",
+                "title": "Test Channel",
+                "description": "A test channel description",
+                "uploader": "Test Channel Creator",
+                "thumbnail": "https://yt3.googleusercontent.com/testchannel_image",
+                "epoch": 1678886400,
+                "entries": [
+                    {
+                        "_type": "playlist",
+                        "id": "testchannel_videos",
+                        "webpage_url": videos_tab_url,
+                        "title": "Videos",
+                    },
+                    {
+                        "_type": "playlist",
+                        "id": "testchannel_playlists",
+                        "webpage_url": "https://www.youtube.com/@testchannel/playlists",
+                        "title": "Playlists",
+                    },
+                    {
+                        "_type": "playlist",
+                        "id": "testchannel_about",
+                        "webpage_url": "https://www.youtube.com/@testchannel/about",
+                        "title": "About",
+                    },
+                ],
+            }
+        ),
+        None,
     )
 
     fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
@@ -906,7 +946,7 @@ async def test_determine_fetch_strategy_preserves_channel_classification(
 
     # Verify that if we extract feed metadata from this discovery result,
     # the source_type is correctly set to CHANNEL
-    discovery_result = mock_extract_playlist_info.return_value
+    discovery_result = mock_extract_playlist_info.return_value.payload
     extracted_feed = youtube_handler.extract_feed_metadata(
         FEED_ID, discovery_result, ref_type, initial_url
     )
@@ -935,27 +975,30 @@ async def test_determine_fetch_strategy_channel_without_videos_tab_still_classif
     resolved_channel_url = "https://www.youtube.com/@newchannel/featured"
 
     # Mock yt-dlp discovery response for a channel with no videos tab but still channel-like
-    mock_extract_playlist_info.return_value = YtdlpInfo(
-        {
-            "extractor": "youtube:tab",
-            "_type": "playlist",
-            "webpage_url": resolved_channel_url,
-            "id": "newchannel_id",
-            "title": "New Channel",
-            "description": "A new channel with no videos yet",
-            "uploader": "New Channel Creator",
-            "thumbnail": "https://yt3.googleusercontent.com/newchannel_default",
-            "epoch": 1678886400,  # yt-dlp request timestamp
-            "entries": [
-                {
-                    "_type": "playlist",
-                    "id": "newchannel_community_id",
-                    "webpage_url": "https://www.youtube.com/@newchannel/community",
-                    "title": "Community",
-                },
-                # No videos tab available
-            ],
-        }
+    mock_extract_playlist_info.return_value = YtdlpRunResult(
+        YtdlpInfo(
+            {
+                "extractor": "youtube:tab",
+                "_type": "playlist",
+                "webpage_url": resolved_channel_url,
+                "id": "newchannel_id",
+                "title": "New Channel",
+                "description": "A new channel with no videos yet",
+                "uploader": "New Channel Creator",
+                "thumbnail": "https://yt3.googleusercontent.com/newchannel_default",
+                "epoch": 1678886400,  # yt-dlp request timestamp
+                "entries": [
+                    {
+                        "_type": "playlist",
+                        "id": "newchannel_community_id",
+                        "webpage_url": "https://www.youtube.com/@newchannel/community",
+                        "title": "Community",
+                    },
+                    # No videos tab available
+                ],
+            }
+        ),
+        None,
     )
 
     fetch_url, ref_type = await youtube_handler.determine_fetch_strategy(
@@ -967,7 +1010,7 @@ async def test_determine_fetch_strategy_channel_without_videos_tab_still_classif
     assert ref_type == SourceType.CHANNEL
 
     # Extract feed metadata and verify source_type preservation
-    discovery_result = mock_extract_playlist_info.return_value
+    discovery_result = mock_extract_playlist_info.return_value.payload
     extracted_feed = youtube_handler.extract_feed_metadata(
         FEED_ID, discovery_result, ref_type, initial_url
     )

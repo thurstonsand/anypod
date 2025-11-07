@@ -515,7 +515,14 @@ class PatreonHandler:
         args: YtdlpArgs,
     ) -> YtdlpArgs:
         """Apply Patreon referer and match filter for downloads metadata calls."""
-        return args.referer(_PATREON_REFERER).match_filter("vcodec")
+        # Patreon multi-attachment posts often expose JPEG poster frames as separate
+        # playlist entries with ``vcodec=mjpeg``. ``match_filter("vcodec")`` alone lets
+        # those through, which causes .jpg downloads to be enqueued. Require a real
+        # video codec and explicitly ignore image extensions so only playable media is
+        # discovered.
+        return args.referer(_PATREON_REFERER).match_filter(
+            "vcodec && vcodec != none && ext not in (jpg,png,webp)"
+        )
 
     async def _probe_duration(self, feed_id: str, entry: PatreonEntry) -> int:
         """Probe duration using entry URLs; raise wrapped error on failure.

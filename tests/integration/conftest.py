@@ -217,13 +217,19 @@ def downloader(
     download_db: DownloadDatabase,
     file_manager: FileManager,
     ytdlp_wrapper: YtdlpWrapper,
+    ffprobe: FFProbe,
 ) -> Downloader:
     """Provide a Downloader instance for the tests.
 
     Returns:
         Downloader instance configured with test components.
     """
-    return Downloader(download_db, file_manager, ytdlp_wrapper)
+    return Downloader(
+        download_db=download_db,
+        file_manager=file_manager,
+        ytdlp_wrapper=ytdlp_wrapper,
+        ffprobe=ffprobe,
+    )
 
 
 @pytest.fixture

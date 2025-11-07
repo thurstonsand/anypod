@@ -7,7 +7,7 @@ import pytest
 
 from anypod.db.types import SourceType
 from anypod.ffprobe import FFProbe
-from anypod.ytdlp_wrapper.core import YtdlpArgs, YtdlpCore, YtdlpInfo
+from anypod.ytdlp_wrapper.core import YtdlpArgs, YtdlpCore, YtdlpInfo, YtdlpRunResult
 from anypod.ytdlp_wrapper.handlers import (
     PatreonHandler,
     YtdlpPatreonDataError,
@@ -252,15 +252,18 @@ async def test_determine_fetch_strategy_playlist(
 ):
     """Test determine_fetch_strategy with playlist."""
     initial_url = "https://patreon.com/creator"
-    mock_extract_playlist_info.return_value = YtdlpInfo(
-        {
-            "extractor": "patreon:campaign",
-            "_type": "playlist",
-            "webpage_url": initial_url,
-            "id": "123",
-            "epoch": 1700000000,
-            "title": "Creator",
-        }
+    mock_extract_playlist_info.return_value = YtdlpRunResult(
+        YtdlpInfo(
+            {
+                "extractor": "patreon:campaign",
+                "_type": "playlist",
+                "webpage_url": initial_url,
+                "id": "123",
+                "epoch": 1700000000,
+                "title": "Creator",
+            }
+        ),
+        None,
     )
     fetch_url, st = await patreon_handler.determine_fetch_strategy(
         FEED_ID, initial_url, base_args
@@ -279,15 +282,18 @@ async def test_determine_fetch_strategy_single(
 ):
     """Test determine_fetch_strategy with single video."""
     initial_url = "https://patreon.com/posts/123"
-    mock_extract_playlist_info.return_value = YtdlpInfo(
-        {
-            "extractor": "patreon",
-            "_type": "video",
-            "webpage_url": initial_url,
-            "id": "123",
-            "epoch": 1700000000,
-            "title": "Post",
-        }
+    mock_extract_playlist_info.return_value = YtdlpRunResult(
+        YtdlpInfo(
+            {
+                "extractor": "patreon",
+                "_type": "video",
+                "webpage_url": initial_url,
+                "id": "123",
+                "epoch": 1700000000,
+                "title": "Post",
+            }
+        ),
+        None,
     )
     fetch_url, st = await patreon_handler.determine_fetch_strategy(
         FEED_ID, initial_url, base_args

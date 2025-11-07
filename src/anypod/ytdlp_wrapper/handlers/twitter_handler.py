@@ -268,9 +268,10 @@ class TwitterEntry:
     @property
     def duration(self) -> int:
         """Get the video duration in seconds as an int."""
-        raw_duration = self._ytdlp_info.get_raw("duration")
         with self._annotate_exceptions():
-            match self._ytdlp_info.get_raw("duration"):
+            raw_duration = self._ytdlp_info.get_raw("duration")
+
+            match raw_duration:
                 case bool():  # special case for int vs bool type confusion
                     raise YtdlpTwitterDataError(
                         f"Duration had unexpected type: '({type(raw_duration)}){raw_duration}'.",
@@ -278,24 +279,50 @@ class TwitterEntry:
                         download_id=self.download_id,
                     )
                 case float() as duration:
-                    return int(duration)
+                    normalized_duration = int(duration)
                 case int() as duration:
-                    return duration
+                    normalized_duration = duration
                 case str() as duration_str:
                     try:
-                        return int(float(duration_str))
+                        normalized_duration = int(float(duration_str))
                     except ValueError as e:
                         raise YtdlpTwitterDataError(
                             f"Unparsable duration '{duration_str}'.",
                             feed_id=self.feed_id,
                             download_id=self.download_id,
                         ) from e
-                case _:  # including None
-                    raise YtdlpTwitterDataError(
-                        "Missing duration.",
-                        feed_id=self.feed_id,
-                        download_id=self.download_id,
+                case None:
+                    logger.warning(
+                        "Twitter metadata missing duration; using placeholder.",
+                        extra={
+                            "feed_id": self.feed_id,
+                            "download_id": self.download_id,
+                        },
                     )
+                    return 1
+                case _:
+                    logger.warning(
+                        "Twitter metadata returned unsupported duration type; using placeholder.",
+                        extra={
+                            "feed_id": self.feed_id,
+                            "download_id": self.download_id,
+                            "raw_type": type(raw_duration).__name__,
+                        },
+                    )
+                    return 1
+
+        if normalized_duration <= 0:
+            logger.warning(
+                "Twitter metadata provided non-positive duration; using placeholder.",
+                extra={
+                    "feed_id": self.feed_id,
+                    "download_id": self.download_id,
+                    "raw_duration": raw_duration,
+                },
+            )
+            return 1
+
+        return normalized_duration
 
     @property
     def quality_info(self) -> str | None:

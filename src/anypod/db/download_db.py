@@ -240,7 +240,12 @@ class DownloadDatabase:
 
     @handle_download_db_errors("mark download as DOWNLOADED")
     async def mark_as_downloaded(
-        self, feed_id: str, download_id: str, ext: str, filesize: int
+        self,
+        feed_id: str,
+        download_id: str,
+        ext: str,
+        filesize: int,
+        duration: int | None = None,
     ) -> None:
         """Mark a download as DOWNLOADED with updated metadata.
 
@@ -252,6 +257,7 @@ class DownloadDatabase:
             download_id: The download identifier.
             ext: The new file extension.
             filesize: The new file size in bytes.
+            duration: Optional measured duration in seconds to persist.
 
         Raises:
             DownloadNotFoundError: If the download is not found.
@@ -260,6 +266,16 @@ class DownloadDatabase:
         log_params = {"feed_id": feed_id, "download_id": download_id}
         logger.debug("Attempting to mark as DOWNLOADED.", extra=log_params)
         async with self._db.session() as session:
+            values: dict[str, object] = {
+                "status": DownloadStatus.DOWNLOADED,
+                "retries": 0,
+                "last_error": None,
+                "ext": ext,
+                "filesize": filesize,
+            }
+            if duration is not None:
+                values["duration"] = duration
+
             stmt = (
                 update(Download)
                 .where(
@@ -267,13 +283,7 @@ class DownloadDatabase:
                     col(Download.id) == download_id,
                     col(Download.status) == DownloadStatus.QUEUED,
                 )
-                .values(
-                    status=DownloadStatus.DOWNLOADED,
-                    retries=0,
-                    last_error=None,
-                    ext=ext,
-                    filesize=filesize,
-                )
+                .values(**values)
             )
             result = await session.execute(stmt)
             match self._db.as_cursor_result(result).rowcount:

@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from anypod.db.types import Download, DownloadStatus, SourceType
-from anypod.ytdlp_wrapper.core import YtdlpArgs, YtdlpCore, YtdlpInfo
+from anypod.ytdlp_wrapper.core import YtdlpArgs, YtdlpCore, YtdlpInfo, YtdlpRunResult
 from anypod.ytdlp_wrapper.handlers.twitter_handler import (
     TwitterEntry,
     TwitterHandler,
@@ -119,7 +119,7 @@ async def test_determine_fetch_strategy_single_video(
     mock_extract: AsyncMock, twitter_handler: TwitterHandler, entry_info: YtdlpInfo
 ) -> None:
     """Single-video URLs resolve as expected."""
-    mock_extract.return_value = entry_info
+    mock_extract.return_value = YtdlpRunResult(payload=entry_info, logs=None)
     base_args = YtdlpArgs()
 
     final_url, source_type = await twitter_handler.determine_fetch_strategy(

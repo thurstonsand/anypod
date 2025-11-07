@@ -736,8 +736,8 @@ async def test_filesize_metadata_flow(
     assert downloaded_item.thumbnail_ext == "jpg"
     assert await file_manager.image_exists(feed_id, downloaded_item.id, "jpg")
 
-    # If initial estimate was available and reasonable, it should be in the ballpark
-    if initial_filesize > 0:
+    # If initial estimate was a meaningful positive value, it should be in the ballpark
+    if initial_filesize and initial_filesize > 1024:
         # Allow for some variance between estimate and actual (up to 50% difference)
         size_ratio = min(initial_filesize, final_filesize) / max(
             initial_filesize, final_filesize

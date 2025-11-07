@@ -21,8 +21,10 @@ from anypod.db.types import Download, DownloadStatus, Feed, SourceType
 from anypod.exceptions import (
     DatabaseOperationError,
     DownloadError,
+    FFProbeError,
     YtdlpApiError,
 )
+from anypod.ffprobe import FFProbe
 from anypod.file_manager import FileManager
 from anypod.ytdlp_wrapper import YtdlpWrapper
 
@@ -67,6 +69,7 @@ def mock_file_manager() -> MagicMock:
     mock.delete_download_file = AsyncMock()
     mock.download_exists = AsyncMock()
     mock.get_download_stream = AsyncMock()
+    mock.image_exists = AsyncMock(return_value=False)
 
     return mock
 
@@ -82,13 +85,27 @@ def mock_ytdlp_wrapper() -> MagicMock:
 
 
 @pytest.fixture
+def mock_ffprobe() -> MagicMock:
+    """Provides a mock FFProbe."""
+    mock = MagicMock(spec=FFProbe)
+    mock.get_duration_seconds_from_file = AsyncMock(return_value=321)
+    return mock
+
+
+@pytest.fixture
 def downloader(
     mock_download_db: MagicMock,
     mock_file_manager: MagicMock,
     mock_ytdlp_wrapper: MagicMock,
+    mock_ffprobe: MagicMock,
 ) -> Downloader:
     """Provides a Downloader instance with mocked dependencies."""
-    return Downloader(mock_download_db, mock_file_manager, mock_ytdlp_wrapper)
+    return Downloader(
+        mock_download_db,
+        mock_file_manager,
+        mock_ytdlp_wrapper,
+        mock_ffprobe,
+    )
 
 
 @pytest.fixture
@@ -136,6 +153,7 @@ async def test_handle_download_success_updates_db(
     _mock_stat: AsyncMock,
     downloader: Downloader,
     mock_download_db: MagicMock,
+    mock_ffprobe: MagicMock,
     sample_download: Download,
 ):
     """Tests that _handle_download_success calls mark_as_downloaded on DB manager."""
@@ -143,11 +161,15 @@ async def test_handle_download_success_updates_db(
 
     await downloader._handle_download_success(sample_download, downloaded_file)
 
+    mock_ffprobe.get_duration_seconds_from_file.assert_awaited_once_with(
+        downloaded_file
+    )
     mock_download_db.mark_as_downloaded.assert_awaited_once_with(
         feed_id=sample_download.feed_id,
         download_id=sample_download.id,
         ext="mp4",
         filesize=1024,  # From our mocked stat result
+        duration=321,
     )
 
 
@@ -171,6 +193,31 @@ async def test_handle_download_success_db_update_fails_raises_downloader_error(
     assert exc_info.value.__cause__ is db_error
     assert exc_info.value.feed_id == sample_download.feed_id
     assert exc_info.value.download_id == sample_download.id
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@patch("aiofiles.os.stat", new_callable=AsyncMock, return_value=MagicMock(st_size=1024))
+async def test_handle_download_success_handles_ffprobe_errors(
+    _mock_stat: AsyncMock,
+    downloader: Downloader,
+    mock_download_db: MagicMock,
+    mock_ffprobe: MagicMock,
+    sample_download: Download,
+):
+    """Even if ffprobe fails, downloading should still succeed with metadata fallback."""
+    mock_ffprobe.get_duration_seconds_from_file.side_effect = FFProbeError("probe boom")
+    downloaded_file = Path("/path/to/downloaded_video.mp4")
+
+    await downloader._handle_download_success(sample_download, downloaded_file)
+
+    mock_download_db.mark_as_downloaded.assert_awaited_once_with(
+        feed_id=sample_download.feed_id,
+        download_id=sample_download.id,
+        ext="mp4",
+        filesize=1024,
+        duration=None,
+    )
 
 
 # --- Tests for _handle_download_failure ---

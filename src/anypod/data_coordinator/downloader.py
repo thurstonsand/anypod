@@ -19,9 +19,11 @@ from ..exceptions import (
     DatabaseOperationError,
     DownloadError,
     DownloadNotFoundError,
+    FFProbeError,
     FileOperationError,
     YtdlpApiError,
 )
+from ..ffprobe import FFProbe
 from ..file_manager import FileManager
 from ..ytdlp_wrapper import YtdlpWrapper
 
@@ -47,11 +49,43 @@ class Downloader:
         download_db: DownloadDatabase,
         file_manager: FileManager,
         ytdlp_wrapper: YtdlpWrapper,
+        ffprobe: FFProbe,
     ):
         self.download_db = download_db
         self.file_manager = file_manager
         self.ytdlp_wrapper = ytdlp_wrapper
+        self._ffprobe = ffprobe
         logger.debug("Downloader initialized.")
+
+    async def _probe_download_duration(
+        self, download: Download, downloaded_file_path: Path
+    ) -> int | None:
+        """Return actual duration for the downloaded media when possible."""
+        log_params = {
+            "feed_id": download.feed_id,
+            "download_id": download.id,
+            "downloaded_file_path": str(downloaded_file_path),
+        }
+        try:
+            duration = await self._ffprobe.get_duration_seconds_from_file(
+                downloaded_file_path
+            )
+        except (FFProbeError, FileNotFoundError) as e:
+            logger.warning(
+                "Unable to probe duration via ffprobe; keeping metadata value.",
+                extra=log_params,
+                exc_info=e,
+            )
+            return None
+
+        if duration <= 0:
+            logger.warning(
+                "ffprobe reported non-positive duration; keeping metadata value.",
+                extra={**log_params, "probed_duration": duration},
+            )
+            return None
+
+        return duration
 
     async def _handle_download_success(
         self, download: Download, downloaded_file_path: Path
@@ -77,11 +111,15 @@ class Downloader:
 
         try:
             file_stat = await aiofiles.os.stat(downloaded_file_path)
+            duration_seconds = await self._probe_download_duration(
+                download, downloaded_file_path
+            )
             await self.download_db.mark_as_downloaded(
                 feed_id=download.feed_id,
                 download_id=download.id,
                 ext=downloaded_file_path.suffix.lstrip("."),
                 filesize=file_stat.st_size,
+                duration=duration_seconds,
             )
         except (DownloadNotFoundError, DatabaseOperationError) as e:
             raise DownloadError(
