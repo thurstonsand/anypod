@@ -521,7 +521,7 @@ class PatreonHandler:
         # video codec and explicitly ignore image extensions so only playable media is
         # discovered.
         return args.referer(_PATREON_REFERER).match_filter(
-            "vcodec && vcodec != none && ext not in (jpg,png,webp)"
+            "vcodec & vcodec != 'none' & ext != 'jpg' & ext != 'png' & ext != 'webp'"
         )
 
     async def _probe_duration(self, feed_id: str, entry: PatreonEntry) -> int:
