@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -9,6 +10,7 @@ from anypod.db.types import Download, DownloadStatus, SourceType
 from anypod.exceptions import YtdlpApiError
 from anypod.path_manager import PathManager
 from anypod.ytdlp_wrapper import YtdlpWrapper
+from anypod.ytdlp_wrapper.core import YtdlpCore
 
 # some CC-BY licensed urls to test with
 # (url_type, url, expected_source_type, expected_feed_title_contains, expected_resolved_url)
@@ -551,6 +553,39 @@ async def test_download_media_to_file_impossible_filter(
 
     # Expecting failure because no format matches the filter during download attempt
     assert "might have filtered" in str(excinfo.value).lower()
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+@patch.object(YtdlpCore, "download", new_callable=AsyncMock)
+async def test_download_media_to_file_detects_corrupt_file(
+    mock_download: AsyncMock,
+    ytdlp_wrapper: YtdlpWrapper,
+    path_manager: PathManager,
+    cookies_path: Path | None,
+):
+    """Ensure injected corrupt files are removed when ffprobe validation fails."""
+    corrupt_download = BIG_BUCK_BUNNY_DOWNLOAD.model_copy(update={"id": "corrupt-case"})
+    feed_dir = await path_manager.feed_data_dir(corrupt_download.feed_id)
+    corrupt_file = feed_dir / f"{corrupt_download.id}.mp4"
+
+    async def fake_download(_args: object, _url: str) -> str:
+        if corrupt_file.exists():
+            corrupt_file.unlink()
+        corrupt_file.write_bytes(b"not-a-real-video")
+        return "STDOUT:\ncorrupt injection"
+
+    mock_download.side_effect = fake_download
+
+    with pytest.raises(YtdlpApiError) as excinfo:
+        await ytdlp_wrapper.download_media_to_file(
+            download=corrupt_download,
+            user_yt_cli_args=YT_DLP_MINIMAL_ARGS,
+            cookies_path=cookies_path,
+        )
+
+    assert "corrupt" in str(excinfo.value).lower()
+    assert not corrupt_file.exists()
 
 
 @pytest.mark.integration

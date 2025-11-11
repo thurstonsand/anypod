@@ -48,6 +48,7 @@ async def run_debug_ytdlp_mode(settings: AppSettings, paths: PathManager) -> Non
         yt_channel=settings.yt_channel,
         yt_update_freq=settings.yt_dlp_update_freq,
         ffmpeg=ffmpeg,
+        ffprobe=ffprobe,
         handler_selector=handler_selector,
     )
 

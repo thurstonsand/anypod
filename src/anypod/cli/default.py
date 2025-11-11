@@ -126,6 +126,7 @@ async def _init(
         yt_channel=settings.yt_channel,
         yt_update_freq=settings.yt_dlp_update_freq,
         ffmpeg=ffmpeg,
+        ffprobe=ffprobe,
         handler_selector=handler_selector,
     )
     rss_generator = RSSFeedGenerator(download_db=download_db, paths=path_manager)

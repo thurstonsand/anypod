@@ -16,11 +16,13 @@ from ..db.app_state_db import AppStateDatabase
 from ..db.types import Download, Feed, SourceType
 from ..exceptions import (
     FFmpegError,
+    FFProbeError,
     FileOperationError,
     YtdlpApiError,
     YtdlpDownloadFilteredOutError,
 )
 from ..ffmpeg import FFmpeg
+from ..ffprobe import FFProbe
 from ..path_manager import PathManager
 from .core import YtdlpArgs, YtdlpCore
 from .handlers import HandlerSelector
@@ -52,6 +54,7 @@ class YtdlpWrapper:
         yt_channel: str,
         yt_update_freq: timedelta,
         ffmpeg: FFmpeg,
+        ffprobe: FFProbe,
         handler_selector: HandlerSelector,
     ):
         self._paths = paths
@@ -60,6 +63,7 @@ class YtdlpWrapper:
         self._yt_channel = yt_channel
         self._yt_update_freq = yt_update_freq
         self._ffmpeg = ffmpeg
+        self._ffprobe = ffprobe
         self._handler_selector = handler_selector
         logger.debug(
             "YtdlpWrapper initialized.",
@@ -495,6 +499,97 @@ class YtdlpWrapper:
 
         return parsed_downloads
 
+    async def _handle_corrupt_download_file(
+        self,
+        download: Download,
+        downloaded_file: Path,
+        reason: str,
+        download_logs: str,
+    ) -> YtdlpApiError:
+        """Delete a corrupt download file and return a `YtdlpApiError`.
+
+        Attempts to remove the corrupt file from disk and logs the operation.
+        Returns a `YtdlpApiError` with diagnostic context after attempting cleanup.
+
+        Args:
+            download: The `Download` object associated with the corrupt file.
+            downloaded_file: Path to the corrupt file to be deleted.
+            reason: Human-readable explanation of why the file is considered corrupt.
+            download_logs: Combined stdout/stderr logs from the yt-dlp download attempt.
+
+        Returns:
+            YtdlpApiError: Exception to be raised by the caller.
+        """
+        log_params = {
+            "feed_id": download.feed_id,
+            "download_id": download.id,
+            "downloaded_file_path": str(downloaded_file),
+        }
+        try:
+            await aiofiles.os.remove(downloaded_file)
+        except FileNotFoundError as cleanup_err:
+            logger.debug(
+                "Corrupt download file missing during cleanup.",
+                extra=log_params,
+                exc_info=cleanup_err,
+            )
+        except OSError as cleanup_err:
+            logger.warning(
+                "Failed to delete corrupt download file.",
+                extra=log_params,
+                exc_info=cleanup_err,
+            )
+        else:
+            logger.debug("Deleted corrupt download file.", extra=log_params)
+
+        return YtdlpApiError(
+            message=reason,
+            feed_id=download.feed_id,
+            download_id=download.id,
+            url=download.source_url,
+            logs=download_logs,
+        )
+
+    async def _verify_download_file_integrity(
+        self,
+        download: Download,
+        downloaded_file: Path,
+        download_logs: str,
+    ) -> None:
+        """Verify that a downloaded media file is valid and uncorrupted.
+
+        Uses `ffprobe` to probe the file and extract duration. If the file cannot
+        be read or reports a non-positive duration, it is considered corrupt and
+        will be quarantined (deleted) with a `YtdlpApiError` raised.
+
+        Args:
+            download: The `Download` object associated with the file.
+            downloaded_file: Path to the downloaded media file to verify.
+            download_logs: Combined stdout/stderr logs from the yt-dlp download attempt.
+
+        Raises:
+            YtdlpApiError: If the file fails integrity checks (via `_handle_corrupt_download_file`).
+        """
+        try:
+            duration = await self._ffprobe.get_duration_seconds_from_file(
+                downloaded_file
+            )
+        except (FFProbeError, FileNotFoundError) as e:
+            raise await self._handle_corrupt_download_file(
+                download,
+                downloaded_file,
+                "Downloaded file is corrupt (ffprobe failed to read media).",
+                download_logs,
+            ) from e
+
+        if duration <= 0:
+            raise await self._handle_corrupt_download_file(
+                download,
+                downloaded_file,
+                "Downloaded file is corrupt (ffprobe reported non-positive duration).",
+                download_logs,
+            )
+
     async def download_media_to_file(
         self,
         download: Download,
@@ -594,14 +689,11 @@ class YtdlpWrapper:
                 url=url_to_download,
             )
 
-        file_stat = await aiofiles.os.stat(downloaded_file)
-        if file_stat.st_size == 0:
-            raise YtdlpApiError(
-                message="Downloaded file is invalid (empty).",
-                feed_id=download.feed_id,
-                download_id=download.id,
-                url=url_to_download,
-            )
+        await self._verify_download_file_integrity(
+            download,
+            downloaded_file,
+            download_logs,
+        )
 
         logger.debug(
             "Download complete.",
