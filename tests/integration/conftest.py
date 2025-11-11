@@ -151,6 +151,7 @@ def ytdlp_wrapper(
     db_core: SqlalchemyCore,
     handler_selector: HandlerSelector,
     ffmpeg: FFmpeg,
+    ffprobe: FFProbe,
 ) -> YtdlpWrapper:
     """Provide a YtdlpWrapper instance with shared directories.
 
@@ -165,6 +166,7 @@ def ytdlp_wrapper(
         yt_channel="stable",
         yt_update_freq=timedelta(hours=12),
         ffmpeg=ffmpeg,
+        ffprobe=ffprobe,
         handler_selector=handler_selector,
     )
 

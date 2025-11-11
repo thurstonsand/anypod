@@ -315,6 +315,7 @@ Patreon creator pages and individual posts are supported with the following cons
 **Current behavior**: Anypod uses lenient error handling for yt-dlp operations. When yt-dlp encounters errors (e.g., inaccessible content, authentication issues), Anypod logs warnings but continues processing whatever content is available. This means:
 
 - **Partial failures are tolerated**: If some posts/videos are inaccessible but others succeed, the feed will be updated with the accessible content
+- **Corrupt files are quarantined**: After each download yt-dlp reports success, Anypod probes the media with `ffprobe`. Files that can't be read or report non-positive durations are deleted so broken media never reaches RSS subscribers.
 - **No exceptions raised**: Failed downloads won't stop feed processing
 - **Check your logs**: Since errors don't stop processing, you should monitor logs to identify issues like missing credentials, rate limiting, or content access problems
 

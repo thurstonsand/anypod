@@ -65,6 +65,7 @@ async def run_debug_enqueuer_mode(
             yt_channel=settings.yt_channel,
             yt_update_freq=settings.yt_dlp_update_freq,
             ffmpeg=ffmpeg,
+            ffprobe=ffprobe,
             handler_selector=handler_selector,
         )
         pruner = Pruner(feed_db, download_db, file_manager)

@@ -11,6 +11,7 @@ from anypod.db.app_state_db import AppStateDatabase
 from anypod.db.types import Download, DownloadStatus, Feed, SourceType
 from anypod.exceptions import YtdlpApiError
 from anypod.ffmpeg import FFmpeg
+from anypod.ffprobe import FFProbe
 from anypod.path_manager import PathManager
 from anypod.ytdlp_wrapper import YtdlpWrapper
 from anypod.ytdlp_wrapper.core import YtdlpArgs, YtdlpCore, YtdlpInfo, YtdlpRunResult
@@ -71,12 +72,21 @@ def ffmpeg_mock() -> MagicMock:
 
 
 @pytest.fixture
+def ffprobe_mock() -> MagicMock:
+    """Provide a mocked FFProbe instance."""
+    mock = MagicMock(spec=FFProbe)
+    mock.get_duration_seconds_from_file = AsyncMock(return_value=321)
+    return mock
+
+
+@pytest.fixture
 def ytdlp_wrapper_with_provider(
     paths: PathManager,
     app_state_db_mock: MagicMock,
     mock_youtube_handler: MagicMock,
     handler_selector_mock: MagicMock,
     ffmpeg_mock: MagicMock,
+    ffprobe_mock: MagicMock,
 ) -> YtdlpWrapper:
     """YtdlpWrapper configured with a provider URL and mocked handler."""
     provider_url = "http://bgutil-provider:4416"
@@ -88,6 +98,7 @@ def ytdlp_wrapper_with_provider(
         yt_channel="stable",
         yt_update_freq=timedelta(hours=12),
         ffmpeg=ffmpeg_mock,
+        ffprobe=ffprobe_mock,
         handler_selector=handler_selector_mock,
     )
     return wrapper
@@ -100,6 +111,7 @@ def ytdlp_wrapper(
     mock_youtube_handler: MagicMock,
     handler_selector_mock: MagicMock,
     ffmpeg_mock: MagicMock,
+    ffprobe_mock: MagicMock,
 ) -> YtdlpWrapper:
     """YtdlpWrapper with a mocked YoutubeHandler and shared paths/app state."""
     handler_selector_mock.select.return_value = mock_youtube_handler
@@ -110,6 +122,7 @@ def ytdlp_wrapper(
         yt_channel="stable",
         yt_update_freq=timedelta(hours=12),
         ffmpeg=ffmpeg_mock,
+        ffprobe=ffprobe_mock,
         handler_selector=handler_selector_mock,
     )
     return wrapper
@@ -450,17 +463,16 @@ async def test_download_feed_thumbnail_file_not_found(
 @pytest.mark.unit
 @patch.object(YtdlpCore, "download")
 @patch("aiofiles.os.path.isfile", return_value=True)
-@patch("aiofiles.os.stat")
 @patch.object(YtdlpWrapper, "_prepare_download_dir")
 @patch("aiofiles.os.wrap")
 @pytest.mark.asyncio
 async def test_download_media_to_file_success_simplified(
     mock_aiofiles_wrap: MagicMock,
     mock_prep_dl_dir: AsyncMock,
-    mock_stat: AsyncMock,
     mock_is_file: AsyncMock,
     mock_ytdlcore_download: AsyncMock,
     ytdlp_wrapper: YtdlpWrapper,
+    ffprobe_mock: MagicMock,
 ):
     """Tests the happy path of download_media_to_file."""
     feed_id = "test_feed_happy"
@@ -478,6 +490,7 @@ async def test_download_media_to_file_success_simplified(
         duration=60,
         status=DownloadStatus.QUEUED,
     )
+
     yt_cli_args: list[str] = ["--format", "bestvideo+bestaudio/best"]
 
     feed_temp_path = ytdlp_wrapper._paths.base_tmp_dir / feed_id
@@ -489,9 +502,6 @@ async def test_download_media_to_file_success_simplified(
 
     expected_final_file.parent.mkdir(parents=True, exist_ok=True)
     expected_final_file.touch()
-
-    mock_stat_instance = mock_stat.return_value
-    mock_stat_instance.st_size = 12345
 
     mock_prep_dl_dir.return_value = (feed_temp_path, feed_home_path)
     mock_glob = AsyncMock(return_value=[expected_final_file])
@@ -516,10 +526,11 @@ async def test_download_media_to_file_success_simplified(
     mock_glob.assert_called_once_with(f"{download_id}.*")
 
     mock_is_file.assert_called_once_with(expected_final_file)
-    mock_stat.assert_called_once_with(expected_final_file)
+    ffprobe_mock.get_duration_seconds_from_file.assert_awaited_once_with(
+        expected_final_file
+    )
 
     assert mock_is_file.call_count >= 1
-    assert mock_stat.call_count >= 1
 
 
 @pytest.mark.unit
