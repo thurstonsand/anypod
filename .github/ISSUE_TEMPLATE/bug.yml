@@ -1,25 +1,8 @@
 name: "Bug report"
 description: "Something didn't work"
 title: "[bug] <summary>"
-labels: ["bug"]
+labels: ["type:bug"]
 body:
-  - type: markdown
-    attributes:
-      value: |
-        **AI copy-paste block**
-        ```text
-        BUG TITLE:
-        WHAT HAPPENED:
-        EXPECTED:
-        STEPS:
-        SOURCE TYPE: [YouTube|Patreon|X/Twitter|Other]
-        FEED ID or URL:
-        VERSION or IMAGE TAG:
-        ENV (OS/arch, Docker Compose|Docker|Source):
-        MINIMAL FEED YAML:
-        LOGS or SCREENSHOT:
-        ```
-
   - type: textarea
     id: happened
     attributes:
@@ -38,7 +21,7 @@ body:
   - type: textarea
     id: steps
     attributes:
-      label: Steps (optional)
+      label: Steps
       description: Exact steps help reproduce.
       placeholder: |
         1. Start container / run command
@@ -48,25 +31,25 @@ body:
   - type: dropdown
     id: source
     attributes:
-      label: Source type (optional)
+      label: Source type
       options: ["YouTube", "Patreon", "X/Twitter", "Other"]
 
   - type: input
     id: version
     attributes:
-      label: Version or image tag (optional)
+      label: Version or image tag
       placeholder: "ghcr.io/thurstonsand/anypod:latest | nightly | <commit>"
 
   - type: input
     id: env
     attributes:
-      label: Environment (optional)
+      label: Environment
       placeholder: "Ubuntu 22.04 x86_64, Docker Compose"
 
   - type: textarea
     id: feed_yaml
     attributes:
-      label: Minimal feed YAML (optional)
+      label: Minimal feed YAML
       description: Remove secrets. Keep it minimal.
       render: yaml
       placeholder: |
@@ -77,6 +60,6 @@ body:
   - type: textarea
     id: logs
     attributes:
-      label: Logs or screenshot (optional)
+      label: Logs or screenshot
       description: Paste the relevant error lines or drag a screenshot.
       render: shell

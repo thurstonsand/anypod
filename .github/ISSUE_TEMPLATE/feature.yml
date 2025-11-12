@@ -1,21 +1,8 @@
 name: "Feature request"
 description: "Suggest an improvement"
 title: "[feature] <summary>"
-labels: ["enhancement"]
+labels: ["type:enhancement"]
 body:
-  - type: markdown
-    attributes:
-      value: |
-        **AI copy-paste block**
-        ```text
-        TITLE:
-        PROBLEM:
-        PROPOSED SOLUTION:
-        EXAMPLE (YAML or HTTP):
-        SOURCE(S): [YouTube|Patreon|X/Twitter|All]
-        EXTRA CONTEXT:
-        ```
-
   - type: textarea
     id: problem
     attributes:
@@ -34,7 +21,7 @@ body:
   - type: textarea
     id: example
     attributes:
-      label: Example (optional)
+      label: Example
       description: A small config or endpoint sketch.
       render: yaml
       placeholder: |
@@ -45,12 +32,12 @@ body:
   - type: dropdown
     id: sources
     attributes:
-      label: Source(s) (optional)
+      label: Source(s)
       multiple: true
       options: ["YouTube", "Patreon", "X/Twitter", "All", "Other"]
 
   - type: textarea
     id: context
     attributes:
-      label: Extra context (optional)
+      label: Extra context
       placeholder: "Links, prior art, screenshots."
