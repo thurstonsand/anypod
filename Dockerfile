@@ -7,8 +7,8 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_PYTHON_PREFERENCE=only-managed \
     UV_PYTHON_INSTALL_DIR=/python
 
-# Install Python 3.13
-RUN uv python install 3.13
+# Install Python 3.14
+RUN uv python install 3.14
 
 # Set working directory
 WORKDIR /app

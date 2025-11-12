@@ -568,7 +568,7 @@ All CLI flags can alternatively be set via environment variables using uppercase
 | Aspect           | Setting                                                                                               |
 | ---------------- | ----------------------------------------------------------------------------------------------------- |
 | **Image**        | `ghcr.io/thurstonsand/anypod:nightly`                                                                 |
-| **Base**         | `debian:trixie-slim` with uv-managed Python 3.13                                                      |
+| **Base**         | `debian:trixie-slim` with uv-managed Python 3.14                                                      |
 | **User**         | Runs as **root (UID 0)** by default; automatically switches to non-root user (PUID/PGID) if specified |
 | **Volumes**      | `/config`, `/data`, `/cookies`                                                                        |
 | **Port**         | 8024                                                                                                  |

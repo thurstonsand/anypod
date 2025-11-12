@@ -323,7 +323,7 @@ Patreon creator pages and individual posts are supported with the following cons
 
 ## Development
 
-Requirements: Python 3.13+, [`uv`](https://docs.astral.sh/uv/) package manager, ffmpeg and ffprobe.
+Requirements: Python 3.14+, [`uv`](https://docs.astral.sh/uv/) package manager, ffmpeg and ffprobe.
 
 ```bash
 # Install deps
