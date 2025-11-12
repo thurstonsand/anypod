@@ -7,7 +7,7 @@ name = "anypod"
 version = "0.1.0"
 description = "Thin yt-dlp -> podcast solution"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 dependencies = [
     "aiofiles>=24.1.0",
     "aiosqlite>=0.21.0",
@@ -82,7 +82,7 @@ directory = "coverage_html_report"
 
 [tool.ruff]
 line-length = 88
-target-version = "py313"
+target-version = "py314"
 exclude = [
     ".venv",
     ".git",
@@ -141,7 +141,7 @@ exclude = ["**/node_modules", "**/__pycache__", ".venv", "build", "dist"]
 ignore = ["**/legacy/**"]
 typeCheckingMode = "strict"
 strict = ["src", "tests"]
-pythonVersion = "3.13"
+pythonVersion = "3.14"
 pythonPlatform = "All"
 venvPath = "."
 venv = ".venv"
@@ -160,7 +160,7 @@ failOnWarnings = true
 
 # Previous Ty experiment retained here for reference if we revisit it.
 # [tool.ty.environment]
-# python-version = "3.13"
+# python-version = "3.14"
 #
 # [tool.ty.src]
 # include = ["src", "tests"]

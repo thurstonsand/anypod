@@ -3,7 +3,7 @@
 ## 1 Repo Bootstrap
 
 - [x] **Init git repo** – `git init --initial-branch=main && gh repo create`.
-- [x] **`pyproject.toml`** – minimal project metadata, `uv` backend, Python ≥ 3.13.
+- [x] **`pyproject.toml`** – minimal project metadata, `uv` backend, Python ≥ 3.14.
 - [x] **`uv pip install --groups dev`** – add dev deps: `ruff`, `pytest`, `pytest-asyncio`, `mypy`, `pre-commit`.
 - [x] **Pre-commit hooks** – formatters & linter.
 - [x] **CI** – GitHub Actions workflow running `pytest` on every PR.

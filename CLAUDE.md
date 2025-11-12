@@ -132,7 +132,7 @@ Download status transitions are implemented as explicit methods, not generic upd
 
 ### Requirements
 
-- Python 3.13+ (uses modern match/case syntax)
+- Python 3.14+ (uses modern match/case syntax)
 - Package manager: `uv` (not pip/poetry) - use modern `uv add`, `uv sync` commands, not legacy `uv pip`
 
 ### Code Patterns
