@@ -7,7 +7,8 @@
       "Bash(docker build:*)",
       "Bash(uvx yt-dlp:*)",
       "Bash(python3:*)",
-      "Bash(./scripts/run_dev.sh:*)"
+      "Bash(./scripts/run_dev.sh:*)",
+      "Bash(gh issue list:*)"
     ],
     "deny": [],
     "ask": []

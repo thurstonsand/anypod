@@ -16,7 +16,7 @@ This is a **self-hosted, small-scale solution** designed for personal use or sma
 
 This design prioritizes simplicity, reliability, and ease of self-hosting over scalability or multi-tenancy.
 
-see @DESIGN_DOC.md for in depth design doc.
+see DESIGN_DOC.md for in depth design doc.
 
 ## Behavior
 
