@@ -23,7 +23,16 @@ jobs:
           set -euo pipefail
 
           # Update bgutil provider to latest version
-          LATEST=$(curl -s https://api.github.com/repos/brainicism/bgutil-ytdlp-pot-provider/releases/latest | jq -r '.tag_name')
+          RESP=$(curl -s https://api.github.com/repos/brainicism/bgutil-ytdlp-pot-provider/releases/latest)
+          LATEST=$(echo "$RESP" | jq -r '.tag_name')
+
+          if [ -z "$LATEST" ] || [ "$LATEST" = "null" ]; then
+            echo "ERROR: Failed to fetch latest bgutil version from GitHub API"
+            echo "Full API response:"
+            echo "$RESP"
+            exit 1
+          fi
+
           sed -i "s/^ARG BGUTIL_POT_PROVIDER_VERSION=.*/ARG BGUTIL_POT_PROVIDER_VERSION=${LATEST}/" Dockerfile
 
           # Update cache bust key to current week (forces package refresh)

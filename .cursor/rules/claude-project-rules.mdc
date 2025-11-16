@@ -22,7 +22,7 @@ This is a **self-hosted, small-scale solution** designed for personal use or sma
 
 This design prioritizes simplicity, reliability, and ease of self-hosting over scalability or multi-tenancy.
 
-see @DESIGN_DOC.md for in depth design doc.
+see DESIGN_DOC.md for in depth design doc.
 
 ## Behavior
 
@@ -138,7 +138,7 @@ Download status transitions are implemented as explicit methods, not generic upd
 
 ### Requirements
 
-- Python 3.13+ (uses modern match/case syntax)
+- Python 3.14+ (uses modern match/case syntax)
 - Package manager: `uv` (not pip/poetry) - use modern `uv add`, `uv sync` commands, not legacy `uv pip`
 
 ### Code Patterns
