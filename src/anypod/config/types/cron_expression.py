@@ -90,7 +90,7 @@ class CronExpression:
         Returns:
             The next datetime that matches the cron expression
         """
-        return self._itr.get_next(datetime, start_time=start_time)  # type: ignore
+        return self._itr.get_next(datetime, start_time=start_time)  # type: ignore[return-value]
 
     def prev(self, start_time: datetime) -> datetime:
         """Get the previous datetime that matches the cron expression.
@@ -101,7 +101,7 @@ class CronExpression:
         Returns:
             The previous datetime that matches the cron expression
         """
-        return self._itr.get_prev(datetime, start_time=start_time)  # type: ignore
+        return self._itr.get_prev(datetime, start_time=start_time)  # type: ignore[return-value]
 
     def __str__(self) -> str:
         """Return the cron expression string."""

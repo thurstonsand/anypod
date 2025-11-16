@@ -17,7 +17,7 @@ class PodcastType(str, Enum):
     SERIAL = "SERIAL"
 
     @classmethod
-    def from_str(cls, s: str) -> "PodcastType":
+    def from_str(cls, s: str) -> PodcastType:
         """Create PodcastType from string value.
 
         Args:

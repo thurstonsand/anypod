@@ -83,32 +83,32 @@ class YtdlpArgs:
         self._referer: str | None = None
         self._match_filter: str | None = None
 
-    def quiet(self) -> "YtdlpArgs":
+    def quiet(self) -> YtdlpArgs:
         """Enable quiet mode (suppress verbose output)."""
         self._quiet = True
         return self
 
-    def no_warnings(self) -> "YtdlpArgs":
+    def no_warnings(self) -> YtdlpArgs:
         """Suppress warning messages."""
         self._no_warnings = True
         return self
 
-    def no_progress(self) -> "YtdlpArgs":
+    def no_progress(self) -> YtdlpArgs:
         """Disable interactive progress output."""
         self._no_progress = True
         return self
 
-    def skip_download(self) -> "YtdlpArgs":
+    def skip_download(self) -> YtdlpArgs:
         """Extract metadata only, don't download media."""
         self._skip_download = True
         return self
 
-    def flat_playlist(self) -> "YtdlpArgs":
+    def flat_playlist(self) -> YtdlpArgs:
         """Extract playlist metadata without individual entries."""
         self._flat_playlist = True
         return self
 
-    def playlist_items(self, item_spec: str | int) -> "YtdlpArgs":
+    def playlist_items(self, item_spec: str | int) -> YtdlpArgs:
         """Select specific playlist items using --playlist-items flag.
 
         Args:
@@ -129,27 +129,27 @@ class YtdlpArgs:
         self._playlist_items = str(item_spec)
         return self
 
-    def dateafter(self, date: datetime) -> "YtdlpArgs":
+    def dateafter(self, date: datetime) -> YtdlpArgs:
         """Only download videos uploaded on or after this date (day granularity)."""
         self._dateafter = date
         return self
 
-    def datebefore(self, date: datetime) -> "YtdlpArgs":
+    def datebefore(self, date: datetime) -> YtdlpArgs:
         """Only download videos uploaded on or before this date (day granularity)."""
         self._datebefore = date
         return self
 
-    def output(self, template: str) -> "YtdlpArgs":
+    def output(self, template: str) -> YtdlpArgs:
         """Set output filename template."""
         self._output = template
         return self
 
-    def convert_thumbnails(self, format: str) -> "YtdlpArgs":
+    def convert_thumbnails(self, format: str) -> YtdlpArgs:
         """Convert thumbnails to specified format (jpg, png, webp)."""
         self._convert_thumbnails = format
         return self
 
-    def write_thumbnail(self) -> "YtdlpArgs":
+    def write_thumbnail(self) -> YtdlpArgs:
         """Enable thumbnail downloading.
 
         Returns:
@@ -158,7 +158,7 @@ class YtdlpArgs:
         self._write_thumbnails = True
         return self
 
-    def output_thumbnail(self, template: str) -> "YtdlpArgs":
+    def output_thumbnail(self, template: str) -> YtdlpArgs:
         """Set output template for thumbnail files.
 
         Args:
@@ -170,7 +170,7 @@ class YtdlpArgs:
         self._thumbnail_output = template
         return self
 
-    def output_pl_thumbnail(self, template: str) -> "YtdlpArgs":
+    def output_pl_thumbnail(self, template: str) -> YtdlpArgs:
         """Set output template for playlist-level thumbnail files.
 
         Args:
@@ -182,17 +182,17 @@ class YtdlpArgs:
         self._pl_thumbnail_output = template
         return self
 
-    def paths_temp(self, path: Path) -> "YtdlpArgs":
+    def paths_temp(self, path: Path) -> YtdlpArgs:
         """Set temporary directory path for downloads."""
         self._paths_temp = path
         return self
 
-    def paths_home(self, path: Path) -> "YtdlpArgs":
+    def paths_home(self, path: Path) -> YtdlpArgs:
         """Set final directory path for downloads."""
         self._paths_home = path
         return self
 
-    def paths_thumbnail(self, path: Path) -> "YtdlpArgs":
+    def paths_thumbnail(self, path: Path) -> YtdlpArgs:
         """Set the directory where thumbnails will be saved.
 
         Args:
@@ -204,7 +204,7 @@ class YtdlpArgs:
         self._paths_thumbnail = path
         return self
 
-    def paths_pl_thumbnail(self, path: Path) -> "YtdlpArgs":
+    def paths_pl_thumbnail(self, path: Path) -> YtdlpArgs:
         """Set the directory where playlist thumbnails will be saved.
 
         Args:
@@ -216,27 +216,27 @@ class YtdlpArgs:
         self._paths_pl_thumbnail = path
         return self
 
-    def cookies(self, path: Path) -> "YtdlpArgs":
+    def cookies(self, path: Path) -> YtdlpArgs:
         """Set path to cookies file for authentication."""
         self._cookies = path
         return self
 
-    def dump_single_json(self) -> "YtdlpArgs":
+    def dump_single_json(self) -> YtdlpArgs:
         """Output metadata as JSON without downloading."""
         self._dump_single_json = True
         return self
 
-    def dump_json(self) -> "YtdlpArgs":
+    def dump_json(self) -> YtdlpArgs:
         """Output metadata as JSON for each video without downloading."""
         self._dump_json = True
         return self
 
-    def lazy_playlist(self) -> "YtdlpArgs":
+    def lazy_playlist(self) -> YtdlpArgs:
         """Process playlist entries sequentially, enables early termination."""
         self._lazy_playlist = True
         return self
 
-    def break_match_filters(self, filter_expr: str) -> "YtdlpArgs":
+    def break_match_filters(self, filter_expr: str) -> YtdlpArgs:
         """Stop processing when filter condition fails.
 
         Args:
@@ -245,7 +245,7 @@ class YtdlpArgs:
         self._break_match_filters = filter_expr
         return self
 
-    def referer(self, url: str) -> "YtdlpArgs":
+    def referer(self, url: str) -> YtdlpArgs:
         """Set the HTTP Referer header for requests.
 
         Args:
@@ -257,7 +257,7 @@ class YtdlpArgs:
         self._referer = url
         return self
 
-    def match_filter(self, filter_expr: str) -> "YtdlpArgs":
+    def match_filter(self, filter_expr: str) -> YtdlpArgs:
         """Include only entries matching the filter expression.
 
         Args:
@@ -269,7 +269,7 @@ class YtdlpArgs:
         self._match_filter = filter_expr
         return self
 
-    def update_to(self, channel: str) -> "YtdlpArgs":
+    def update_to(self, channel: str) -> YtdlpArgs:
         """Update to a specific channel or version.
 
         Args:
@@ -279,12 +279,12 @@ class YtdlpArgs:
         self._update_to = channel
         return self
 
-    def extend_args(self, args: list[str]) -> "YtdlpArgs":
+    def extend_args(self, args: list[str]) -> YtdlpArgs:
         """Add additional raw arguments to the end."""
         self._additional_args.extend(args)
         return self
 
-    def extractor_args(self, value: str) -> "YtdlpArgs":
+    def extractor_args(self, value: str) -> YtdlpArgs:
         """Append an ``--extractor-args`` flag value.
 
         Args:

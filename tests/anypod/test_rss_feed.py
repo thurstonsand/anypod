@@ -4,6 +4,7 @@
 
 from datetime import UTC, datetime
 from pathlib import Path
+from types import TracebackType
 from unittest.mock import AsyncMock, MagicMock
 from xml.etree import ElementTree as ET
 
@@ -128,23 +129,28 @@ def capture_rss_write(monkeypatch: pytest.MonkeyPatch) -> dict[str, bytes]:
         def __init__(self) -> None:
             self._buf = bytearray()
 
-        async def __aenter__(self) -> "_DummyWriter":  # type: ignore
+        async def __aenter__(self) -> _DummyWriter:
             return self
 
-        async def __aexit__(self, exc_type, exc, tb) -> bool:  # type: ignore
+        async def __aexit__(
+            self,
+            exc_type: type[BaseException] | None,
+            exc: BaseException | None,
+            tb: TracebackType | None,
+        ) -> bool:
             captured["data"] = bytes(self._buf)
             return False
 
         async def write(self, data: bytes) -> None:
             self._buf.extend(data)
 
-    def _fake_open(path: Path | str, mode: str = "rb") -> _DummyWriter:  # type: ignore
+    def _fake_open(path: Path | str, mode: str = "rb") -> _DummyWriter:
         return _DummyWriter()
 
-    async def _fake_replace(src: Path | str, dst: Path | str) -> None:  # type: ignore
+    async def _fake_replace(src: Path | str, dst: Path | str) -> None:
         return None
 
-    async def _fake_makedirs(path: Path | str, exist_ok: bool = True) -> None:  # type: ignore
+    async def _fake_makedirs(path: Path | str, exist_ok: bool = True) -> None:
         return None
 
     monkeypatch.setattr("aiofiles.open", _fake_open)
