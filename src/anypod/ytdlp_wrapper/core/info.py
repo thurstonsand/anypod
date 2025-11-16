@@ -90,7 +90,7 @@ class YtdlpInfo:
             )
         return field
 
-    def entries(self) -> list["YtdlpInfo | None"] | None:
+    def entries(self) -> list[YtdlpInfo | None] | None:
         """Extract and wrap entries from a playlist or collection.
 
         Returns:

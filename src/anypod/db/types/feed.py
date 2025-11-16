@@ -197,7 +197,7 @@ class Feed(SQLModel, table=True):
     )
 
     # ---------------------------------------------------- relationships
-    downloads: list["Download"] = Relationship(back_populates="feed")
+    downloads: list[Download] = Relationship(back_populates="feed")
 
     # --- Class Helpers -----------------------------------------------------
 

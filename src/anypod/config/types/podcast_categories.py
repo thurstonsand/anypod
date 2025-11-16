@@ -148,7 +148,7 @@ class PodcastCategories:
         return collapsed.lower()
 
     @classmethod
-    def default(cls) -> "PodcastCategories":
+    def default(cls) -> PodcastCategories:
         """Return the default category."""
         return cls("TV & Film")
 
@@ -338,13 +338,13 @@ class PodcastCategories:
     ) -> CoreSchema:
         """Generate core schema for PodcastCategory validation."""
 
-        def validate_from_str(value: str) -> "PodcastCategories":
+        def validate_from_str(value: str) -> PodcastCategories:
             """Validate and create PodcastCategories from string."""
             return cls(value)
 
         def validate_from_list(
             value: list[Any],
-        ) -> "PodcastCategories":
+        ) -> PodcastCategories:
             """Validate and create PodcastCategories from list."""
             if any(not isinstance(item, str | dict | tuple) for item in value):
                 raise ValueError(f"Invalid category item: {value!r}")

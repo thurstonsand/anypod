@@ -114,7 +114,7 @@ class FeedgenCore:
         self._feed = feed
 
     # TODO: incorporate `updated` and `transcript`
-    def with_downloads(self, downloads: list[Download]) -> "FeedgenCore":
+    def with_downloads(self, downloads: list[Download]) -> FeedgenCore:
         """Add download entries to the feed.
 
         Args:

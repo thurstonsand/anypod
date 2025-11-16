@@ -116,7 +116,7 @@ class Download(SQLModel, table=True):
 
     # --- Relationships ----------------------------------------------------
 
-    feed: "Feed" = Relationship(back_populates="downloads")
+    feed: Feed = Relationship(back_populates="downloads")
 
     # Composite indexes
     __table_args__ = (
@@ -153,7 +153,7 @@ class Download(SQLModel, table=True):
             dump.pop("updated_at")
         return dump
 
-    def content_equals(self, other: "Download") -> bool:
+    def content_equals(self, other: Download) -> bool:
         """Compare downloads excluding timestamp fields.
 
         Compares all fields except discovered_at, updated_at, and downloaded_at,

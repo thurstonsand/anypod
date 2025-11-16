@@ -23,7 +23,7 @@ async def main_cli():
     to the appropriate mode (default, ytdlp debug, enqueuer debug, or
     downloader debug) based on the DEBUG_MODE setting.
     """
-    settings = AppSettings()  # type: ignore
+    settings = AppSettings()
 
     setup_logging(
         log_format_type=settings.log_format,

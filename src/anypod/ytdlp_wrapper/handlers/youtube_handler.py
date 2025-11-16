@@ -169,7 +169,7 @@ class YoutubeEntry:
     # --- playlist fields ---
 
     @property
-    def entries(self) -> list["YoutubeEntry | None"] | None:
+    def entries(self) -> list[YoutubeEntry | None] | None:
         """Get playlist entries as YoutubeEntry objects."""
         with self._annotate_exceptions():
             entries = self._ytdlp_info.entries()

@@ -549,9 +549,11 @@ class StateReconciler:
                     )
 
                 else:
+                    # config_image_url is guaranteed to be defined due to match statement
+                    assert config_image_url is not None
                     result = await self._image_downloader.download_feed_image_direct(
                         feed_id,
-                        config_image_url,  # type: ignore # config_image_url is guaranteed to be defined due to match statement
+                        config_image_url,
                     )
             except ImageDownloadError as e:
                 logger.warning(

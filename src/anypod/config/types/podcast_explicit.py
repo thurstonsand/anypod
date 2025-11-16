@@ -19,7 +19,7 @@ class PodcastExplicit(str, Enum):
     CLEAN = "CLEAN"
 
     @classmethod
-    def from_str(cls, s: str) -> "PodcastExplicit":
+    def from_str(cls, s: str) -> PodcastExplicit:
         """Create PodcastExplicit from string value.
 
         Args:

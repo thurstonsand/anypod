@@ -197,7 +197,7 @@ class FeedConfig(BaseModel):
                 )
 
     @model_validator(mode="after")
-    def validate_manual_feed(self) -> "FeedConfig":
+    def validate_manual_feed(self) -> FeedConfig:
         """Ensure manual feeds provide required metadata overrides."""
         if self.schedule is None:
             title_override = (
