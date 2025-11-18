@@ -8,7 +8,8 @@
       "Bash(uvx yt-dlp:*)",
       "Bash(python3:*)",
       "Bash(./scripts/run_dev.sh:*)",
-      "Bash(gh issue list:*)"
+      "Bash(gh issue list:*)",
+      "Skill(project-management:git-commit-helper)"
     ],
     "deny": [],
     "ask": []

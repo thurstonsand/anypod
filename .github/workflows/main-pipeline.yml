@@ -1,32 +1,35 @@
-name: Docker Publish
+name: Main Pipeline
 
 on:
-  # Wait for security scans to complete successfully before publishing
-  workflow_run:
-    workflows: ["Security Scans"]
-    types:
-      - completed
+  push:
     branches: [main]
-
-# Cancel any in-progress run on the same ref (branch or PR)
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
 
 permissions:
   contents: read
-  packages: write # needed to push to GHCR
+  security-events: write # needed to upload SARIF
+  packages: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build-and-publish:
-    name: Build & Publish
+  ci:
+    name: CI
+    uses: ./.github/workflows/ci.yml
+
+  security-scans:
+    name: Security Scans
+    uses: ./.github/workflows/security-scans.yml
+
+  docker-publish:
+    name: Build & Publish Docker Image
     runs-on: ubuntu-latest
-    # Only publish if security scans succeeded
-    if: github.event.workflow_run.conclusion == 'success'
+    needs: [ci, security-scans]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -40,6 +43,7 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Extract metadata (tags, labels) for Docker
         id: meta
         uses: docker/metadata-action@v5
