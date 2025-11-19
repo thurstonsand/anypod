@@ -56,6 +56,10 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
+      - name: Install project dependencies
+        if: steps.update.outputs.has_changes == 'true'
+        run: uv sync --locked --all-extras --dev
+
       - name: Run pre-commit checks
         if: steps.update.outputs.has_changes == 'true'
         uses: pre-commit/action@v3.0.1
