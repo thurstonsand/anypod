@@ -17,7 +17,7 @@ Your self-hosted, YAML-driven bridge from yt-dlp–supported sources (YouTube ch
     - [Using Docker Compose (recommended)](#using-docker-compose-recommended)
     - [Using Docker directly](#using-docker-directly)
   - [Configuration](#configuration)
-      - [Manual feeds \& submissions](#manual-feeds--submissions)
+    - [Manual feeds \& submissions](#manual-feeds--submissions)
   - [Environment variables](#environment-variables)
   - [HTTP endpoints](#http-endpoints)
     - [Public endpoints](#public-endpoints)
@@ -169,59 +169,27 @@ feeds:
 
 Notes:
 
-- `schedule` accepts a [cron expression](https://crontab.cronhub.io/)
-- `since` must be in the format `YYYYMMDD` (day‑precision; see Limitation below).
-- `image_url` allows you to override the feed artwork. Anypod will download and host this image locally for better reliability and performance.
-- `yt_args` are passed directly to the [`yt-dlp` program](https://github.com/yt-dlp/yt-dlp); see their docs for full options, keeping note of the options below you cannot use (or risk breaking Anypod)
+- `schedule` accepts a [cron expression](https://crontab.cronhub.io/) or `"manual"` for ad-hoc feeds
+- `since` must be in the format `YYYYMMDD` (day‑precision; see Limitation below)
+- `image_url` allows you to override the feed artwork (downloaded and hosted locally)
+- `yt_args` are passed directly to [`yt-dlp`](https://github.com/yt-dlp/yt-dlp); see their docs for options
 
-#### Manual feeds & submissions
-
-For ad-hoc drops, set `schedule: "manual"` and provide at least a `metadata.title`. Manual feeds skip yt-dlp discovery and the scheduler; they only process downloads you submit.
-
-```yaml
-feeds:
-  manual_drop:
-    schedule: "manual"
-    metadata:
-      title: "Manual Drops"
-      description: "Episodes arrive when we say so"
-```
-
-Manual feed workflow:
-
-1. Configure feed as shown above (you can still use `yt_args`, retention policies, etc.).
-2. POST each URL to `POST /admin/feeds/{feed_id}/downloads` with `{"url": "<video url>"}`.
-3. The admin handler stores the download, queues it via the normal pipeline, and fires the background runner.
-
-If the video was already downloaded, the endpoint responds with `new: false` and skips scheduling.
-
-Reserved/managed `yt‑dlp` options (set by Anypod, do not override):
-
-- Metadata: `--dump-json`, `--dump-single-json`, `--flat-playlist`, `--skip-download`, `--quiet`, `--no-warnings`
-- Filtering/iteration: `--break-match-filters`, `--lazy-playlist`, playlist limits derived from `keep_last` and `since`
-- Paths/output: `--paths`, `--output "<download_id>.%(ext)s"`
-- Thumbnails: conversion to `jpg` is enforced
-- Updates: `-U`/`--update-to` controlled by `yt_channel` configuration
+For full configuration details including manual feeds, metadata overrides, and reserved yt-dlp options, see [docs/configuration.md](docs/configuration.md).
 
 ## Environment variables
 
 All can be provided via env or CLI flags (kebab‑case). Common ones:
 
-| Name                     | Default                            | Description                                                                                                                                               |
-| ------------------------ | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `BASE_URL`               | `http://reverseproxy.example:8024` | Public base URL for feed/media links (set this behind a reverse proxy)                                                                                    |
-| `SERVER_PORT`            | `8024`                             | Bind port for public server                                                                                                                               |
-| `ADMIN_SERVER_PORT`      | `8025`                             | Bind port for admin server (should not be exposed publicly)                                                                                               |
-| `TRUSTED_PROXIES`        | unset                              | List of local IPs or networks allowed to access the server, mainly for reverse proxy use (e.g. `["192.168.1.0/24"]`)                                      |
-| `TZ`                     | unset                              | Your timezone (set if you don't want to mount `/etc/localtime`)                                                                                           |
-| `LOG_FORMAT`             | `json`                             | `human` or `json`                                                                                                                                         |
-| `LOG_LEVEL`              | `INFO`                             | Log level                                                                                                                                                 |
-| `LOG_INCLUDE_STACKTRACE` | `false`                            | Include stack traces in error logs                                                                                                                        |
-| `POT_PROVIDER_URL`       | unset                              | Base URL for a bgutil POT provider. When set, yt-dlp will be configured to use this provider for YouTube PO Tokens; when unset, POT fetching is disabled. |
-| `YT_CHANNEL`             | `stable`                           | yt-dlp update channel: stable, nightly, master, or version                                                                                                |
-| `YT_DLP_UPDATE_FREQ`     | `12h`                              | Minimum interval between yt-dlp --update-to invocations                                                                                                   |
-| `PUID`                   | `1000`                             | Container user                                                                                                                                            |
-| `PGID`                   | `1000`                             | Container group                                                                                                                                           |
+| Name                | Default                            | Description                                                 |
+| ------------------- | ---------------------------------- | ----------------------------------------------------------- |
+| `BASE_URL`          | `http://reverseproxy.example:8024` | Public base URL for feed/media links                        |
+| `SERVER_PORT`       | `8024`                             | Bind port for public server                                 |
+| `ADMIN_SERVER_PORT` | `8025`                             | Bind port for admin server (should not be exposed publicly) |
+| `TRUSTED_PROXIES`   | unset                              | Trusted proxy IPs/networks (e.g. `["192.168.1.0/24"]`)      |
+| `POT_PROVIDER_URL`  | unset                              | bgutil POT provider URL for YouTube PO Tokens               |
+| `PUID` / `PGID`     | `1000`                             | Container user/group                                        |
+
+For the complete list of environment variables, see [docs/configuration.md](docs/configuration.md#environment-variables).
 
 ## HTTP endpoints
 
@@ -327,29 +295,12 @@ Patreon creator pages and individual posts are supported with the following cons
 Requirements: Python 3.14+, [`uv`](https://docs.astral.sh/uv/) package manager, ffmpeg and ffprobe.
 
 ```bash
-# Install deps
-uv sync
-
-# Run full service (dev)
-./scripts/run_dev.sh [--keep]
-
-# Run debug component
-./scripts/run_debug.sh <enqueuer|downloader|ytdlp> [--keep]
-
-# Lint/format/type-check/tests
-uv run pre-commit run --all-files
-uv run ruff check && uv run ruff format
-uv run basedpyright
-uv run pytest
-uv run pytest --integration # will hit actual youtube endpoints
+uv run pre-commit run --all-files # Lint/format/type-check
+uv run pytest                     # Run tests
+uv run pytest --integration       # Integration tests (hits YouTube)
 ```
 
-Local defaults in dev scripts:
-
-- Database and media under `tmpdata/`
-- Config from `local_feeds.yaml`
-- Cookies from `cookies.txt`
-- Timezone `US/Eastern`
+For dev server scripts, debug modes, Docker workflows, and coverage, see [docs/development.md](docs/development.md).
 
 ## Architecture
 
