@@ -8,7 +8,7 @@ or port, and not exposed on the public internet.
 import logging
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
 from ...db.types import Download, DownloadStatus
@@ -16,14 +16,18 @@ from ...exceptions import (
     DatabaseOperationError,
     DownloadNotFoundError,
     FeedNotFoundError,
+    FileOperationError,
     ManualSubmissionError,
     ManualSubmissionUnavailableError,
+    RSSGenerationError,
 )
 from ..dependencies import (
     CookiesPathDep,
+    DataCoordinatorDep,
     DownloadDatabaseDep,
     FeedConfigsDep,
     FeedDatabaseDep,
+    FileManagerDep,
     ManualFeedRunnerDep,
     ManualSubmissionServiceDep,
 )
@@ -297,3 +301,105 @@ async def get_download_fields(
         download_id=download_id,
         download=filtered_data,
     )
+
+
+@router.delete(
+    "/feeds/{feed_id}/downloads/{download_id}",
+    status_code=204,
+)
+async def delete_download(
+    feed_id: ValidatedFeedId,
+    download_id: str,
+    feed_configs: FeedConfigsDep,
+    feed_db: FeedDatabaseDep,
+    download_db: DownloadDatabaseDep,
+    file_manager: FileManagerDep,
+    data_coordinator: DataCoordinatorDep,
+) -> Response:
+    """Delete a download from a manual feed with full cleanup.
+
+    Args:
+        feed_id: Feed identifier for the manual feed.
+        download_id: Identifier of the download to remove.
+        feed_configs: Configured feeds keyed by identifier.
+        feed_db: Feed database dependency.
+        download_db: Download database dependency.
+        file_manager: File manager for deleting media and images.
+        data_coordinator: Coordinator used to regenerate RSS after deletion.
+
+    Returns:
+        Empty 204 response on success.
+
+    Raises:
+        HTTPException: 404 for missing feed or download, 400 for non-manual feed,
+            500 for filesystem or database failures, or RSS regeneration failures.
+    """
+    log_params = {"feed_id": feed_id, "download_id": download_id}
+
+    feed_config = feed_configs.get(feed_id)
+    if feed_config is None:
+        raise HTTPException(status_code=404, detail="Feed not configured")
+    if not feed_config.is_manual:
+        raise HTTPException(
+            status_code=400,
+            detail="Download deletion is only supported for manual feeds",
+        )
+
+    try:
+        await feed_db.get_feed_by_id(feed_id)
+    except FeedNotFoundError as e:
+        raise HTTPException(status_code=404, detail="Feed not found") from e
+    except DatabaseOperationError as e:
+        raise HTTPException(status_code=500, detail="Database error") from e
+
+    try:
+        download = await download_db.delete_download(feed_id, download_id)
+    except DownloadNotFoundError as e:
+        raise HTTPException(status_code=404, detail="Download not found") from e
+    except DatabaseOperationError as e:
+        raise HTTPException(status_code=500, detail="Database error") from e
+
+    try:
+        rss_result = await data_coordinator.regenerate_rss(feed_id)
+    except (RSSGenerationError, FeedNotFoundError, DatabaseOperationError) as e:
+        raise HTTPException(
+            status_code=500, detail="Failed to regenerate RSS feed"
+        ) from e
+    else:
+        if not rss_result.overall_success:
+            raise HTTPException(status_code=500, detail="Failed to regenerate RSS feed")
+
+    try:
+        await file_manager.delete_download_file(feed_id, download.id, download.ext)
+    except FileNotFoundError:
+        logger.warning(
+            "Download file missing during deletion; continuing.", extra=log_params
+        )
+    except FileOperationError as e:
+        raise HTTPException(
+            status_code=500, detail="Failed to delete download file"
+        ) from e
+
+    if download.thumbnail_ext:
+        try:
+            await file_manager.delete_image(
+                feed_id, download.id, download.thumbnail_ext
+            )
+        except FileNotFoundError:
+            logger.warning(
+                "Thumbnail missing during deletion; continuing.", extra=log_params
+            )
+        except FileOperationError as e:
+            raise HTTPException(
+                status_code=500, detail="Failed to delete thumbnail"
+            ) from e
+
+    logger.info(
+        "Download deleted for manual feed.",
+        extra={
+            **log_params,
+            "thumbnail_deleted": bool(download.thumbnail_ext),
+            "total_duration_seconds": rss_result.total_duration_seconds,
+        },
+    )
+    return Response(status_code=204)

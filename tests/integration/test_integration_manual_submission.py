@@ -14,6 +14,7 @@ from anypod.config import FeedConfig
 from anypod.config.types import FeedMetadataOverrides
 from anypod.db import DownloadDatabase, FeedDatabase
 from anypod.db.types import Download, DownloadStatus, Feed, SourceType
+from anypod.exceptions import DownloadNotFoundError
 from anypod.manual_feed_runner import ManualFeedRunner
 from anypod.path_manager import PathManager
 
@@ -377,3 +378,55 @@ async def test_manual_submission_multiple_submissions(
 
     assert download1.status == DownloadStatus.DOWNLOADED
     assert download2.status == DownloadStatus.DOWNLOADED
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_manual_submission_delete_flow(
+    manual_admin_app: TestClient,
+    manual_feed_runner: ManualFeedRunner,
+    manual_feed_setup: Feed,
+    download_db: DownloadDatabase,
+    path_manager: PathManager,
+    feed_configs: dict[str, FeedConfig],
+) -> None:
+    """Submit, download, verify, delete, and confirm cleanup for manual feed."""
+    test_url = "https://www.youtube.com/watch?v=jNQXAC9IVRw"
+
+    # Submit download request
+    submit_resp = manual_admin_app.post(
+        f"/admin/feeds/{MANUAL_FEED_ID}/downloads",
+        json={"url": test_url},
+    )
+    assert submit_resp.status_code == 200
+    download_id = submit_resp.json()["download_id"]
+
+    # Run manual feed to process the queued download
+    feed_config = feed_configs[MANUAL_FEED_ID]
+    await manual_feed_runner._run_feed(MANUAL_FEED_ID, feed_config)
+
+    download = await _wait_for_download_status(
+        download_db, MANUAL_FEED_ID, download_id, DownloadStatus.DOWNLOADED
+    )
+
+    media_path = await path_manager.media_file_path(
+        MANUAL_FEED_ID, download_id, download.ext
+    )
+    assert media_path.exists()
+
+    # Delete the download via admin endpoint
+    delete_resp = manual_admin_app.delete(
+        f"/admin/feeds/{MANUAL_FEED_ID}/downloads/{download_id}"
+    )
+    assert delete_resp.status_code == 204
+
+    # Record should be gone
+    with pytest.raises(DownloadNotFoundError):
+        await download_db.get_download_by_id(MANUAL_FEED_ID, download_id)
+
+    # Media file should be deleted
+    assert not media_path.exists()
+
+    # RSS should be regenerated and present
+    rss_path = await path_manager.feed_xml_path(MANUAL_FEED_ID)
+    assert rss_path.exists()

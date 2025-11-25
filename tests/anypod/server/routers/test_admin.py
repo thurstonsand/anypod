@@ -2,19 +2,25 @@
 
 """Tests for the admin router endpoints."""
 
+from datetime import UTC, datetime
 from unittest.mock import Mock
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import pytest
 
+from anypod.config import FeedConfig
+from anypod.config.types import CronExpression, FeedMetadataOverrides
+from anypod.data_coordinator import DataCoordinator
+from anypod.data_coordinator.types import ProcessingResults
 from anypod.db import DownloadDatabase, FeedDatabase
-from anypod.db.types import DownloadStatus
+from anypod.db.types import Download, DownloadStatus
 from anypod.exceptions import (
     DatabaseOperationError,
     DownloadNotFoundError,
     FeedNotFoundError,
 )
+from anypod.file_manager import FileManager
 from anypod.server.routers.admin import router
 
 # Shared test constants
@@ -36,9 +42,30 @@ def mock_download_database() -> Mock:
 
 
 @pytest.fixture
+def mock_file_manager() -> Mock:
+    """Create a mock FileManager for testing."""
+    return Mock(spec=FileManager)
+
+
+@pytest.fixture
+def mock_data_coordinator() -> Mock:
+    """Create a mock DataCoordinator for testing."""
+    return Mock(spec=DataCoordinator)
+
+
+@pytest.fixture
+def feed_configs() -> dict[str, FeedConfig]:
+    """In-memory feed config mapping used by admin dependencies."""
+    return {}
+
+
+@pytest.fixture
 def app(
     mock_feed_database: Mock,
     mock_download_database: Mock,
+    mock_file_manager: Mock,
+    mock_data_coordinator: Mock,
+    feed_configs: dict[str, FeedConfig],
 ) -> FastAPI:
     """Create a FastAPI app with the admin router and mocked dependencies."""
     app = FastAPI()
@@ -47,6 +74,9 @@ def app(
     # Attach mocked dependencies to app state
     app.state.feed_database = mock_feed_database
     app.state.download_database = mock_download_database
+    app.state.file_manager = mock_file_manager
+    app.state.data_coordinator = mock_data_coordinator
+    app.state.feed_configs = feed_configs
 
     return app
 
@@ -55,6 +85,45 @@ def app(
 def client(app: FastAPI) -> TestClient:
     """Create a test client for the admin router."""
     return TestClient(app)
+
+
+@pytest.fixture
+def manual_feed_config() -> FeedConfig:
+    """Create a manual feed configuration."""
+    return FeedConfig(  # type: ignore[call-arg]
+        schedule="manual",
+        metadata=FeedMetadataOverrides(title="Manual Feed"),
+    )
+
+
+@pytest.fixture
+def scheduled_feed_config() -> FeedConfig:
+    """Create a scheduled feed configuration."""
+    return FeedConfig(  # type: ignore[call-arg]
+        url="https://example.com",
+        schedule=CronExpression("0 3 * * *"),
+    )
+
+
+@pytest.fixture
+def sample_download() -> Download:
+    """Create a sample downloaded item."""
+    return Download(
+        feed_id=FEED_ID,
+        id="dl-1",
+        source_url="https://example.com/video",
+        title="Test Video",
+        published=datetime(2024, 1, 1, tzinfo=UTC),
+        ext="mp3",
+        mime_type="audio/mpeg",
+        filesize=1000000,
+        duration=120,
+        status=DownloadStatus.DOWNLOADED,
+        thumbnail_ext="jpg",
+    )
+
+
+# --- Tests for reset-errors endpoint ---
 
 
 @pytest.mark.unit
@@ -111,6 +180,9 @@ def test_reset_errors_db_error_on_requeue(
 
     assert response.status_code == 500
     assert response.json()["detail"] == "Database error"
+
+
+# --- Tests for get-download-fields endpoint ---
 
 
 @pytest.mark.unit
@@ -264,3 +336,124 @@ def test_get_download_fields_database_error_returns_500(
 
     assert response.status_code == 500
     assert response.json()["detail"] == "Database error"
+
+
+# --- Tests for delete-download endpoint ---
+
+
+@pytest.mark.unit
+def test_delete_download_success(
+    client: TestClient,
+    feed_configs: dict[str, FeedConfig],
+    mock_feed_database: Mock,
+    mock_download_database: Mock,
+    mock_file_manager: Mock,
+    mock_data_coordinator: Mock,
+    manual_feed_config: FeedConfig,
+    sample_download: Download,
+) -> None:
+    """Deletes download, files, and regenerates RSS for manual feeds."""
+    feed_configs[FEED_ID] = manual_feed_config
+    mock_feed_database.get_feed_by_id.return_value = object()
+    mock_download_database.delete_download.return_value = sample_download
+    mock_data_coordinator.regenerate_rss.return_value = ProcessingResults(
+        feed_id=FEED_ID,
+        start_time=datetime(2024, 1, 1, tzinfo=UTC),
+        overall_success=True,
+    )
+
+    response = client.delete(
+        f"{ADMIN_PREFIX}/feeds/{FEED_ID}/downloads/{sample_download.id}"
+    )
+
+    assert response.status_code == 204
+    assert response.text == ""
+    mock_feed_database.get_feed_by_id.assert_awaited_once_with(FEED_ID)
+    mock_download_database.delete_download.assert_awaited_once_with(
+        FEED_ID, sample_download.id
+    )
+    mock_file_manager.delete_download_file.assert_awaited_once_with(
+        FEED_ID, sample_download.id, sample_download.ext
+    )
+    mock_file_manager.delete_image.assert_awaited_once_with(
+        FEED_ID, sample_download.id, sample_download.thumbnail_ext
+    )
+    mock_data_coordinator.regenerate_rss.assert_awaited_once_with(FEED_ID)
+
+
+@pytest.mark.unit
+def test_delete_download_not_found(
+    client: TestClient,
+    feed_configs: dict[str, FeedConfig],
+    mock_feed_database: Mock,
+    mock_download_database: Mock,
+    manual_feed_config: FeedConfig,
+) -> None:
+    """404 when the download does not exist."""
+    feed_configs[FEED_ID] = manual_feed_config
+    mock_feed_database.get_feed_by_id.return_value = object()
+    missing_id = "missing"
+    mock_download_database.delete_download.side_effect = DownloadNotFoundError(
+        "missing", feed_id=FEED_ID, download_id=missing_id
+    )
+
+    response = client.delete(f"{ADMIN_PREFIX}/feeds/{FEED_ID}/downloads/{missing_id}")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Download not found"
+    mock_feed_database.get_feed_by_id.assert_awaited_once_with(FEED_ID)
+    mock_download_database.delete_download.assert_awaited_once_with(FEED_ID, missing_id)
+
+
+@pytest.mark.unit
+def test_delete_download_rejects_non_manual_feed(
+    client: TestClient,
+    feed_configs: dict[str, FeedConfig],
+    scheduled_feed_config: FeedConfig,
+) -> None:
+    """400 when attempting to delete from a scheduled feed."""
+    feed_configs[FEED_ID] = scheduled_feed_config
+
+    response = client.delete(f"{ADMIN_PREFIX}/feeds/{FEED_ID}/downloads/dl-1")
+
+    assert response.status_code == 400
+    assert (
+        response.json()["detail"]
+        == "Download deletion is only supported for manual feeds"
+    )
+
+
+@pytest.mark.unit
+def test_delete_download_handles_missing_files(
+    client: TestClient,
+    feed_configs: dict[str, FeedConfig],
+    mock_feed_database: Mock,
+    mock_download_database: Mock,
+    mock_file_manager: Mock,
+    mock_data_coordinator: Mock,
+    manual_feed_config: FeedConfig,
+    sample_download: Download,
+) -> None:
+    """Missing media files are tolerated while deleting the download."""
+    # Use a download without thumbnail to simplify test
+    download_no_thumb = sample_download.model_copy(update={"thumbnail_ext": None})
+
+    feed_configs[FEED_ID] = manual_feed_config
+    mock_feed_database.get_feed_by_id.return_value = object()
+    mock_download_database.delete_download.return_value = download_no_thumb
+    mock_file_manager.delete_download_file.side_effect = FileNotFoundError()
+    mock_data_coordinator.regenerate_rss.return_value = ProcessingResults(
+        feed_id=FEED_ID,
+        start_time=datetime(2024, 1, 1, tzinfo=UTC),
+        overall_success=True,
+    )
+
+    response = client.delete(
+        f"{ADMIN_PREFIX}/feeds/{FEED_ID}/downloads/{download_no_thumb.id}"
+    )
+
+    assert response.status_code == 204
+    mock_feed_database.get_feed_by_id.assert_awaited_once_with(FEED_ID)
+    mock_file_manager.delete_download_file.assert_awaited_once()
+    mock_file_manager.delete_image.assert_not_awaited()
+    mock_data_coordinator.regenerate_rss.assert_awaited_once_with(FEED_ID)

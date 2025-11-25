@@ -562,7 +562,7 @@ This section details the components that manage the lifecycle of downloads, from
 
 ## 11 manual feeds
 
-- [ ] delete a download from a feed?
+- [x] delete a download from a feed?
 - [ ] optional (additional?) yt args override in req
 - [ ] endpoint for manually triggering a feed
 
