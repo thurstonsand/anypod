@@ -241,6 +241,7 @@ All can be provided via env or CLI flags (kebab‑case). Common ones:
 - `POST /admin/feeds/{feed_id}/reset-errors` – reset all ERROR downloads for a feed to QUEUED status
 - `POST /admin/feeds/{feed_id}/downloads` – queue a single URL for manual feeds (`schedule: "manual"`)
 - `GET /admin/feeds/{feed_id}/downloads/{download_id}` – retrieve selected fields for a download record (supports `?fields=` query parameter)
+- `DELETE /admin/feeds/{feed_id}/downloads/{download_id}` – delete a download from a manual feed and clean up associated media files and thumbnails; regenerates RSS
 - `GET /api/health` – health check
 
 Admin endpoints run on a separate server. No authentication is implemented. Only expose the public server publicly.

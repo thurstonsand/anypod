@@ -11,7 +11,7 @@ from datetime import datetime
 import logging
 from typing import Any
 
-from sqlalchemy import and_, func, update
+from sqlalchemy import and_, delete, func, update
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
@@ -641,6 +641,47 @@ class DownloadDatabase:
                     "Download not found.", feed_id=feed_id, download_id=download_id
                 )
             return download
+
+    @handle_download_db_errors(
+        "delete download", feed_id_from="feed_id", download_id_from="download_id"
+    )
+    async def delete_download(self, feed_id: str, download_id: str) -> Download:
+        """Delete a download and return the removed record.
+
+        Args:
+            feed_id: The feed identifier.
+            download_id: The download identifier.
+
+        Returns:
+            The deleted `Download` record.
+
+        Raises:
+            DownloadNotFoundError: If the download does not exist.
+            DatabaseOperationError: If the delete operation fails.
+        """
+        log_params = {"feed_id": feed_id, "download_id": download_id}
+        logger.debug("Attempting to delete download.", extra=log_params)
+
+        async with self._db.session() as session:
+            stmt = (
+                delete(Download)
+                .where(
+                    col(Download.feed_id) == feed_id,
+                    col(Download.id) == download_id,
+                )
+                .returning(Download)
+            )
+            result = await session.execute(stmt)
+            deleted = result.scalars().first()
+            await session.commit()
+
+        if not deleted:
+            raise DownloadNotFoundError(
+                "Download not found.", feed_id=feed_id, download_id=download_id
+            )
+
+        logger.debug("Download deleted successfully.", extra=log_params)
+        return deleted
 
     @handle_feed_db_errors("get downloads by status")
     async def get_downloads_by_status(

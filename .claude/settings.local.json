@@ -9,7 +9,9 @@
       "Bash(python3:*)",
       "Bash(./scripts/run_dev.sh:*)",
       "Bash(gh issue list:*)",
-      "Skill(project-management:git-commit-helper)"
+      "Skill(project-management:git-commit-helper)",
+      "Bash(uv run pytest:*)",
+      "Bash(uv run pre-commit:*)"
     ],
     "deny": [],
     "ask": []

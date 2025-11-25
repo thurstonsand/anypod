@@ -368,6 +368,33 @@ class DataCoordinator:
                 duration_seconds=duration,
             )
 
+    async def regenerate_rss(self, feed_id: str) -> ProcessingResults:
+        """Regenerate RSS for a feed without running other phases.
+
+        Args:
+            feed_id: The feed identifier.
+
+        Returns:
+            ProcessingResults with only the RSS generation phase populated.
+        """
+        start_time = datetime.now(UTC)
+
+        results = ProcessingResults(
+            feed_id=feed_id,
+            start_time=start_time,
+        )
+
+        results.rss_generation_result = await self._execute_rss_generation_phase(
+            feed_id
+        )
+        results.overall_success = results.rss_generation_result.success
+
+        results.total_duration_seconds = (
+            datetime.now(UTC) - start_time
+        ).total_seconds()
+
+        return results
+
     async def process_feed(
         self, feed_id: str, feed_config: FeedConfig
     ) -> ProcessingResults:
