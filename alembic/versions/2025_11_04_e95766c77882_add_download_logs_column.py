@@ -9,6 +9,7 @@ Create Date: 2025-11-04 16:31:59.614160
 from collections.abc import Sequence
 
 import sqlalchemy as sa
+from sqlmodel.sql.sqltypes import AutoString
 
 from alembic import op
 
@@ -21,7 +22,7 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    op.add_column("download", sa.Column("download_logs", sa.Text(), nullable=True))
+    op.add_column("download", sa.Column("download_logs", AutoString(), nullable=True))
 
 
 def downgrade() -> None:

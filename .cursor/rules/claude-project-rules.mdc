@@ -73,6 +73,10 @@ For table layout, indexes, and lifecycle details, see `docs/database.md`.
 
 ## Development Notes
 
+### Database Changes
+
+**Before modifying any database models**, read `docs/database.md` for schema details and migration workflow. Changes to `src/anypod/db/types/` require corresponding Alembic migrations.
+
 ### Requirements
 
 - Python 3.14+

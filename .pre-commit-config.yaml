@@ -29,7 +29,7 @@ repos:
         entry: bash scripts/check_migrations.sh
         language: system
         pass_filenames: false
-        files: '^(src/anypod/db/types/.*\.py|alembic/versions/.*\.py)$'
+        files: '^(src/anypod/db/types/.*\.py|alembic/(versions/.*\.py|env\.py))$'
 
       - id: sync-agents-md
         name: sync CLAUDE.md files to AGENTS.md
