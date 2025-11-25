@@ -161,20 +161,27 @@ Do not bypass these helper methods with raw SQL or generic ORM updates.
 
 ## Migrations
 
-Migrations are managed with Alembic:
+Migrations are managed with Alembic. Migration files are in `alembic/versions/`.
+
+### Workflow
+
+When changing database models in `src/anypod/db/types/`:
+
+1. Make your changes to the SQLModel classes
+2. Generate a migration: `uv run alembic revision --autogenerate -m "describe your changes"`
+3. Review the generated migration in `alembic/versions/`
+4. Commit your changes
+
+The drift check runs automatically via pre-commit on any model or migration changes. You can also run it manually with `./scripts/check_migrations.sh` to verify no uncommitted schema changes exist.
+
+### Commands
 
 ```bash
-# Create a new migration
-uv run alembic revision --autogenerate -m "description"
-
-# Apply migrations
-uv run alembic upgrade head
-
-# Rollback one migration
-uv run alembic downgrade -1
+uv run alembic revision --autogenerate -m "description"  # Create migration
+uv run alembic upgrade head                              # Apply migrations
+uv run alembic downgrade -1                              # Rollback one migration
+./scripts/check_migrations.sh                            # Check for schema drift
 ```
-
-Migration files are in `alembic/versions/`.
 
 ---
 

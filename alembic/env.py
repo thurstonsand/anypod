@@ -1,4 +1,4 @@
-"""Alembic environment script for asynchronous database migrations.
+"""Alembic environment script for database migrations.
 
 This script is the entrypoint for all Alembic commands. It configures the
 database connection, sets up the migration context, and defines the logic
@@ -6,7 +6,8 @@ for running migrations in both 'online' (connected to a database) and
 'offline' (generating SQL scripts) modes.
 
 The script is configured to:
-- Use an asynchronous database driver (aiosqlite).
+- Support both synchronous (sqlite://) and asynchronous (aiosqlite://)
+  database drivers. The driver is auto-detected from the database URL.
 - Read the database URL from the DATABASE_URL environment variable,
   falling back to the `sqlalchemy.url` key in alembic.ini.
 - Use SQLModel metadata for autogenerate support, allowing Alembic to

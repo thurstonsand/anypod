@@ -67,21 +67,9 @@ For table layout, indexes, and lifecycle details, see `docs/database.md`.
 
 ## Development Notes
 
-### Database Migrations
+### Database Changes
 
-When changing database models in `src/anypod/db/types/`, you must create a corresponding Alembic migration:
-
-1. Make your changes to the SQLModel classes
-2. Generate a migration: `uv run alembic revision --autogenerate -m "describe your changes"`
-3. Review the generated migration in `alembic/versions/`
-4. Test the migration: `bash scripts/check_migrations.sh`
-
-The migration check script (`scripts/check_migrations.sh`) runs automatically in pre-commit hooks and will fail if:
-
-- You've modified a database model without creating a migration
-- The migration doesn't match the current model definition
-
-**Important**: Always use explicit SQLAlchemy column types (like `sa.Text()`, `sa.Integer()`) instead of relying on SQLModel's `AutoString()` to avoid type drift issues. This ensures migrations are predictable and consistent.
+**Before modifying any database models**, read `docs/database.md` for schema details and migration workflow. Changes to `src/anypod/db/types/` require corresponding Alembic migrations.
 
 ### Requirements
 
