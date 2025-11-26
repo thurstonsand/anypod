@@ -40,6 +40,7 @@ def upgrade() -> None:
     drop_feed_triggers_v2()
 
     # Schema migration: Change type to Boolean using batch_alter_table
+    # Note: Foreign key checks are disabled at the env.py level for all migrations
     with op.batch_alter_table("feed", schema=None) as batch_op:
         batch_op.alter_column(
             "explicit",
@@ -66,6 +67,7 @@ def downgrade() -> None:
     drop_feed_triggers_v2()
 
     # Schema migration: Change type back to VARCHAR using batch_alter_table
+    # Note: Foreign key checks are disabled at the env.py level for all migrations
     with op.batch_alter_table("feed", schema=None) as batch_op:
         batch_op.alter_column(
             "explicit",

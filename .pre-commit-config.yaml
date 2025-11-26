@@ -26,7 +26,7 @@ repos:
 
       - id: alembic-migration-check
         name: check for schema drift
-        entry: bash scripts/check_migrations.sh
+        entry: ./scripts/check_migrations.sh
         language: system
         pass_filenames: false
         files: '^(src/anypod/db/types/.*\.py|alembic/(versions/.*\.py|env\.py))$'

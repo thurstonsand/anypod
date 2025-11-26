@@ -17,9 +17,10 @@ The script is configured to:
 import asyncio
 from logging.config import fileConfig
 import os
+from typing import Any
 
-from sqlalchemy import engine_from_config, pool
-from sqlalchemy.engine import Connection
+from sqlalchemy import engine_from_config, event, pool
+from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.ext.asyncio import async_engine_from_config
 from sqlmodel import SQLModel
 
@@ -43,6 +44,32 @@ if config.config_file_name is not None:
 # add your model's MetaData object here
 # for 'autogenerate' support
 target_metadata = SQLModel.metadata
+
+
+def _register_fk_disable_listener(engine: Engine) -> None:
+    """Register a listener to disable foreign key checks for this engine.
+
+    This must be done at the raw DBAPI connection level, before any transaction
+    starts. It's required for batch_alter_table operations that recreate tables,
+    as SQLite will fail to drop the original table if other tables have FK
+    constraints referencing it.
+
+    The listener is registered on the specific engine instance rather than
+    globally, to avoid affecting application connections (e.g., in tests).
+
+    Args:
+        engine: The SQLAlchemy engine to register the listener on.
+    """
+
+    @event.listens_for(engine, "connect")
+    def _disable_foreign_keys(  # pyright: ignore[reportUnusedFunction]
+        dbapi_connection: Any, _connection_record: Any
+    ) -> None:
+        """Disable foreign key constraints for migration connections."""
+        if hasattr(dbapi_connection, "cursor"):
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA foreign_keys=OFF")
+            cursor.close()
 
 
 def run_migrations_offline() -> None:
@@ -105,6 +132,8 @@ async def run_async_migrations(connectable_config: dict[str, str]) -> None:
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
+    # Register FK disable listener on the underlying sync engine
+    _register_fk_disable_listener(async_engine.sync_engine)
     async with async_engine.connect() as connection:
         await connection.run_sync(run_migrations_for_context)
     await async_engine.dispose()
@@ -140,6 +169,8 @@ def run_migrations_online() -> None:
         engine = engine_from_config(
             connectable_config, prefix="sqlalchemy.", poolclass=pool.NullPool
         )
+        # Register FK disable listener for SQLite
+        _register_fk_disable_listener(engine)
         with engine.connect() as connection:
             run_migrations_for_context(connection)
 
