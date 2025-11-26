@@ -8,11 +8,13 @@ from Anypod download data.
 
 import logging
 
+from feedgen.ext.podcast_entry import PodcastEntryExtension  # type: ignore
 from feedgen.feed import FeedGenerator  # type: ignore
 
 from ..db.types import Download, Feed
 from ..exceptions import RSSGenerationError
 from ..path_manager import PathManager
+from .podcast_extension import Podcast
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +45,12 @@ class FeedgenCore:
             raise ValueError("Feed description is required when creating an RSS feed.")
 
         fg = FeedGenerator()  # type: ignore
-        fg.load_extension("podcast")  # type: ignore
+
+        # Register our custom Podcast extension to override the default one.
+        # We must provide both the feed extension (Podcast) and the entry extension
+        # (PodcastEntryExtension) so that entries created via add_entry() also get
+        # the podcast extension loaded (e.g., fe.podcast.itunes_title()).
+        fg.register_extension("podcast", Podcast, PodcastEntryExtension)  # type: ignore
 
         try:
             feed_self_url = paths.feed_url(feed_id)
@@ -63,6 +70,7 @@ class FeedgenCore:
         description = feed.description or "No description available"
         fg.description(description)  # type: ignore
         fg.podcast.itunes_summary(description)  # type: ignore
+        fg.description(description)  # type: ignore
         fg.language(feed.language or "en")  # type: ignore
 
         # Handle optional fields with null checks
@@ -71,7 +79,11 @@ class FeedgenCore:
             feed.category.itunes_rss_list()
         )
         fg.podcast.itunes_type(feed.podcast_type.rss_str())  # type: ignore
-        fg.podcast.itunes_explicit(feed.explicit.rss_str())  # type: ignore
+
+        # Explicit is a boolean, convert to "true"/"false" for RSS
+        explicit_str = "true" if feed.explicit else "false"
+        fg.podcast.itunes_explicit(explicit_str)  # type: ignore
+
         # Prefer hosted feed image; fall back to remote URL
         if feed.image_ext:
             try:
@@ -97,10 +109,9 @@ class FeedgenCore:
             )
         if feed.author:
             fg.podcast.itunes_author(feed.author)  # type: ignore
-            if feed.author_email:
-                fg.podcast.itunes_owner(  # type: ignore
-                    name=feed.author, email=feed.author_email
-                )
+            fg.podcast.itunes_owner(  # type: ignore
+                name=feed.author, email=feed.author_email
+            )
 
         fg.lastBuildDate(None)  # type: ignore # None == now()
         fg.generator(  # type: ignore
@@ -138,10 +149,9 @@ class FeedgenCore:
 
             # Use description from download if available
             description = download.description or download.title
-            fe.description(description)  # type: ignore
-            # TODO: Consider removing itunes:summary as it's redundant with description
-            # Apple Podcasts documentation indicates description is sufficient for episodes
+
             fe.podcast.itunes_summary(description)  # type: ignore
+            fe.description(description)  # type: ignore
 
             # Prefer hosted per-episode thumbnail when thumbnail_ext is present; fall back to remote URL
             if download.thumbnail_ext:

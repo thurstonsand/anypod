@@ -17,7 +17,6 @@ from anypod.config import FeedConfig
 from anypod.config.types import (
     FeedMetadataOverrides,
     PodcastCategories,
-    PodcastExplicit,
     PodcastType,
 )
 from anypod.data_coordinator.pruner import Pruner
@@ -52,7 +51,7 @@ MOCK_FEED = Feed(
     description=None,
     language=None,
     author=None,
-    author_email=None,
+    # author_email uses default "notifications@thurstons.house"
     remote_image_url=None,
     is_enabled=True,
     source_type=SourceType.UNKNOWN,
@@ -69,7 +68,7 @@ MOCK_DISABLED_FEED = Feed(
     description=None,
     language=None,
     author=None,
-    author_email=None,
+    # author_email uses default "notifications@thurstons.house"
     remote_image_url=None,
     is_enabled=True,
     source_type=SourceType.UNKNOWN,
@@ -220,7 +219,7 @@ def feed_config_with_metadata() -> FeedConfig:
             image_url="https://example.com/image.jpg",
             category=PodcastCategories("Technology"),
             podcast_type=PodcastType.EPISODIC,
-            explicit=PodcastExplicit.NO,
+            explicit=False,
         ),
     )
 
@@ -1605,7 +1604,7 @@ async def test_handle_existing_manual_feed_updates_metadata_and_image(
         description="Old description",
         language=None,
         author=None,
-        author_email=None,
+        # author_email uses default "notifications@thurstons.house"
         remote_image_url="https://example.com/manual-old.jpg",
         image_ext="png",
         is_enabled=True,

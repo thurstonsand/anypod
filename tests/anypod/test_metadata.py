@@ -10,7 +10,6 @@ from anypod.config.types import (
     CronExpression,
     FeedMetadataOverrides,
     PodcastCategories,
-    PodcastExplicit,
     PodcastType,
 )
 from anypod.db.types import Feed, SourceType
@@ -37,7 +36,7 @@ def test_merge_feed_metadata_no_overrides():
         remote_image_url="https://example.com/image.jpg",
         category=PodcastCategories("Technology"),
         podcast_type=PodcastType.EPISODIC,
-        explicit=PodcastExplicit.NO,
+        explicit=False,
     )
 
     # Create feed config without metadata overrides
@@ -61,7 +60,7 @@ def test_merge_feed_metadata_no_overrides():
     assert result["remote_image_url"] == "https://example.com/image.jpg"
     assert result["category"] == PodcastCategories("Technology")
     assert result["podcast_type"] == PodcastType.EPISODIC
-    assert result["explicit"] == PodcastExplicit.NO
+    assert result["explicit"] is False
 
 
 @pytest.mark.unit
@@ -84,7 +83,7 @@ def test_merge_feed_metadata_with_overrides():
         remote_image_url="https://example.com/image.jpg",
         category=PodcastCategories("Technology"),
         podcast_type=PodcastType.EPISODIC,
-        explicit=PodcastExplicit.NO,
+        explicit=False,
     )
 
     # Create metadata overrides
@@ -95,7 +94,7 @@ def test_merge_feed_metadata_with_overrides():
         language=None,
         category=PodcastCategories("Business"),
         podcast_type=PodcastType.SERIAL,
-        explicit=PodcastExplicit.YES,
+        explicit=True,
         image_url=None,
         author="Override Author",
         author_email=None,
@@ -128,7 +127,7 @@ def test_merge_feed_metadata_with_overrides():
         "Business"
     )  # overridden (categories -> category mapping)
     assert result["podcast_type"] == PodcastType.SERIAL  # overridden
-    assert result["explicit"] == PodcastExplicit.YES  # overridden
+    assert result["explicit"] is True  # overridden
 
 
 @pytest.mark.unit
@@ -151,7 +150,7 @@ def test_merge_feed_metadata_partial_overrides():
         remote_image_url="https://example.com/image.jpg",
         category=PodcastCategories("Music"),
         podcast_type=PodcastType.EPISODIC,
-        explicit=PodcastExplicit.CLEAN,
+        explicit=False,
     )
 
     # Create partial metadata overrides (only override some fields)
@@ -181,7 +180,7 @@ def test_merge_feed_metadata_partial_overrides():
     assert result["remote_image_url"] == "https://example.com/image.jpg"  # from fetched
     assert result["category"] == PodcastCategories("Music")  # from fetched
     assert result["podcast_type"] == PodcastType.EPISODIC  # from fetched
-    assert result["explicit"] == PodcastExplicit.CLEAN  # from fetched
+    assert result["explicit"] is False  # from fetched
 
 
 @pytest.mark.unit
@@ -200,11 +199,11 @@ def test_merge_feed_metadata_removes_none_values():
         description=None,  # None value
         language="en",
         author=None,  # None value
-        author_email=None,  # None value
+        # author_email uses default "notifications@thurstons.house"
         remote_image_url="https://example.com/image.jpg",
         category=PodcastCategories("Technology"),
         podcast_type=PodcastType.EPISODIC,
-        explicit=PodcastExplicit.NO,
+        explicit=False,
     )
 
     # Create feed config without metadata overrides
@@ -222,11 +221,11 @@ def test_merge_feed_metadata_removes_none_values():
     assert "subtitle" not in result
     assert "description" not in result
     assert "author" not in result
-    assert "author_email" not in result
 
     # Non-None values should be included
     assert result["title"] == "Video Title"
     assert result["language"] == "en"
+    assert result["author_email"] == "notifications@thurstons.house"  # default value
     assert result["remote_image_url"] == "https://example.com/image.jpg"
     assert result["category"] == PodcastCategories("Technology")
 
@@ -245,7 +244,7 @@ def test_merge_feed_metadata_category_mapping():
         title="Feed Title",
         category=PodcastCategories("Technology"),
         podcast_type=PodcastType.EPISODIC,
-        explicit=PodcastExplicit.NO,
+        explicit=False,
     )
 
     # Create metadata overrides with categories field
@@ -285,7 +284,7 @@ def test_merge_feed_metadata_authoritative_fields():
         keep_last=999,  # This should be ignored
         category=PodcastCategories("Technology"),
         podcast_type=PodcastType.EPISODIC,
-        explicit=PodcastExplicit.NO,
+        explicit=False,
     )
 
     # Create feed config with different values

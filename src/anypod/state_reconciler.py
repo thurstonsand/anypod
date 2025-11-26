@@ -123,11 +123,15 @@ class StateReconciler:
         manual_feed.description = overrides.description
         manual_feed.language = overrides.language
         manual_feed.author = overrides.author
-        manual_feed.author_email = overrides.author_email
+        manual_feed.author_email = overrides.author_email or manual_feed.author_email
         manual_feed.remote_image_url = overrides.image_url
         manual_feed.category = overrides.category or manual_feed.category
         manual_feed.podcast_type = overrides.podcast_type or manual_feed.podcast_type
-        manual_feed.explicit = overrides.explicit or manual_feed.explicit
+        manual_feed.explicit = (
+            overrides.explicit
+            if overrides.explicit is not None
+            else manual_feed.explicit
+        )
         return manual_feed
 
     async def _handle_new_feed(

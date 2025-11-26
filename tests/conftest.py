@@ -4,9 +4,16 @@
 from _pytest.config import Config
 from _pytest.config.argparsing import Parser
 from _pytest.nodes import Item
+import lxml.etree  # noqa: F401  # type: ignore[reportUnusedImport]  # Workaround for feedgen bug (see below)
 import pytest
 
 from anypod.logging_config import setup_logging
+
+# The lxml.etree import above is a workaround for a feedgen bug: feedgen/util.py
+# does `import lxml` then accesses `lxml.etree` without properly importing the
+# submodule. In pytest-xdist workers, feedgen may be imported before any code
+# triggers the proper lxml.etree import, causing AttributeError. This pre-import
+# ensures lxml.etree is in sys.modules.
 
 
 def pytest_addoption(parser: Parser) -> None:
