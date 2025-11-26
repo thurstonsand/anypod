@@ -61,8 +61,12 @@ def merge_feed_metadata(
         candidate_metadata["podcast_type"] = (
             candidate_metadata.get("podcast_type") or fetched_feed.podcast_type
         )
+        # Use `is not None` check for explicit since False is a valid override value
+        explicit_override = candidate_metadata.get("explicit")
         candidate_metadata["explicit"] = (
-            candidate_metadata.get("explicit") or fetched_feed.explicit
+            explicit_override
+            if explicit_override is not None
+            else fetched_feed.explicit
         )
 
     # Remove None values to avoid overwriting defaults

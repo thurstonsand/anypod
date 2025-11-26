@@ -131,6 +131,46 @@ def test_merge_feed_metadata_with_overrides():
 
 
 @pytest.mark.unit
+def test_merge_feed_metadata_explicit_false_overrides_true():
+    """Test that explicit=False override correctly overrides explicit=True from feed.
+
+    This tests a subtle bug where using `or` instead of `is not None` would cause
+    `False or True` to evaluate to `True`, ignoring the user's explicit=False override.
+    """
+    # Create a fetched feed with explicit=True
+    fetched_feed = Feed(
+        id="test_feed",
+        is_enabled=True,
+        source_type=SourceType.CHANNEL,
+        source_url="https://example.com/feed",
+        resolved_url="https://example.com/feed/resolved",
+        last_successful_sync=datetime(2024, 1, 1, tzinfo=UTC),
+        title="Original Title",
+        category=PodcastCategories("Technology"),
+        podcast_type=PodcastType.EPISODIC,
+        explicit=True,  # Feed is marked as explicit
+    )
+
+    # User wants to override explicit to False
+    metadata_overrides = FeedMetadataOverrides(  # type: ignore
+        explicit=False,
+    )
+
+    feed_config = FeedConfig(
+        url="https://example.com/feed",
+        schedule=CronExpression("0 * * * *"),
+        since=None,
+        keep_last=None,
+        metadata=metadata_overrides,
+    )
+
+    result = merge_feed_metadata(fetched_feed, feed_config)
+
+    # explicit=False should override the feed's explicit=True
+    assert result["explicit"] is False
+
+
+@pytest.mark.unit
 def test_merge_feed_metadata_partial_overrides():
     """Test merging when only some metadata fields are overridden."""
     # Create a fetched feed with some metadata

@@ -65,7 +65,7 @@ if [[ "$CONVERT_VIDEO" == true || "$CONVERT_AUDIO" == true || "$CONVERT_CONTAINE
     fi
 
     # Run ffmpeg with determined arguments
-    ffmpeg -hide_banner -loglevel error -i "$FILENAME" \
+    ffmpeg -y -hide_banner -loglevel error -i "$FILENAME" \
         $VIDEO_ARGS \
         $AUDIO_ARGS \
         "$TEMP_FILE"

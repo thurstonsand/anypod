@@ -49,6 +49,12 @@ def upgrade() -> None:
             existing_server_default="'NO'",
             server_default="0",
         )
+        # Now that there's no more NULLs
+        batch_op.alter_column(
+            "author_email",
+            existing_type=sa.VARCHAR(),
+            nullable=False,
+        )
 
     # Recreate triggers
     create_feed_triggers_v2()
@@ -69,6 +75,12 @@ def downgrade() -> None:
             existing_server_default="0",
             server_default="'NO'",
         )
+        # Restore author_email to nullable
+        batch_op.alter_column(
+            "author_email",
+            existing_type=sa.VARCHAR(),
+            nullable=True,
+        )
 
     # Recreate triggers
     create_feed_triggers_v2()
@@ -77,6 +89,3 @@ def downgrade() -> None:
     # After conversion to VARCHAR, the values will likely be '1' and '0' strings
     op.execute("UPDATE feed SET explicit = 'YES' WHERE explicit = '1'")
     op.execute("UPDATE feed SET explicit = 'NO' WHERE explicit = '0'")
-
-    # Note: We don't revert author_email to NULL since that would lose data.
-    # The previous schema allowed NULL but the data is now populated.
