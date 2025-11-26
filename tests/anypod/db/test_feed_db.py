@@ -11,7 +11,7 @@ from helpers.alembic import run_migrations
 import pytest
 import pytest_asyncio
 
-from anypod.config.types import PodcastCategories, PodcastExplicit
+from anypod.config.types import PodcastCategories
 from anypod.db import DownloadDatabase, FeedDatabase
 from anypod.db.sqlalchemy_core import SqlalchemyCore
 from anypod.db.types import Download, DownloadStatus, Feed, SourceType
@@ -67,7 +67,7 @@ def sample_feed() -> Feed:
         author="Test Author",
         remote_image_url="https://example.com/image.jpg",
         category=PodcastCategories("Technology"),
-        explicit=PodcastExplicit.NO,
+        explicit=True,
     )
 
 
@@ -189,7 +189,7 @@ async def test_upsert_feed_updates_existing(feed_db: FeedDatabase, sample_feed: 
         author="Updated Author",  # Changed
         remote_image_url="https://example.com/updated.jpg",  # Changed
         category=PodcastCategories("Business"),  # Changed
-        explicit=PodcastExplicit.YES,  # Changed
+        explicit=True,  # Changed
         consecutive_failures=2,  # Changed
     )
 
@@ -475,7 +475,7 @@ async def test_update_feed_metadata(feed_db: FeedDatabase, sample_feed: Feed):
     new_description = "New Description"
     new_language = "de"
     new_category = PodcastCategories("News")
-    new_explicit = PodcastExplicit.CLEAN
+    new_explicit = True
 
     # Update some metadata fields
     await feed_db.update_feed_metadata(

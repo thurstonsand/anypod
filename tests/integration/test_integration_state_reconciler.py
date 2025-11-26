@@ -14,7 +14,6 @@ from anypod.config import FeedConfig
 from anypod.config.types import (
     FeedMetadataOverrides,
     PodcastCategories,
-    PodcastExplicit,
     PodcastType,
 )
 from anypod.data_coordinator.pruner import Pruner
@@ -128,7 +127,7 @@ async def test_new_feed_addition(
                 image_url="https://example.com/image.jpg",
                 category=PodcastCategories("Technology > Tech News"),
                 podcast_type=PodcastType.EPISODIC,
-                explicit=PodcastExplicit.CLEAN,
+                explicit=False,
             ),
         )
     }
@@ -531,7 +530,7 @@ async def test_metadata_updates(
         resolved_url=COLETDJNZ_CHANNEL_VIDEOS,
         last_successful_sync=BASE_TIME,
         language="en",
-        explicit=PodcastExplicit.YES,
+        explicit=True,
         remote_image_url="https://example.com/old_image.jpg",
         image_ext="jpg",
     )
@@ -562,7 +561,7 @@ async def test_metadata_updates(
                 image_url="https://example.com/new_image.jpg",
                 category=PodcastCategories("Arts > Design"),
                 podcast_type=PodcastType.EPISODIC,
-                explicit=PodcastExplicit.NO,
+                explicit=False,
             ),
         )
     }

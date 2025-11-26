@@ -15,7 +15,7 @@ from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col, select
 
-from ..config.types import PodcastCategories, PodcastExplicit, PodcastType
+from ..config.types import PodcastCategories, PodcastType
 from ..exceptions import FeedNotFoundError, NotFoundError
 from .decorators import handle_db_errors, handle_feed_db_errors
 from .sqlalchemy_core import SqlalchemyCore
@@ -269,7 +269,7 @@ class FeedDatabase:
         remote_image_url: str | None = None,
         category: PodcastCategories | None = None,
         podcast_type: PodcastType | None = None,
-        explicit: PodcastExplicit | None = None,
+        explicit: bool | None = None,
         since: datetime | None = None,
         keep_last: int | None = None,
     ) -> None:

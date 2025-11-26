@@ -19,7 +19,7 @@ from sqlalchemy import (
 from sqlalchemy.sql.schema import FetchedValue
 from sqlmodel import Field, Relationship, SQLModel
 
-from ...config.types import PodcastCategories, PodcastExplicit, PodcastType
+from ...config.types import PodcastCategories, PodcastType
 from .source_type import SourceType
 from .timezone_aware_datetime import SQLITE_DATETIME_NOW, TimezoneAwareDatetime
 
@@ -170,7 +170,7 @@ class Feed(SQLModel, table=True):
     description: str | None = None
     language: str | None = None
     author: str | None = None
-    author_email: str | None = None
+    author_email: str = "notifications@thurstons.house"
     remote_image_url: str | None = None
     image_ext: str | None = None
     category: PodcastCategories = Field(
@@ -187,12 +187,12 @@ class Feed(SQLModel, table=True):
             Enum(PodcastType), nullable=False, server_default=PodcastType.EPISODIC.value
         ),
     )
-    explicit: PodcastExplicit = Field(
-        default=PodcastExplicit.NO,
+    explicit: bool = Field(
+        default=False,
         sa_column=Column(
-            Enum(PodcastExplicit),
+            Boolean,
             nullable=False,
-            server_default=PodcastExplicit.NO.value,
+            server_default="0",
         ),
     )
 

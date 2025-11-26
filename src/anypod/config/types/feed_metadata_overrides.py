@@ -1,9 +1,10 @@
 """Pydantic model for overriding feed metadata in RSS generation."""
 
-from pydantic import BaseModel, Field
+from typing import Any
+
+from pydantic import BaseModel, Field, field_validator
 
 from .podcast_categories import PodcastCategories
-from .podcast_explicit import PodcastExplicit
 from .podcast_type import PodcastType
 
 
@@ -25,9 +26,9 @@ class FeedMetadataOverrides(BaseModel):
         default=None,
         description="Podcast type: 'episodic' or 'serial'",
     )
-    explicit: PodcastExplicit | None = Field(
+    explicit: bool | None = Field(
         default=None,
-        description="Explicit content flag; yes | no | clean",
+        description="Explicit content flag; true | false (accepts yes/no/clean)",
     )
     image_url: str | None = Field(
         default=None,
@@ -39,3 +40,17 @@ class FeedMetadataOverrides(BaseModel):
         default=None,
         description="Podcast author email",
     )
+
+    @field_validator("explicit", mode="before")
+    @classmethod
+    def parse_explicit(cls, v: Any) -> bool | None:
+        """Parse explicit flag from various formats."""
+        match v:
+            case None:
+                return None
+            case bool():
+                return v
+            case str() if v.lower().strip() in ("true", "false", "yes", "no", "clean"):
+                return v.lower().strip() in ("true", "yes")
+            case _:
+                raise ValueError(f"Invalid value for explicit: {v!r}")

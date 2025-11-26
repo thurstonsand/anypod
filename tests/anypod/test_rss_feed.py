@@ -12,7 +12,6 @@ import pytest
 
 from anypod.config.types import (
     PodcastCategories,
-    PodcastExplicit,
     PodcastType,
 )
 from anypod.db import DownloadDatabase
@@ -65,7 +64,7 @@ def test_feed() -> Feed:
         remote_image_url="https://example.com/artwork.jpg",
         category=PodcastCategories("Technology"),
         podcast_type=PodcastType.EPISODIC,
-        explicit=PodcastExplicit.NO,
+        explicit=False,
     )
 
 
@@ -265,7 +264,7 @@ async def test_generated_xml_structure(
 
     itunes_explicit = channel.find("itunes:explicit", itunes_ns)
     assert itunes_explicit is not None
-    assert itunes_explicit.text == "no"
+    assert itunes_explicit.text == "false"
 
     itunes_image = channel.find("itunes:image", itunes_ns)
     assert itunes_image is not None
