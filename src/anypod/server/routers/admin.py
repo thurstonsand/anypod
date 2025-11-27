@@ -39,6 +39,73 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin")
 
 
+class RefreshFeedResponse(BaseModel):
+    """Response model for manually triggering feed processing.
+
+    Attributes:
+        feed_id: The feed identifier.
+        message: Human-readable status message.
+    """
+
+    feed_id: str
+    message: str
+
+
+@router.post(
+    "/feeds/{feed_id}/refresh",
+    response_model=RefreshFeedResponse,
+    status_code=202,
+)
+async def refresh_feed(
+    feed_id: ValidatedFeedId,
+    feed_db: FeedDatabaseDep,
+    feed_configs: FeedConfigsDep,
+    manual_feed_runner: ManualFeedRunnerDep,
+) -> RefreshFeedResponse:
+    """Manually trigger feed processing outside of its normal schedule.
+
+    Immediately enqueues the feed for metadata fetching, downloading,
+    pruning, and RSS generation. The processing runs asynchronously
+    in the background. Works for both scheduled (cron) and manual feeds.
+
+    Args:
+        feed_id: The feed identifier (validated and sanitized).
+        feed_db: Feed database dependency.
+        feed_configs: Configured feeds keyed by identifier.
+        manual_feed_runner: Background runner for triggering feed processing.
+
+    Returns:
+        RefreshFeedResponse with the feed_id and status message.
+
+    Raises:
+        HTTPException: 404 if feed not found or not configured;
+            400 if feed is disabled; 500 on database errors.
+    """
+    log_params = {"feed_id": feed_id}
+    logger.debug("Admin refresh request received.", extra=log_params)
+
+    feed_config = feed_configs.get(feed_id)
+    if feed_config is None:
+        raise HTTPException(status_code=404, detail="Feed not configured")
+    if not feed_config.enabled:
+        raise HTTPException(status_code=400, detail="Feed is disabled")
+
+    try:
+        await feed_db.get_feed_by_id(feed_id)
+    except FeedNotFoundError as e:
+        raise HTTPException(status_code=404, detail="Feed not found") from e
+    except DatabaseOperationError as e:
+        raise HTTPException(status_code=500, detail="Database error") from e
+
+    await manual_feed_runner.trigger(feed_id, feed_config)
+
+    logger.info("Feed refresh triggered.", extra=log_params)
+    return RefreshFeedResponse(
+        feed_id=feed_id,
+        message="Feed processing triggered",
+    )
+
+
 class ResetErrorsResponse(BaseModel):
     """Response model for resetting ERROR downloads for a feed.
 

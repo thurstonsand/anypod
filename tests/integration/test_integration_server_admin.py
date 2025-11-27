@@ -18,6 +18,82 @@ from anypod.manual_feed_runner import ManualFeedRunner
 
 @pytest.mark.integration
 @pytest.mark.asyncio
+async def test_admin_refresh_feed_happy_path(
+    admin_test_app: TestClient,
+    feed_db: FeedDatabase,
+    feed_configs: dict[str, FeedConfig],
+) -> None:
+    """Triggers feed processing and downloads queued items."""
+    feed_id = "int_admin_refresh"
+    feed_configs[feed_id] = FeedConfig(
+        url="https://www.youtube.com/watch?v=jNQXAC9IVRw",
+        schedule="0 3 * * *",  # type: ignore[arg-type]
+    )
+    await feed_db.upsert_feed(
+        Feed(
+            id=feed_id,
+            is_enabled=True,
+            source_type=SourceType.SINGLE_VIDEO,
+            source_url="https://www.youtube.com/watch?v=jNQXAC9IVRw",
+            last_successful_sync=datetime(2024, 1, 1, tzinfo=UTC),
+        )
+    )
+
+    resp = admin_test_app.post(f"/admin/feeds/{feed_id}/refresh")
+    assert resp.status_code == 202
+    data = resp.json()
+    assert data["feed_id"] == feed_id
+    assert "triggered" in data["message"].lower()
+
+
+@pytest.mark.integration
+def test_admin_refresh_feed_not_found(admin_test_app: TestClient) -> None:
+    """404 when feed is missing from database."""
+    resp = admin_test_app.post("/admin/feeds/missing/refresh")
+    assert resp.status_code == 404
+
+
+@pytest.mark.integration
+def test_admin_refresh_feed_not_configured(
+    admin_test_app: TestClient,
+) -> None:
+    """404 when feed not in configuration."""
+    resp = admin_test_app.post("/admin/feeds/unconfigured_feed/refresh")
+    assert resp.status_code == 404
+    assert "not configured" in resp.json()["detail"].lower()
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_admin_refresh_feed_disabled(
+    admin_test_app: TestClient,
+    feed_db: FeedDatabase,
+    feed_configs: dict[str, FeedConfig],
+) -> None:
+    """400 when feed is disabled."""
+    feed_id = "int_admin_refresh_disabled"
+    feed_configs[feed_id] = FeedConfig(
+        enabled=False,
+        url="https://www.youtube.com/watch?v=jNQXAC9IVRw",
+        schedule="0 3 * * *",  # type: ignore[arg-type]
+    )
+    await feed_db.upsert_feed(
+        Feed(
+            id=feed_id,
+            is_enabled=False,
+            source_type=SourceType.SINGLE_VIDEO,
+            source_url="https://www.youtube.com/watch?v=jNQXAC9IVRw",
+            last_successful_sync=datetime(2024, 1, 1, tzinfo=UTC),
+        )
+    )
+
+    resp = admin_test_app.post(f"/admin/feeds/{feed_id}/refresh")
+    assert resp.status_code == 400
+    assert "disabled" in resp.json()["detail"].lower()
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
 async def test_admin_reset_errors_happy_path(
     admin_test_app: TestClient, feed_db: FeedDatabase, download_db: DownloadDatabase
 ) -> None:

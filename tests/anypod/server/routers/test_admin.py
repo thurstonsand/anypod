@@ -54,6 +54,14 @@ def mock_data_coordinator() -> Mock:
 
 
 @pytest.fixture
+def mock_manual_feed_runner() -> Mock:
+    """Create a mock ManualFeedRunner for testing."""
+    from anypod.manual_feed_runner import ManualFeedRunner
+
+    return Mock(spec=ManualFeedRunner)
+
+
+@pytest.fixture
 def feed_configs() -> dict[str, FeedConfig]:
     """In-memory feed config mapping used by admin dependencies."""
     return {}
@@ -65,6 +73,7 @@ def app(
     mock_download_database: Mock,
     mock_file_manager: Mock,
     mock_data_coordinator: Mock,
+    mock_manual_feed_runner: Mock,
     feed_configs: dict[str, FeedConfig],
 ) -> FastAPI:
     """Create a FastAPI app with the admin router and mocked dependencies."""
@@ -76,6 +85,7 @@ def app(
     app.state.download_database = mock_download_database
     app.state.file_manager = mock_file_manager
     app.state.data_coordinator = mock_data_coordinator
+    app.state.manual_feed_runner = mock_manual_feed_runner
     app.state.feed_configs = feed_configs
 
     return app
@@ -102,6 +112,16 @@ def scheduled_feed_config() -> FeedConfig:
     return FeedConfig(  # type: ignore[call-arg]
         url="https://example.com",
         schedule=CronExpression("0 3 * * *"),
+    )
+
+
+@pytest.fixture
+def disabled_feed_config() -> FeedConfig:
+    """Create a disabled feed configuration."""
+    return FeedConfig(  # type: ignore[call-arg]
+        url="https://example.com",
+        schedule=CronExpression("0 3 * * *"),
+        enabled=False,
     )
 
 
@@ -177,6 +197,124 @@ def test_reset_errors_db_error_on_requeue(
     )
 
     response = client.post(f"{ADMIN_PREFIX}/feeds/{FEED_ID}/reset-errors")
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "Database error"
+
+
+# --- Tests for refresh endpoint ---
+
+
+@pytest.mark.unit
+def test_refresh_feed_success_scheduled_feed(
+    client: TestClient,
+    feed_configs: dict[str, FeedConfig],
+    mock_feed_database: Mock,
+    mock_manual_feed_runner: Mock,
+    scheduled_feed_config: FeedConfig,
+) -> None:
+    """202 when refresh is triggered for a scheduled feed."""
+    feed_configs[FEED_ID] = scheduled_feed_config
+    mock_feed_database.get_feed_by_id.return_value = object()
+
+    response = client.post(f"{ADMIN_PREFIX}/feeds/{FEED_ID}/refresh")
+
+    assert response.status_code == 202
+    data = response.json()
+    assert data["feed_id"] == FEED_ID
+    assert data["message"] == "Feed processing triggered"
+    mock_feed_database.get_feed_by_id.assert_awaited_once_with(FEED_ID)
+    mock_manual_feed_runner.trigger.assert_awaited_once_with(
+        FEED_ID, scheduled_feed_config
+    )
+
+
+@pytest.mark.unit
+def test_refresh_feed_success_manual_feed(
+    client: TestClient,
+    feed_configs: dict[str, FeedConfig],
+    mock_feed_database: Mock,
+    mock_manual_feed_runner: Mock,
+    manual_feed_config: FeedConfig,
+) -> None:
+    """202 when refresh is triggered for a manual feed."""
+    feed_configs[FEED_ID] = manual_feed_config
+    mock_feed_database.get_feed_by_id.return_value = object()
+
+    response = client.post(f"{ADMIN_PREFIX}/feeds/{FEED_ID}/refresh")
+
+    assert response.status_code == 202
+    data = response.json()
+    assert data["feed_id"] == FEED_ID
+    assert data["message"] == "Feed processing triggered"
+    mock_feed_database.get_feed_by_id.assert_awaited_once_with(FEED_ID)
+    mock_manual_feed_runner.trigger.assert_awaited_once_with(
+        FEED_ID, manual_feed_config
+    )
+
+
+@pytest.mark.unit
+def test_refresh_feed_not_configured(
+    client: TestClient,
+    feed_configs: dict[str, FeedConfig],
+) -> None:
+    """404 when feed is not in configuration."""
+    # feed_configs is empty, so no feed is configured
+
+    response = client.post(f"{ADMIN_PREFIX}/feeds/not-configured/refresh")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Feed not configured"
+
+
+@pytest.mark.unit
+def test_refresh_feed_disabled(
+    client: TestClient,
+    feed_configs: dict[str, FeedConfig],
+    disabled_feed_config: FeedConfig,
+) -> None:
+    """400 when feed is disabled."""
+    feed_configs[FEED_ID] = disabled_feed_config
+
+    response = client.post(f"{ADMIN_PREFIX}/feeds/{FEED_ID}/refresh")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Feed is disabled"
+
+
+@pytest.mark.unit
+def test_refresh_feed_not_in_database(
+    client: TestClient,
+    feed_configs: dict[str, FeedConfig],
+    mock_feed_database: Mock,
+    scheduled_feed_config: FeedConfig,
+) -> None:
+    """404 when feed exists in config but not in database."""
+    feed_configs[FEED_ID] = scheduled_feed_config
+    mock_feed_database.get_feed_by_id.side_effect = FeedNotFoundError(
+        "Feed not found.", feed_id=FEED_ID
+    )
+
+    response = client.post(f"{ADMIN_PREFIX}/feeds/{FEED_ID}/refresh")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Feed not found"
+
+
+@pytest.mark.unit
+def test_refresh_feed_database_error(
+    client: TestClient,
+    feed_configs: dict[str, FeedConfig],
+    mock_feed_database: Mock,
+    scheduled_feed_config: FeedConfig,
+) -> None:
+    """500 when database error occurs during feed lookup."""
+    feed_configs[FEED_ID] = scheduled_feed_config
+    mock_feed_database.get_feed_by_id.side_effect = DatabaseOperationError(
+        "Database error"
+    )
+
+    response = client.post(f"{ADMIN_PREFIX}/feeds/{FEED_ID}/refresh")
 
     assert response.status_code == 500
     assert response.json()["detail"] == "Database error"
