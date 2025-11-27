@@ -187,6 +187,55 @@ def test_admin_reset_errors_feed_not_found(admin_test_app: TestClient) -> None:
 
 @pytest.mark.integration
 @pytest.mark.asyncio
+async def test_admin_reset_sync_happy_path(
+    admin_test_app: TestClient, feed_db: FeedDatabase
+) -> None:
+    """Resets last_successful_sync to provided timestamp and clears failures."""
+    feed_id = "int_admin_sync"
+    original_sync_time = datetime(2024, 1, 1, tzinfo=UTC)
+    target_sync_time = datetime(2024, 6, 15, 12, 0, 0, tzinfo=UTC)
+
+    # Create feed with original sync time and some failures
+    feed = Feed(
+        id=feed_id,
+        is_enabled=True,
+        source_type=SourceType.CHANNEL,
+        source_url="https://example.com/channel",
+        last_successful_sync=original_sync_time,
+        consecutive_failures=3,
+    )
+    await feed_db.upsert_feed(feed)
+
+    # Invoke admin endpoint
+    resp = admin_test_app.post(
+        f"/admin/feeds/{feed_id}/reset-sync",
+        json={"sync_time": target_sync_time.isoformat()},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["feed_id"] == feed_id
+    assert datetime.fromisoformat(data["sync_time"]) == target_sync_time
+
+    # Verify DB state changed
+    updated_feed = await feed_db.get_feed_by_id(feed_id)
+    assert updated_feed.last_successful_sync == target_sync_time
+    assert updated_feed.consecutive_failures == 0
+
+
+@pytest.mark.integration
+def test_admin_reset_sync_feed_not_found(admin_test_app: TestClient) -> None:
+    """404 when feed is missing."""
+    sync_time = datetime(2024, 6, 15, 12, 0, 0, tzinfo=UTC)
+    resp = admin_test_app.post(
+        "/admin/feeds/missing/reset-sync",
+        json={"sync_time": sync_time.isoformat()},
+    )
+    assert resp.status_code == 404
+    assert "feed" in resp.json()["detail"].lower()
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
 async def test_manual_submission_endpoint_enqueues_download(
     admin_test_app: TestClient,
     feed_db: FeedDatabase,
