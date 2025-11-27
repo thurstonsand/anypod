@@ -143,6 +143,118 @@ def sample_download() -> Download:
     )
 
 
+# --- Tests for reset-sync endpoint ---
+
+
+@pytest.mark.unit
+def test_reset_sync_success(
+    client: TestClient,
+    mock_feed_database: Mock,
+) -> None:
+    """Returns feed_id + sync_time; calls mark_sync_success with provided timestamp."""
+    sync_time = datetime(2024, 6, 15, 12, 0, 0, tzinfo=UTC)
+    mock_feed_database.mark_sync_success.return_value = None
+
+    response = client.post(
+        f"{ADMIN_PREFIX}/feeds/{FEED_ID}/reset-sync",
+        json={"sync_time": sync_time.isoformat()},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["feed_id"] == FEED_ID
+    assert datetime.fromisoformat(data["sync_time"]) == sync_time
+    mock_feed_database.mark_sync_success.assert_called_once_with(
+        FEED_ID, sync_time=sync_time
+    )
+
+
+@pytest.mark.unit
+def test_reset_sync_feed_not_found(
+    client: TestClient,
+    mock_feed_database: Mock,
+) -> None:
+    """404 when feed does not exist."""
+    missing_feed_id = "missing"
+    sync_time = datetime(2024, 6, 15, 12, 0, 0, tzinfo=UTC)
+    mock_feed_database.mark_sync_success.side_effect = FeedNotFoundError(
+        "Feed not found.", feed_id=missing_feed_id
+    )
+
+    response = client.post(
+        f"{ADMIN_PREFIX}/feeds/{missing_feed_id}/reset-sync",
+        json={"sync_time": sync_time.isoformat()},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Feed not found"
+
+
+@pytest.mark.unit
+def test_reset_sync_db_error(
+    client: TestClient,
+    mock_feed_database: Mock,
+) -> None:
+    """500 when DB error occurs during mark_sync_success."""
+    sync_time = datetime(2024, 6, 15, 12, 0, 0, tzinfo=UTC)
+    mock_feed_database.mark_sync_success.side_effect = DatabaseOperationError(
+        "DB error"
+    )
+
+    response = client.post(
+        f"{ADMIN_PREFIX}/feeds/{FEED_ID}/reset-sync",
+        json={"sync_time": sync_time.isoformat()},
+    )
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "Database error"
+
+
+@pytest.mark.unit
+def test_reset_sync_invalid_timestamp_format(
+    client: TestClient,
+    mock_feed_database: Mock,
+) -> None:
+    """422 when timestamp is not valid ISO 8601 format."""
+    response = client.post(
+        f"{ADMIN_PREFIX}/feeds/{FEED_ID}/reset-sync",
+        json={"sync_time": "not-a-timestamp"},
+    )
+
+    assert response.status_code == 422
+    mock_feed_database.mark_sync_success.assert_not_called()
+
+
+@pytest.mark.unit
+def test_reset_sync_missing_timestamp(
+    client: TestClient,
+    mock_feed_database: Mock,
+) -> None:
+    """422 when sync_time field is missing from request body."""
+    response = client.post(
+        f"{ADMIN_PREFIX}/feeds/{FEED_ID}/reset-sync",
+        json={},
+    )
+
+    assert response.status_code == 422
+    mock_feed_database.mark_sync_success.assert_not_called()
+
+
+@pytest.mark.unit
+def test_reset_sync_naive_datetime_rejected(
+    client: TestClient,
+    mock_feed_database: Mock,
+) -> None:
+    """422 when timestamp lacks timezone information."""
+    response = client.post(
+        f"{ADMIN_PREFIX}/feeds/{FEED_ID}/reset-sync",
+        json={"sync_time": "2024-06-15T12:00:00"},
+    )
+
+    assert response.status_code == 422
+    mock_feed_database.mark_sync_success.assert_not_called()
+
+
 # --- Tests for reset-errors endpoint ---
 
 

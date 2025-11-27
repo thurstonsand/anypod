@@ -5,11 +5,12 @@ It should be served from a separate FastAPI app bound to a private interface
 or port, and not exposed on the public internet.
 """
 
+from datetime import datetime
 import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Response
-from pydantic import BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, Field
 
 from ...db.types import Download, DownloadStatus
 from ...exceptions import (
@@ -162,6 +163,68 @@ async def reset_error_downloads(
 
     logger.info("Reset errors for feed.", extra={**log_params, "reset_count": count})
     return ResetErrorsResponse(feed_id=feed_id, reset_count=count)
+
+
+class ResetSyncRequest(BaseModel):
+    """Request model for resetting a feed's last_successful_sync timestamp.
+
+    Attributes:
+        sync_time: The ISO 8601 timestamp to set as the last successful sync time.
+    """
+
+    sync_time: AwareDatetime = Field(
+        ...,
+        description="ISO 8601 timestamp with timezone to set as last_successful_sync.",
+    )
+
+
+class ResetSyncResponse(BaseModel):
+    """Response model for resetting a feed's last_successful_sync timestamp.
+
+    Attributes:
+        feed_id: The feed identifier.
+        sync_time: The timestamp that was set.
+    """
+
+    feed_id: str
+    sync_time: datetime
+
+
+@router.post("/feeds/{feed_id}/reset-sync", response_model=ResetSyncResponse)
+async def reset_sync_timestamp(
+    feed_id: ValidatedFeedId,
+    payload: ResetSyncRequest,
+    feed_db: FeedDatabaseDep,
+) -> ResetSyncResponse:
+    """Reset the last_successful_sync timestamp for a feed.
+
+    Sets the feed's last_successful_sync to the provided timestamp, allowing
+    the enqueuer to rediscover content published after that time. This also
+    resets consecutive_failures to 0.
+
+    Args:
+        feed_id: The feed identifier (validated and sanitized).
+        payload: Request body containing the sync_time timestamp.
+        feed_db: Feed database dependency.
+
+    Returns:
+        ResetSyncResponse containing the feed_id and the timestamp that was set.
+
+    Raises:
+        HTTPException: 404 if feed not found; 500 on database errors.
+    """
+    log_params = {"feed_id": feed_id, "sync_time": payload.sync_time.isoformat()}
+    logger.debug("Admin reset-sync request received.", extra=log_params)
+
+    try:
+        await feed_db.mark_sync_success(feed_id, sync_time=payload.sync_time)
+    except FeedNotFoundError as e:
+        raise HTTPException(status_code=404, detail="Feed not found") from e
+    except DatabaseOperationError as e:
+        raise HTTPException(status_code=500, detail="Database error") from e
+
+    logger.info("Reset sync timestamp for feed.", extra=log_params)
+    return ResetSyncResponse(feed_id=feed_id, sync_time=payload.sync_time)
 
 
 class ManualDownloadRequest(BaseModel):
