@@ -782,3 +782,141 @@ class Enqueuer:
         )
 
         return total_queued_count, sync_timestamp
+
+    async def refresh_download_metadata(
+        self,
+        feed_id: str,
+        download_id: str,
+        yt_args: list[str],
+        cookies_path: Path | None = None,
+    ) -> Download:
+        """Re-fetch and update metadata for an existing download.
+
+        Fetches fresh metadata from yt-dlp for the specified download and updates
+        the database with changes to: title, description, duration, quality_info,
+        and remote_thumbnail_url. Preserves the download's status and file paths.
+
+        Args:
+            feed_id: The feed identifier.
+            download_id: The download identifier to refresh.
+            yt_args: User-configured yt-dlp command-line arguments.
+            cookies_path: Path to cookies.txt file for yt-dlp authentication.
+
+        Returns:
+            The updated Download object.
+
+        Raises:
+            EnqueueError: If the download is not found, metadata fetch fails,
+                or database update fails.
+        """
+        log_params = {"feed_id": feed_id, "download_id": download_id}
+        logger.debug("Starting metadata refresh for download.", extra=log_params)
+
+        # Get existing download from database
+        try:
+            existing_download = await self._download_db.get_download_by_id(
+                feed_id, download_id
+            )
+        except DownloadNotFoundError as e:
+            raise EnqueueError(
+                "Download not found for metadata refresh.",
+                feed_id=feed_id,
+                download_id=download_id,
+            ) from e
+        except DatabaseOperationError as e:
+            raise EnqueueError(
+                "Failed to fetch download from database.",
+                feed_id=feed_id,
+                download_id=download_id,
+            ) from e
+
+        # Fetch fresh metadata from yt-dlp using the download's source URL
+        try:
+            fetched_downloads = await self._ytdlp_wrapper.fetch_new_downloads_metadata(
+                feed_id,
+                SourceType.SINGLE_VIDEO,
+                existing_download.source_url,
+                None,  # No resolved URL needed for single video
+                yt_args,
+                None,  # No date filtering
+                None,  # No keep_last limit
+                cookies_path=cookies_path,
+            )
+        except YtdlpApiError as e:
+            raise EnqueueError(
+                "Failed to fetch fresh metadata from yt-dlp.",
+                feed_id=feed_id,
+                download_id=download_id,
+            ) from e
+
+        if not fetched_downloads:
+            raise EnqueueError(
+                "No metadata returned from yt-dlp for download.",
+                feed_id=feed_id,
+                download_id=download_id,
+            )
+
+        # Find matching download in results
+        fetched_download = None
+        for dl in fetched_downloads:
+            if dl.id == download_id:
+                fetched_download = dl
+                break
+
+        if fetched_download is None:
+            raise EnqueueError(
+                "Downloaded ID not found in fetched metadata. "
+                "The video may have been removed or changed ID.",
+                feed_id=feed_id,
+                download_id=download_id,
+            )
+
+        # Create updated download preserving status and applying metadata changes
+        updated_download = existing_download.model_copy()
+
+        # Update metadata fields only (preserving status, file info, error tracking)
+        metadata_changed = False
+        if existing_download.title != fetched_download.title:
+            updated_download.title = fetched_download.title
+            metadata_changed = True
+        if existing_download.description != fetched_download.description:
+            updated_download.description = fetched_download.description
+            metadata_changed = True
+        if existing_download.duration != fetched_download.duration:
+            updated_download.duration = fetched_download.duration
+            metadata_changed = True
+        if existing_download.quality_info != fetched_download.quality_info:
+            updated_download.quality_info = fetched_download.quality_info
+            metadata_changed = True
+        if (
+            existing_download.remote_thumbnail_url
+            != fetched_download.remote_thumbnail_url
+        ):
+            updated_download.remote_thumbnail_url = (
+                fetched_download.remote_thumbnail_url
+            )
+            metadata_changed = True
+
+        if not metadata_changed:
+            logger.debug(
+                "No metadata changes detected during refresh.",
+                extra=log_params,
+            )
+            return existing_download
+
+        # Persist changes to database
+        try:
+            await self._download_db.upsert_download(updated_download)
+        except DatabaseOperationError as e:
+            raise EnqueueError(
+                "Failed to update download metadata in database.",
+                feed_id=feed_id,
+                download_id=download_id,
+            ) from e
+
+        logger.info(
+            "Download metadata refreshed successfully.",
+            extra=log_params,
+        )
+
+        return updated_download

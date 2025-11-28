@@ -13,6 +13,7 @@ from typing import Any
 
 from ..config import FeedConfig
 from ..db import FeedDatabase
+from ..db.types import Download
 from ..exceptions import (
     CoordinatorExecutionError,
     DatabaseOperationError,
@@ -394,6 +395,43 @@ class DataCoordinator:
         ).total_seconds()
 
         return results
+
+    async def refresh_download_metadata(
+        self,
+        feed_id: str,
+        download_id: str,
+        feed_config: FeedConfig,
+    ) -> Download:
+        """Refresh metadata for a specific download.
+
+        Re-fetches metadata from yt-dlp and updates database fields including
+        title, description, duration, quality_info, and remote_thumbnail_url.
+        Preserves the download's status and file paths.
+
+        Args:
+            feed_id: The feed identifier.
+            download_id: The download identifier to refresh.
+            feed_config: The feed configuration (for yt_args).
+
+        Returns:
+            The updated Download object.
+
+        Raises:
+            EnqueueError: If the download is not found, metadata fetch fails,
+                or database update fails.
+        """
+        log_params = {"feed_id": feed_id, "download_id": download_id}
+        logger.info("Refreshing metadata for download.", extra=log_params)
+
+        updated_download = await self._enqueuer.refresh_download_metadata(
+            feed_id=feed_id,
+            download_id=download_id,
+            yt_args=feed_config.yt_args,
+            cookies_path=self._cookies_path,
+        )
+
+        logger.info("Metadata refresh completed.", extra=log_params)
+        return updated_download
 
     async def process_feed(
         self, feed_id: str, feed_config: FeedConfig

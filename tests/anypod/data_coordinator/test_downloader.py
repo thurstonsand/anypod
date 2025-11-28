@@ -7,14 +7,14 @@ for processing items in the download queue, interacting with YtdlpWrapper for
 media fetching, FileManager for storage, and DownloadDatabase for status updates.
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
 from anypod.config import FeedConfig
-from anypod.config.types import FeedMetadataOverrides
+from anypod.config.types import DownloadDelay, FeedMetadataOverrides
 from anypod.data_coordinator.downloader import Downloader
 from anypod.db import DownloadDatabase
 from anypod.db.types import Download, DownloadStatus, Feed, SourceType
@@ -471,3 +471,158 @@ async def test_download_queued_mixed_success_and_failure(
         ],
         any_order=False,
     )
+
+
+# --- Tests for download_delay filtering ---
+
+
+@pytest.fixture
+def feed_config_with_delay() -> FeedConfig:
+    """Provides a FeedConfig with download_delay configured."""
+    return FeedConfig(
+        url="http://example.com/feed_url",
+        yt_args="--format best",  # type: ignore # this gets preprocessed
+        schedule="0 0 * * *",  # type: ignore
+        keep_last=10,
+        since=None,
+        max_errors=3,
+        download_delay=DownloadDelay("24h"),
+        metadata=FeedMetadataOverrides(title="Test Podcast"),  # type: ignore
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@patch.object(Downloader, "_process_single_download", new_callable=AsyncMock)
+async def test_download_queued_with_delay_filters_recent_downloads(
+    mock_process_single: AsyncMock,
+    downloader: Downloader,
+    mock_download_db: MagicMock,
+    feed_config_with_delay: FeedConfig,
+    sample_download: Download,
+):
+    """Downloads published within the delay window are skipped."""
+    now = datetime.now(UTC)
+
+    # Create downloads with different publication times
+    old_download = sample_download.model_copy(
+        update={
+            "id": "old_dl",
+            "published": now - timedelta(hours=48),  # 48 hours ago - should process
+        }
+    )
+    recent_download = sample_download.model_copy(
+        update={
+            "id": "recent_dl",
+            "published": now - timedelta(hours=12),  # 12 hours ago - should skip
+        }
+    )
+
+    mock_download_db.get_downloads_by_status.return_value = [
+        old_download,
+        recent_download,
+    ]
+    mock_process_single.return_value = None
+
+    success, failure = await downloader.download_queued(
+        "test_feed", feed_config_with_delay
+    )
+
+    # Only the old download should be processed
+    assert success == 1
+    assert failure == 0
+    mock_process_single.assert_called_once_with(
+        old_download, feed_config_with_delay, None
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@patch.object(Downloader, "_process_single_download", new_callable=AsyncMock)
+async def test_download_queued_with_delay_at_boundary(
+    mock_process_single: AsyncMock,
+    downloader: Downloader,
+    mock_download_db: MagicMock,
+    feed_config_with_delay: FeedConfig,
+    sample_download: Download,
+):
+    """Downloads exactly at the delay boundary are processed."""
+    now = datetime.now(UTC)
+
+    # Download published exactly 24 hours ago (at boundary)
+    boundary_download = sample_download.model_copy(
+        update={
+            "id": "boundary_dl",
+            "published": now - timedelta(hours=24),
+        }
+    )
+
+    mock_download_db.get_downloads_by_status.return_value = [boundary_download]
+    mock_process_single.return_value = None
+
+    success, failure = await downloader.download_queued(
+        "test_feed", feed_config_with_delay
+    )
+
+    # Should be processed since it's at the boundary
+    assert success == 1
+    assert failure == 0
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_download_queued_with_delay_all_deferred(
+    downloader: Downloader,
+    mock_download_db: MagicMock,
+    feed_config_with_delay: FeedConfig,
+    sample_download: Download,
+):
+    """When all downloads are within delay window, returns (0, 0)."""
+    now = datetime.now(UTC)
+
+    recent_download = sample_download.model_copy(
+        update={
+            "id": "recent_dl",
+            "published": now - timedelta(hours=1),  # 1 hour ago - should skip
+        }
+    )
+
+    mock_download_db.get_downloads_by_status.return_value = [recent_download]
+
+    success, failure = await downloader.download_queued(
+        "test_feed", feed_config_with_delay
+    )
+
+    assert success == 0
+    assert failure == 0
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@patch.object(Downloader, "_process_single_download", new_callable=AsyncMock)
+async def test_download_queued_without_delay_processes_all(
+    mock_process_single: AsyncMock,
+    downloader: Downloader,
+    mock_download_db: MagicMock,
+    sample_feed_config: FeedConfig,  # No download_delay
+    sample_download: Download,
+):
+    """Without download_delay configured, all downloads are processed."""
+    now = datetime.now(UTC)
+
+    # Even very recent downloads should be processed
+    recent_download = sample_download.model_copy(
+        update={
+            "id": "recent_dl",
+            "published": now - timedelta(minutes=5),  # 5 minutes ago
+        }
+    )
+
+    mock_download_db.get_downloads_by_status.return_value = [recent_download]
+    mock_process_single.return_value = None
+
+    success, failure = await downloader.download_queued("test_feed", sample_feed_config)
+
+    assert success == 1
+    assert failure == 0
+    mock_process_single.assert_called_once()

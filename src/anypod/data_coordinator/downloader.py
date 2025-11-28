@@ -6,6 +6,7 @@ to fetch media, the FileManager to handle file storage, and the DownloadDatabase
 to update download statuses and metadata.
 """
 
+from datetime import UTC, datetime
 import logging
 from pathlib import Path
 from typing import Any
@@ -308,12 +309,38 @@ class Downloader:
             logger.debug("No queued downloads found for feed.", extra=log_params)
             return 0, 0
 
+        # Apply download_delay filtering if configured
+        ready_downloads = queued_downloads
+        if feed_config.download_delay is not None:
+            now = datetime.now(UTC)
+            delay = feed_config.download_delay.timedelta
+            ready_downloads = [
+                dl for dl in queued_downloads if dl.published + delay <= now
+            ]
+            deferred_count = len(queued_downloads) - len(ready_downloads)
+            if deferred_count > 0:
+                logger.debug(
+                    "Deferred downloads due to download_delay.",
+                    extra={
+                        **log_params,
+                        "deferred_count": deferred_count,
+                        "download_delay": str(feed_config.download_delay),
+                    },
+                )
+
+        if not ready_downloads:
+            logger.debug(
+                "No downloads ready for processing (all deferred by download_delay).",
+                extra=log_params,
+            )
+            return 0, 0
+
         logger.debug(
             "Found queued items for feed. Processing...",
-            extra={**log_params, "num_queued": len(queued_downloads)},
+            extra={**log_params, "num_queued": len(ready_downloads)},
         )
 
-        for download in queued_downloads:
+        for download in ready_downloads:
             try:
                 await self._process_single_download(download, feed_config, cookies_path)
                 success_count += 1

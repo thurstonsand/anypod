@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from .types import CronExpression, FeedMetadataOverrides
+from .types import CronExpression, DownloadDelay, FeedMetadataOverrides
 
 
 class FeedConfig(BaseModel):
@@ -61,6 +61,13 @@ class FeedConfig(BaseModel):
         default=3,
         ge=1,
         description="Max attempts for downloading media before marking as ERROR.",
+    )
+    download_delay: DownloadDelay | None = Field(
+        default=None,
+        description=(
+            "Delay downloads after video publication. Accepts duration strings: "
+            "'1h', '24h', '3d', '1w'. Allows metadata to stabilize before downloading."
+        ),
     )
     metadata: FeedMetadataOverrides | None = Field(
         None, description="Podcast metadata overrides"
@@ -194,6 +201,36 @@ class FeedConfig(BaseModel):
             case _:
                 raise TypeError(
                     f"since must be a string in YYYYMMDD format or None, got {type(v).__name__}"
+                )
+
+    @field_validator("download_delay", mode="before")
+    @classmethod
+    def parse_download_delay(cls, v: Any) -> DownloadDelay | None:
+        """Parse download_delay string into a DownloadDelay object.
+
+        Args:
+            v: Value to parse, can be string, DownloadDelay, or None.
+
+        Returns:
+            DownloadDelay instance or None if not provided.
+
+        Raises:
+            ValueError: If the duration string format is invalid.
+            TypeError: If the value is not a string, DownloadDelay, or None.
+        """
+        match v:
+            case None:
+                return None
+            case str() as s if not s.strip():
+                return None
+            case str() as s:
+                return DownloadDelay(s)
+            case DownloadDelay():
+                return v
+            case _:
+                raise TypeError(
+                    f"download_delay must be a duration string (e.g., '24h', '3d', '1w') or None, "
+                    f"got {type(v).__name__}"
                 )
 
     @model_validator(mode="after")
