@@ -17,7 +17,7 @@ from anypod.config import FeedConfig
 from anypod.config.types import FeedMetadataOverrides
 from anypod.data_coordinator.downloader import Downloader
 from anypod.db import DownloadDatabase
-from anypod.db.types import Download, DownloadStatus, Feed, SourceType
+from anypod.db.types import Download, DownloadStatus, Feed, SourceType, TranscriptSource
 from anypod.exceptions import (
     DatabaseOperationError,
     DownloadError,
@@ -26,7 +26,7 @@ from anypod.exceptions import (
 )
 from anypod.ffprobe import FFProbe
 from anypod.file_manager import FileManager
-from anypod.ytdlp_wrapper import YtdlpWrapper
+from anypod.ytdlp_wrapper import DownloadedMedia, TranscriptInfo, YtdlpWrapper
 
 # Mock Feed object for testing
 MOCK_FEED = Feed(
@@ -54,6 +54,7 @@ def mock_download_db() -> MagicMock:
     mock.get_downloads_by_status = AsyncMock()
     mock.get_download_by_id = AsyncMock()
     mock.upsert_download = AsyncMock()
+    mock.update_download = AsyncMock()
     mock.mark_as_downloaded = AsyncMock()
     mock.bump_retries = AsyncMock()
     mock.set_download_logs = AsyncMock()
@@ -156,21 +157,24 @@ async def test_handle_download_success_updates_db(
     mock_ffprobe: MagicMock,
     sample_download: Download,
 ):
-    """Tests that _handle_download_success calls mark_as_downloaded on DB manager."""
+    """Tests that _handle_download_success updates download and calls upsert."""
     downloaded_file = Path("/path/to/downloaded_video.mp4")
+    logs = "yt-dlp stdout/stderr"
 
-    await downloader._handle_download_success(sample_download, downloaded_file)
+    await downloader._handle_download_success(sample_download, downloaded_file, logs)
 
     mock_ffprobe.get_duration_seconds_from_file.assert_awaited_once_with(
         downloaded_file
     )
-    mock_download_db.mark_as_downloaded.assert_awaited_once_with(
-        feed_id=sample_download.feed_id,
-        download_id=sample_download.id,
-        ext="mp4",
-        filesize=1024,  # From our mocked stat result
-        duration=321,
-    )
+    mock_download_db.update_download.assert_awaited_once()
+    updated = mock_download_db.update_download.call_args[0][0]
+    assert updated.status == DownloadStatus.DOWNLOADED
+    assert updated.ext == "mp4"
+    assert updated.filesize == 1024
+    assert updated.duration == 321
+    assert updated.retries == 0
+    assert updated.last_error is None
+    assert updated.download_logs == logs
 
 
 @pytest.mark.unit
@@ -184,11 +188,14 @@ async def test_handle_download_success_db_update_fails_raises_downloader_error(
 ):
     """Tests that DB operation failure in _handle_download_success raises DownloadError."""
     downloaded_file = Path("/path/to/downloaded_video.mp4")
+    logs = "yt-dlp stdout/stderr"
     db_error = DatabaseOperationError("DB boom")
-    mock_download_db.mark_as_downloaded.side_effect = db_error
+    mock_download_db.update_download.side_effect = db_error
 
     with pytest.raises(DownloadError) as exc_info:
-        await downloader._handle_download_success(sample_download, downloaded_file)
+        await downloader._handle_download_success(
+            sample_download, downloaded_file, logs
+        )
 
     assert exc_info.value.__cause__ is db_error
     assert exc_info.value.feed_id == sample_download.feed_id
@@ -208,16 +215,14 @@ async def test_handle_download_success_handles_ffprobe_errors(
     """Even if ffprobe fails, downloading should still succeed with metadata fallback."""
     mock_ffprobe.get_duration_seconds_from_file.side_effect = FFProbeError("probe boom")
     downloaded_file = Path("/path/to/downloaded_video.mp4")
+    logs = "yt-dlp stdout/stderr"
+    original_duration = sample_download.duration
 
-    await downloader._handle_download_success(sample_download, downloaded_file)
+    await downloader._handle_download_success(sample_download, downloaded_file, logs)
 
-    mock_download_db.mark_as_downloaded.assert_awaited_once_with(
-        feed_id=sample_download.feed_id,
-        download_id=sample_download.id,
-        ext="mp4",
-        filesize=1024,
-        duration=None,
-    )
+    mock_download_db.update_download.assert_awaited_once()
+    updated = mock_download_db.update_download.call_args[0][0]
+    assert updated.duration == original_duration
 
 
 # --- Tests for _handle_download_failure ---
@@ -274,6 +279,13 @@ async def test_handle_download_failure_db_error_logged(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "transcript",
+    [
+        TranscriptInfo(ext="vtt", lang="en", source=TranscriptSource.CREATOR),
+        None,
+    ],
+)
 @patch.object(Downloader, "_handle_download_success", new_callable=AsyncMock)
 async def test_process_single_download_success_flow(
     mock_handle_success: AsyncMock,
@@ -281,12 +293,15 @@ async def test_process_single_download_success_flow(
     mock_ytdlp_wrapper: MagicMock,
     sample_download: Download,
     sample_feed_config: FeedConfig,
+    transcript: TranscriptInfo | None,
 ):
-    """Tests the success path of _process_single_download."""
+    """Tests the success path of _process_single_download with and without transcripts."""
     downloaded_path = Path("/final/video.mp4")
-    mock_ytdlp_wrapper.download_media_to_file.return_value = (
-        downloaded_path,
-        "yt-dlp stdout/stderr",
+    logs = "yt-dlp stdout/stderr"
+    mock_ytdlp_wrapper.download_media_to_file.return_value = DownloadedMedia(
+        file_path=downloaded_path,
+        logs=logs,
+        transcript=transcript,
     )
 
     await downloader._process_single_download(sample_download, sample_feed_config)
@@ -295,13 +310,10 @@ async def test_process_single_download_success_flow(
         sample_download,
         sample_feed_config.yt_args,
         cookies_path=None,
+        transcript_lang=sample_feed_config.transcript_lang,
     )
-    mock_handle_success.assert_called_once_with(sample_download, downloaded_path)
-
-    downloader.download_db.set_download_logs.assert_awaited_once_with(  # type: ignore[attr-defined] this is an AsyncMock
-        feed_id=sample_download.feed_id,
-        download_id=sample_download.id,
-        logs="yt-dlp stdout/stderr",
+    mock_handle_success.assert_called_once_with(
+        sample_download, downloaded_path, logs, transcript
     )
 
 

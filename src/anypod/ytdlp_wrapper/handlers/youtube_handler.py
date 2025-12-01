@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 import logging
 from typing import Any, NoReturn
 
-from ...db.types import Download, DownloadStatus, Feed, SourceType
+from ...db.types import Download, DownloadStatus, Feed, SourceType, TranscriptSource
 from ...exceptions import (
     YtdlpDataError,
     YtdlpDownloadFilteredOutError,
@@ -734,12 +734,18 @@ class YoutubeHandler:
         self,
         feed_id: str,
         ytdlp_info: YtdlpInfo,
+        transcript_lang: str | None = None,
+        transcript_source_priority: list[TranscriptSource] | None = None,
     ) -> Download:
         """Extract metadata from a single yt-dlp video entry into a Download object.
 
         Args:
             feed_id: The feed identifier.
             ytdlp_info: The yt-dlp metadata for a single video.
+            transcript_lang: Language code for transcripts (e.g., "en"). If provided,
+                determines transcript_source from yt-dlp subtitle metadata.
+            transcript_source_priority: Ordered list of transcript sources to try.
+                Defaults to [CREATOR, AUTO] if not provided.
 
         Returns:
             A Download object parsed from the metadata.
@@ -808,6 +814,15 @@ class YoutubeHandler:
             duration = entry.duration
             mime_type = entry.mime_type
 
+        transcript = (
+            ytdlp_info.transcript(transcript_lang, transcript_source_priority)
+            if transcript_lang and transcript_source_priority
+            else None
+        )
+        transcript_source = (
+            transcript.source if transcript else TranscriptSource.NOT_AVAILABLE
+        )
+
         parsed_download = Download(
             feed_id=feed_id,
             id=entry.download_id,
@@ -822,6 +837,7 @@ class YoutubeHandler:
             remote_thumbnail_url=entry.thumbnail,
             description=entry.description,
             quality_info=entry.quality_info,
+            transcript_source=transcript_source,
         )
         logger.debug(
             "Successfully parsed single video entry.",

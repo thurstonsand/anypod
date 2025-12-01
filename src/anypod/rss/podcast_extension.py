@@ -1,11 +1,21 @@
-"""Custom podcast extension for feedgen with modern iTunes explicit values."""
+"""Custom podcast extensions for feedgen with Podcasting 2.0 support.
+
+This module provides custom podcast extensions for feedgen, including:
+- Modern iTunes explicit values ("true"/"false")
+- Podcasting 2.0 transcript support via <podcast:transcript> tag
+"""
 
 from typing import Any
 
 from feedgen.ext.podcast import PodcastExtension as BasePodcastExtension  # type: ignore
+from feedgen.ext.podcast_entry import (  # pyright: ignore[reportMissingTypeStubs]
+    PodcastEntryExtension as BasePodcastEntryExtension,  # type: ignore  # pyright: ignore[reportUnknownVariableType]
+)
 from feedgen.util import xml_elem  # type: ignore
+from lxml.etree import SubElement  # type: ignore
 
 ITUNES_NS = "http://www.itunes.com/dtds/podcast-1.0.dtd"
+PODCAST_NS = "https://podcastindex.org/namespace/1.0"
 
 
 class Podcast(BasePodcastExtension):  # type: ignore[misc]
@@ -44,6 +54,16 @@ class Podcast(BasePodcastExtension):  # type: ignore[misc]
 
         return self._explicit
 
+    def extend_ns(self) -> dict[str, str]:
+        """Extend the namespace dictionary with the podcast namespace.
+
+        Returns:
+            Dictionary of namespace prefixes to URIs.
+        """
+        ns = super().extend_ns() or {}  # type: ignore[reportUnknownMemberType]
+        ns["podcast"] = PODCAST_NS
+        return ns  # type: ignore[reportReturnType]
+
     def extend_rss(self, rss_feed: Any) -> Any:
         """Extend RSS feed with podcast elements.
 
@@ -78,3 +98,67 @@ class Podcast(BasePodcastExtension):  # type: ignore[misc]
                 existing.text = self._explicit
 
         return rss_feed  # type: ignore[reportUnknownVariableType]
+
+
+class PodcastEntryExtension(BasePodcastEntryExtension):  # type: ignore[misc]
+    """Custom podcast entry extension with transcript support.
+
+    Extends the base podcast entry extension to add Podcasting 2.0
+    transcript support via the <podcast:transcript> tag.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()  # type: ignore[reportUnknownMemberType]
+        self._transcript_url: str | None = None
+        self._transcript_type: str | None = None
+        self._transcript_language: str | None = None
+        self._transcript_rel: str | None = None
+
+    def transcript(
+        self,
+        url: str,
+        type: str,
+        language: str | None = None,
+        rel: str | None = None,
+    ) -> None:
+        """Set the podcast:transcript tag for this entry.
+
+        Args:
+            url: Full URL to the transcript file.
+            type: MIME type (e.g., "text/vtt", "application/x-subrip").
+            language: Optional ISO language code (e.g., "en").
+            rel: Optional relationship type ("captions" for timed captions).
+        """
+        self._transcript_url = url
+        self._transcript_type = type
+        self._transcript_language = language
+        self._transcript_rel = rel
+
+    def extend_rss(self, entry: Any) -> Any:
+        """Extend RSS entry with podcast elements including transcript.
+
+        Args:
+            entry: The RSS item element to extend.
+
+        Returns:
+            The extended RSS entry element.
+        """
+        # Let the base class handle iTunes podcast tags
+        entry = super().extend_rss(entry)  # type: ignore[reportUnknownMemberType]
+
+        # Add podcast:transcript if set
+        if self._transcript_url and self._transcript_type:
+            nsmap = {None: PODCAST_NS}  # type: ignore[var-annotated]
+            transcript_elem = SubElement(  # type: ignore[reportUnknownMemberType]
+                entry,
+                f"{{{PODCAST_NS}}}transcript",
+                nsmap=nsmap,  # type: ignore[arg-type]
+            )
+            transcript_elem.set("url", self._transcript_url)  # type: ignore[reportUnknownMemberType]
+            transcript_elem.set("type", self._transcript_type)  # type: ignore[reportUnknownMemberType]
+            if self._transcript_language:
+                transcript_elem.set("language", self._transcript_language)  # type: ignore[reportUnknownMemberType]
+            if self._transcript_rel:
+                transcript_elem.set("rel", self._transcript_rel)  # type: ignore[reportUnknownMemberType]
+
+        return entry  # type: ignore[reportUnknownVariableType]

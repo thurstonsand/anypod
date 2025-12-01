@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from anypod.db.types import Download, DownloadStatus, SourceType
+from anypod.db.types import Download, DownloadStatus, SourceType, TranscriptSource
 from anypod.exceptions import YtdlpApiError
 from anypod.path_manager import PathManager
 from anypod.ytdlp_wrapper import YtdlpWrapper
@@ -440,57 +440,63 @@ async def test_download_media_to_file_success(
     path_manager: PathManager,
     cookies_path: Path | None,
 ):
-    """Tests successful media download for a specific video.
-
-    Asserts that the file is downloaded to the correct location and
-    exists.
-    """
-    # Metadata for Big Buck Bunny video
+    """Tests successful media download with transcript for a video with auto-captions."""
     download = Download(
         feed_id="video",
-        id="aqz-KE-bpKQ",
-        source_url="https://www.youtube.com/watch?v=aqz-KE-bpKQ",
-        title="Big Buck Bunny 60fps 4K - Official Blender Foundation Short Film",
-        published=datetime(2014, 11, 10, 14, 5, 55, tzinfo=UTC),
-        ext="mp4",  # Expected extension based on common yt-dlp behavior with -f worst*[ext=mp4]
+        id="ZY6TS8Q4C8s",
+        source_url="https://www.youtube.com/watch?v=ZY6TS8Q4C8s",
+        title="VFX Artists React to Bad and Great CGi 173",
+        published=datetime(2025, 5, 17, 14, 0, 8, tzinfo=UTC),
+        ext="mp4",
         mime_type="video/mp4",
         filesize=12345,
-        duration=635,
+        duration=1403,
         status=DownloadStatus.QUEUED,
-        remote_thumbnail_url="https://i.ytimg.com/vi_webp/aqz-KE-bpKQ/maxresdefault.webp",
+        remote_thumbnail_url="https://i.ytimg.com/vi/ZY6TS8Q4C8s/maxresdefault.jpg",
         retries=0,
         last_error=None,
-        discovered_at=datetime(2014, 11, 11, 14, 5, 55, tzinfo=UTC),
-        updated_at=datetime(2014, 11, 11, 14, 5, 55, tzinfo=UTC),
+        discovered_at=datetime(2025, 5, 17, 14, 0, 8, tzinfo=UTC),
+        updated_at=datetime(2025, 5, 17, 14, 0, 8, tzinfo=UTC),
+        transcript_source=TranscriptSource.AUTO,
     )
 
-    # Use the same minimal args as other tests, could be customized if needed
-    cli_args = YT_DLP_MINIMAL_ARGS
-
-    downloaded_file_path, download_logs = await ytdlp_wrapper.download_media_to_file(
+    result = await ytdlp_wrapper.download_media_to_file(
         download=download,
-        user_yt_cli_args=cli_args,
+        user_yt_cli_args=YT_DLP_MINIMAL_ARGS,
         cookies_path=cookies_path,
+        transcript_lang="en",
     )
 
-    assert downloaded_file_path.exists(), (
-        f"Downloaded file does not exist at {downloaded_file_path}"
+    assert result.file_path.exists(), (
+        f"Downloaded file does not exist at {result.file_path}"
     )
-    assert downloaded_file_path.is_file(), f"Path {downloaded_file_path} is not a file"
+    assert result.file_path.is_file(), f"Path {result.file_path} is not a file"
 
-    assert download_logs.strip() != "STDOUT:", (
+    assert result.logs.strip() != "STDOUT:", (
         "yt-dlp logs should include more than the header"
     )
-    assert len([line for line in download_logs.splitlines() if line.strip()]) > 1
+    assert len([line for line in result.logs.splitlines() if line.strip()]) > 1
 
-    # Verify download-level thumbnail was downloaded and converted to JPG
-    # downloads_images_dir = await path_manager.download_images_dir(download.feed_id)
-    # download_image_path = downloads_images_dir / f"{download.id}.jpg"
     download_image_path = await path_manager.image_path(
         download.feed_id, download.id, "jpg"
     )
     assert download_image_path.exists(), (
         f"Expected download thumbnail at {download_image_path} to exist"
+    )
+
+    assert result.transcript is not None, "Expected transcript to be downloaded"
+    assert result.transcript.ext == "vtt"
+    assert result.transcript.lang == "en"
+    assert result.transcript.source == TranscriptSource.AUTO
+
+    transcript_path = await path_manager.transcript_path(
+        download.feed_id,
+        download.id,
+        result.transcript.lang,
+        result.transcript.ext,
+    )
+    assert transcript_path.exists(), (
+        f"Transcript file should exist at {transcript_path}"
     )
 
 

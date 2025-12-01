@@ -11,7 +11,10 @@
       "Bash(gh issue list:*)",
       "Skill(project-management:git-commit-helper)",
       "Bash(uv run pytest:*)",
-      "Bash(uv run pre-commit:*)"
+      "Bash(uv run pre-commit:*)",
+      "Bash(uv run basedpyright:*)",
+      "Bash(gh pr view:*)",
+      "Bash(uv run ruff:*)"
     ],
     "deny": [],
     "ask": []

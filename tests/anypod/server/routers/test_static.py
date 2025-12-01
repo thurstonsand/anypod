@@ -1004,3 +1004,238 @@ def test_serve_media_security_validation(client: TestClient, mock_file_manager: 
     response = client.get("/media/valid_feed/...mp4")
     assert response.status_code == 400
     mock_file_manager.get_download_file_path.assert_not_called()
+
+
+# --- Tests for transcript serving endpoint ---
+
+
+@pytest.mark.unit
+@patch("anypod.server.routers.static.FileResponse")
+def test_serve_transcript_success(
+    mock_file_response: Mock,
+    client: TestClient,
+    mock_file_manager: Mock,
+) -> None:
+    """Test successful transcript file serving."""
+    mock_file_manager.get_transcript_path.return_value = Path(
+        "/ignored/test_video.en.vtt"
+    )
+    mock_file_response.side_effect = _file_response_side_effect
+
+    response = client.get("/transcripts/test_feed/test_video.en.vtt")
+
+    assert response.status_code == 200
+    # FastAPI adds charset=utf-8 to text/* MIME types
+    assert response.headers["content-type"] == "text/vtt; charset=utf-8"
+    assert "cache-control" in response.headers
+    assert response.headers["cache-control"] == "public, max-age=86400"
+
+    mock_file_manager.get_transcript_path.assert_called_once_with(
+        "test_feed", "test_video", "en", "vtt"
+    )
+    assert mock_file_response.called
+    assert mock_file_response.call_args is not None
+    assert mock_file_response.call_args.kwargs.get("media_type") == "text/vtt"
+    assert mock_file_response.call_args.kwargs.get("path") == Path(
+        "/ignored/test_video.en.vtt"
+    )
+
+
+@pytest.mark.unit
+def test_serve_transcript_not_found(client: TestClient, mock_file_manager: Mock):
+    """Test transcript serving when file doesn't exist."""
+    mock_file_manager.get_transcript_path.side_effect = FileNotFoundError(
+        "File not found"
+    )
+
+    response = client.get("/transcripts/test_feed/nonexistent.en.vtt")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Transcript not found"
+
+
+@pytest.mark.unit
+def test_serve_transcript_file_operation_error(
+    client: TestClient, mock_file_manager: Mock
+):
+    """Test transcript serving when file operation fails."""
+    mock_file_manager.get_transcript_path.side_effect = FileOperationError(
+        "File operation failed"
+    )
+
+    response = client.get("/transcripts/test_feed/error_file.en.vtt")
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "Internal server error"
+
+
+@pytest.mark.unit
+@patch("anypod.server.routers.static.FileResponse")
+@pytest.mark.parametrize(
+    "lang,ext,expected_content_type",
+    [
+        ("en", "vtt", "text/vtt; charset=utf-8"),  # WebVTT format
+        ("es", "vtt", "text/vtt; charset=utf-8"),  # Spanish WebVTT
+        ("fr", "vtt", "text/vtt; charset=utf-8"),  # French WebVTT
+    ],
+)
+def test_serve_transcript_content_type_guessing(
+    mock_file_response: Mock,
+    client: TestClient,
+    mock_file_manager: Mock,
+    lang: str,
+    ext: str,
+    expected_content_type: str,
+) -> None:
+    """Test that transcript content type is correctly guessed from extension."""
+    mock_file_manager.get_transcript_path.return_value = Path(
+        f"/ignored/video.{lang}.{ext}"
+    )
+    mock_file_response.side_effect = _file_response_side_effect
+
+    response = client.get(f"/transcripts/test_feed/video.{lang}.{ext}")
+
+    assert response.status_code == 200
+    # FastAPI adds charset=utf-8 to text/* MIME types
+    assert response.headers["content-type"] == expected_content_type
+
+    # Verify the correct parameters were passed
+    mock_file_manager.get_transcript_path.assert_called_once_with(
+        "test_feed", "video", lang, ext
+    )
+    # And that FileResponse was constructed with expected media type (without charset)
+    assert mock_file_response.called
+    assert mock_file_response.call_args is not None
+    assert mock_file_response.call_args.kwargs.get("media_type") == "text/vtt"
+    assert mock_file_response.call_args.kwargs.get("path") == Path(
+        f"/ignored/video.{lang}.{ext}"
+    )
+
+
+@pytest.mark.unit
+@patch("anypod.server.routers.static.FileResponse")
+def test_serve_transcript_head_request(
+    mock_file_response: Mock,
+    client: TestClient,
+    mock_file_manager: Mock,
+) -> None:
+    """Test HEAD request returns correct headers without body."""
+    mock_file_manager.get_transcript_path.return_value = Path(
+        "/ignored/test_video.en.vtt"
+    )
+    mock_file_response.side_effect = _file_response_side_effect
+
+    response = client.head("/transcripts/test_feed/test_video.en.vtt")
+
+    assert response.status_code == 200
+    # FastAPI adds charset=utf-8 to text/* MIME types
+    assert response.headers["content-type"] == "text/vtt; charset=utf-8"
+    assert "cache-control" in response.headers
+
+    mock_file_manager.get_transcript_path.assert_called_once_with(
+        "test_feed", "test_video", "en", "vtt"
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "filename,expected_status",
+    [
+        # Valid filenames
+        ("valid_video", 404),  # Valid but transcript not found
+        ("video123", 404),
+        ("video.with.dots", 404),  # Dots allowed in filename
+        # Basic security cases
+        ("../../../etc/passwd", 404),  # Contains slashes, routing returns 404
+        ("video$", 422),  # Invalid characters
+        (".", 400),  # Path traversal attempt
+        ("..", 400),  # Path traversal attempt
+    ],
+)
+def test_serve_transcript_filename_validation(
+    client: TestClient, mock_file_manager: Mock, filename: str, expected_status: int
+):
+    """Test transcript endpoint filename validation."""
+    if expected_status == 404:
+        mock_file_manager.get_transcript_path.side_effect = FileNotFoundError(
+            "File not found"
+        )
+
+    response = client.get(f"/transcripts/valid_feed/{filename}.en.vtt")
+    assert response.status_code == expected_status
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "lang,expected_status",
+    [
+        # Valid language codes
+        ("en", 404),  # Valid but file not found
+        ("es", 404),
+        ("fr", 404),
+        (
+            "zh-CN",
+            404,
+        ),  # Language code with hyphen (dots allowed in filename validation)
+        # Basic security cases
+        ("../../../etc", 404),  # Path traversal - routing returns 404
+        ("en$", 422),  # Invalid characters
+        (".", 400),  # Path traversal attempt
+        ("..", 400),  # Path traversal attempt
+    ],
+)
+def test_serve_transcript_lang_validation(
+    client: TestClient, mock_file_manager: Mock, lang: str, expected_status: int
+):
+    """Test transcript endpoint language code validation."""
+    if expected_status == 404:
+        mock_file_manager.get_transcript_path.side_effect = FileNotFoundError(
+            "File not found"
+        )
+
+    response = client.get(f"/transcripts/valid_feed/video.{lang}.vtt")
+    assert response.status_code == expected_status
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "ext,expected_status",
+    [
+        # Valid extensions
+        ("vtt", 404),  # Valid but file not found
+        ("srt", 404),
+        # Basic security cases
+        ("../../../etc", 404),  # Path traversal - routing returns 404
+        ("vtt$", 422),  # Invalid characters
+    ],
+)
+def test_serve_transcript_extension_validation(
+    client: TestClient,
+    mock_file_manager: Mock,
+    ext: str,
+    expected_status: int,
+):
+    """Test transcript endpoint extension validation."""
+    if expected_status == 404:
+        mock_file_manager.get_transcript_path.side_effect = FileNotFoundError(
+            "File not found"
+        )
+
+    response = client.get(f"/transcripts/valid_feed/video.en.{ext}")
+    assert response.status_code == expected_status
+
+
+@pytest.mark.unit
+def test_serve_transcript_security_validation(
+    client: TestClient, mock_file_manager: Mock
+):
+    """Test that security validation prevents path traversal for transcripts."""
+    # Mock should never be called for malicious input
+    mock_file_manager.get_transcript_path.side_effect = Exception(
+        "Should not be called"
+    )
+
+    # Test the dependency validation catches . and ..
+    response = client.get("/transcripts/valid_feed/...en.vtt")
+    assert response.status_code == 400
+    mock_file_manager.get_transcript_path.assert_not_called()

@@ -293,6 +293,126 @@ class FileManager:
                     file_name=f"{download_id or feed_id}.{ext}",
                 ) from e
 
+    async def get_transcript_path(
+        self, feed_id: str, download_id: str, lang: str, ext: str
+    ) -> Path:
+        """Get the file path for a transcript file.
+
+        Args:
+            feed_id: The name of the feed.
+            download_id: The unique identifier for the download.
+            lang: Language code (e.g., "en").
+            ext: File extension without the leading dot (e.g., "vtt").
+
+        Returns:
+            Path to the transcript file.
+
+        Raises:
+            FileNotFoundError: If the file does not exist or is not a regular file, or if the path is invalid.
+            FileOperationError: If an OS-level error occurs.
+        """
+        try:
+            file_path = await self._paths.transcript_path(
+                feed_id, download_id, lang, ext
+            )
+        except ValueError as e:
+            raise FileNotFoundError(
+                "Invalid feed or download identifier.",
+            ) from e
+
+        log_params = {
+            "feed_id": feed_id,
+            "download_id": download_id,
+            "file_path": str(file_path),
+        }
+        logger.debug("Getting transcript file path.", extra=log_params)
+
+        try:
+            exists = await aiofiles.os.path.isfile(file_path)
+        except OSError as e:
+            raise FileOperationError(
+                "Failed to check if transcript file exists.",
+                file_name=str(file_path),
+            ) from e
+
+        if not exists:
+            raise FileNotFoundError(
+                f"Transcript file not found or is not a file: {file_path}"
+            )
+        return file_path
+
+    async def transcript_exists(
+        self, feed_id: str, download_id: str, lang: str, ext: str
+    ) -> bool:
+        """Check if a transcript file exists.
+
+        Args:
+            feed_id: The name of the feed.
+            download_id: The unique identifier for the download.
+            lang: Language code (e.g., "en").
+            ext: File extension without the leading dot (e.g., "vtt").
+
+        Returns:
+            True if the file exists and is a file, False otherwise.
+
+        Raises:
+            FileOperationError: If an OS-level error occurs during the file existence check.
+        """
+        try:
+            await self.get_transcript_path(feed_id, download_id, lang, ext)
+            return True
+        except FileNotFoundError:
+            return False
+
+    async def delete_transcript(
+        self, feed_id: str, download_id: str, lang: str, ext: str
+    ) -> None:
+        """Delete a transcript file from the filesystem.
+
+        Args:
+            feed_id: The name of the feed.
+            download_id: The unique identifier for the download.
+            lang: Language code (e.g., "en").
+            ext: File extension without the leading dot (e.g., "vtt").
+
+        Raises:
+            FileNotFoundError: If the file does not exist or is not a regular file.
+            FileOperationError: If an OS-level error occurs during file deletion, or if feed/download identifiers are invalid.
+        """
+        try:
+            file_path = await self._paths.transcript_path(
+                feed_id, download_id, lang, ext
+            )
+        except ValueError as e:
+            raise FileOperationError(
+                "Invalid feed or download identifier.",
+                feed_id=feed_id,
+                download_id=download_id,
+            ) from e
+
+        log_params = {
+            "feed_id": feed_id,
+            "download_id": download_id,
+            "transcript_lang": lang,
+            "transcript_ext": ext,
+            "file_path": str(file_path),
+        }
+        logger.debug("Attempting to delete transcript file.", extra=log_params)
+
+        if not await aiofiles.os.path.isfile(file_path):
+            raise FileNotFoundError(f"Transcript file not found: {file_path}")
+        else:
+            try:
+                await aiofiles.os.remove(file_path)
+                logger.debug("Transcript file deleted successfully.", extra=log_params)
+            except OSError as e:
+                raise FileOperationError(
+                    "Failed to delete transcript file.",
+                    feed_id=feed_id,
+                    download_id=download_id,
+                    file_name=f"{download_id}.{lang}.{ext}",
+                ) from e
+
     async def get_feed_xml_path(self, feed_id: str) -> Path:
         """Get the file path for a feed's RSS XML file.
 

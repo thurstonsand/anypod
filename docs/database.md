@@ -14,33 +14,35 @@ Database location: `${DATA_DIR}/db/anypod.db`
 
 Stores feed metadata and configuration.
 
-| Column                 | Type     | Nullable | Default             | Description                                                                                      |
-| ---------------------- | -------- | -------- | ------------------- | ------------------------------------------------------------------------------------------------ |
-| `id`                   | TEXT     | NO       | -                   | **Primary key**, feed identifier from config                                                     |
-| `is_enabled`           | BOOLEAN  | NO       | `1`                 | Whether the feed is enabled for processing                                                       |
-| `source_type`          | ENUM     | NO       | -                   | Source type: `CHANNEL`, `PLAYLIST`, `SINGLE_VIDEO`, `MANUAL`, `UNKNOWN`                          |
-| `source_url`           | TEXT     | YES      | NULL                | Original source URL                                                                              |
-| `resolved_url`         | TEXT     | YES      | NULL                | URL after redirects                                                                              |
-| `last_successful_sync` | DATETIME | NO       | `CURRENT_TIMESTAMP` | Last successful sync (UTC)                                                                       |
-| `created_at`           | DATETIME | NO       | `CURRENT_TIMESTAMP` | Creation timestamp (UTC)                                                                         |
-| `updated_at`           | DATETIME | NO       | `CURRENT_TIMESTAMP` | Last update timestamp (UTC)                                                                      |
-| `last_rss_generation`  | DATETIME | YES      | NULL                | Last RSS generation (UTC)                                                                        |
-| `last_failed_sync`     | DATETIME | YES      | NULL                | Last failed sync (UTC)                                                                           |
-| `consecutive_failures` | INTEGER  | NO       | `0`                 | Consecutive sync failure count                                                                   |
-| `total_downloads`      | INTEGER  | NO       | `0`                 | Total downloads for this feed                                                                    |
-| `since`                | DATETIME | YES      | NULL                | Retention: only process after this date                                                          |
-| `keep_last`            | INTEGER  | YES      | NULL                | Retention: max downloads to keep                                                                 |
-| `title`                | TEXT     | YES      | NULL                | Feed title                                                                                       |
-| `subtitle`             | TEXT     | YES      | NULL                | Feed subtitle                                                                                    |
-| `description`          | TEXT     | YES      | NULL                | Feed description                                                                                 |
-| `language`             | TEXT     | YES      | NULL                | Language code (e.g., `en`)                                                                       |
-| `author`               | TEXT     | YES      | NULL                | Feed author                                                                                      |
-| `author_email`         | TEXT     | YES      | NULL                | Author email                                                                                     |
-| `remote_image_url`     | TEXT     | YES      | NULL                | Original image URL                                                                               |
-| `image_ext`            | TEXT     | YES      | NULL                | Hosted image extension                                                                           |
-| `category`             | TEXT     | NO       | `TV & Film`         | [Apple Podcasts categories](https://podcasters.apple.com/support/1691-apple-podcasts-categories) |
-| `podcast_type`         | ENUM     | NO       | `episodic`          | `episodic` or `serial`                                                                           |
-| `explicit`             | ENUM     | NO       | `no`                | `yes`, `no`, or `clean`                                                                          |
+| Column                       | Type     | Nullable | Default             | Description                                                                                      |
+| ---------------------------- | -------- | -------- | ------------------- | ------------------------------------------------------------------------------------------------ |
+| `id`                         | TEXT     | NO       | -                   | **Primary key**, feed identifier from config                                                     |
+| `is_enabled`                 | BOOLEAN  | NO       | `1`                 | Whether the feed is enabled for processing                                                       |
+| `source_type`                | ENUM     | NO       | -                   | Source type: `CHANNEL`, `PLAYLIST`, `SINGLE_VIDEO`, `MANUAL`, `UNKNOWN`                          |
+| `source_url`                 | TEXT     | YES      | NULL                | Original source URL                                                                              |
+| `resolved_url`               | TEXT     | YES      | NULL                | URL after redirects                                                                              |
+| `last_successful_sync`       | DATETIME | NO       | `CURRENT_TIMESTAMP` | Last successful sync (UTC)                                                                       |
+| `created_at`                 | DATETIME | NO       | `CURRENT_TIMESTAMP` | Creation timestamp (UTC)                                                                         |
+| `updated_at`                 | DATETIME | NO       | `CURRENT_TIMESTAMP` | Last update timestamp (UTC)                                                                      |
+| `last_rss_generation`        | DATETIME | YES      | NULL                | Last RSS generation (UTC)                                                                        |
+| `last_failed_sync`           | DATETIME | YES      | NULL                | Last failed sync (UTC)                                                                           |
+| `consecutive_failures`       | INTEGER  | NO       | `0`                 | Consecutive sync failure count                                                                   |
+| `total_downloads`            | INTEGER  | NO       | `0`                 | Total downloads for this feed                                                                    |
+| `since`                      | DATETIME | YES      | NULL                | Retention: only process after this date                                                          |
+| `keep_last`                  | INTEGER  | YES      | NULL                | Retention: max downloads to keep                                                                 |
+| `transcript_lang`            | TEXT     | YES      | NULL                | Preferred transcript language code (ISO 639-1)                                                   |
+| `transcript_source_priority` | TEXT     | YES      | NULL                | Comma-separated transcript source order (`creator`, `auto`)                                      |
+| `title`                      | TEXT     | YES      | NULL                | Feed title                                                                                       |
+| `subtitle`                   | TEXT     | YES      | NULL                | Feed subtitle                                                                                    |
+| `description`                | TEXT     | YES      | NULL                | Feed description                                                                                 |
+| `language`                   | TEXT     | YES      | NULL                | Language code (e.g., `en`)                                                                       |
+| `author`                     | TEXT     | YES      | NULL                | Feed author                                                                                      |
+| `author_email`               | TEXT     | YES      | NULL                | Author email                                                                                     |
+| `remote_image_url`           | TEXT     | YES      | NULL                | Original image URL                                                                               |
+| `image_ext`                  | TEXT     | YES      | NULL                | Hosted image extension                                                                           |
+| `category`                   | TEXT     | NO       | `TV & Film`         | [Apple Podcasts categories](https://podcasters.apple.com/support/1691-apple-podcasts-categories) |
+| `podcast_type`               | ENUM     | NO       | `episodic`          | `episodic` or `serial`                                                                           |
+| `explicit`                   | ENUM     | NO       | `no`                | `yes`, `no`, or `clean`                                                                          |
 
 **Indexes:**
 
@@ -55,29 +57,32 @@ Stores feed metadata and configuration.
 
 Stores download information, status, and media metadata.
 
-| Column                 | Type     | Nullable | Default             | Description                                   |
-| ---------------------- | -------- | -------- | ------------------- | --------------------------------------------- |
-| `feed_id`              | TEXT     | NO       | -                   | **Primary key (part 1)**, FK to `feed.id`     |
-| `id`                   | TEXT     | NO       | -                   | **Primary key (part 2)**, download identifier |
-| `source_url`           | TEXT     | NO       | -                   | Source URL for download                       |
-| `title`                | TEXT     | NO       | -                   | Episode title                                 |
-| `published`            | DATETIME | NO       | -                   | Publication timestamp (UTC)                   |
-| `ext`                  | TEXT     | NO       | -                   | File extension                                |
-| `mime_type`            | TEXT     | NO       | -                   | MIME type                                     |
-| `filesize`             | INTEGER  | NO       | -                   | File size in bytes (>0)                       |
-| `duration`             | INTEGER  | NO       | -                   | Duration in seconds (>0)                      |
-| `status`               | ENUM     | NO       | -                   | Download status (see lifecycle below)         |
-| `discovered_at`        | DATETIME | NO       | `CURRENT_TIMESTAMP` | First discovered (UTC)                        |
-| `updated_at`           | DATETIME | NO       | `CURRENT_TIMESTAMP` | Last update (UTC)                             |
-| `remote_thumbnail_url` | TEXT     | YES      | NULL                | Original thumbnail URL                        |
-| `thumbnail_ext`        | TEXT     | YES      | NULL                | Hosted thumbnail extension                    |
-| `description`          | TEXT     | YES      | NULL                | Episode description                           |
-| `quality_info`         | TEXT     | YES      | NULL                | Quality information                           |
-| `playlist_index`       | INTEGER  | YES      | NULL                | 1-based index in multi-attachment posts       |
-| `retries`              | INTEGER  | NO       | `0`                 | Retry attempt count                           |
-| `last_error`           | TEXT     | YES      | NULL                | Last error message                            |
-| `download_logs`        | TEXT     | YES      | NULL                | yt-dlp execution logs                         |
-| `downloaded_at`        | DATETIME | YES      | NULL                | Download completion time (UTC)                |
+| Column                 | Type     | Nullable | Default             | Description                                    |
+| ---------------------- | -------- | -------- | ------------------- | ---------------------------------------------- |
+| `feed_id`              | TEXT     | NO       | -                   | **Primary key (part 1)**, FK to `feed.id`      |
+| `id`                   | TEXT     | NO       | -                   | **Primary key (part 2)**, download identifier  |
+| `source_url`           | TEXT     | NO       | -                   | Source URL for download                        |
+| `title`                | TEXT     | NO       | -                   | Episode title                                  |
+| `published`            | DATETIME | NO       | -                   | Publication timestamp (UTC)                    |
+| `ext`                  | TEXT     | NO       | -                   | File extension                                 |
+| `mime_type`            | TEXT     | NO       | -                   | MIME type                                      |
+| `filesize`             | INTEGER  | NO       | -                   | File size in bytes (>0)                        |
+| `duration`             | INTEGER  | NO       | -                   | Duration in seconds (>0)                       |
+| `status`               | ENUM     | NO       | -                   | Download status (see lifecycle below)          |
+| `discovered_at`        | DATETIME | NO       | `CURRENT_TIMESTAMP` | First discovered (UTC)                         |
+| `updated_at`           | DATETIME | NO       | `CURRENT_TIMESTAMP` | Last update (UTC)                              |
+| `remote_thumbnail_url` | TEXT     | YES      | NULL                | Original thumbnail URL                         |
+| `thumbnail_ext`        | TEXT     | YES      | NULL                | Hosted thumbnail extension                     |
+| `description`          | TEXT     | YES      | NULL                | Episode description                            |
+| `quality_info`         | TEXT     | YES      | NULL                | Quality information                            |
+| `playlist_index`       | INTEGER  | YES      | NULL                | 1-based index in multi-attachment posts        |
+| `retries`              | INTEGER  | NO       | `0`                 | Retry attempt count                            |
+| `last_error`           | TEXT     | YES      | NULL                | Last error message                             |
+| `download_logs`        | TEXT     | YES      | NULL                | yt-dlp execution logs                          |
+| `downloaded_at`        | DATETIME | YES      | NULL                | Download completion time (UTC)                 |
+| `transcript_ext`       | TEXT     | YES      | NULL                | Transcript file extension (e.g., "vtt", "srt") |
+| `transcript_lang`      | TEXT     | YES      | NULL                | Transcript language code (e.g., "en")          |
+| `transcript_source`    | ENUM     | YES      | NULL                | Transcript origin: `CREATOR` or `AUTO`         |
 
 **Indexes:**
 
@@ -145,6 +150,13 @@ UPCOMING   → QUEUED   → DOWNLOADED → ARCHIVED
 | `yes`   | Contains explicit content           |
 | `no`    | No explicit content                 |
 | `clean` | Cleaned version of explicit content |
+
+### `TranscriptSource`
+
+| Value     | Description                             |
+| --------- | --------------------------------------- |
+| `CREATOR` | Creator-provided subtitles/transcripts  |
+| `AUTO`    | Auto-generated captions (e.g., YouTube) |
 
 ---
 

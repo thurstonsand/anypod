@@ -7,7 +7,7 @@ fetch strategy determination and metadata parsing.
 
 from typing import Protocol
 
-from ...db.types import Download, Feed, SourceType
+from ...db.types import Download, Feed, SourceType, TranscriptSource
 from ..core import YtdlpArgs, YtdlpInfo
 
 
@@ -103,12 +103,18 @@ class SourceHandlerBase(Protocol):
         self,
         feed_id: str,
         ytdlp_info: YtdlpInfo,
+        transcript_lang: str | None = None,
+        transcript_source_priority: list[TranscriptSource] | None = None,
     ) -> Download:
         """Extract metadata from a single yt-dlp video entry into a Download object.
 
         Args:
             feed_id: The feed identifier.
             ytdlp_info: The yt-dlp metadata for a single video.
+            transcript_lang: Language code for transcripts (e.g., "en"). If provided,
+                determines transcript_source from yt-dlp subtitle metadata.
+            transcript_source_priority: Ordered list of transcript sources to try.
+                Defaults to [CREATOR, AUTO] if not provided.
 
         Returns:
             A Download object parsed from the metadata.

@@ -25,7 +25,7 @@ from ..exceptions import (
 )
 from ..ffprobe import FFProbe
 from ..file_manager import FileManager
-from ..ytdlp_wrapper import YtdlpWrapper
+from ..ytdlp_wrapper import TranscriptInfo, YtdlpWrapper
 
 logger = logging.getLogger(__name__)
 
@@ -88,19 +88,26 @@ class Downloader:
         return duration
 
     async def _handle_download_success(
-        self, download: Download, downloaded_file_path: Path
+        self,
+        download: Download,
+        downloaded_file_path: Path,
+        logs: str,
+        transcript: TranscriptInfo | None = None,
     ) -> None:
         """Process a successfully downloaded file.
 
-        Moves the file to permanent storage and updates its database record to DOWNLOADED,
-        including its final extension and filesize.
+        Updates the download record to DOWNLOADED status with all metadata
+        (extension, filesize, duration, thumbnail, transcript, logs) in a single
+        database upsert.
 
         Args:
-            download: The Download object.
-            downloaded_file_path: Path to the successfully downloaded (temporary) file.
+            download: The Download object to update.
+            downloaded_file_path: Path to the successfully downloaded file.
+            logs: yt-dlp execution logs.
+            transcript: Transcript metadata if downloaded, None otherwise.
 
         Raises:
-            DownloadError: If moving the file or updating the database fails.
+            DownloadError: If file operations or database update fails.
         """
         log_params: dict[str, Any] = {
             "feed_id": download.feed_id,
@@ -111,24 +118,17 @@ class Downloader:
 
         try:
             file_stat = await aiofiles.os.stat(downloaded_file_path)
-            duration_seconds = await self._probe_download_duration(
-                download, downloaded_file_path
-            )
-            await self.download_db.mark_as_downloaded(
-                feed_id=download.feed_id,
-                download_id=download.id,
-                ext=downloaded_file_path.suffix.lstrip("."),
-                filesize=file_stat.st_size,
-                duration=duration_seconds,
-            )
-        except (DownloadNotFoundError, DatabaseOperationError) as e:
+        except OSError as e:
             raise DownloadError(
-                message="Failed to update database record to DOWNLOADED.",
+                message="Failed to stat downloaded file.",
                 feed_id=download.feed_id,
                 download_id=download.id,
             ) from e
-        # If a thumbnail was saved by yt-dlp, persist its extension
-        # Check for existence rather than assuming success
+
+        duration_seconds = await self._probe_download_duration(
+            download, downloaded_file_path
+        )
+
         try:
             has_thumb = await self.file_manager.image_exists(
                 download.feed_id, download.id, "jpg"
@@ -139,11 +139,30 @@ class Downloader:
                 feed_id=download.feed_id,
                 download_id=download.id,
             ) from e
-        else:
-            if has_thumb:
-                await self.download_db.set_thumbnail_extension(
-                    download.feed_id, download.id, "jpg"
-                )
+
+        download.status = DownloadStatus.DOWNLOADED
+        download.ext = downloaded_file_path.suffix.lstrip(".")
+        download.filesize = file_stat.st_size
+        if duration_seconds is not None:
+            download.duration = duration_seconds
+        download.retries = 0
+        download.last_error = None
+        download.download_logs = logs
+        download.thumbnail_ext = "jpg" if has_thumb else None
+        if transcript:
+            download.transcript_ext = transcript.ext
+            download.transcript_lang = transcript.lang
+            download.transcript_source = transcript.source
+
+        try:
+            await self.download_db.update_download(download)
+        except (DownloadNotFoundError, DatabaseOperationError) as e:
+            raise DownloadError(
+                message="Failed to update database record to DOWNLOADED.",
+                feed_id=download.feed_id,
+                download_id=download.id,
+            ) from e
+
         logger.info("Successfully downloaded media.", extra=log_params)
 
     async def _handle_download_failure(
@@ -229,13 +248,11 @@ class Downloader:
         logger.debug("Processing single download.", extra=log_params)
 
         try:
-            (
-                downloaded_file_path,
-                download_logs,
-            ) = await self.ytdlp_wrapper.download_media_to_file(
+            downloaded_media = await self.ytdlp_wrapper.download_media_to_file(
                 download_to_process,
                 feed_config.yt_args,
                 cookies_path=cookies_path,
+                transcript_lang=feed_config.transcript_lang,
             )
         except YtdlpApiError as e:
             await self._persist_download_logs(download_to_process, e.logs or "")
@@ -245,8 +262,12 @@ class Downloader:
                 download_id=download_to_process.id,
             ) from e
 
-        await self._persist_download_logs(download_to_process, download_logs)
-        await self._handle_download_success(download_to_process, downloaded_file_path)
+        await self._handle_download_success(
+            download_to_process,
+            downloaded_media.file_path,
+            downloaded_media.logs,
+            downloaded_media.transcript,
+        )
 
     # TODO: do i need to think about race conditions for retrieve/modify/update?
     async def download_queued(

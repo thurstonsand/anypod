@@ -67,15 +67,9 @@ For dev server/debug scripts, coverage runs, Docker workflows, and code-explorat
 
 ### State Management
 
-Download status transitions are implemented as explicit methods, not generic updates. Always use proper state transition methods in `db/download_db.py` and `db/feed_db.py`.
-
-For table layout, indexes, and lifecycle details, see `docs/database.md`.
+Download status transitions are implemented as explicit methods in `db/download_db.py` and `db/feed_db.py`. For table layout, indexes, and lifecycle details, see `docs/database.md`.
 
 ## Development Notes
-
-### Database Changes
-
-**Before modifying any database models**, read `docs/database.md` for schema details and migration workflow. Changes to `src/anypod/db/types/` require corresponding Alembic migrations.
 
 ### Requirements
 
@@ -86,14 +80,14 @@ For table layout, indexes, and lifecycle details, see `docs/database.md`.
 
 - Error handling: Structured exceptions with context (e.g. feed_id, download_id)
 - Logging: Structured JSON logging with proper context propagation
-- Database: Uses SQLModel and SQLAlchemy with a custom `SqlalchemyCore` class, not raw SQLite
+- Database: Uses SQLModel and SQLAlchemy with a custom `SqlalchemyCore` class
 - Currently synchronous but designed for future async conversion
 - Function signatures: Default to required parameters; avoid `<type> | None` unless `None` is a real, supported input path
 
 ## Key Directories
 
 - `src/anypod/` – Application code (CLI, config, orchestration, server, yt-dlp integration)
-- `src/anypod/db/` – DB models and access layer; use helper functions and SqlalchemyCore, not raw sqlite
+- `src/anypod/db/` – DB models and access layer
 - `src/anypod/data_coordinator/` – Scheduler phases (enqueuer, downloader, pruner)
 - `src/anypod/server/` – FastAPI app, routers, validation
 - `src/anypod/rss/` – RSS generation
@@ -118,7 +112,6 @@ For full configuration examples, manual feed workflows, and environment variable
 - Bias towards wrapping and re-raising exceptions to the highest possible location
 - Exception messages should not include variable data—use existing exception parameters/attributes instead
 - When catching and re-raising exceptions, use `raise ... from e` syntax to preserve stack traces
-- Catch specific exceptions rather than broad `Exception` catches
 - When adding new code/features, don't reference them with "new logic", "new field", etc. It is going to live in the code base for a long time past "new"
 - Order functions so each is defined before being referenced within the same file
 - Imports should always be at the top of the file, unless you are specifically trying to lazy load
@@ -149,3 +142,62 @@ def fetch_metadata(
 ```
 
 - When writing docstrings, never write one for `__init__` fns, since this should be covered by the class level docstring
+
+## Boundaries
+
+### Never
+
+- Commit secrets, API keys, credentials, or `cookies.txt` content
+- Modify `alembic/versions/` without reading `docs/database.md` first
+- Bypass database state transition methods with raw SQL or generic ORM updates
+- Use broad `Exception` catches
+- Suppress type errors with `# type: ignore` (unless integrating with an untyped dependency, which we don't have control of)
+
+### Ask First
+
+- Database schema changes (require Alembic migrations)
+- Changes to `pyproject.toml` dependencies
+- Modifying `alembic/env.py` or migration infrastructure
+- Architecture changes spanning multiple components
+
+## Git Workflow
+
+### Commit Messages
+
+Follow [Conventional Commits](https://www.conventionalcommits.org/) with scope:
+
+```
+<type>(<scope>): <imperative summary>
+
+<body explaining what and why>
+
+Closes #<issue> (if exists)
+```
+
+**Types**: `feat`, `fix`, `refactor`, `docs`, `chore`, `test`
+**Scopes**: `admin`, `api`, `db`, `rss`, `ci`, `docker`, `deps`, etc.
+
+Example:
+
+```
+feat(admin): add reset-sync endpoint to adjust feed last_successful_sync
+
+Add POST /admin/feeds/{feed_id}/reset-sync endpoint that allows operators
+to manually set a feed's last_successful_sync timestamp...
+
+Closes #79
+```
+
+### Branches
+
+- `feat/descriptive-title` — new features
+- `fix/descriptive-title` — bug fixes
+- `docs/descriptive-title`, `refactor/descriptive-title`, etc.
+
+### Pre-commit
+
+Pre-commit runs automatically as a git hook. **Commits will not succeed if pre-commit fails.** Run manually with:
+
+```bash
+uv run pre-commit run --all-files
+```

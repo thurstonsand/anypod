@@ -22,7 +22,7 @@ def _format_run_output(stdout: str, stderr: str) -> str:
     return "\n\n".join(sections)
 
 
-@dataclass(slots=True)
+@dataclass(frozen=True, slots=True)
 class YtdlpRunResult[T]:
     """Container for yt-dlp subprocess payloads and raw log output."""
 

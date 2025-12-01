@@ -14,12 +14,15 @@ from .config import FeedConfig
 from .data_coordinator import Pruner
 from .db import DownloadDatabase
 from .db.feed_db import FeedDatabase
-from .db.types import DownloadStatus, Feed, SourceType
+from .db.types import Download, DownloadStatus, Feed, SourceType, TranscriptSource
 from .exceptions import (
     DatabaseOperationError,
+    FileOperationError,
     ImageDownloadError,
     PruneError,
     StateReconciliationError,
+    YtdlpApiError,
+    YtdlpError,
 )
 from .file_manager import FileManager
 from .image_downloader import ImageDownloader
@@ -171,6 +174,8 @@ class StateReconciler:
             last_successful_sync=initial_sync,
             since=feed_config.since,
             keep_last=feed_config.keep_last,
+            transcript_lang=feed_config.transcript_lang,
+            transcript_source_priority=feed_config.transcript_source_priority,
             **merged_metadata,
         )
 
@@ -582,6 +587,328 @@ class StateReconciler:
 
         return None
 
+    async def _download_transcripts_for_downloads(
+        self,
+        feed_id: str,
+        downloads: list[Download],
+        lang: str,
+        transcript_source_priority: list[TranscriptSource] | None,
+        user_yt_cli_args: list[str],
+        cookies_path: Path | None,
+        log_params: dict[str, Any],
+    ) -> None:
+        """Download transcripts for a list of downloads.
+
+        For each download, refreshes metadata to determine transcript_source,
+        then downloads the transcript if available.
+
+        Args:
+            feed_id: The feed identifier.
+            downloads: List of Download objects to process.
+            lang: Language code for subtitles.
+            transcript_source_priority: Ordered list of transcript sources to try.
+            user_yt_cli_args: User-provided yt-dlp CLI arguments.
+            cookies_path: Path to cookies.txt file for yt-dlp authentication.
+            log_params: Logging parameters for context.
+
+        Raises:
+            StateReconciliationError: If metadata fetch fails for a download.
+        """
+        success_count = 0
+        unavailable_count = 0
+        fail_count = 0
+
+        for download in downloads:
+            if download.transcript_ext:
+                continue
+
+            download_log_params = {**log_params, "download_id": download.id}
+
+            # Refresh metadata to get transcript_source
+            try:
+                refreshed_downloads = (
+                    await self._ytdlp_wrapper.fetch_new_downloads_metadata(
+                        feed_id=feed_id,
+                        source_type=SourceType.SINGLE_VIDEO,
+                        source_url=download.source_url,
+                        resolved_url=None,
+                        user_yt_cli_args=user_yt_cli_args,
+                        transcript_lang=lang,
+                        transcript_source_priority=transcript_source_priority,
+                        cookies_path=cookies_path,
+                    )
+                )
+            except (YtdlpApiError, YtdlpError) as e:
+                raise StateReconciliationError(
+                    f"Failed to refresh metadata for transcript detection (download_id={download.id}).",
+                    feed_id=feed_id,
+                ) from e
+
+            if not refreshed_downloads:
+                logger.debug(
+                    "No metadata returned for download during transcript backfill.",
+                    extra=download_log_params,
+                )
+                unavailable_count += 1
+                continue
+
+            refreshed_download = refreshed_downloads[0]
+            transcript_source = refreshed_download.transcript_source
+
+            if (
+                not transcript_source
+                or transcript_source == TranscriptSource.NOT_AVAILABLE
+            ):
+                logger.debug(
+                    "No transcript available for download.",
+                    extra=download_log_params,
+                )
+                unavailable_count += 1
+                continue
+
+            # Download the transcript using the detected source
+            ext = await self._ytdlp_wrapper.download_transcript_only(
+                feed_id=feed_id,
+                download_id=download.id,
+                source_url=download.source_url,
+                transcript_lang=lang,
+                transcript_source=transcript_source,
+                cookies_path=cookies_path,
+            )
+
+            if ext:
+                try:
+                    await self._download_db.set_transcript_metadata(
+                        feed_id=feed_id,
+                        download_id=download.id,
+                        transcript_ext=ext,
+                        transcript_lang=lang,
+                        transcript_source=transcript_source,
+                    )
+                    success_count += 1
+                except DatabaseOperationError as e:
+                    logger.warning(
+                        "Failed to persist transcript metadata.",
+                        extra=download_log_params,
+                        exc_info=e,
+                    )
+                    fail_count += 1
+            else:
+                logger.debug(
+                    "Transcript file not found after download attempt.",
+                    extra=download_log_params,
+                )
+                fail_count += 1
+
+        logger.info(
+            f"Transcript download complete: {success_count} succeeded, {unavailable_count} unavailable, {fail_count} failed.",
+            extra={
+                **log_params,
+                "success_count": success_count,
+                "unavailable_count": unavailable_count,
+                "fail_count": fail_count,
+            },
+        )
+
+    async def _delete_transcripts_for_downloads(
+        self,
+        feed_id: str,
+        downloads: list[Download],
+        log_params: dict[str, Any],
+    ) -> None:
+        """Delete transcripts for a list of downloads.
+
+        Args:
+            feed_id: The feed identifier.
+            downloads: List of Download objects to process.
+            log_params: Logging parameters for context.
+        """
+        deleted_count = 0
+        for download in downloads:
+            if not download.transcript_lang or not download.transcript_ext:
+                continue
+
+            try:
+                await self._file_manager.delete_transcript(
+                    feed_id,
+                    download.id,
+                    download.transcript_lang,
+                    download.transcript_ext,
+                )
+                deleted_count += 1
+            except FileNotFoundError:
+                logger.debug(
+                    "Transcript file not found for deletion.",
+                    extra={**log_params, "download_id": download.id},
+                )
+            except FileOperationError as e:
+                logger.warning(
+                    "Failed to delete transcript file.",
+                    extra={**log_params, "download_id": download.id},
+                    exc_info=e,
+                )
+
+            try:
+                await self._download_db.set_transcript_metadata(
+                    feed_id=feed_id,
+                    download_id=download.id,
+                    transcript_ext=None,
+                    transcript_lang=None,
+                    transcript_source=None,
+                )
+            except DatabaseOperationError as e:
+                logger.warning(
+                    "Failed to clear transcript metadata.",
+                    extra={**log_params, "download_id": download.id},
+                    exc_info=e,
+                )
+
+        logger.info(
+            f"Deleted {deleted_count} transcript files.",
+            extra={**log_params, "deleted_count": deleted_count},
+        )
+
+    async def _handle_transcript_config_changes(
+        self,
+        feed_id: str,
+        config_transcript_lang: str | None,
+        config_transcript_source_priority: list[TranscriptSource] | None,
+        db_transcript_lang: str | None,
+        db_transcript_source_priority: list[TranscriptSource] | None,
+        user_yt_cli_args: list[str],
+        cookies_path: Path | None,
+        log_params: dict[str, Any],
+    ) -> None:
+        """Handle transcript config changes: download or delete transcripts.
+
+        Triggers re-processing when transcript_lang or transcript_source_priority
+        changes. When transcript_lang is enabled (None → value), downloads transcripts
+        for all DOWNLOADED items. When disabled (value → None), deletes all transcript
+        files and clears metadata. When language or priority changes, re-downloads
+        with the updated configuration.
+
+        Args:
+            feed_id: The feed identifier.
+            config_transcript_lang: The transcript_lang from config (or None).
+            config_transcript_source_priority: Ordered list of transcript sources to try.
+            db_transcript_lang: The transcript_lang stored in database (or None).
+            db_transcript_source_priority: Ordered list of transcript sources from database.
+            user_yt_cli_args: User-provided yt-dlp CLI arguments.
+            cookies_path: Path to cookies.txt file for yt-dlp authentication.
+            log_params: Logging parameters for context.
+
+        Raises:
+            StateReconciliationError: If database or file operations fail.
+        """
+        lang_changed = config_transcript_lang != db_transcript_lang
+        priority_changed = (
+            config_transcript_source_priority != db_transcript_source_priority
+        )
+
+        if not lang_changed and not priority_changed:
+            return
+
+        try:
+            downloads = await self._download_db.get_downloads_by_status(
+                DownloadStatus.DOWNLOADED, feed_id=feed_id
+            )
+        except DatabaseOperationError as e:
+            raise StateReconciliationError(
+                "Failed to fetch downloads for transcript reconciliation.",
+                feed_id=feed_id,
+            ) from e
+
+        if not downloads:
+            logger.debug(
+                "No downloaded items to reconcile transcripts for.",
+                extra=log_params,
+            )
+            return
+
+        match (
+            db_transcript_lang,
+            config_transcript_lang,
+            lang_changed,
+            priority_changed,
+        ):
+            case (None, str() as new_lang, True, _):
+                logger.info(
+                    f"Transcript support enabled with lang '{new_lang}', downloading transcripts for {len(downloads)} items.",
+                    extra={**log_params, "transcript_lang": new_lang},
+                )
+                await self._download_transcripts_for_downloads(
+                    feed_id,
+                    downloads,
+                    new_lang,
+                    config_transcript_source_priority,
+                    user_yt_cli_args,
+                    cookies_path,
+                    log_params,
+                )
+
+            case (str() as old_lang, None, True, _):
+                logger.info(
+                    f"Transcript support disabled (was '{old_lang}'), deleting transcripts for {len(downloads)} items.",
+                    extra={**log_params, "old_transcript_lang": old_lang},
+                )
+                await self._delete_transcripts_for_downloads(
+                    feed_id, downloads, log_params
+                )
+
+            case (str() as old_lang, str() as new_lang, True, _):
+                logger.info(
+                    f"Transcript language changed from '{old_lang}' to '{new_lang}', re-downloading transcripts for {len(downloads)} items.",
+                    extra={
+                        **log_params,
+                        "old_transcript_lang": old_lang,
+                        "new_transcript_lang": new_lang,
+                    },
+                )
+                await self._delete_transcripts_for_downloads(
+                    feed_id, downloads, log_params
+                )
+                await self._download_transcripts_for_downloads(
+                    feed_id,
+                    downloads,
+                    new_lang,
+                    config_transcript_source_priority,
+                    user_yt_cli_args,
+                    cookies_path,
+                    log_params,
+                )
+
+            case (_, str() as current_lang, _, True):
+                logger.info(
+                    f"Transcript source priority changed, re-downloading transcripts for {len(downloads)} items.",
+                    extra={
+                        **log_params,
+                        "transcript_lang": current_lang,
+                        "old_priority": [s.value for s in db_transcript_source_priority]
+                        if db_transcript_source_priority
+                        else None,
+                        "new_priority": [
+                            s.value for s in config_transcript_source_priority
+                        ]
+                        if config_transcript_source_priority
+                        else None,
+                    },
+                )
+                await self._delete_transcripts_for_downloads(
+                    feed_id, downloads, log_params
+                )
+                await self._download_transcripts_for_downloads(
+                    feed_id,
+                    downloads,
+                    current_lang,
+                    config_transcript_source_priority,
+                    user_yt_cli_args,
+                    cookies_path,
+                    log_params,
+                )
+
+            case _:
+                pass
+
     async def _handle_existing_feed(
         self,
         feed_id: str,
@@ -619,6 +946,8 @@ class StateReconciler:
                 "resolved_url": fetched_feed.resolved_url,
                 "since": feed_config.since,
                 "keep_last": feed_config.keep_last,
+                "transcript_lang": feed_config.transcript_lang,
+                "transcript_source_priority": feed_config.transcript_source_priority,
             }
         )
 
@@ -658,6 +987,17 @@ class StateReconciler:
             )
         if new_image_ext is not None:
             updated_feed.image_ext = new_image_ext
+
+        await self._handle_transcript_config_changes(
+            feed_id,
+            feed_config.transcript_lang,
+            feed_config.transcript_source_priority,
+            db_feed.transcript_lang,
+            db_feed.transcript_source_priority,
+            feed_config.yt_args,
+            cookies_path,
+            log_params,
+        )
 
         if updated_feed != db_feed:
             logger.debug("Feed configuration changes applied.", extra=log_params)

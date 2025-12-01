@@ -8,13 +8,13 @@ from Anypod download data.
 
 import logging
 
-from feedgen.ext.podcast_entry import PodcastEntryExtension  # type: ignore
 from feedgen.feed import FeedGenerator  # type: ignore
 
 from ..db.types import Download, Feed
 from ..exceptions import RSSGenerationError
+from ..mimetypes import mimetypes
 from ..path_manager import PathManager
-from .podcast_extension import Podcast
+from .podcast_extension import Podcast, PodcastEntryExtension
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +124,6 @@ class FeedgenCore:
         self._paths = paths
         self._feed = feed
 
-    # TODO: incorporate `updated` and `transcript`
     def with_downloads(self, downloads: list[Download]) -> FeedgenCore:
         """Add download entries to the feed.
 
@@ -203,6 +202,35 @@ class FeedgenCore:
             fe.podcast.itunes_duration(self._format_duration(download.duration))  # type: ignore
             # Always set episode type to full for now
             fe.podcast.itunes_episode_type("full")  # type: ignore
+
+            # Add transcript if available
+            if download.transcript_lang and download.transcript_ext:
+                try:
+                    transcript_url = self._paths.transcript_url(
+                        download.feed_id,
+                        download.id,
+                        download.transcript_lang,
+                        download.transcript_ext,
+                    )
+                except ValueError as e:
+                    logger.warning(
+                        "Skipping transcript with invalid URL.",
+                        extra={
+                            "feed_id": download.feed_id,
+                            "download_id": download.id,
+                        },
+                        exc_info=e,
+                    )
+                else:
+                    transcript_type = mimetypes.guess_type(
+                        f"file.{download.transcript_ext}"
+                    )[0]
+                    fe.podcast.transcript(  # type: ignore
+                        url=transcript_url,
+                        type=transcript_type,
+                        language=download.transcript_lang,
+                        rel="captions",  # VTT files are timed captions
+                    )
 
         return self
 

@@ -192,6 +192,50 @@ class Pruner:
         else:
             logger.debug("Image deleted successfully during pruning.", extra=log_params)
 
+    async def _handle_transcript_deletion(
+        self, download: Download, feed_id: str
+    ) -> None:
+        """Handle transcript deletion for a DOWNLOADED item being pruned.
+
+        Args:
+            download: The Download object with DOWNLOADED status.
+            feed_id: The feed identifier.
+
+        Raises:
+            PruneError: If transcript deletion fails.
+        """
+        if not download.transcript_lang or not download.transcript_ext:
+            return
+
+        log_params: dict[str, Any] = {
+            "feed_id": feed_id,
+            "download_transcript": f"{download.id}.{download.transcript_lang}.{download.transcript_ext}",
+        }
+        logger.debug(
+            "Attempting to delete transcript for downloaded item being pruned.",
+            extra=log_params,
+        )
+
+        try:
+            await self._file_manager.delete_transcript(
+                feed_id, download.id, download.transcript_lang, download.transcript_ext
+            )
+        except FileNotFoundError:
+            logger.debug(
+                "Transcript file not found for deletion during pruning.",
+                extra=log_params,
+            )
+        except FileOperationError as e:
+            raise PruneError(
+                message="Failed to delete transcript during pruning.",
+                feed_id=feed_id,
+                download_id=download.id,
+            ) from e
+        else:
+            logger.debug(
+                "Transcript deleted successfully during pruning.", extra=log_params
+            )
+
     async def _archive_download(self, download: Download, feed_id: str) -> None:
         """Archive a download in the database.
 
@@ -244,7 +288,7 @@ class Pruner:
 
         file_deleted = False
 
-        # Delete file+thumbnail if the download is DOWNLOADED
+        # Delete file+thumbnail+transcript if the download is DOWNLOADED
         if download.status == DownloadStatus.DOWNLOADED:
             try:
                 await self._handle_file_deletion(download, feed_id)
@@ -261,6 +305,14 @@ class Pruner:
             except PruneError:
                 logger.warning(
                     "Image deletion failed during pruning, continuing with DB archival.",
+                    extra=log_params,
+                )
+
+            try:
+                await self._handle_transcript_deletion(download, feed_id)
+            except PruneError:
+                logger.warning(
+                    "Transcript deletion failed during pruning, continuing with DB archival.",
                     extra=log_params,
                 )
 

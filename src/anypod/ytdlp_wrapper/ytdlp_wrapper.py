@@ -13,7 +13,7 @@ from typing import Any
 import aiofiles.os
 
 from ..db.app_state_db import AppStateDatabase
-from ..db.types import Download, Feed, SourceType
+from ..db.types import Download, Feed, SourceType, TranscriptSource
 from ..exceptions import (
     FFmpegError,
     FFProbeError,
@@ -26,6 +26,7 @@ from ..ffprobe import FFProbe
 from ..path_manager import PathManager
 from .core import YtdlpArgs, YtdlpCore
 from .handlers import HandlerSelector
+from .types import DownloadedMedia, TranscriptInfo
 
 logger = logging.getLogger(__name__)
 
@@ -393,6 +394,8 @@ class YtdlpWrapper:
         user_yt_cli_args: list[str],
         fetch_since_date: datetime | None = None,
         keep_last: int | None = None,
+        transcript_lang: str | None = None,
+        transcript_source_priority: list[TranscriptSource] | None = None,
         cookies_path: Path | None = None,
     ) -> list[Download]:
         """Get download metadata for enqueuing. Does not retrieve playlist metadata.
@@ -405,6 +408,10 @@ class YtdlpWrapper:
             user_yt_cli_args: User-configured command-line arguments for yt-dlp.
             fetch_since_date: The cutoff date for fetching videos (inclusive).
             keep_last: Maximum number of recent playlist items to fetch.
+            transcript_lang: Language code for transcripts (e.g., "en"). If provided,
+                determines transcript_source for each download.
+            transcript_source_priority: Ordered list of transcript sources to try.
+                Defaults to [CREATOR, AUTO] if not provided.
             cookies_path: Path to cookies.txt file for authentication.
 
         Returns:
@@ -477,6 +484,8 @@ class YtdlpWrapper:
                 download = await handler.extract_download_metadata(
                     feed_id,
                     ytdlp_info,
+                    transcript_lang,
+                    transcript_source_priority,
                 )
             except YtdlpDownloadFilteredOutError:
                 # Video was filtered out by yt-dlp, skip it
@@ -498,6 +507,88 @@ class YtdlpWrapper:
         )
 
         return parsed_downloads
+
+    async def download_transcript_only(
+        self,
+        feed_id: str,
+        download_id: str,
+        source_url: str,
+        transcript_lang: str,
+        transcript_source: TranscriptSource,
+        cookies_path: Path | None = None,
+    ) -> str | None:
+        """Download only the transcript for an existing media file.
+
+        Used for backfilling transcripts when transcript support is enabled
+        for feeds that already have downloaded media. The caller must determine
+        transcript_source via metadata refresh before calling this method.
+
+        Args:
+            feed_id: The feed identifier.
+            download_id: The download identifier.
+            source_url: The source URL of the video.
+            transcript_lang: Language code for subtitles (e.g., "en").
+            transcript_source: Source type (creator or auto-generated) determined by caller.
+            cookies_path: Path to cookies.txt file for authentication.
+
+        Returns:
+            Extension string ("vtt") if transcript was downloaded, None otherwise.
+        """
+        transcripts_dir = await self._paths.feed_transcripts_dir(feed_id)
+        log_params: dict[str, Any] = {
+            "feed_id": feed_id,
+            "download_id": download_id,
+            "source_url": source_url,
+            "transcript_lang": transcript_lang,
+            "transcript_source": str(transcript_source),
+        }
+
+        logger.debug(
+            "Requesting transcript-only download via yt-dlp.", extra=log_params
+        )
+
+        args = (
+            YtdlpArgs()
+            .quiet()
+            .no_warnings()
+            .skip_download()
+            .sub_format("vtt")
+            .sub_langs(transcript_lang)
+            .convert_subs("vtt")
+            .paths_subtitle(transcripts_dir)
+            .output_subtitle(f"{download_id}.%(ext)s")
+        )
+        # Only request the specific subtitle type detected
+        if transcript_source == TranscriptSource.CREATOR:
+            args = args.write_subs()
+        elif transcript_source == TranscriptSource.AUTO:
+            args = args.write_auto_subs()
+
+        args = self._pot_extractor_args(args)
+
+        if cookies_path:
+            args = args.cookies(cookies_path)
+
+        await YtdlpCore.download(args, source_url)
+
+        transcript_path = await self._paths.transcript_path(
+            feed_id, download_id, transcript_lang, "vtt"
+        )
+        if await aiofiles.os.path.isfile(transcript_path):
+            logger.debug(
+                "Transcript downloaded successfully.",
+                extra={
+                    **log_params,
+                    "transcript_ext": "vtt",
+                },
+            )
+            return "vtt"
+
+        logger.debug(
+            "Transcript file not found after download attempt.",
+            extra=log_params,
+        )
+        return None
 
     async def _handle_corrupt_download_file(
         self,
@@ -595,19 +686,22 @@ class YtdlpWrapper:
         download: Download,
         user_yt_cli_args: list[str],
         cookies_path: Path | None = None,
-    ) -> tuple[Path, str]:
+        transcript_lang: str | None = None,
+    ) -> DownloadedMedia:
         """Download the media for a given Download to a target directory.
 
         yt-dlp will place the final file in a feed-specific subdirectory within
-        the application's configured data directory.
+        the application's configured data directory. Optionally downloads subtitles
+        as transcripts.
 
         Args:
             download: The Download object containing metadata.
             user_yt_cli_args: User-provided yt-dlp CLI arguments for this feed.
             cookies_path: Path to cookies.txt file for authentication, or None if not needed.
+            transcript_lang: Language code for subtitles (e.g., "en"). If None, subtitles are not downloaded.
 
         Returns:
-            Tuple containing the downloaded file path and combined stdout/stderr logs.
+            DownloadedMedia containing the file path, logs, and optional transcript info.
 
         Raises:
             YtdlpApiError: If the download fails or the downloaded file is not found.
@@ -616,14 +710,18 @@ class YtdlpWrapper:
             download.feed_id
         )
 
+        log_params: dict[str, Any] = {
+            "feed_id": download.feed_id,
+            "download_id": download.id,
+            "download_target_dir": str(download_data_dir),
+            "source_url": download.source_url,
+            "transcript_lang": transcript_lang,
+            "transcript_source": download.transcript_source,
+        }
+
         logger.debug(
             "Requesting media download via yt-dlp.",
-            extra={
-                "feed_id": download.feed_id,
-                "download_id": download.id,
-                "download_target_dir": str(download_data_dir),
-                "source_url": download.source_url,
-            },
+            extra=log_params,
         )
 
         # Inline download options
@@ -641,6 +739,26 @@ class YtdlpWrapper:
             .paths_temp(download_temp_dir)
             .paths_home(download_data_dir)
         )
+
+        # Add subtitle/transcript options
+        transcripts_dir: Path | None = None
+        if transcript_lang and download.transcript_source in [
+            TranscriptSource.CREATOR,
+            TranscriptSource.AUTO,
+        ]:
+            transcripts_dir = await self._paths.feed_transcripts_dir(download.feed_id)
+            download_args = (
+                download_args.sub_format("vtt")
+                .sub_langs(transcript_lang)
+                .convert_subs("vtt")
+                .paths_subtitle(transcripts_dir)
+                .output_subtitle(f"{download.id}.%(ext)s")
+            )
+            if download.transcript_source == TranscriptSource.CREATOR:
+                download_args = download_args.write_subs()
+            elif download.transcript_source == TranscriptSource.AUTO:
+                download_args = download_args.write_auto_subs()
+
         download_args = await self._update_to(download_args)
         download_args = self._pot_extractor_args(download_args)
 
@@ -672,8 +790,7 @@ class YtdlpWrapper:
             logger.warning(
                 "Multiple files found after attempting download. Using the first one.",
                 extra={
-                    "feed_id": download.feed_id,
-                    "download_id": download.id,
+                    **log_params,
                     "files_found": [str(f) for f in downloaded_files],
                 },
             )
@@ -695,13 +812,47 @@ class YtdlpWrapper:
             download_logs,
         )
 
+        # Check if transcript was downloaded
+        transcript = None
+        if (
+            transcripts_dir
+            and transcript_lang
+            and download.transcript_source
+            in [TranscriptSource.CREATOR, TranscriptSource.AUTO]
+        ):
+            transcript_path = await self._paths.transcript_path(
+                download.feed_id, download.id, transcript_lang, "vtt"
+            )
+            if await aiofiles.os.path.isfile(transcript_path):
+                transcript = TranscriptInfo(
+                    ext="vtt",
+                    lang=transcript_lang,
+                    source=download.transcript_source,
+                )
+                logger.debug(
+                    "Transcript downloaded successfully.",
+                    extra={
+                        **log_params,
+                        "transcript_ext": "vtt",
+                    },
+                )
+            else:
+                logger.debug(
+                    "Transcript file not found after download attempt.",
+                    extra=log_params,
+                )
+
         logger.debug(
             "Download complete.",
             extra={
-                "feed_id": download.feed_id,
-                "download_id": download.id,
+                **log_params,
                 "file_path": str(downloaded_file),
+                "has_transcript": transcript is not None,
             },
         )
 
-        return downloaded_file, download_logs
+        return DownloadedMedia(
+            file_path=downloaded_file,
+            logs=download_logs,
+            transcript=transcript,
+        )

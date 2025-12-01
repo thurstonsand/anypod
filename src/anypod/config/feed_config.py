@@ -8,11 +8,13 @@ that control how content is fetched and processed.
 from datetime import UTC, datetime, tzinfo
 import os
 import shlex
-from typing import Any
+from typing import Any, cast
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+import pycountry
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from ..db.types.transcript_source import TranscriptSource
 from .types import CronExpression, FeedMetadataOverrides
 
 
@@ -61,6 +63,14 @@ class FeedConfig(BaseModel):
         default=3,
         ge=1,
         description="Max attempts for downloading media before marking as ERROR.",
+    )
+    transcript_lang: str | None = Field(
+        default=None,
+        description="Language code for downloading subtitles/transcripts (e.g., 'en'). If None, transcripts are not downloaded.",
+    )
+    transcript_source_priority: list[TranscriptSource] | None = Field(
+        default=None,
+        description="Ordered list of transcript sources to try (e.g., ['creator', 'auto']). First available source wins.",
     )
     metadata: FeedMetadataOverrides | None = Field(
         None, description="Podcast metadata overrides"
@@ -196,9 +206,130 @@ class FeedConfig(BaseModel):
                     f"since must be a string in YYYYMMDD format or None, got {type(v).__name__}"
                 )
 
+    @field_validator("transcript_lang", mode="before")
+    @classmethod
+    def validate_transcript_lang(cls, v: Any) -> str | None:
+        """Validate transcript language code as ISO 639-1.
+
+        Accepts standard ISO 639-1 two-letter language codes (e.g., 'en', 'fr', 'de').
+        The value is passed directly to yt-dlp's --sub-langs option.
+
+        Args:
+            v: Value to validate, can be string or None.
+
+        Returns:
+            Lowercase ISO 639-1 language code, or None if not provided.
+
+        Raises:
+            ValueError: If the language code is not a valid ISO 639-1 code.
+            TypeError: If the value is not a string or None.
+        """
+        match v:
+            case None:
+                return None
+            case str() as s if not s.strip():
+                return None
+            case str() as s:
+                code = s.strip().lower()
+                if not pycountry.languages.get(alpha_2=code):
+                    raise ValueError(
+                        f"Invalid ISO 639-1 language code '{s}'. "
+                        "Use two-letter codes like 'en', 'fr', 'de'."
+                    )
+                return code
+            case _:
+                raise TypeError(
+                    f"transcript_lang must be an ISO 639-1 language code string or None, got {type(v).__name__}"
+                )
+
+    @staticmethod
+    def _validate_transcript_source(item: Any) -> TranscriptSource:
+        """Validate and convert a single transcript source value.
+
+        Args:
+            item: Value to validate (string or TranscriptSource enum).
+
+        Returns:
+            Validated TranscriptSource enum value.
+
+        Raises:
+            ValueError: If the value is not a valid transcript source.
+            TypeError: If the value is not a string or TranscriptSource.
+        """
+        valid_sources = {TranscriptSource.CREATOR, TranscriptSource.AUTO}
+
+        match item:
+            case TranscriptSource() as source:
+                pass
+            case str() as s:
+                try:
+                    source = TranscriptSource(s.lower())
+                except ValueError as e:
+                    raise ValueError(
+                        f"Invalid transcript source '{s}'. "
+                        f"Valid values: {[src.value for src in valid_sources]}"
+                    ) from e
+            case _:
+                raise TypeError(
+                    f"transcript_source_priority items must be strings or "
+                    f"TranscriptSource, got {type(item).__name__}"
+                )
+
+        if source not in valid_sources:
+            raise ValueError(
+                f"Invalid transcript source '{source.value}'. "
+                f"Valid values: {[src.value for src in valid_sources]}"
+            )
+        return source
+
+    @field_validator("transcript_source_priority", mode="before")
+    @classmethod
+    def validate_transcript_source_priority(
+        cls, v: Any
+    ) -> list[TranscriptSource] | None:
+        """Validate and convert transcript source priority list.
+
+        Accepts a list of strings or TranscriptSource enum values.
+        Only CREATOR and AUTO are valid choices (NOT_AVAILABLE is not a valid priority).
+
+        Args:
+            v: Value to validate, can be list of strings/enums or None.
+
+        Returns:
+            List of TranscriptSource enum values, or None if not provided.
+
+        Raises:
+            ValueError: If invalid source values are provided or duplicates exist.
+            TypeError: If the value is not a list or None.
+        """
+        match v:
+            case None:
+                return None
+            case list():
+                items = cast(list[Any], v)
+                if len(items) == 0:
+                    return None
+            case _:
+                raise TypeError(
+                    f"transcript_source_priority must be a list or None, "
+                    f"got {type(v).__name__}"
+                )
+
+        result: list[TranscriptSource] = []
+        seen: set[TranscriptSource] = set()
+        for item in items:
+            source = FeedConfig._validate_transcript_source(item)
+            if source in seen:
+                raise ValueError(
+                    f"Duplicate transcript source '{source.value}' in priority list."
+                )
+            seen.add(source)
+            result.append(source)
+        return result
+
     @model_validator(mode="after")
-    def validate_manual_feed(self) -> FeedConfig:
-        """Ensure manual feeds provide required metadata overrides."""
+    def validate_feed_config(self) -> FeedConfig:
+        """Validate feed configuration and apply defaults."""
         if self.schedule is None:
             title_override = (
                 self.metadata.title if self.metadata and self.metadata.title else None
@@ -209,6 +340,13 @@ class FeedConfig(BaseModel):
                 )
         elif not self.url:
             raise ValueError("Feed URL is required for scheduled feeds.")
+
+        if self.transcript_lang and self.transcript_source_priority is None:
+            self.transcript_source_priority = [
+                TranscriptSource.CREATOR,
+                TranscriptSource.AUTO,
+            ]
+
         return self
 
     @property

@@ -17,7 +17,7 @@ and any errors that occurred during execution.
 from dataclasses import dataclass, field
 
 
-@dataclass
+@dataclass(frozen=True)
 class PhaseResult:
     """Results from a single processing phase.
 

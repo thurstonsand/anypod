@@ -196,6 +196,54 @@ async def test_upsert_download_updates_existing(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+async def test_update_download_raises_when_not_found(
+    download_db: DownloadDatabase, test_feed: Feed
+):
+    """Test that update_download raises DownloadNotFoundError when download doesn't exist."""
+    nonexistent_download = Download(
+        feed_id=test_feed.id,
+        id="nonexistent_id",
+        source_url="http://example.com/video/nonexistent",
+        title="Nonexistent Video",
+        published=datetime(2023, 1, 1, 12, 0, 0, tzinfo=UTC),
+        ext="mp4",
+        mime_type="video/mp4",
+        duration=100,
+        filesize=1024,
+        status=DownloadStatus.DOWNLOADED,
+    )
+
+    with pytest.raises(DownloadNotFoundError):
+        await download_db.update_download(nonexistent_download)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_update_download_updates_existing(
+    download_db: DownloadDatabase, sample_download_queued: Download
+):
+    """Test that update_download modifies an existing download."""
+    await download_db.upsert_download(sample_download_queued)
+
+    sample_download_queued.status = DownloadStatus.DOWNLOADED
+    sample_download_queued.ext = "mkv"
+    sample_download_queued.filesize = 4096
+    sample_download_queued.retries = 0
+    sample_download_queued.last_error = None
+
+    await download_db.update_download(sample_download_queued)
+
+    retrieved = await download_db.get_download_by_id(
+        feed_id=sample_download_queued.feed_id,
+        download_id=sample_download_queued.id,
+    )
+    assert retrieved.status == DownloadStatus.DOWNLOADED
+    assert retrieved.ext == "mkv"
+    assert retrieved.filesize == 4096
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 async def test_status_transitions(
     download_db: DownloadDatabase,
     sample_download_queued: Download,

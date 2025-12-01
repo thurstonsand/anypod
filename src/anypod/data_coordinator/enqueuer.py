@@ -282,6 +282,8 @@ class Enqueuer:
                 feed_config.yt_args,
                 None,  # No date filtering for single video
                 None,  # No keep_last for single video
+                feed_config.transcript_lang,
+                feed_config.transcript_source_priority,
                 cookies_path=cookies_path,
             )
         except YtdlpApiError as e:
@@ -655,6 +657,8 @@ class Enqueuer:
                     user_yt_cli_args,
                     fetch_since_date,
                     feed_config.keep_last,
+                    feed_config.transcript_lang,
+                    feed_config.transcript_source_priority,
                     cookies_path,
                 )
             )
