@@ -508,6 +508,48 @@ class YtdlpWrapper:
 
         return parsed_downloads
 
+    async def _find_and_normalize_transcript(
+        self,
+        feed_id: str,
+        download_id: str,
+        transcript_lang: str,
+    ) -> Path | None:
+        """Find transcript file with case-insensitive language code matching.
+
+        yt-dlp creates files with platform-specific language code casing
+        (e.g., Twitter uses "EN", YouTube uses "en"). Find matches
+        regardless of casing, then normalizes to lowercase.
+
+        Args:
+            feed_id: The feed identifier.
+            download_id: The download identifier.
+            transcript_lang: Expected language code (e.g., "en").
+
+        Returns:
+            Path to the normalized transcript file if found, None otherwise.
+        """
+        transcripts_dir = await self._paths.feed_transcripts_dir(feed_id)
+        expected_filename = f"{download_id}.{transcript_lang.lower()}.vtt"
+        expected_path = transcripts_dir / expected_filename
+
+        pattern = f"{download_id}.{transcript_lang}.vtt"
+        actual_path = next(transcripts_dir.glob(pattern, case_sensitive=False), None)
+
+        if actual_path is None:
+            return None
+        if actual_path.name != expected_filename:
+            await aiofiles.os.rename(actual_path, expected_path)
+            logger.debug(
+                "Renamed transcript file to normalize language code.",
+                extra={
+                    "feed_id": feed_id,
+                    "download_id": download_id,
+                    "original_name": actual_path.name,
+                    "normalized_name": expected_filename,
+                },
+            )
+        return expected_path
+
     async def download_transcript_only(
         self,
         feed_id: str,
@@ -571,10 +613,10 @@ class YtdlpWrapper:
 
         await YtdlpCore.download(args, source_url)
 
-        transcript_path = await self._paths.transcript_path(
-            feed_id, download_id, transcript_lang, "vtt"
+        transcript_path = await self._find_and_normalize_transcript(
+            feed_id, download_id, transcript_lang
         )
-        if await aiofiles.os.path.isfile(transcript_path):
+        if transcript_path:
             logger.debug(
                 "Transcript downloaded successfully.",
                 extra={
@@ -820,10 +862,10 @@ class YtdlpWrapper:
             and download.transcript_source
             in [TranscriptSource.CREATOR, TranscriptSource.AUTO]
         ):
-            transcript_path = await self._paths.transcript_path(
-                download.feed_id, download.id, transcript_lang, "vtt"
+            transcript_path = await self._find_and_normalize_transcript(
+                download.feed_id, download.id, transcript_lang
             )
-            if await aiofiles.os.path.isfile(transcript_path):
+            if transcript_path:
                 transcript = TranscriptInfo(
                     ext="vtt",
                     lang=transcript_lang,

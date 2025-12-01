@@ -154,7 +154,9 @@ class YtdlpInfo:
     ) -> YtdlpTranscript | None:
         """Get transcript data for a language with source information.
 
-        Checks sources in priority order.
+        Checks sources in priority order. Language matching is case-insensitive
+        since different extractors use different casing (e.g., Twitter uses "EN"
+        while YouTube uses "en").
 
         Args:
             lang: Language code to check (e.g., "en").
@@ -169,14 +171,20 @@ class YtdlpInfo:
             "automatic_captions", dict[str, list[dict[str, Any]]]
         )
 
+        def get_lang(
+            d: dict[str, list[dict[str, Any]]] | None,
+        ) -> list[dict[str, Any]] | None:
+            if not d:
+                return None
+            lang_lower = lang.lower()
+            return next((v for k, v in d.items() if k.lower() == lang_lower), None)
+
         for source in source_priority:
-            if source == TranscriptSource.CREATOR and subtitles and lang in subtitles:
-                return YtdlpTranscript(subtitles[lang], TranscriptSource.CREATOR)
-            if (
-                source == TranscriptSource.AUTO
-                and automatic_captions
-                and lang in automatic_captions
+            if source == TranscriptSource.CREATOR and (data := get_lang(subtitles)):
+                return YtdlpTranscript(data, TranscriptSource.CREATOR)
+            if source == TranscriptSource.AUTO and (
+                data := get_lang(automatic_captions)
             ):
-                return YtdlpTranscript(automatic_captions[lang], TranscriptSource.AUTO)
+                return YtdlpTranscript(data, TranscriptSource.AUTO)
 
         return None

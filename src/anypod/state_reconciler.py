@@ -90,7 +90,9 @@ class StateReconciler:
             (
                 source_type,
                 resolved_url,
-            ) = await self._ytdlp_wrapper.discover_feed_properties(feed_id, source_url)
+            ) = await self._ytdlp_wrapper.discover_feed_properties(
+                feed_id, source_url, cookies_path
+            )
         else:
             source_type = db_feed.source_type
             resolved_url = db_feed.resolved_url
@@ -715,17 +717,22 @@ class StateReconciler:
         feed_id: str,
         downloads: list[Download],
         log_params: dict[str, Any],
-    ) -> None:
+    ) -> list[Download]:
         """Delete transcripts for a list of downloads.
 
         Args:
             feed_id: The feed identifier.
             downloads: List of Download objects to process.
             log_params: Logging parameters for context.
+
+        Returns:
+            List of Download objects with cleared transcript metadata.
         """
         deleted_count = 0
+        cleared_downloads: list[Download] = []
         for download in downloads:
             if not download.transcript_lang or not download.transcript_ext:
+                cleared_downloads.append(download)
                 continue
 
             try:
@@ -756,6 +763,15 @@ class StateReconciler:
                     transcript_lang=None,
                     transcript_source=None,
                 )
+                cleared_downloads.append(
+                    download.model_copy(
+                        update={
+                            "transcript_ext": None,
+                            "transcript_lang": None,
+                            "transcript_source": None,
+                        }
+                    )
+                )
             except DatabaseOperationError as e:
                 logger.warning(
                     "Failed to clear transcript metadata.",
@@ -767,6 +783,8 @@ class StateReconciler:
             f"Deleted {deleted_count} transcript files.",
             extra={**log_params, "deleted_count": deleted_count},
         )
+
+        return cleared_downloads
 
     async def _handle_transcript_config_changes(
         self,
@@ -864,12 +882,12 @@ class StateReconciler:
                         "new_transcript_lang": new_lang,
                     },
                 )
-                await self._delete_transcripts_for_downloads(
+                cleared_downloads = await self._delete_transcripts_for_downloads(
                     feed_id, downloads, log_params
                 )
                 await self._download_transcripts_for_downloads(
                     feed_id,
-                    downloads,
+                    cleared_downloads,
                     new_lang,
                     config_transcript_source_priority,
                     user_yt_cli_args,
@@ -893,12 +911,12 @@ class StateReconciler:
                         else None,
                     },
                 )
-                await self._delete_transcripts_for_downloads(
+                cleared_downloads = await self._delete_transcripts_for_downloads(
                     feed_id, downloads, log_params
                 )
                 await self._download_transcripts_for_downloads(
                     feed_id,
-                    downloads,
+                    cleared_downloads,
                     current_lang,
                     config_transcript_source_priority,
                     user_yt_cli_args,
