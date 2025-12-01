@@ -19,15 +19,23 @@ jobs:
 
       - name: Update Dockerfile if needed
         id: update
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
 
-          # Update bgutil provider to latest version
-          RESP=$(curl -s https://api.github.com/repos/brainicism/bgutil-ytdlp-pot-provider/releases/latest)
-          LATEST=$(echo "$RESP" | jq -r '.tag_name')
+          if [ -z "${GITHUB_TOKEN:-}" ]; then
+            echo "ERROR: GITHUB_TOKEN is required to query the GitHub API"
+            exit 1
+          fi
 
-          if [ -z "$LATEST" ] || [ "$LATEST" = "null" ]; then
-            echo "ERROR: Failed to fetch latest bgutil version from GitHub API"
+          # Update bgutil provider to latest version using authenticated API request to avoid rate limits
+          RESP=$(curl -fsSL \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            "https://api.github.com/repos/brainicism/bgutil-ytdlp-pot-provider/releases/latest")
+
+          if ! LATEST=$(echo "$RESP" | jq -er '.tag_name'); then
+            echo "ERROR: Failed to parse latest bgutil version from GitHub API"
             echo "Full API response:"
             echo "$RESP"
             exit 1
