@@ -3,8 +3,10 @@
 from types import UnionType
 from typing import Any, Union, get_origin
 
+from ...db.types import TranscriptSource
 from ...exceptions import YtdlpFieldInvalidError, YtdlpFieldMissingError
 from .thumbnails import YtdlpThumbnails
+from .transcript import YtdlpTranscript
 
 
 class YtdlpInfo:
@@ -99,12 +101,12 @@ class YtdlpInfo:
         Raises:
             YtdlpFieldInvalidError: If an entry has an invalid type.
         """
-        raw_entries = self.get("entries", list[dict[str, Any] | None])  # type: ignore
+        raw_entries = self.get("entries", list[dict[str, Any] | None])
         if raw_entries is None:
             return None
 
         entries: list[YtdlpInfo | None] = []
-        for entry in raw_entries:  # type: ignore
+        for entry in raw_entries:
             if entry is None:
                 entries.append(None)
                 continue
@@ -114,7 +116,7 @@ class YtdlpInfo:
                 raise YtdlpFieldInvalidError(
                     field_name="entries",
                     expected_type=dict,
-                    actual_value=entry,  # type: ignore
+                    actual_value=entry,
                 )
 
             entries.append(YtdlpInfo(entry))
@@ -130,17 +132,51 @@ class YtdlpInfo:
         Raises:
             YtdlpFieldInvalidError: If thumbnails field has an invalid type.
         """
-        raw_thumbnails = self.get("thumbnails", list[dict[str, Any]])  # type: ignore
+        raw_thumbnails = self.get("thumbnails", list[dict[str, Any]])
         if raw_thumbnails is None:
             return None
 
         # Validate that each thumbnail is a dictionary
-        for i, thumbnail in enumerate(raw_thumbnails):  # type: ignore
+        for i, thumbnail in enumerate(raw_thumbnails):
             if not isinstance(thumbnail, dict):  # pyright: ignore[reportUnnecessaryIsInstance]
                 raise YtdlpFieldInvalidError(
                     field_name=f"thumbnails[{i}]",
                     expected_type=dict,
-                    actual_value=thumbnail,  # type: ignore
+                    actual_value=thumbnail,
                 )
 
-        return YtdlpThumbnails(raw_thumbnails)  # type: ignore
+        return YtdlpThumbnails(raw_thumbnails)
+
+    def transcript(
+        self,
+        lang: str,
+        source_priority: list[TranscriptSource],
+    ) -> YtdlpTranscript | None:
+        """Get transcript data for a language with source information.
+
+        Checks sources in priority order.
+
+        Args:
+            lang: Language code to check (e.g., "en").
+            source_priority: Ordered list of sources to try.
+
+        Returns:
+            YtdlpTranscript object for accessing transcript data, or None if
+            no transcript is available for the language in any prioritized source.
+        """
+        subtitles = self.get("subtitles", dict[str, list[dict[str, Any]]])
+        automatic_captions = self.get(
+            "automatic_captions", dict[str, list[dict[str, Any]]]
+        )
+
+        for source in source_priority:
+            if source == TranscriptSource.CREATOR and subtitles and lang in subtitles:
+                return YtdlpTranscript(subtitles[lang], TranscriptSource.CREATOR)
+            if (
+                source == TranscriptSource.AUTO
+                and automatic_captions
+                and lang in automatic_captions
+            ):
+                return YtdlpTranscript(automatic_captions[lang], TranscriptSource.AUTO)
+
+        return None

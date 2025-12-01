@@ -17,7 +17,7 @@ Your self-hosted, YAML-driven bridge from yt-dlp–supported sources (YouTube ch
     - [Using Docker Compose (recommended)](#using-docker-compose-recommended)
     - [Using Docker directly](#using-docker-directly)
   - [Configuration](#configuration)
-    - [Manual feeds \& submissions](#manual-feeds--submissions)
+    - [Transcript configuration](#transcript-configuration)
   - [Environment variables](#environment-variables)
   - [HTTP endpoints](#http-endpoints)
     - [Public endpoints](#public-endpoints)
@@ -52,6 +52,7 @@ Anypod is a thin Python wrapper around `yt‑dlp` that turns any `yt‑dlp`–su
 - Works with YouTube channels/playlists, Patreon creator pages/posts (beta), and public X/Twitter video posts (beta)
 - Feed metadata overrides (title, description, artwork, categories, explicit, etc.)
 - Thumbnail hosting: Downloads and serves feed artwork and episode thumbnails locally
+- Transcript/subtitle support: Downloads and serves transcripts via `<podcast:transcript>` tags (VTT format)
 - Retention policies: keep the last N items and/or only since YYYYMMDD
 - Manual submission feeds: declare `schedule: "manual"` and push ad-hoc URLs via the admin API
 - Docker image with non‑root (PUID/PGID) support
@@ -174,6 +175,23 @@ Notes:
 - `image_url` allows you to override the feed artwork (downloaded and hosted locally)
 - `yt_args` are passed directly to [`yt-dlp`](https://github.com/yt-dlp/yt-dlp); see their docs for options
 
+### Transcript configuration
+
+Add `transcript_lang` to a feed to fetch subtitles/transcripts (VTT format) and emit `<podcast:transcript>` tags that podcast players understand. Transcript files are stored under `/transcripts/{feed_id}` and served automatically from `/transcripts/{feed_id}/{download_id}.{lang}.vtt`.
+
+Control which subtitles Anypod prefers by setting `transcript_source_priority` to an ordered list of `creator` and/or `auto` sources. When omitted, Anypod tries creator subtitles first and falls back to auto captions.
+
+```yaml
+feeds:
+  channel:
+    url: https://www.youtube.com/@example
+    schedule: "0 3 * * *"
+    transcript_lang: en
+    transcript_source_priority:
+      - creator
+      - auto
+```
+
 For full configuration details including manual feeds, metadata overrides, and reserved yt-dlp options, see [docs/configuration.md](docs/configuration.md).
 
 ## Environment variables
@@ -202,6 +220,7 @@ For the complete list of environment variables, see [docs/configuration.md](docs
 - `GET /media/{feed_id}/{filename}.{ext}` – media file download
 - `GET /images/{feed_id}.jpg` – feed artwork/thumbnail
 - `GET /images/{feed_id}/{download_id}.jpg` – episode thumbnail
+- `GET /transcripts/{feed_id}/{download_id}.{lang}.{ext}` – episode transcript file
 - `GET /api/health` – health check
 
 ### Admin endpoints (trusted/local access only)
@@ -321,7 +340,7 @@ High‑level upcoming work. See `TASK_LIST.md` for the full checklist.
 
 - Admin Dashboard
 - Advanced video conversion
-- Grab transcripts, potentially add in-app transcription when not provided externally
+- AI transcription fallback (Whisper) when source doesn't provide transcripts
 - Grab timestamps and convert to chapters
 - Include global size limit such that all podcasts across all feeds don't exceed a certain size
 - Integrate sponsorblock to automatically cut out or add chapter markers for ads

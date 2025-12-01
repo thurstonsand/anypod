@@ -5,6 +5,7 @@ from .download import Download
 from .download_status import DownloadStatus
 from .feed import Feed
 from .source_type import SourceType
+from .transcript_source import TranscriptSource
 
 __all__ = [
     "AppState",
@@ -12,4 +13,5 @@ __all__ = [
     "DownloadStatus",
     "Feed",
     "SourceType",
+    "TranscriptSource",
 ]

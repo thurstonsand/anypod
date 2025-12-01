@@ -83,6 +83,15 @@ class YtdlpArgs:
         self._referer: str | None = None
         self._match_filter: str | None = None
 
+        # Subtitle/transcript options
+        self._write_subs: bool = False
+        self._write_auto_subs: bool = False
+        self._sub_format: str | None = None
+        self._sub_langs: str | None = None
+        self._convert_subs: str | None = None
+        self._paths_subtitle: Path | None = None
+        self._subtitle_output: str | None = None
+
     def quiet(self) -> YtdlpArgs:
         """Enable quiet mode (suppress verbose output)."""
         self._quiet = True
@@ -284,6 +293,76 @@ class YtdlpArgs:
         self._additional_args.extend(args)
         return self
 
+    def write_subs(self) -> YtdlpArgs:
+        """Enable creator-provided subtitle downloading."""
+        self._write_subs = True
+        return self
+
+    def write_auto_subs(self) -> YtdlpArgs:
+        """Enable auto-generated subtitle downloading (YouTube)."""
+        self._write_auto_subs = True
+        return self
+
+    def sub_format(self, fmt: str) -> YtdlpArgs:
+        """Set subtitle format preference (e.g., 'vtt', 'srt/vtt/best').
+
+        Args:
+            fmt: Subtitle format specification.
+
+        Returns:
+            The builder instance for chaining.
+        """
+        self._sub_format = fmt
+        return self
+
+    def sub_langs(self, langs: str) -> YtdlpArgs:
+        """Set subtitle languages to download (e.g., 'en', 'en.*', 'all').
+
+        Args:
+            langs: Language specification string.
+
+        Returns:
+            The builder instance for chaining.
+        """
+        self._sub_langs = langs
+        return self
+
+    def convert_subs(self, fmt: str) -> YtdlpArgs:
+        """Convert subtitles to specified format (srt, vtt, ass, lrc).
+
+        Args:
+            fmt: Target subtitle format.
+
+        Returns:
+            The builder instance for chaining.
+        """
+        self._convert_subs = fmt
+        return self
+
+    def paths_subtitle(self, path: Path) -> YtdlpArgs:
+        """Set the directory where subtitles will be saved.
+
+        Args:
+            path: Filesystem path to save subtitles in.
+
+        Returns:
+            The builder instance for chaining.
+        """
+        self._paths_subtitle = path
+        return self
+
+    def output_subtitle(self, template: str) -> YtdlpArgs:
+        """Set the output template for subtitle files.
+
+        Args:
+            template: The output template string for subtitles (e.g., "%(id)s.%(ext)s").
+
+        Returns:
+            The builder instance for chaining.
+        """
+        self._subtitle_output = template
+        return self
+
     def extractor_args(self, value: str) -> YtdlpArgs:
         """Append an ``--extractor-args`` flag value.
 
@@ -390,6 +469,22 @@ class YtdlpArgs:
             cmd.extend(["--referer", self._referer])
         if self._match_filter is not None:
             cmd.extend(["--match-filter", self._match_filter])
+
+        # Subtitle/transcript options
+        if self._write_subs:
+            cmd.append("--write-subs")
+        if self._write_auto_subs:
+            cmd.append("--write-auto-subs")
+        if self._sub_format is not None:
+            cmd.extend(["--sub-format", self._sub_format])
+        if self._sub_langs is not None:
+            cmd.extend(["--sub-langs", self._sub_langs])
+        if self._convert_subs is not None:
+            cmd.extend(["--convert-subs", self._convert_subs])
+        if self._paths_subtitle is not None:
+            cmd.extend(["--paths", f"subtitle:{self._paths_subtitle}"])
+        if self._subtitle_output is not None:
+            cmd.extend(["--output", f"subtitle:{self._subtitle_output}"])
 
         # Update control - skip in pytest to avoid issues with pip-installed yt-dlp
         if self._update_to is not None and not self._running_under_pytest():

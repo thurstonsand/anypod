@@ -46,6 +46,11 @@ class PathManager:
         return self._base_data_dir / "images"
 
     @property
+    def base_transcripts_dir(self) -> Path:
+        """Return the directory used for transcript files."""
+        return self._base_data_dir / "transcripts"
+
+    @property
     def base_feeds_dir(self) -> Path:
         """Return the directory used for persisted RSS XML files."""
         return self._base_data_dir / "feeds"
@@ -203,6 +208,88 @@ class PathManager:
         """
         tmp_dir = await self.feed_tmp_dir(feed_id)
         return tmp_dir / f"tmp_{uuid.uuid4().hex}"
+
+    async def feed_transcripts_dir(self, feed_id: str) -> Path:
+        """Return the directory for a feed's transcript files.
+
+        Creates the directory if it doesn't exist.
+
+        Args:
+            feed_id: Unique identifier for the feed.
+
+        Returns:
+            Path to the feed's transcripts directory.
+
+        Raises:
+            ValueError: If feed_id is empty or whitespace-only.
+            FileOperationError: If the directory cannot be created.
+        """
+        if not feed_id or not feed_id.strip():
+            raise ValueError("feed_id cannot be empty or whitespace-only")
+
+        path = self.base_transcripts_dir / feed_id
+        try:
+            await aiofiles.os.makedirs(path, exist_ok=True)
+        except OSError as e:
+            raise FileOperationError(
+                "Failed to create feed transcripts directory.",
+                file_name=str(path),
+            ) from e
+        return path
+
+    async def transcript_path(
+        self, feed_id: str, download_id: str, lang: str, ext: str
+    ) -> Path:
+        """Return the full file system path for a transcript file.
+
+        Args:
+            feed_id: Unique identifier for the feed.
+            download_id: Unique identifier for the download.
+            lang: Language code (e.g., "en").
+            ext: File extension without the leading dot (e.g., "vtt").
+
+        Returns:
+            Complete path to the transcript file on disk.
+
+        Raises:
+            ValueError: If feed_id, download_id, or lang is empty or whitespace-only.
+            FileOperationError: If the directory cannot be created.
+        """
+        if not download_id or not download_id.strip():
+            raise ValueError("download_id cannot be empty or whitespace-only")
+        if not lang or not lang.strip():
+            raise ValueError("lang cannot be empty or whitespace-only")
+
+        transcripts_dir = await self.feed_transcripts_dir(feed_id)
+        return transcripts_dir / f"{download_id}.{lang}.{ext}"
+
+    def transcript_url(
+        self, feed_id: str, download_id: str, lang: str, ext: str
+    ) -> str:
+        """Return the HTTP URL for a transcript file.
+
+        Args:
+            feed_id: Unique identifier for the feed.
+            download_id: Unique identifier for the download.
+            lang: Language code (e.g., "en").
+            ext: File extension without the leading dot (e.g., "vtt").
+
+        Returns:
+            Complete URL for accessing the transcript file via HTTP.
+
+        Raises:
+            ValueError: If feed_id, download_id, or lang is empty or whitespace-only.
+        """
+        if not feed_id or not feed_id.strip():
+            raise ValueError("feed_id cannot be empty or whitespace-only")
+        if not download_id or not download_id.strip():
+            raise ValueError("download_id cannot be empty or whitespace-only")
+        if not lang or not lang.strip():
+            raise ValueError("lang cannot be empty or whitespace-only")
+
+        return urljoin(
+            self._base_url, f"/transcripts/{feed_id}/{download_id}.{lang}.{ext}"
+        )
 
     def feed_url(self, feed_id: str) -> str:
         """Return the full URL for a feed's RSS XML.

@@ -90,21 +90,21 @@ graph TD
 
 ### Layer Responsibilities
 
-| Layer                       | Responsibility                                                                                                                                                                                   | Key Points                                                                                           |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| **`AppSettings` (config/)** | Parse & validate YAML into strongly‑typed models.                                                                                                                                                | Environment‑variable overrides; default value injection; early failure on schema mismatch.           |
-| **`StateReconciler`**       | Synchronize YAML configuration with database state on startup and config changes.                                                                                                                | Handles feed creation/removal/updates; manages retention policy changes; preserves download history. |
-| **`Scheduler`**             | Trigger periodic `DataCoordinator.process_feed` jobs per‑feed cron schedule.                                                                                                                     | Async scheduler; cron expressions validated at startup; stateless job store.                         |
-| **Database Classes**        | Persistent metadata store (status, retries, paths, etc.). Specialized classes for downloads and feeds.                                                                                           | `DownloadDatabase` + `FeedDatabase` + `SqlalchemyCore`; proper state transitions.                    |
-| **`FileManager`**           | All filesystem interaction: save/read/delete media, atomic RSS writes, directory hygiene, free‑space checks.                                                                                     | Centralized path management; future back‑ends (S3/GCS) become plug‑ins.                              |
-| **`YtdlpWrapper`**          | Thin wrapper around `yt-dlp` for fetching media metadata and downloading media content.                                                                                                          | Handler-based system; abstracts `yt-dlp` specifics; provides `fetch_metadata` and `download_media`.  |
-| **`FeedGen`** (rss/)        | Generates RSS XML feed files based on current download metadata.                                                                                                                                 | Persists XML to disk atomically; uses database classes & `FileManager` for storage.                  |
-| **DataCoordinator Module**  | Houses services that orchestrate data lifecycle operations using foundational components and `FeedGen`.                                                                                          | Uses database classes, `FileManager`, `YtdlpWrapper`, `FeedGen`. Main class is `DataCoordinator`.    |
-| ↳ **`DataCoordinator`**     | High-level orchestration of enqueue, download, prune, and feed generation phases.                                                                                                                | Delegates to `Enqueuer`, `Downloader`, `Pruner`, and calls `FeedGen`. Ensures sequence.              |
-| ↳ **`Enqueuer`**            | Fetches media metadata in two phases—(1) re-poll existing 'upcoming' entries to transition them to 'queued' when VOD; (2) fetch latest feed media and insert new 'queued' or 'upcoming' entries. | Uses `YtdlpWrapper` for metadata, database classes for DB writes.                                    |
+| Layer                       | Responsibility                                                                                                                                                                                   | Key Points                                                                                                            |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| **`AppSettings` (config/)** | Parse & validate YAML into strongly‑typed models.                                                                                                                                                | Environment‑variable overrides; default value injection; early failure on schema mismatch.                            |
+| **`StateReconciler`**       | Synchronize YAML configuration with database state on startup and config changes.                                                                                                                | Handles feed creation/removal/updates; manages retention policy changes; preserves download history.                  |
+| **`Scheduler`**             | Trigger periodic `DataCoordinator.process_feed` jobs per‑feed cron schedule.                                                                                                                     | Async scheduler; cron expressions validated at startup; stateless job store.                                          |
+| **Database Classes**        | Persistent metadata store (status, retries, paths, etc.). Specialized classes for downloads and feeds.                                                                                           | `DownloadDatabase` + `FeedDatabase` + `SqlalchemyCore`; proper state transitions.                                     |
+| **`FileManager`**           | All filesystem interaction: save/read/delete media, atomic RSS writes, directory hygiene, free‑space checks.                                                                                     | Centralized path management; future back‑ends (S3/GCS) become plug‑ins.                                               |
+| **`YtdlpWrapper`**          | Thin wrapper around `yt-dlp` for fetching media metadata and downloading media content.                                                                                                          | Handler-based system; abstracts `yt-dlp` specifics; provides `fetch_metadata` and `download_media`.                   |
+| **`FeedGen`** (rss/)        | Generates RSS XML feed files based on current download metadata.                                                                                                                                 | Persists XML to disk atomically; uses database classes & `FileManager` for storage.                                   |
+| **DataCoordinator Module**  | Houses services that orchestrate data lifecycle operations using foundational components and `FeedGen`.                                                                                          | Uses database classes, `FileManager`, `YtdlpWrapper`, `FeedGen`. Main class is `DataCoordinator`.                     |
+| ↳ **`DataCoordinator`**     | High-level orchestration of enqueue, download, prune, and feed generation phases.                                                                                                                | Delegates to `Enqueuer`, `Downloader`, `Pruner`, and calls `FeedGen`. Ensures sequence.                               |
+| ↳ **`Enqueuer`**            | Fetches media metadata in two phases—(1) re-poll existing 'upcoming' entries to transition them to 'queued' when VOD; (2) fetch latest feed media and insert new 'queued' or 'upcoming' entries. | Uses `YtdlpWrapper` for metadata, database classes for DB writes.                                                     |
 | ↳ **`Downloader`**          | Processes queued downloads: triggers downloads via `YtdlpWrapper`, saves files, verifies integrity with `ffprobe`, and updates database records.                                                 | Uses `YtdlpWrapper`, `FileManager`, database classes. Handles download success/failure and quarantines corrupt files. |
-| ↳ **`Pruner`**              | Implements retention policies by identifying and removing old/stale downloads and their files.                                                                                                   | Uses database classes for selection, `FileManager` for deletion.                                     |
-| **HTTP (FastAPI)**          | Serve RSS feeds, media files, and API endpoints.                                                                                                                                                 | Delegates look-ups to underlying components; zero business logic.                                    |
+| ↳ **`Pruner`**              | Implements retention policies by identifying and removing old/stale downloads and their files.                                                                                                   | Uses database classes for selection, `FileManager` for deletion.                                                      |
+| **HTTP (FastAPI)**          | Serve RSS feeds, media files, and API endpoints.                                                                                                                                                 | Delegates look-ups to underlying components; zero business logic.                                                     |
 
 ---
 
@@ -117,6 +117,10 @@ feeds:
     yt_args: "-f worst[ext=mp4] --playlist-items 1-3"
     schedule: "0 3 * * *"
     since: "20220101"
+    transcript_lang: en
+    transcript_source_priority:
+      - creator
+      - auto
 
   # Feed with full metadata overrides
   premium_podcast:
@@ -218,6 +222,9 @@ CREATE TABLE downloads (
   retries              INTEGER NOT NULL DEFAULT 0,
   last_error           TEXT,
   download_logs        TEXT,                    -- yt-dlp execution logs (stdout/stderr)
+  transcript_ext       TEXT,                    -- Transcript file extension (e.g., vtt)
+  transcript_lang      TEXT,                    -- Transcript language code (ISO 639-1)
+  transcript_source    TEXT,                    -- creator | auto | not_available
   downloaded_at        TEXT,                    -- ISO 8601 datetime string
   PRIMARY KEY (feed, id)
 );
@@ -249,9 +256,11 @@ CREATE TABLE feeds (
   -- Download tracking
   total_downloads           INTEGER NOT NULL DEFAULT 0, -- Computed: count of downloads with status DOWNLOADED
 
-  -- Retention policies
+  -- Retention + transcript policies
   since                     TEXT,                    -- ISO 8601 datetime string
   keep_last                 INTEGER,
+  transcript_lang           TEXT,                    -- Preferred transcript language (ISO 639-1)
+  transcript_source_priority TEXT,                   -- Comma-separated priority list (creator,auto)
 
   -- Feed metadata overrides
   title                     TEXT,
@@ -494,25 +503,26 @@ The `RSSFeedGenerator` module **persists RSS XML files to disk** under the data 
 
 ### Public Endpoints
 
-| Path                               | Description                                                            |
-| ---------------------------------- | ---------------------------------------------------------------------- |
-| `/feeds`                           | HTML directory listing of available feeds                              |
-| `/feeds/{feed}.xml`                | Podcast RSS                                                            |
-| `/media`                           | HTML directory listing of feed directories                             |
-| `/media/{feed}`                    | HTML directory listing of media files for feed                         |
-| `/media/{feed}/{file}`             | MP4 / M4A enclosure                                                    |
-| `/images/{feed}.jpg`               | Feed artwork/thumbnail                                                 |
-| `/images/{feed}/{download_id}.jpg` | Episode thumbnail                                                      |
-| `/errors`                          | JSON list of failed downloads                                          |
-| `/api/health`                      | Health check endpoint returning service status, timestamp, and version |
+| Path                                             | Description                                                            |
+| ------------------------------------------------ | ---------------------------------------------------------------------- |
+| `/feeds`                                         | HTML directory listing of available feeds                              |
+| `/feeds/{feed}.xml`                              | Podcast RSS                                                            |
+| `/media`                                         | HTML directory listing of feed directories                             |
+| `/media/{feed}`                                  | HTML directory listing of media files for feed                         |
+| `/media/{feed}/{file}`                           | MP4 / M4A enclosure                                                    |
+| `/images/{feed}.jpg`                             | Feed artwork/thumbnail                                                 |
+| `/images/{feed}/{download_id}.jpg`               | Episode thumbnail                                                      |
+| `/transcripts/{feed}/{download_id}.{lang}.{ext}` | Episode transcript file                                                |
+| `/errors`                                        | JSON list of failed downloads                                          |
+| `/api/health`                                    | Health check endpoint returning service status, timestamp, and version |
 
 ### Admin Endpoints (Private/Trusted Access)
 
-| Path                                                    | Description                                                                                                     |
-| ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `POST /admin/feeds/{feed_id}/reset-errors`              | Reset all ERROR downloads for a feed to QUEUED status                                                           |
-| `POST /admin/feeds/{feed_id}/downloads`                 | Queue a single URL for manual feeds                                                                             |
-| `GET /admin/feeds/{feed_id}/downloads/{download_id}`    | Retrieve selected fields for a download record (supports `?fields=` query parameter)                            |
+| Path                                                    | Description                                                                                |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `POST /admin/feeds/{feed_id}/reset-errors`              | Reset all ERROR downloads for a feed to QUEUED status                                      |
+| `POST /admin/feeds/{feed_id}/downloads`                 | Queue a single URL for manual feeds                                                        |
+| `GET /admin/feeds/{feed_id}/downloads/{download_id}`    | Retrieve selected fields for a download record (supports `?fields=` query parameter)       |
 | `DELETE /admin/feeds/{feed_id}/downloads/{download_id}` | Delete a download from a manual feed with full cleanup (media, thumbnail); regenerates RSS |
 
 ---
@@ -615,9 +625,7 @@ yt-dlp's `daterange` parameter only supports YYYYMMDD format, not hour/minute/se
 - OAuth device-flow
 - Prometheus `/metrics`
 - Consider restricting feed_id and download_id in `PathManager` to alphanumeric characters only (plus maybe hyphens/underscores) to avoid potential filesystem and URL encoding issues
-- Support transcripts/auto-generated (whisper can natively output .srt files)
-  - > I'm a podcast author, how can I add transcripts to my show?
-    > In order for Pocket Casts to discover transcripts for an episode and offer them within the app, the podcast feed must include the <podcast:transcript> element and the transcript must be in one of the following formats: VTT, SRT, PodcastIndex JSON, or HTML.
+- AI transcription fallback (Whisper) when source doesn't provide transcripts
 - include global size limit such that entire app doesnt exeed certain size
   - need to explore options around how to evict downloads if exceeded; some ideas below
   - | Policy                                     | What it does                                                                                                                                                                     | Strengths                                                               | Watch‑outs                                                                                                              |

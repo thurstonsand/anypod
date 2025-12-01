@@ -22,6 +22,7 @@ from sqlmodel import Field, Relationship, SQLModel
 from ...config.types import PodcastCategories, PodcastType
 from .source_type import SourceType
 from .timezone_aware_datetime import SQLITE_DATETIME_NOW, TimezoneAwareDatetime
+from .transcript_source import TranscriptSource
 
 if TYPE_CHECKING:
     from .download import Download
@@ -47,6 +48,29 @@ class PodcastCategoriesType(TypeDecorator[PodcastCategories]):
             # Return default if somehow None is returned from database
             return PodcastCategories("TV & Film")
         return PodcastCategories(value)
+
+
+class TranscriptSourcePriorityType(TypeDecorator[list[TranscriptSource]]):
+    """SQLAlchemy type for transcript source priority list stored as comma-separated string."""
+
+    impl = String
+    cache_ok = True
+
+    def process_bind_param(
+        self, value: list[TranscriptSource] | None, dialect: Any
+    ) -> str | None:
+        """Convert list of TranscriptSource to comma-separated string for storage."""
+        if value is None or len(value) == 0:
+            return None
+        return ",".join(source.value for source in value)
+
+    def process_result_value(
+        self, value: str | None, dialect: Any
+    ) -> list[TranscriptSource] | None:
+        """Convert comma-separated string back to list of TranscriptSource."""
+        if value is None or value == "":
+            return None
+        return [TranscriptSource(s) for s in value.split(",")]
 
 
 class Feed(SQLModel, table=True):
@@ -163,6 +187,13 @@ class Feed(SQLModel, table=True):
         default=None, sa_column=Column(TimezoneAwareDatetime)
     )
     keep_last: int | None = None
+
+    # ------------------------------------------------ transcript config
+    transcript_lang: str | None = None
+    transcript_source_priority: list[TranscriptSource] | None = Field(
+        default=None,
+        sa_column=Column(TranscriptSourcePriorityType, nullable=True),
+    )
 
     # ------------------------------------------------ feed metadata
     title: str | None = None

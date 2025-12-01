@@ -89,6 +89,8 @@ class ManualSubmissionService:
                 user_yt_cli_args=feed_config.yt_args,
                 fetch_since_date=None,
                 keep_last=None,
+                transcript_lang=feed_config.transcript_lang,
+                transcript_source_priority=feed_config.transcript_source_priority,
                 cookies_path=cookies_path,
             )
         except YtdlpError as e:

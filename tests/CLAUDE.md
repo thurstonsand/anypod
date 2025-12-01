@@ -43,3 +43,8 @@ uv run pytest --cov-report=xml
 - Aim for meaningful coverage, not 100% blindly
 - Include security tests for input validation when testing HTTP endpoints
 - Perform a full confirmation run (`uv run pytest --integration`) to ensure all tests pass after you finish writing and verifying.
+
+### Boundaries
+
+- Never delete or disable tests to make them pass
+- Never add test-only methods or flags to production code

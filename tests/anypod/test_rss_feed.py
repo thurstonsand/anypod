@@ -322,6 +322,11 @@ async def test_generated_xml_structure(
     items = channel.findall("item")
     assert len(items) == 2
 
+    # Transcript elements should be absent when downloads have no transcript metadata
+    podcast_ns = {"podcast": "https://podcastindex.org/namespace/1.0"}
+    for item in items:
+        assert item.find("podcast:transcript", podcast_ns) is None
+
     # Check first item (should be newest - video1)
     first_item = items[0]
     first_title = first_item.find("title")
@@ -662,3 +667,208 @@ async def test_channel_publication_date_absent_when_no_episodes(
     pubdate = channel.find("pubDate")
     # When no episodes, feedgen does not set pubDate at all
     assert pubdate is None
+
+
+# --- Tests for podcast:transcript elements ---
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_transcript_element_included_when_metadata_present(
+    rss_generator: RSSFeedGenerator,
+    mock_download_db: MagicMock,
+    test_feed: Feed,
+    sample_downloads: list[Download],
+    capture_rss_write: dict[str, bytes],
+):
+    """Test that podcast:transcript element is generated when download has transcript metadata."""
+    feed_id = TEST_FEED_ID
+    # Add transcript metadata to first download
+    sample_downloads[0].transcript_ext = "vtt"
+    sample_downloads[0].transcript_lang = "en"
+
+    mock_download_db.get_downloads_by_status.return_value = sample_downloads
+
+    await rss_generator.update_feed(feed_id, test_feed)
+    xml_bytes = capture_rss_write["data"]
+
+    root = ET.fromstring(xml_bytes)
+    channel = root.find("channel")
+    assert channel is not None
+
+    podcast_ns = {"podcast": "https://podcastindex.org/namespace/1.0"}
+    items = channel.findall("item")
+    assert len(items) == 2
+
+    # First item should have transcript element
+    first_item = items[0]
+    transcript_elem = first_item.find("podcast:transcript", podcast_ns)
+    assert transcript_elem is not None
+
+    # Verify attributes
+    expected_url = f"{TEST_BASE_URL}/transcripts/{TEST_FEED_ID}/video1.en.vtt"
+    assert transcript_elem.get("url") == expected_url
+    assert transcript_elem.get("type") == "text/vtt"
+    assert transcript_elem.get("language") == "en"
+    assert transcript_elem.get("rel") == "captions"
+
+    # Second item should not have transcript element
+    second_item = items[1]
+    second_transcript = second_item.find("podcast:transcript", podcast_ns)
+    assert second_transcript is None
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_transcript_mime_type_for_srt_format(
+    rss_generator: RSSFeedGenerator,
+    mock_download_db: MagicMock,
+    test_feed: Feed,
+    capture_rss_write: dict[str, bytes],
+):
+    """Test that SRT transcript files get correct MIME type."""
+    feed_id = TEST_FEED_ID
+    downloads_with_srt = [
+        Download(
+            feed_id=TEST_FEED_ID,
+            id="video_with_srt",
+            source_url="https://youtube.com/watch?v=video_with_srt",
+            title="Video with SRT Transcript",
+            published=datetime(2023, 1, 1, tzinfo=UTC),
+            ext="mp4",
+            mime_type="video/mp4",
+            filesize=1000000,
+            duration=300,
+            status=DownloadStatus.DOWNLOADED,
+            discovered_at=datetime(2023, 1, 2, tzinfo=UTC),
+            updated_at=datetime(2023, 1, 2, tzinfo=UTC),
+            transcript_ext="srt",
+            transcript_lang="en",
+        ),
+    ]
+
+    mock_download_db.get_downloads_by_status.return_value = downloads_with_srt
+
+    await rss_generator.update_feed(feed_id, test_feed)
+    xml_bytes = capture_rss_write["data"]
+
+    root = ET.fromstring(xml_bytes)
+    channel = root.find("channel")
+    assert channel is not None
+
+    podcast_ns = {"podcast": "https://podcastindex.org/namespace/1.0"}
+    items = channel.findall("item")
+    assert len(items) == 1
+
+    item = items[0]
+    transcript_elem = item.find("podcast:transcript", podcast_ns)
+    assert transcript_elem is not None
+    assert transcript_elem.get("type") == "application/x-subrip"
+    assert (
+        transcript_elem.get("url")
+        == f"{TEST_BASE_URL}/transcripts/{TEST_FEED_ID}/video_with_srt.en.srt"
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_transcript_with_different_language_codes(
+    rss_generator: RSSFeedGenerator,
+    mock_download_db: MagicMock,
+    test_feed: Feed,
+    capture_rss_write: dict[str, bytes],
+):
+    """Test that transcript language codes are correctly set in RSS."""
+    feed_id = TEST_FEED_ID
+    downloads_multilang = [
+        Download(
+            feed_id=TEST_FEED_ID,
+            id="video_en",
+            source_url="https://youtube.com/watch?v=video_en",
+            title="English Video",
+            published=datetime(2023, 1, 3, tzinfo=UTC),
+            ext="mp4",
+            mime_type="video/mp4",
+            filesize=1000000,
+            duration=300,
+            status=DownloadStatus.DOWNLOADED,
+            discovered_at=datetime(2023, 1, 4, tzinfo=UTC),
+            updated_at=datetime(2023, 1, 4, tzinfo=UTC),
+            transcript_ext="vtt",
+            transcript_lang="en",
+        ),
+        Download(
+            feed_id=TEST_FEED_ID,
+            id="video_es",
+            source_url="https://youtube.com/watch?v=video_es",
+            title="Spanish Video",
+            published=datetime(2023, 1, 2, tzinfo=UTC),
+            ext="mp4",
+            mime_type="video/mp4",
+            filesize=1000000,
+            duration=300,
+            status=DownloadStatus.DOWNLOADED,
+            discovered_at=datetime(2023, 1, 3, tzinfo=UTC),
+            updated_at=datetime(2023, 1, 3, tzinfo=UTC),
+            transcript_ext="vtt",
+            transcript_lang="es",
+        ),
+        Download(
+            feed_id=TEST_FEED_ID,
+            id="video_ja",
+            source_url="https://youtube.com/watch?v=video_ja",
+            title="Japanese Video",
+            published=datetime(2023, 1, 1, tzinfo=UTC),
+            ext="mp4",
+            mime_type="video/mp4",
+            filesize=1000000,
+            duration=300,
+            status=DownloadStatus.DOWNLOADED,
+            discovered_at=datetime(2023, 1, 2, tzinfo=UTC),
+            updated_at=datetime(2023, 1, 2, tzinfo=UTC),
+            transcript_ext="vtt",
+            transcript_lang="ja",
+        ),
+    ]
+
+    mock_download_db.get_downloads_by_status.return_value = downloads_multilang
+
+    await rss_generator.update_feed(feed_id, test_feed)
+    xml_bytes = capture_rss_write["data"]
+
+    root = ET.fromstring(xml_bytes)
+    channel = root.find("channel")
+    assert channel is not None
+
+    podcast_ns = {"podcast": "https://podcastindex.org/namespace/1.0"}
+    items = channel.findall("item")
+    assert len(items) == 3
+
+    # Verify each item has correct language code
+    # Items are sorted by published date descending (video_en, video_es, video_ja)
+    en_item = items[0]
+    en_transcript = en_item.find("podcast:transcript", podcast_ns)
+    assert en_transcript is not None
+    assert en_transcript.get("language") == "en"
+    assert (
+        en_transcript.get("url")
+        == f"{TEST_BASE_URL}/transcripts/{TEST_FEED_ID}/video_en.en.vtt"
+    )
+
+    es_item = items[1]
+    es_transcript = es_item.find("podcast:transcript", podcast_ns)
+    assert es_transcript is not None
+    assert es_transcript.get("language") == "es"
+    assert (
+        es_transcript.get("url")
+        == f"{TEST_BASE_URL}/transcripts/{TEST_FEED_ID}/video_es.es.vtt"
+    )
+
+    ja_item = items[2]
+    ja_transcript = ja_item.find("podcast:transcript", podcast_ns)
+    assert ja_transcript is not None
+    assert ja_transcript.get("language") == "ja"
+    assert (
+        ja_transcript.get("url")
+        == f"{TEST_BASE_URL}/transcripts/{TEST_FEED_ID}/video_ja.ja.vtt"
+    )

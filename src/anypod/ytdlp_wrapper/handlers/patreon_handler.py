@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 import logging
 from typing import Any, cast
 
-from ...db.types import Download, DownloadStatus, Feed, SourceType
+from ...db.types import Download, DownloadStatus, Feed, SourceType, TranscriptSource
 from ...exceptions import (
     FFProbeError,
     YtdlpDataError,
@@ -584,12 +584,18 @@ class PatreonHandler:
         self,
         feed_id: str,
         ytdlp_info: YtdlpInfo,
+        transcript_lang: str | None = None,
+        transcript_source_priority: list[TranscriptSource] | None = None,
     ) -> Download:
         """Extract metadata from a single Patreon post into a Download object.
 
         Args:
             feed_id: The feed identifier.
             ytdlp_info: The yt-dlp metadata for a single post.
+            transcript_lang: Language code for transcripts (e.g., "en"). If provided,
+                determines transcript_source from yt-dlp subtitle metadata.
+            transcript_source_priority: Ordered list of transcript sources to try.
+                Defaults to [CREATOR, AUTO] if not provided.
 
         Returns:
             A Download object parsed from the metadata.
@@ -627,6 +633,15 @@ class PatreonHandler:
         if duration <= 0:
             duration = await self._probe_duration(feed_id, entry)
 
+        transcript = (
+            ytdlp_info.transcript(transcript_lang, transcript_source_priority)
+            if transcript_lang and transcript_source_priority
+            else None
+        )
+        transcript_source = (
+            transcript.source if transcript else TranscriptSource.NOT_AVAILABLE
+        )
+
         parsed_download = Download(
             feed_id=feed_id,
             id=entry.download_id,
@@ -642,6 +657,7 @@ class PatreonHandler:
             description=entry.description,
             quality_info=entry.quality_info,
             playlist_index=entry.playlist_index,
+            transcript_source=transcript_source,
         )
 
         logger.debug(

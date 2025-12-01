@@ -452,3 +452,193 @@ async def test_delete_image_os_error(file_manager: FileManager):
     # Now try to delete it again - this should raise FileNotFoundError which gets converted to FileOperationError
     with pytest.raises(FileNotFoundError):
         await file_manager.delete_image(feed_id, download_id, ext)
+
+
+# --- Tests for get_transcript_path ---
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_get_transcript_path_success(file_manager: FileManager):
+    """Tests get_transcript_path returns correct path for existing transcripts."""
+    feed_id = "transcript_feed"
+    download_id = "video_123"
+    lang = "en"
+    ext = "vtt"
+
+    # Create the transcript file
+    transcript_path = await file_manager._paths.transcript_path(
+        feed_id, download_id, lang, ext
+    )
+    transcript_path.write_bytes(b"dummy transcript content")
+
+    result_path = await file_manager.get_transcript_path(
+        feed_id, download_id, lang, ext
+    )
+
+    assert result_path == transcript_path
+    assert result_path.exists()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_get_transcript_path_not_found(file_manager: FileManager):
+    """Tests get_transcript_path raises FileNotFoundError for non-existent files."""
+    feed_id = "transcript_feed_404"
+    download_id = "missing_transcript"
+    lang = "en"
+    ext = "vtt"
+
+    with pytest.raises(FileNotFoundError):
+        await file_manager.get_transcript_path(feed_id, download_id, lang, ext)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_get_transcript_path_invalid_feed_id(file_manager: FileManager):
+    """Tests get_transcript_path raises FileNotFoundError for invalid feed_id."""
+    feed_id = ""
+    download_id = "video_123"
+    lang = "en"
+    ext = "vtt"
+
+    with pytest.raises(FileNotFoundError):
+        await file_manager.get_transcript_path(feed_id, download_id, lang, ext)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_get_transcript_path_invalid_download_id(file_manager: FileManager):
+    """Tests get_transcript_path raises FileNotFoundError for invalid download_id."""
+    feed_id = "valid_feed"
+    download_id = ""
+    lang = "en"
+    ext = "vtt"
+
+    with pytest.raises(FileNotFoundError):
+        await file_manager.get_transcript_path(feed_id, download_id, lang, ext)
+
+
+# --- Tests for transcript_exists ---
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_transcript_exists_true(file_manager: FileManager):
+    """Tests transcript_exists returns True for existing transcripts."""
+    feed_id = "exists_transcript_feed"
+    download_id = "existing_transcript"
+    lang = "en"
+    ext = "vtt"
+
+    # Create the transcript file
+    transcript_path = await file_manager._paths.transcript_path(
+        feed_id, download_id, lang, ext
+    )
+    transcript_path.write_bytes(b"dummy transcript content")
+
+    assert await file_manager.transcript_exists(feed_id, download_id, lang, ext)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_transcript_exists_false_not_found(file_manager: FileManager):
+    """Tests transcript_exists returns False for non-existent transcripts."""
+    feed_id = "exists_transcript_feed_false"
+    download_id = "ghost_transcript"
+    lang = "en"
+    ext = "vtt"
+
+    assert not await file_manager.transcript_exists(feed_id, download_id, lang, ext)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_transcript_exists_false_invalid_feed_id(file_manager: FileManager):
+    """Tests transcript_exists returns False for invalid feed_id."""
+    feed_id = ""
+    download_id = "video_123"
+    lang = "en"
+    ext = "vtt"
+
+    assert not await file_manager.transcript_exists(feed_id, download_id, lang, ext)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_transcript_exists_false_invalid_download_id(file_manager: FileManager):
+    """Tests transcript_exists returns False for invalid download_id."""
+    feed_id = "valid_feed"
+    download_id = ""
+    lang = "en"
+    ext = "vtt"
+
+    assert not await file_manager.transcript_exists(feed_id, download_id, lang, ext)
+
+
+# --- Tests for delete_transcript ---
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_delete_transcript_success(file_manager: FileManager):
+    """Tests successful deletion of transcript files."""
+    feed_id = "delete_transcript_feed"
+    download_id = "to_delete"
+    lang = "en"
+    ext = "vtt"
+
+    # Create the transcript file
+    transcript_path = await file_manager._paths.transcript_path(
+        feed_id, download_id, lang, ext
+    )
+    transcript_path.write_bytes(b"dummy transcript content")
+
+    assert transcript_path.exists()
+    await file_manager.delete_transcript(feed_id, download_id, lang, ext)
+    assert not transcript_path.exists()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_delete_transcript_not_found(file_manager: FileManager):
+    """Tests delete_transcript raises FileNotFoundError for non-existent files."""
+    feed_id = "delete_transcript_feed_404"
+    download_id = "non_existent"
+    lang = "en"
+    ext = "vtt"
+
+    with pytest.raises(FileNotFoundError):
+        await file_manager.delete_transcript(feed_id, download_id, lang, ext)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_delete_transcript_invalid_feed_id(file_manager: FileManager):
+    """Tests delete_transcript raises FileOperationError for invalid feed_id."""
+    feed_id = ""
+    download_id = "video_123"
+    lang = "en"
+    ext = "vtt"
+
+    with pytest.raises(FileOperationError) as exc_info:
+        await file_manager.delete_transcript(feed_id, download_id, lang, ext)
+
+    assert exc_info.value.feed_id == feed_id
+    assert exc_info.value.download_id == download_id
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_delete_transcript_invalid_download_id(file_manager: FileManager):
+    """Tests delete_transcript raises FileOperationError for invalid download_id."""
+    feed_id = "valid_feed"
+    download_id = ""
+    lang = "en"
+    ext = "vtt"
+
+    with pytest.raises(FileOperationError) as exc_info:
+        await file_manager.delete_transcript(feed_id, download_id, lang, ext)
+
+    assert exc_info.value.feed_id == feed_id
+    assert exc_info.value.download_id == download_id

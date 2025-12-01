@@ -12,6 +12,7 @@ from sqlmodel import Field, Relationship, SQLModel
 
 from .download_status import DownloadStatus
 from .timezone_aware_datetime import SQLITE_DATETIME_NOW, TimezoneAwareDatetime
+from .transcript_source import TranscriptSource
 
 if TYPE_CHECKING:
     from .feed import Feed
@@ -40,6 +41,11 @@ class Download(SQLModel, table=True):
             description: Optional description of the download.
             quality_info: Optional quality information for the download.
             playlist_index: Optional 1-based index of item within a multi-attachment post.
+
+        Transcript Metadata:
+            transcript_ext: File extension of the transcript (e.g., "vtt", "srt").
+            transcript_lang: Language code of the transcript (e.g., "en").
+            transcript_source: Origin of transcript (creator or auto-generated).
 
         Error Tracking:
             retries: Number of retry attempts.
@@ -97,6 +103,14 @@ class Download(SQLModel, table=True):
     description: str | None = None
     quality_info: str | None = None
     playlist_index: int | None = None
+
+    # Transcript metadata
+    transcript_ext: str | None = None
+    transcript_lang: str | None = None
+    transcript_source: TranscriptSource | None = Field(
+        default=None,
+        sa_column=Column(Enum(TranscriptSource), nullable=True),
+    )
 
     # Error tracking
     retries: int = Field(

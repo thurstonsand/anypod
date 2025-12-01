@@ -31,6 +31,10 @@ feeds:
     yt_args: "-f worst[ext=mp4] --playlist-items 1-3"
     schedule: "0 3 * * *"
     since: "20220101"
+    transcript_lang: en # Download English transcripts when available
+    transcript_source_priority:
+      - creator # Prefer creator subtitles first
+      - auto # Fall back to auto-generated captions if needed
 
   # Feed with full metadata overrides
   premium_podcast:
@@ -60,16 +64,32 @@ feeds:
 
 ### Field Reference
 
-| Field       | Required | Description                                               |
-| ----------- | -------- | --------------------------------------------------------- |
-| `url`       | Yes\*    | Source URL (YouTube channel/playlist, Patreon, X/Twitter) |
-| `schedule`  | Yes      | Cron expression or `"manual"`                             |
-| `yt_args`   | No       | Extra yt-dlp arguments (see caveats below)                |
-| `since`     | No       | Only include items after this date (`YYYYMMDD`)           |
-| `keep_last` | No       | Retain only the N most recent items                       |
-| `metadata`  | No       | Override feed metadata (see below)                        |
+| Field                        | Required | Description                                                   |
+| ---------------------------- | -------- | ------------------------------------------------------------- |
+| `url`                        | Yes\*    | Source URL (YouTube channel/playlist, Patreon, X/Twitter)     |
+| `schedule`                   | Yes      | Cron expression or `"manual"`                                 |
+| `yt_args`                    | No       | Extra yt-dlp arguments (see caveats below)                    |
+| `since`                      | No       | Only include items after this date (`YYYYMMDD`)               |
+| `keep_last`                  | No       | Retain only the N most recent items                           |
+| `transcript_lang`            | No       | Language code for subtitles/transcripts (e.g., `en`)          |
+| `transcript_source_priority` | No       | Ordered list of transcript sources to try (`creator`, `auto`) |
+| `metadata`                   | No       | Override feed metadata (see below)                            |
 
 - `url` is optional for manual feeds.
+
+### Transcript Settings
+
+- `transcript_lang` accepts ISO 639-1 two-letter codes (e.g., `en`, `es`). When set, Anypod downloads subtitles in VTT format, stores them under `/transcripts/{feed_id}`, and emits `<podcast:transcript>` tags so podcast players surface captions.
+- `transcript_source_priority` is an ordered list containing `creator` and/or `auto`. The first available source wins. When omitted but `transcript_lang` is set, Anypod defaults to `['creator', 'auto']`.
+
+```yaml
+feeds:
+  channel:
+    transcript_lang: en
+    transcript_source_priority:
+      - creator
+      - auto
+```
 
 ### Metadata Overrides
 

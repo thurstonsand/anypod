@@ -20,7 +20,7 @@ from sqlmodel import col, select
 from ..exceptions import DatabaseOperationError, DownloadNotFoundError, NotFoundError
 from .decorators import handle_download_db_errors, handle_feed_db_errors
 from .sqlalchemy_core import SqlalchemyCore
-from .types import Download, DownloadStatus
+from .types import Download, DownloadStatus, TranscriptSource
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +95,62 @@ class DownloadDatabase:
             await session.commit()
         logger.debug("Upsert download record execution complete.", extra=log_params)
 
+    @handle_download_db_errors(
+        "update download",
+        feed_id_from="download.feed_id",
+        download_id_from="download.id",
+    )
+    async def update_download(self, download: Download) -> None:
+        """Update an existing download in the downloads table.
+
+        Unlike upsert_download, this method fails if the download does not exist.
+
+        Args:
+            download: The Download object with updated fields.
+
+        Raises:
+            DownloadNotFoundError: If no download with matching (feed_id, id) exists.
+            DatabaseOperationError: If the database operation fails.
+        """
+        log_params = {
+            "feed_id": download.feed_id,
+            "download_id": download.id,
+            "status": str(download.status),
+        }
+        logger.debug("Attempting to update download record.", extra=log_params)
+
+        data = download.model_dump_for_insert()
+        data.pop("feed_id", None)
+        data.pop("id", None)
+
+        async with self._db.session() as session:
+            stmt = (
+                update(Download)
+                .where(
+                    col(Download.feed_id) == download.feed_id,
+                    col(Download.id) == download.id,
+                )
+                .values(**data)
+            )
+            result = await session.execute(stmt)
+            match self._db.as_cursor_result(result).rowcount:
+                case 0:
+                    raise DownloadNotFoundError(
+                        "Download not found.",
+                        feed_id=download.feed_id,
+                        download_id=download.id,
+                    )
+                case 1:
+                    await session.commit()
+                case _ as row_count:
+                    raise DatabaseOperationError(
+                        f"Update affected {row_count} rows, expected 1.",
+                        feed_id=download.feed_id,
+                        download_id=download.id,
+                    )
+
+        logger.debug("Update download record complete.", extra=log_params)
+
     # --- Status Transition Methods ---
 
     @handle_download_db_errors("mark download as QUEUED from UPCOMING")
@@ -135,21 +191,20 @@ class DownloadDatabase:
                 )
             )
             res = await session.execute(stmt)
-            await session.commit()
 
-        match self._db.as_cursor_result(res).rowcount:
-            case 0:
-                raise DownloadNotFoundError(
-                    "Download not found.", feed_id=feed_id, download_id=download_id
-                )
-            case 1:
-                pass
-            case _ as row_count:
-                raise DatabaseOperationError(
-                    f"Update affected {row_count} rows, expected 1. Rolling back transaction.",
-                    feed_id=feed_id,
-                    download_id=download_id,
-                )
+            match self._db.as_cursor_result(res).rowcount:
+                case 0:
+                    raise DownloadNotFoundError(
+                        "Download not found.", feed_id=feed_id, download_id=download_id
+                    )
+                case 1:
+                    await session.commit()
+                case _ as row_count:
+                    raise DatabaseOperationError(
+                        f"Update affected {row_count} rows, expected 1.",
+                        feed_id=feed_id,
+                        download_id=download_id,
+                    )
         logger.debug("Download marked as QUEUED from UPCOMING.", extra=log_params)
 
     @handle_feed_db_errors("requeue downloads")
@@ -292,14 +347,13 @@ class DownloadDatabase:
                         "Download not found.", feed_id=feed_id, download_id=download_id
                     )
                 case 1:
-                    pass
+                    await session.commit()
                 case _ as row_count:
                     raise DatabaseOperationError(
-                        f"Update affected {row_count} rows, expected 1. Rolling back transaction.",
+                        f"Update affected {row_count} rows, expected 1.",
                         feed_id=feed_id,
                         download_id=download_id,
                     )
-            await session.commit()
 
         logger.debug("Download marked as DOWNLOADED.", extra=log_params)
 
@@ -337,14 +391,13 @@ class DownloadDatabase:
                         "Download not found.", feed_id=feed_id, download_id=download_id
                     )
                 case 1:
-                    pass
+                    await session.commit()
                 case _ as row_count:
                     raise DatabaseOperationError(
-                        f"Update affected {row_count} rows, expected 1. Rolling back transaction.",
+                        f"Update affected {row_count} rows, expected 1.",
                         feed_id=feed_id,
                         download_id=download_id,
                     )
-            await session.commit()
 
         logger.debug("Download logs updated.", extra=log_params)
 
@@ -389,6 +442,62 @@ class DownloadDatabase:
                 ) from e
             await session.commit()
         logger.debug("Thumbnail extension updated.", extra=log_params)
+
+    @handle_download_db_errors("set transcript metadata for download")
+    async def set_transcript_metadata(
+        self,
+        feed_id: str,
+        download_id: str,
+        transcript_ext: str | None,
+        transcript_lang: str | None,
+        transcript_source: TranscriptSource | None,
+    ) -> None:
+        """Persist transcript metadata for a download.
+
+        Args:
+            feed_id: The feed identifier.
+            download_id: The download identifier.
+            transcript_ext: File extension for transcript (e.g., "vtt"), or None to clear.
+            transcript_lang: Language code of the transcript (e.g., "en"), or None to clear.
+            transcript_source: Source of transcript (creator or autogenerated), or None
+                to reset to unknown state.
+
+        Raises:
+            DownloadNotFoundError: If the download is not found.
+            DatabaseOperationError: If the database operation fails.
+        """
+        log_params = {
+            "feed_id": feed_id,
+            "download_id": download_id,
+            "transcript_ext": transcript_ext,
+            "transcript_lang": transcript_lang,
+            "transcript_source": str(transcript_source) if transcript_source else None,
+        }
+        logger.debug("Attempting to set transcript metadata.", extra=log_params)
+        async with self._db.session() as session:
+            stmt = (
+                update(Download)
+                .where(
+                    col(Download.feed_id) == feed_id,
+                    col(Download.id) == download_id,
+                )
+                .values(
+                    transcript_ext=transcript_ext,
+                    transcript_lang=transcript_lang,
+                    transcript_source=transcript_source,
+                )
+            )
+            result = await session.execute(stmt)
+            try:
+                self._db.assert_exactly_one_row_affected(
+                    result, feed_id=feed_id, download_id=download_id
+                )
+            except NotFoundError as e:
+                raise DownloadNotFoundError(
+                    "Download not found.", feed_id=feed_id, download_id=download_id
+                ) from e
+            await session.commit()
+        logger.debug("Transcript metadata updated.", extra=log_params)
 
     @handle_download_db_errors("mark download as SKIPPED")
     async def skip_download(self, feed_id: str, download_id: str) -> None:

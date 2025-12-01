@@ -94,6 +94,8 @@ async def run_debug_ytdlp_mode(settings: AppSettings, paths: PathManager) -> Non
                 user_yt_cli_args=feed_config.yt_args,
                 fetch_since_date=feed_config.since,
                 keep_last=feed_config.keep_last,
+                transcript_lang=feed_config.transcript_lang,
+                transcript_source_priority=feed_config.transcript_source_priority,
                 cookies_path=settings.cookies_path,
             )
 
@@ -131,22 +133,29 @@ async def run_debug_ytdlp_mode(settings: AppSettings, paths: PathManager) -> Non
                     if download.status == DownloadStatus.QUEUED:
                         try:
                             logger.info(f"Attempting to download: {download.title}")
-                            (
-                                downloaded_file_path,
-                                download_logs,
-                            ) = await ytdlp_wrapper.download_media_to_file(
-                                download,
-                                feed_config.yt_args,
-                                cookies_path=settings.cookies_path,
+                            downloaded_media = (
+                                await ytdlp_wrapper.download_media_to_file(
+                                    download,
+                                    feed_config.yt_args,
+                                    cookies_path=settings.cookies_path,
+                                    transcript_lang=feed_config.transcript_lang,
+                                )
                             )
                             logger.info(
                                 "Download successful: %s",
-                                downloaded_file_path,
+                                downloaded_media.file_path,
                             )
+                            if downloaded_media.transcript:
+                                logger.info(
+                                    "Transcript downloaded: ext=%s, lang=%s, source=%s",
+                                    downloaded_media.transcript.ext,
+                                    downloaded_media.transcript.lang,
+                                    downloaded_media.transcript.source,
+                                )
                             logger.debug(
                                 "yt-dlp logs for %s:\n%s",
                                 download.id,
-                                download_logs,
+                                downloaded_media.logs,
                             )
                             downloadable_count += 1
                         except YtdlpApiError as download_error:

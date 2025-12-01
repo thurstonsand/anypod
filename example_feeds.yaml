@@ -35,8 +35,13 @@ feeds:
     schedule: "0 3 * * *"
     since: "20090101"
     keep_last: 3
+    transcript_lang: en  # Download English subtitles/transcripts when available
+    transcript_source_priority:
+      - creator          # Prefer creator-provided subtitles
+      - auto             # Fall back to auto-generated captions
 
   # Example with video conversion using the built-in conversion script
+
   high_quality_with_conversion:
     url: https://www.youtube.com/@coletdjnz/videos
     # Prefer h.265/av1, exclude vp9, get good quality

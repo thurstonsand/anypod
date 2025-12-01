@@ -608,3 +608,280 @@ async def test_multiple_directory_levels(path_manager: PathManager):
     assert "deeply" in str(feed_dir)
     assert "nested" in str(feed_dir)
     assert "structure" in str(feed_dir)
+
+
+# --- Tests for transcript_path ---
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_transcript_path_generation(path_manager: PathManager):
+    """Tests that transcript_path generates correct file system paths."""
+    feed_id = "path_test_feed"
+    download_id = "video_789"
+    lang = "en"
+    ext = "vtt"
+
+    file_path = await path_manager.transcript_path(feed_id, download_id, lang, ext)
+
+    expected_path = (
+        path_manager.base_transcripts_dir / feed_id / f"{download_id}.{lang}.{ext}"
+    )
+    assert file_path == expected_path
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_transcript_path_creates_parent_dir(path_manager: PathManager):
+    """Tests that transcript_path creates the parent directory."""
+    feed_id = "new_transcript_feed"
+    download_id = "first_video"
+    lang = "en"
+    ext = "vtt"
+
+    file_path = await path_manager.transcript_path(feed_id, download_id, lang, ext)
+
+    # The parent directory should be created by the call to feed_transcripts_dir
+    assert file_path.parent.exists()
+    assert file_path.parent.name == feed_id
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_transcript_path_different_languages(path_manager: PathManager):
+    """Tests transcript_path with various language codes."""
+    feed_id = "multi_lang_feed"
+    download_id = "video_content"
+    ext = "vtt"
+
+    # Test different language codes
+    en_path = await path_manager.transcript_path(feed_id, download_id, "en", ext)
+    es_path = await path_manager.transcript_path(feed_id, download_id, "es", ext)
+    fr_path = await path_manager.transcript_path(feed_id, download_id, "fr", ext)
+
+    expected_base = path_manager.base_transcripts_dir / feed_id
+    assert en_path == expected_base / f"{download_id}.en.{ext}"
+    assert es_path == expected_base / f"{download_id}.es.{ext}"
+    assert fr_path == expected_base / f"{download_id}.fr.{ext}"
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_transcript_path_different_extensions(path_manager: PathManager):
+    """Tests transcript_path with various file extensions."""
+    feed_id = "ext_test_feed"
+    download_id = "content_item"
+    lang = "en"
+
+    # Test different extensions
+    vtt_path = await path_manager.transcript_path(feed_id, download_id, lang, "vtt")
+    srt_path = await path_manager.transcript_path(feed_id, download_id, lang, "srt")
+    txt_path = await path_manager.transcript_path(feed_id, download_id, lang, "txt")
+
+    expected_base = path_manager.base_transcripts_dir / feed_id
+    assert vtt_path == expected_base / f"{download_id}.{lang}.vtt"
+    assert srt_path == expected_base / f"{download_id}.{lang}.srt"
+    assert txt_path == expected_base / f"{download_id}.{lang}.txt"
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "invalid_download_id",
+    [
+        "",
+        "   ",
+        "\t\n",
+    ],
+)
+async def test_transcript_path_invalid_download_id(
+    path_manager: PathManager, invalid_download_id: str
+):
+    """Tests that an empty or whitespace-only download_id raises ValueError."""
+    feed_id = "valid_feed"
+    lang = "en"
+    ext = "vtt"
+
+    with pytest.raises(ValueError):
+        await path_manager.transcript_path(feed_id, invalid_download_id, lang, ext)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "invalid_lang",
+    [
+        "",
+        "   ",
+        "\t\n",
+    ],
+)
+async def test_transcript_path_invalid_lang(
+    path_manager: PathManager, invalid_lang: str
+):
+    """Tests that an empty or whitespace-only lang raises ValueError."""
+    feed_id = "valid_feed"
+    download_id = "video_123"
+    ext = "vtt"
+
+    with pytest.raises(ValueError):
+        await path_manager.transcript_path(feed_id, download_id, invalid_lang, ext)
+
+
+# --- Tests for transcript_url ---
+
+
+@pytest.mark.unit
+def test_transcript_url_generation(path_manager: PathManager):
+    """Tests that transcript_url generates correct URLs."""
+    feed_id = "my_podcast"
+    download_id = "video_123"
+    lang = "en"
+    ext = "vtt"
+
+    url = path_manager.transcript_url(feed_id, download_id, lang, ext)
+
+    assert (
+        url
+        == f"{path_manager.base_url}/transcripts/{feed_id}/{download_id}.{lang}.{ext}"
+    )
+
+
+@pytest.mark.unit
+def test_transcript_url_different_languages(path_manager: PathManager):
+    """Tests transcript_url with various language codes."""
+    feed_id = "multi_lang"
+    download_id = "item_456"
+    ext = "vtt"
+
+    # Test different language codes
+    en_url = path_manager.transcript_url(feed_id, download_id, "en", ext)
+    es_url = path_manager.transcript_url(feed_id, download_id, "es", ext)
+    fr_url = path_manager.transcript_url(feed_id, download_id, "fr", ext)
+
+    base = f"{path_manager.base_url}/transcripts/{feed_id}"
+    assert en_url == f"{base}/{download_id}.en.{ext}"
+    assert es_url == f"{base}/{download_id}.es.{ext}"
+    assert fr_url == f"{base}/{download_id}.fr.{ext}"
+
+
+@pytest.mark.unit
+def test_transcript_url_different_extensions(path_manager: PathManager):
+    """Tests transcript_url with various file extensions."""
+    feed_id = "multi_format"
+    download_id = "item_456"
+    lang = "en"
+
+    # Test different extensions
+    vtt_url = path_manager.transcript_url(feed_id, download_id, lang, "vtt")
+    srt_url = path_manager.transcript_url(feed_id, download_id, lang, "srt")
+    txt_url = path_manager.transcript_url(feed_id, download_id, lang, "txt")
+
+    base = f"{path_manager.base_url}/transcripts/{feed_id}/{download_id}.{lang}"
+    assert vtt_url == f"{base}.vtt"
+    assert srt_url == f"{base}.srt"
+    assert txt_url == f"{base}.txt"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "invalid_feed_id",
+    [
+        "",
+        "   ",
+        "\t\n",
+    ],
+)
+def test_transcript_url_invalid_feed_id(
+    path_manager: PathManager, invalid_feed_id: str
+):
+    """Tests that an empty or whitespace-only feed_id raises ValueError."""
+    download_id = "video_123"
+    lang = "en"
+    ext = "vtt"
+
+    with pytest.raises(ValueError):
+        path_manager.transcript_url(invalid_feed_id, download_id, lang, ext)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "invalid_download_id",
+    [
+        "",
+        "   ",
+        "\t\n",
+    ],
+)
+def test_transcript_url_invalid_download_id(
+    path_manager: PathManager, invalid_download_id: str
+):
+    """Tests that an empty or whitespace-only download_id raises ValueError."""
+    feed_id = "valid_feed"
+    lang = "en"
+    ext = "vtt"
+
+    with pytest.raises(ValueError):
+        path_manager.transcript_url(feed_id, invalid_download_id, lang, ext)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "invalid_lang",
+    [
+        "",
+        "   ",
+        "\t\n",
+    ],
+)
+def test_transcript_url_invalid_lang(path_manager: PathManager, invalid_lang: str):
+    """Tests that an empty or whitespace-only lang raises ValueError."""
+    feed_id = "valid_feed"
+    download_id = "video_123"
+    ext = "vtt"
+
+    with pytest.raises(ValueError):
+        path_manager.transcript_url(feed_id, download_id, invalid_lang, ext)
+
+
+@pytest.mark.unit
+def test_transcript_url_special_characters(path_manager: PathManager):
+    """Tests transcript_url with special characters in identifiers."""
+    feed_id = "feed-with_special.chars"
+    download_id = "video.with.dots"
+    lang = "en"
+    ext = "vtt"
+
+    url = path_manager.transcript_url(feed_id, download_id, lang, ext)
+
+    assert (
+        url
+        == f"{path_manager.base_url}/transcripts/{feed_id}/{download_id}.{lang}.{ext}"
+    )
+
+
+# --- Integration tests for transcript URL and path consistency ---
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_transcript_url_path_consistency(path_manager: PathManager):
+    """Tests that transcript URLs and file paths maintain consistent 1:1 mapping."""
+    feed_id = "consistency_test"
+    download_id = "test_video"
+    lang = "en"
+    ext = "vtt"
+
+    # Get both URL and path
+    file_url = path_manager.transcript_url(feed_id, download_id, lang, ext)
+    file_path = await path_manager.transcript_path(feed_id, download_id, lang, ext)
+
+    # URL should encode the same information as the path
+    assert feed_id in file_url
+    assert download_id in file_url
+    assert lang in file_url
+    assert ext in file_url
+    assert feed_id in str(file_path)
+    assert download_id in str(file_path)
+    assert lang in str(file_path)
+    assert ext in str(file_path)

@@ -10,7 +10,7 @@ from datetime import datetime
 from croniter import croniter
 
 
-@dataclass
+@dataclass(frozen=True)
 class CronExpression:
     """Data representation of a cron expression.
 
@@ -58,22 +58,24 @@ class CronExpression:
     second: int | str | None = field(init=False)
 
     def __post_init__(self):
-        self._itr = croniter(self.cron_str)
+        # Use object.__setattr__ to bypass frozen restriction during init
+        _set = object.__setattr__
+        _set(self, "_itr", croniter(self.cron_str))
         match self._itr.expressions:
             case (minute, hour, day, month, day_of_week):
-                self.minute = minute
-                self.hour = hour
-                self.day = day
-                self.month = month
-                self.day_of_week = day_of_week
-                self.second = None  # Initialize second to None for 5-field expressions
+                _set(self, "minute", minute)
+                _set(self, "hour", hour)
+                _set(self, "day", day)
+                _set(self, "month", month)
+                _set(self, "day_of_week", day_of_week)
+                _set(self, "second", None)
             case (minute, hour, day, month, day_of_week, second):
-                self.minute = minute
-                self.hour = hour
-                self.day = day
-                self.month = month
-                self.day_of_week = day_of_week
-                self.second = second
+                _set(self, "minute", minute)
+                _set(self, "hour", hour)
+                _set(self, "day", day)
+                _set(self, "month", month)
+                _set(self, "day_of_week", day_of_week)
+                _set(self, "second", second)
             case (_, _, _, _, _, _, year):
                 raise ValueError(
                     f"Invalid cron expression: year value not allowed (but used {year})"

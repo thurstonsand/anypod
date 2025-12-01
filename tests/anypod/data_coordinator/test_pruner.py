@@ -306,6 +306,121 @@ async def test_handle_image_deletion_no_thumbnail_ext(
     mock_file_manager.delete_image.assert_not_called()
 
 
+# --- Tests for Pruner._handle_transcript_deletion ---
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_handle_transcript_deletion_success(
+    pruner: Pruner,
+    mock_file_manager: AsyncMock,
+    sample_downloaded_item: Download,
+):
+    """Tests _handle_transcript_deletion successfully deletes transcript."""
+    download_with_transcript = sample_downloaded_item.model_copy(
+        update={"transcript_lang": "en", "transcript_ext": "vtt"}
+    )
+
+    await pruner._handle_transcript_deletion(download_with_transcript, "test_feed")
+
+    mock_file_manager.delete_transcript.assert_called_once_with(
+        "test_feed", "test_dl_id_1", "en", "vtt"
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_handle_transcript_deletion_no_transcript_metadata(
+    pruner: Pruner,
+    mock_file_manager: AsyncMock,
+    sample_downloaded_item: Download,
+):
+    """Tests _handle_transcript_deletion skips deletion when no transcript metadata."""
+    # Download without transcript metadata (None by default)
+    await pruner._handle_transcript_deletion(sample_downloaded_item, "test_feed")
+
+    mock_file_manager.delete_transcript.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_handle_transcript_deletion_missing_lang_skips(
+    pruner: Pruner,
+    mock_file_manager: AsyncMock,
+    sample_downloaded_item: Download,
+):
+    """Tests _handle_transcript_deletion skips deletion when transcript_lang is missing."""
+    download_with_ext_only = sample_downloaded_item.model_copy(
+        update={"transcript_ext": "vtt"}
+    )
+
+    await pruner._handle_transcript_deletion(download_with_ext_only, "test_feed")
+
+    mock_file_manager.delete_transcript.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_handle_transcript_deletion_missing_ext_skips(
+    pruner: Pruner,
+    mock_file_manager: AsyncMock,
+    sample_downloaded_item: Download,
+):
+    """Tests _handle_transcript_deletion skips deletion when transcript_ext is missing."""
+    download_with_lang_only = sample_downloaded_item.model_copy(
+        update={"transcript_lang": "en"}
+    )
+
+    await pruner._handle_transcript_deletion(download_with_lang_only, "test_feed")
+
+    mock_file_manager.delete_transcript.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_handle_transcript_deletion_file_not_found_continues(
+    pruner: Pruner,
+    mock_file_manager: AsyncMock,
+    sample_downloaded_item: Download,
+):
+    """Tests _handle_transcript_deletion continues when transcript file not found."""
+    download_with_transcript = sample_downloaded_item.model_copy(
+        update={"transcript_lang": "en", "transcript_ext": "vtt"}
+    )
+    mock_file_manager.delete_transcript.side_effect = FileNotFoundError(
+        "Transcript not found"
+    )
+
+    # Should not raise an exception
+    await pruner._handle_transcript_deletion(download_with_transcript, "test_feed")
+
+    mock_file_manager.delete_transcript.assert_called_once_with(
+        "test_feed", "test_dl_id_1", "en", "vtt"
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_handle_transcript_deletion_file_operation_error_raises_prune_error(
+    pruner: Pruner,
+    mock_file_manager: AsyncMock,
+    sample_downloaded_item: Download,
+):
+    """Tests _handle_transcript_deletion raises PruneError on FileOperationError."""
+    download_with_transcript = sample_downloaded_item.model_copy(
+        update={"transcript_lang": "en", "transcript_ext": "vtt"}
+    )
+    file_error = FileOperationError("Permission denied")
+    mock_file_manager.delete_transcript.side_effect = file_error
+
+    with pytest.raises(PruneError) as exc_info:
+        await pruner._handle_transcript_deletion(download_with_transcript, "test_feed")
+
+    assert exc_info.value.feed_id == "test_feed"
+    assert exc_info.value.download_id == sample_downloaded_item.id
+    assert exc_info.value.__cause__ is file_error
+
+
 # --- Tests for Pruner._handle_file_deletion ---
 
 
@@ -516,6 +631,77 @@ async def test_process_single_download_downloaded_with_image_deletes_both(
     )
     mock_download_db.archive_download.assert_awaited_once_with(
         "test_feed", download_with_image.id
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_process_single_download_downloaded_with_transcript_deletes_all(
+    pruner: Pruner,
+    mock_download_db: MagicMock,
+    mock_file_manager: AsyncMock,
+    sample_downloaded_item: Download,
+):
+    """Tests _process_single_download_for_pruning deletes file, image, and transcript for DOWNLOADED items."""
+    download_with_all = sample_downloaded_item.model_copy(
+        update={
+            "thumbnail_ext": "jpg",
+            "transcript_lang": "en",
+            "transcript_ext": "vtt",
+        }
+    )
+
+    result = await pruner._process_single_download_for_pruning(
+        download_with_all, "test_feed"
+    )
+
+    assert result is True
+    mock_file_manager.delete_download_file.assert_called_once_with(
+        "test_feed", "test_dl_id_1", "mp4"
+    )
+    mock_file_manager.delete_image.assert_called_once_with(
+        "test_feed", "test_dl_id_1", "jpg"
+    )
+    mock_file_manager.delete_transcript.assert_called_once_with(
+        "test_feed", "test_dl_id_1", "en", "vtt"
+    )
+    mock_download_db.archive_download.assert_awaited_once_with(
+        "test_feed", download_with_all.id
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_process_single_download_transcript_deletion_error_continues(
+    pruner: Pruner,
+    mock_download_db: MagicMock,
+    mock_file_manager: AsyncMock,
+    sample_downloaded_item: Download,
+):
+    """Tests _process_single_download_for_pruning continues archival when transcript deletion fails."""
+    download_with_transcript = sample_downloaded_item.model_copy(
+        update={"transcript_lang": "en", "transcript_ext": "vtt"}
+    )
+    mock_file_manager.delete_transcript.side_effect = FileOperationError(
+        "Permission denied"
+    )
+
+    result = await pruner._process_single_download_for_pruning(
+        download_with_transcript, "test_feed"
+    )
+
+    # File deletion succeeded
+    assert result is True
+    mock_file_manager.delete_download_file.assert_called_once_with(
+        "test_feed", "test_dl_id_1", "mp4"
+    )
+    # Transcript deletion was attempted
+    mock_file_manager.delete_transcript.assert_called_once_with(
+        "test_feed", "test_dl_id_1", "en", "vtt"
+    )
+    # Download should still be archived despite transcript deletion failure
+    mock_download_db.archive_download.assert_awaited_once_with(
+        "test_feed", download_with_transcript.id
     )
 
 

@@ -346,3 +346,49 @@ async def serve_download_image(
         media_type=mimetypes.guess_type(f"file.{ext}")[0],
         headers={"Cache-Control": "public, max-age=86400"},  # 24 hours
     )
+
+
+@router.api_route(
+    "/transcripts/{feed_id}/{filename}.{lang}.{ext}", methods=["GET", "HEAD"]
+)
+async def serve_download_transcript(
+    feed_id: ValidatedFeedId,
+    filename: ValidatedFilename,
+    lang: ValidatedFilename,
+    ext: ValidatedExtension,
+    file_manager: FileManagerDep,
+) -> FileResponse:
+    """Serve transcript file for a specific download.
+
+    Args:
+        feed_id: The unique identifier for the feed.
+        filename: The download identifier (filename without extension).
+        lang: The language code of the transcript (e.g., "en").
+        ext: The file extension of the transcript file (e.g., "vtt").
+        file_manager: The file manager dependency.
+
+    Returns:
+        File response with transcript content.
+
+    Raises:
+        HTTPException: If transcript not found or cannot be served.
+    """
+    logger.debug(
+        "Serving transcript",
+        extra={"feed_id": feed_id, "download_id": filename, "lang": lang, "ext": ext},
+    )
+
+    try:
+        file_path = await file_manager.get_transcript_path(feed_id, filename, lang, ext)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail="Transcript not found") from e
+    except FileOperationError as e:
+        raise HTTPException(status_code=500, detail="Internal server error") from e
+
+    media_type = mimetypes.guess_type(f"file.{ext}")[0]
+
+    return FileResponse(
+        path=file_path,
+        media_type=media_type,
+        headers={"Cache-Control": "public, max-age=86400"},  # 24 hours
+    )

@@ -339,7 +339,7 @@ async def test_fetch_new_downloads_metadata_returns_downloads(
 
     # Verify that the handler method was called with correct parameters
     mock_youtube_handler.extract_download_metadata.assert_called_once_with(
-        feed_id, mock_video_info
+        feed_id, mock_video_info, None, None
     )
 
 
@@ -507,12 +507,10 @@ async def test_download_media_to_file_success_simplified(
     mock_glob = AsyncMock(return_value=[expected_final_file])
     mock_aiofiles_wrap.return_value = mock_glob
 
-    returned_path, returned_logs = await ytdlp_wrapper.download_media_to_file(
-        dummy_download, yt_cli_args
-    )
+    result = await ytdlp_wrapper.download_media_to_file(dummy_download, yt_cli_args)
 
-    assert returned_path == expected_final_file
-    assert returned_logs == "STDOUT:\nprogress line\n"
+    assert result.file_path == expected_final_file
+    assert result.logs == "STDOUT:\nprogress line\n"
 
     mock_prep_dl_dir.assert_called_once_with(feed_id)
 
