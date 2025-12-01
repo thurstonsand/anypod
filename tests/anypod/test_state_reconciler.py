@@ -1779,12 +1779,14 @@ async def test_handle_transcript_config_changes_language_change(
     mock_file_manager: MagicMock,
     mock_ytdlp_wrapper: MagicMock,
 ) -> None:
-    """Changing transcript language triggers deletion and attempts re-download."""
-    # Note: Due to implementation limitation, the in-memory Download objects
-    # still have transcript_ext set after deletion, so they get skipped during
-    # the download phase. This test verifies deletion happens correctly.
+    """Changing transcript language triggers deletion and re-download."""
     download_with_transcript = deepcopy(MOCK_DOWNLOADED_DOWNLOAD_WITH_TRANSCRIPT)
     mock_download_db.get_downloads_by_status.return_value = [download_with_transcript]
+
+    refreshed_download = deepcopy(download_with_transcript)
+    refreshed_download.transcript_source = TranscriptSource.CREATOR
+    mock_ytdlp_wrapper.fetch_new_downloads_metadata.return_value = [refreshed_download]
+    mock_ytdlp_wrapper.download_transcript_only.return_value = "vtt"
 
     log_params = {"feed_id": FEED_ID}
     await state_reconciler._handle_transcript_config_changes(
@@ -1798,19 +1800,12 @@ async def test_handle_transcript_config_changes_language_change(
         log_params=log_params,
     )
 
-    # Should delete old transcripts
     mock_file_manager.delete_transcript.assert_awaited_once_with(
         FEED_ID, "downloaded_3", "en", "vtt"
     )
-    mock_download_db.set_transcript_metadata.assert_awaited_once_with(
-        feed_id=FEED_ID,
-        download_id="downloaded_3",
-        transcript_ext=None,
-        transcript_lang=None,
-        transcript_source=None,
-    )
-    # Download is skipped because in-memory object still has transcript_ext set
-    mock_ytdlp_wrapper.fetch_new_downloads_metadata.assert_not_called()
+    mock_ytdlp_wrapper.fetch_new_downloads_metadata.assert_awaited_once()
+    mock_ytdlp_wrapper.download_transcript_only.assert_awaited_once()
+    assert mock_download_db.set_transcript_metadata.await_count == 2
 
 
 @pytest.mark.unit
@@ -1821,12 +1816,14 @@ async def test_handle_transcript_config_changes_priority_change(
     mock_file_manager: MagicMock,
     mock_ytdlp_wrapper: MagicMock,
 ) -> None:
-    """Changing transcript source priority triggers deletion and attempts re-download."""
-    # Note: Due to implementation limitation, the in-memory Download objects
-    # still have transcript_ext set after deletion, so they get skipped during
-    # the download phase. This test verifies deletion happens correctly.
+    """Changing transcript source priority triggers deletion and re-download."""
     download_with_transcript = deepcopy(MOCK_DOWNLOADED_DOWNLOAD_WITH_TRANSCRIPT)
     mock_download_db.get_downloads_by_status.return_value = [download_with_transcript]
+
+    refreshed_download = deepcopy(download_with_transcript)
+    refreshed_download.transcript_source = TranscriptSource.AUTO
+    mock_ytdlp_wrapper.fetch_new_downloads_metadata.return_value = [refreshed_download]
+    mock_ytdlp_wrapper.download_transcript_only.return_value = "vtt"
 
     log_params = {"feed_id": FEED_ID}
     await state_reconciler._handle_transcript_config_changes(
@@ -1840,17 +1837,10 @@ async def test_handle_transcript_config_changes_priority_change(
         log_params=log_params,
     )
 
-    # Should delete old transcripts
     mock_file_manager.delete_transcript.assert_awaited_once()
-    mock_download_db.set_transcript_metadata.assert_awaited_once_with(
-        feed_id=FEED_ID,
-        download_id="downloaded_3",
-        transcript_ext=None,
-        transcript_lang=None,
-        transcript_source=None,
-    )
-    # Download is skipped because in-memory object still has transcript_ext set
-    mock_ytdlp_wrapper.fetch_new_downloads_metadata.assert_not_called()
+    mock_ytdlp_wrapper.fetch_new_downloads_metadata.assert_awaited_once()
+    mock_ytdlp_wrapper.download_transcript_only.assert_awaited_once()
+    assert mock_download_db.set_transcript_metadata.await_count == 2
 
 
 @pytest.mark.unit
