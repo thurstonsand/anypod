@@ -457,6 +457,94 @@ async def test_download_feed_thumbnail_file_not_found(
     assert mock_is_file.call_count == 3
 
 
+# --- Tests for YtdlpWrapper.download_media_thumbnail ---
+
+
+@pytest.mark.unit
+@patch.object(YtdlpCore, "download")
+@pytest.mark.asyncio
+async def test_download_media_thumbnail_success(
+    mock_ytdlcore_download: AsyncMock,
+    ytdlp_wrapper: YtdlpWrapper,
+):
+    """Verify download_media_thumbnail calls YtdlpCore.download with correct args and returns logs."""
+    feed_id = "test_feed"
+    download_id = "test_download_id"
+    source_url = "https://www.youtube.com/watch?v=test123"
+    expected_logs = "STDOUT:\nthumbnail download complete\n"
+
+    download = Download(
+        feed_id=feed_id,
+        id=download_id,
+        source_url=source_url,
+        title="Test Video",
+        published=datetime(2023, 1, 1, 0, 0, 0, tzinfo=UTC),
+        ext="mp4",
+        mime_type="video/mp4",
+        filesize=12345,
+        duration=120,
+        status=DownloadStatus.QUEUED,
+    )
+
+    mock_ytdlcore_download.return_value = expected_logs
+
+    result = await ytdlp_wrapper.download_media_thumbnail(
+        download=download,
+        user_yt_cli_args=["--format", "best"],
+    )
+
+    assert result == expected_logs
+    mock_ytdlcore_download.assert_called_once()
+
+    call_args = mock_ytdlcore_download.call_args[0]
+    ytdlp_args: YtdlpArgs = call_args[0]
+    cmd_list = ytdlp_args.to_list()
+
+    assert "--skip-download" in cmd_list
+    assert "--write-thumbnail" in cmd_list
+    assert "--convert-thumbnails" in cmd_list
+    assert "jpg" in cmd_list
+    assert call_args[1] == source_url
+
+
+@pytest.mark.unit
+@patch.object(YtdlpCore, "download")
+@pytest.mark.asyncio
+async def test_download_media_thumbnail_failure(
+    mock_ytdlcore_download: AsyncMock,
+    ytdlp_wrapper: YtdlpWrapper,
+):
+    """Verify download_media_thumbnail propagates YtdlpApiError from YtdlpCore.download."""
+    feed_id = "test_feed"
+    download_id = "test_download_id"
+    source_url = "https://www.youtube.com/watch?v=test123"
+
+    download = Download(
+        feed_id=feed_id,
+        id=download_id,
+        source_url=source_url,
+        title="Test Video",
+        published=datetime(2023, 1, 1, 0, 0, 0, tzinfo=UTC),
+        ext="mp4",
+        mime_type="video/mp4",
+        filesize=12345,
+        duration=120,
+        status=DownloadStatus.QUEUED,
+    )
+
+    expected_error = YtdlpApiError("thumbnail download failed", logs="STDERR:\nerror\n")
+    mock_ytdlcore_download.side_effect = expected_error
+
+    with pytest.raises(YtdlpApiError) as exc_info:
+        await ytdlp_wrapper.download_media_thumbnail(
+            download=download,
+            user_yt_cli_args=[],
+        )
+
+    assert exc_info.value is expected_error
+    mock_ytdlcore_download.assert_called_once()
+
+
 # --- Tests for YtdlpWrapper.download_media_to_file ---
 
 

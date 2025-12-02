@@ -267,6 +267,7 @@ def data_coordinator(
     downloader: Downloader,
     pruner: Pruner,
     rss_generator: RSSFeedGenerator,
+    download_db: DownloadDatabase,
     feed_db: FeedDatabase,
     cookies_path: Path | None,
 ) -> DataCoordinator:
@@ -276,6 +277,7 @@ def data_coordinator(
         downloader=downloader,
         pruner=pruner,
         rss_generator=rss_generator,
+        download_db=download_db,
         feed_db=feed_db,
         cookies_path=cookies_path,
     )

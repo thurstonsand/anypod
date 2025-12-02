@@ -5,7 +5,7 @@ metadata definitions, category validation, and feed-specific settings
 that control how content is fetched and processed.
 """
 
-from datetime import UTC, datetime, tzinfo
+from datetime import UTC, datetime, timedelta, tzinfo
 import os
 import shlex
 from typing import Any, cast
@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import pycountry
 from pydantic import BaseModel, Field, field_validator, model_validator
+import pytimeparse2  # pyright: ignore[reportMissingTypeStubs]
 
 from ..db.types.transcript_source import TranscriptSource
 from .types import CronExpression, FeedMetadataOverrides
@@ -71,6 +72,14 @@ class FeedConfig(BaseModel):
     transcript_source_priority: list[TranscriptSource] | None = Field(
         default=None,
         description="Ordered list of transcript sources to try (e.g., ['creator', 'auto']). First available source wins.",
+    )
+    download_delay: timedelta | None = Field(
+        default=None,
+        description=(
+            "Delay downloads after video publication. If None (default), downloads "
+            "immediately. Accepts duration strings: '1h', '24h', '3d', '1w'. "
+            "Allows metadata to stabilize before downloading."
+        ),
     )
     metadata: FeedMetadataOverrides | None = Field(
         None, description="Podcast metadata overrides"
@@ -326,6 +335,48 @@ class FeedConfig(BaseModel):
             seen.add(source)
             result.append(source)
         return result
+
+    @field_validator("download_delay", mode="before")
+    @classmethod
+    def parse_download_delay(cls, v: Any) -> timedelta | None:
+        """Parse download_delay string into a timedelta object.
+
+        Args:
+            v: Value to parse, can be string, timedelta, or None.
+
+        Returns:
+            timedelta instance or None if not provided.
+
+        Raises:
+            ValueError: If the duration string format is invalid.
+            TypeError: If the value is not a string, timedelta, or None.
+        """
+        match v:
+            case None:
+                return None
+            case str() as s if not s.strip():
+                return None
+            case str() as s:
+                seconds = cast(
+                    int | float | None,
+                    pytimeparse2.parse(s),  # pyright: ignore[reportUnknownMemberType]
+                )
+                if seconds is None:
+                    raise ValueError(
+                        f"Invalid duration format: '{s}'. "
+                        "Expected format: '<number><unit>' where unit is h, d, w, etc. "
+                        "Examples: '1h', '24h', '3d', '1w', '2 hours', '1 day'"
+                    )
+                if seconds < 0:
+                    raise ValueError(f"download_delay must be non-negative, got '{s}'")
+                return timedelta(seconds=seconds)
+            case timedelta():
+                return v
+            case _:
+                raise TypeError(
+                    f"download_delay must be a duration string (e.g., '24h', '3d', '1w') or None, "
+                    f"got {type(v).__name__}"
+                )
 
     @model_validator(mode="after")
     def validate_feed_config(self) -> FeedConfig:

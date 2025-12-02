@@ -156,6 +156,7 @@ async def _init(
         downloader=downloader,
         pruner=pruner,
         rss_generator=rss_generator,
+        download_db=download_db,
         feed_db=feed_db,
         cookies_path=settings.cookies_path,
     )

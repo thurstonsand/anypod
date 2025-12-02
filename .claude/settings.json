@@ -1,19 +1,23 @@
 {
   "permissions": {
     "allow": [
-      "Skill(project-management-plugin:git-commit-helper)",
       "Bash(git log:*)",
-      "Bash(ssh truenas docker logs:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)",
+      "Bash(git log:*)",
+      "Bash(git rev-parse:*)",
       "Bash(docker build:*)",
+      "Bash(docker logs:*)",
       "Bash(uvx yt-dlp:*)",
       "Bash(python3:*)",
       "Bash(./scripts/run_dev.sh:*)",
       "Bash(gh issue list:*)",
-      "Skill(project-management:git-commit-helper)",
+      "Bash(gh pr view:*)",
       "Bash(uv run pytest:*)",
       "Bash(uv run pre-commit:*)",
       "Bash(uv run basedpyright:*)",
-      "Bash(gh pr view:*)",
       "Bash(uv run ruff:*)"
     ],
     "deny": [],

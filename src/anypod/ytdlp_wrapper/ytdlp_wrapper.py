@@ -385,6 +385,65 @@ class YtdlpWrapper:
         # Convert thumbnail to JPG if needed (yt-dlp bug workaround)
         return await self._convert_thumbnail_to_jpg_if_needed(feed_id, log_config)
 
+    async def download_media_thumbnail(
+        self,
+        download: Download,
+        user_yt_cli_args: list[str],
+        cookies_path: Path | None = None,
+    ) -> str:
+        """Download only the thumbnail for a download (skip media).
+
+        Useful for refreshing thumbnails when the remote thumbnail URL changes
+        without re-downloading the media file.
+
+        Args:
+            download: The Download object to fetch thumbnail for.
+            user_yt_cli_args: User-configured command-line arguments for yt-dlp.
+            cookies_path: Path to cookies.txt file for authentication, or None if not needed.
+
+        Returns:
+            yt-dlp execution logs.
+
+        Raises:
+            YtdlpApiError: If the thumbnail download fails.
+        """
+        thumbnails_dir = await self._paths.download_images_dir(download.feed_id)
+        temp_dir = await self._paths.feed_tmp_dir(download.feed_id)
+
+        log_params: dict[str, Any] = {
+            "feed_id": download.feed_id,
+            "download_id": download.id,
+            "source_url": download.source_url,
+        }
+
+        logger.debug("Downloading thumbnail for existing download.", extra=log_params)
+
+        thumb_args = (
+            YtdlpArgs(user_yt_cli_args)
+            .skip_download()
+            .write_thumbnail()
+            .convert_thumbnails("jpg")
+            .paths_thumbnail(thumbnails_dir)
+            .output_thumbnail(f"{download.id}.%(ext)s")
+            .paths_pl_thumbnail(thumbnails_dir)
+            .output_pl_thumbnail(f"{download.id}.%(ext)s")
+            .paths_temp(temp_dir)
+        )
+
+        thumb_args = await self._update_to(thumb_args)
+        thumb_args = self._pot_extractor_args(thumb_args)
+
+        handler = self._handler_selector.select(download.source_url)
+        thumb_args = handler.prepare_thumbnail_args(thumb_args)
+
+        if cookies_path:
+            thumb_args = thumb_args.cookies(cookies_path)
+
+        logs = await YtdlpCore.download(thumb_args, download.source_url)
+
+        logger.debug("Thumbnail downloaded for existing download.", extra=log_params)
+        return logs
+
     async def fetch_new_downloads_metadata(
         self,
         feed_id: str,

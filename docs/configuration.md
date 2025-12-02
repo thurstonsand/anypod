@@ -64,16 +64,17 @@ feeds:
 
 ### Field Reference
 
-| Field                        | Required | Description                                                   |
-| ---------------------------- | -------- | ------------------------------------------------------------- |
-| `url`                        | Yes\*    | Source URL (YouTube channel/playlist, Patreon, X/Twitter)     |
-| `schedule`                   | Yes      | Cron expression or `"manual"`                                 |
-| `yt_args`                    | No       | Extra yt-dlp arguments (see caveats below)                    |
-| `since`                      | No       | Only include items after this date (`YYYYMMDD`)               |
-| `keep_last`                  | No       | Retain only the N most recent items                           |
-| `transcript_lang`            | No       | Language code for subtitles/transcripts (e.g., `en`)          |
-| `transcript_source_priority` | No       | Ordered list of transcript sources to try (`creator`, `auto`) |
-| `metadata`                   | No       | Override feed metadata (see below)                            |
+| Field                        | Required | Description                                                                        |
+| ---------------------------- | -------- | ---------------------------------------------------------------------------------- |
+| `url`                        | Yes\*    | Source URL (YouTube channel/playlist, Patreon, X/Twitter)                          |
+| `schedule`                   | Yes      | Cron expression or `"manual"`                                                      |
+| `yt_args`                    | No       | Extra yt-dlp arguments (see caveats below)                                         |
+| `since`                      | No       | Only include items after this date (`YYYYMMDD`)                                    |
+| `keep_last`                  | No       | Retain only the N most recent items                                                |
+| `download_delay`             | No       | Delay downloads after publication (e.g., `24h`, `3d`, `1w`) for metadata to settle |
+| `transcript_lang`            | No       | Language code for subtitles/transcripts (e.g., `en`)                               |
+| `transcript_source_priority` | No       | Ordered list of transcript sources to try (`creator`, `auto`)                      |
+| `metadata`                   | No       | Override feed metadata (see below)                                                 |
 
 - `url` is optional for manual feeds.
 
