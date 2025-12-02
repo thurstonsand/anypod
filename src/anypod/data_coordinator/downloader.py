@@ -6,6 +6,7 @@ to fetch media, the FileManager to handle file storage, and the DownloadDatabase
 to update download statuses and metadata.
 """
 
+from datetime import UTC, datetime
 import logging
 from pathlib import Path
 from typing import Any
@@ -199,6 +200,80 @@ class Downloader:
                 extra={"feed_id": download.feed_id, "download_id": download.id},
             )
 
+    async def download_thumbnail_for_existing_download(
+        self,
+        download: Download,
+        yt_args: list[str],
+        cookies_path: Path | None = None,
+    ) -> bool:
+        """Download thumbnail for an existing download.
+
+        Used during metadata refresh when remote_thumbnail_url changes.
+        Downloads the new thumbnail without re-downloading the media file.
+
+        Args:
+            download: The Download object to fetch thumbnail for.
+            yt_args: User-configured yt-dlp command-line arguments.
+            cookies_path: Path to cookies.txt file for authentication.
+
+        Returns:
+            True if thumbnail was successfully downloaded, False otherwise.
+
+        Raises:
+            DownloadError: If a critical infrastructure error occurs
+                (e.g., database update failure).
+        """
+        log_params: dict[str, Any] = {
+            "feed_id": download.feed_id,
+            "download_id": download.id,
+        }
+        logger.debug("Downloading thumbnail for existing download.", extra=log_params)
+
+        try:
+            await self.ytdlp_wrapper.download_media_thumbnail(
+                download, yt_args, cookies_path
+            )
+        except YtdlpApiError as e:
+            logger.warning(
+                "Thumbnail download failed via yt-dlp.",
+                extra=log_params,
+                exc_info=e,
+            )
+            return False
+
+        # Verify thumbnail file was created before updating database
+        try:
+            has_thumb = await self.file_manager.image_exists(
+                download.feed_id, download.id, "jpg"
+            )
+        except FileOperationError as e:
+            raise DownloadError(
+                message="Failed to verify thumbnail file exists.",
+                feed_id=download.feed_id,
+                download_id=download.id,
+            ) from e
+
+        if not has_thumb:
+            logger.warning(
+                "Thumbnail file not found after download.",
+                extra=log_params,
+            )
+            return False
+
+        try:
+            await self.download_db.set_thumbnail_extension(
+                download.feed_id, download.id, "jpg"
+            )
+        except (DownloadNotFoundError, DatabaseOperationError) as e:
+            raise DownloadError(
+                message="Failed to update thumbnail extension in database.",
+                feed_id=download.feed_id,
+                download_id=download.id,
+            ) from e
+
+        logger.info("Thumbnail downloaded for existing download.", extra=log_params)
+        return True
+
     async def _persist_download_logs(self, download: Download, logs: str) -> None:
         """Persist yt-dlp logs for a download when available."""
         log_params = {"feed_id": download.feed_id, "download_id": download.id}
@@ -329,12 +404,39 @@ class Downloader:
             logger.debug("No queued downloads found for feed.", extra=log_params)
             return 0, 0
 
+        # Apply download_delay filtering if configured
+        ready_downloads = queued_downloads
+        if feed_config.download_delay is not None:
+            now = datetime.now(UTC)
+            ready_downloads = [
+                dl
+                for dl in queued_downloads
+                if dl.published + feed_config.download_delay <= now
+            ]
+            deferred_count = len(queued_downloads) - len(ready_downloads)
+            if deferred_count > 0:
+                logger.debug(
+                    "Deferred downloads due to download_delay.",
+                    extra={
+                        **log_params,
+                        "deferred_count": deferred_count,
+                        "download_delay": str(feed_config.download_delay),
+                    },
+                )
+
+        if not ready_downloads:
+            logger.debug(
+                "No downloads ready for processing (all deferred by download_delay).",
+                extra=log_params,
+            )
+            return 0, 0
+
         logger.debug(
             "Found queued items for feed. Processing...",
-            extra={**log_params, "num_queued": len(queued_downloads)},
+            extra={**log_params, "num_queued": len(ready_downloads)},
         )
 
-        for download in queued_downloads:
+        for download in ready_downloads:
             try:
                 await self._process_single_download(download, feed_config, cookies_path)
                 success_count += 1

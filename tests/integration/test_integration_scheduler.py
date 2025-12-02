@@ -92,12 +92,13 @@ def data_coordinator(
     downloader: Downloader,
     pruner: Pruner,
     rss_generator: RSSFeedGenerator,
+    download_db: DownloadDatabase,
     feed_db: FeedDatabase,
     cookies_path: Path | None,
 ) -> DataCoordinator:
     """Provides a DataCoordinator instance combining all services."""
     return DataCoordinator(
-        enqueuer, downloader, pruner, rss_generator, feed_db, cookies_path
+        enqueuer, downloader, pruner, rss_generator, download_db, feed_db, cookies_path
     )
 
 

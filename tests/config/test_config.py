@@ -3,6 +3,7 @@
 """Tests for the configuration loading and validation functionality."""
 
 # tests/test_config.py
+from datetime import timedelta
 import os
 from pathlib import Path
 from typing import Any
@@ -454,3 +455,97 @@ def test_feed_config_since_invalid_values(
             schedule="* * * * *",
             since=since_value,
         )  # type: ignore
+
+
+# --- Tests for FeedConfig.download_delay validator ---
+
+
+@pytest.mark.unit
+def test_feed_config_download_delay_valid_string():
+    """Valid duration string is parsed into timedelta."""
+    feed = FeedConfig(  # type: ignore[call-arg]
+        url="http://example.com",
+        schedule="* * * * *",
+        download_delay="24h",
+    )
+    assert feed.download_delay == timedelta(hours=24)
+
+
+@pytest.mark.unit
+def test_feed_config_download_delay_none_preserved():
+    """None value is preserved."""
+    feed = FeedConfig(  # type: ignore[call-arg]
+        url="http://example.com",
+        schedule="* * * * *",
+        download_delay=None,
+    )
+    assert feed.download_delay is None
+
+
+@pytest.mark.unit
+def test_feed_config_download_delay_empty_string_becomes_none():
+    """Empty string is treated as None."""
+    feed = FeedConfig(  # type: ignore[call-arg]
+        url="http://example.com",
+        schedule="* * * * *",
+        download_delay="",
+    )
+    assert feed.download_delay is None
+
+
+@pytest.mark.unit
+def test_feed_config_download_delay_whitespace_becomes_none():
+    """Whitespace-only string is treated as None."""
+    feed = FeedConfig(  # type: ignore[call-arg]
+        url="http://example.com",
+        schedule="* * * * *",
+        download_delay="   ",
+    )
+    assert feed.download_delay is None
+
+
+@pytest.mark.unit
+def test_feed_config_download_delay_timedelta_passthrough():
+    """Timedelta values pass through unchanged."""
+    td = timedelta(hours=24)
+    feed = FeedConfig(  # type: ignore[call-arg]
+        url="http://example.com",
+        schedule="* * * * *",
+        download_delay=td,
+    )
+    assert feed.download_delay == td
+
+
+@pytest.mark.unit
+def test_feed_config_download_delay_invalid_format_raises_value_error():
+    """Invalid format strings raise ValueError."""
+    with pytest.raises(ValidationError) as exc_info:
+        FeedConfig(  # type: ignore[call-arg]
+            url="http://example.com",
+            schedule="* * * * *",
+            download_delay="not a duration",
+        )
+    assert "Invalid duration format" in str(exc_info.value)
+
+
+@pytest.mark.unit
+def test_feed_config_download_delay_negative_raises_value_error():
+    """Negative duration strings raise ValueError."""
+    with pytest.raises(ValidationError) as exc_info:
+        FeedConfig(  # type: ignore[call-arg]
+            url="http://example.com",
+            schedule="* * * * *",
+            download_delay="-24h",
+        )
+    assert "non-negative" in str(exc_info.value)
+
+
+@pytest.mark.unit
+def test_feed_config_download_delay_invalid_type_raises_type_error():
+    """Invalid types raise TypeError."""
+    with pytest.raises(TypeError, match="duration string"):
+        FeedConfig(  # type: ignore[call-arg]
+            url="http://example.com",
+            schedule="* * * * *",
+            download_delay=123,
+        )
