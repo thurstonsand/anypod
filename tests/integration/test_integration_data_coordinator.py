@@ -49,12 +49,19 @@ def data_coordinator(
     downloader: Downloader,
     pruner: Pruner,
     rss_generator: RSSFeedGenerator,
+    download_db: DownloadDatabase,
     feed_db: FeedDatabase,
     cookies_path: Path | None,
 ) -> DataCoordinator:
     """Provides a DataCoordinator instance combining all services."""
     return DataCoordinator(
-        enqueuer, downloader, pruner, rss_generator, feed_db, cookies_path=cookies_path
+        enqueuer,
+        downloader,
+        pruner,
+        rss_generator,
+        download_db,
+        feed_db,
+        cookies_path=cookies_path,
     )
 
 
@@ -639,3 +646,108 @@ async def test_date_filtering_behavior(
     # The key assertion: verify expected behavior based on URL type and date range
     assert results.enqueue_result.count == expected_enqueue_count, description
     assert results.download_result.count == expected_enqueue_count, description
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_refresh_download_metadata_with_thumbnail_refresh(
+    data_coordinator: DataCoordinator,
+    feed_db: FeedDatabase,
+    download_db: DownloadDatabase,
+    file_manager: FileManager,
+):
+    """Tests metadata refresh including thumbnail refresh when URL changes.
+
+    Creates a download with an old/missing thumbnail, refreshes metadata,
+    and verifies the thumbnail gets downloaded when the URL changes.
+    """
+    feed_id = "test_thumbnail_refresh"
+    feed_config = create_feed_config()
+
+    assert feed_config.url is not None
+    await setup_feed_with_initial_sync(
+        feed_db, feed_id, feed_config.url, SourceType.SINGLE_VIDEO
+    )
+
+    existing_download = Download(
+        feed_id=feed_id,
+        id=BIG_BUCK_BUNNY_VIDEO_ID,
+        source_url=BIG_BUCK_BUNNY_URL,
+        title="Old Title",
+        published=BIG_BUCK_BUNNY_PUBLISHED,
+        ext="mp4",
+        mime_type="video/mp4",
+        filesize=12345,
+        duration=635,
+        status=DownloadStatus.DOWNLOADED,
+        retries=0,
+        discovered_at=BIG_BUCK_BUNNY_PUBLISHED,
+        updated_at=BIG_BUCK_BUNNY_PUBLISHED,
+        remote_thumbnail_url=None,
+        thumbnail_ext=None,
+    )
+    await download_db.upsert_download(existing_download)
+
+    feed_data_dir = Path(file_manager._paths.base_data_dir) / feed_id
+    feed_data_dir.mkdir(parents=True, exist_ok=True)
+    dummy_file = feed_data_dir / f"{BIG_BUCK_BUNNY_VIDEO_ID}.mp4"
+    dummy_file.write_bytes(b"dummy content")
+
+    (
+        updated_download,
+        thumbnail_refreshed,
+    ) = await data_coordinator.refresh_download_metadata(
+        feed_id=feed_id,
+        download_id=BIG_BUCK_BUNNY_VIDEO_ID,
+        feed_config=feed_config,
+    )
+
+    assert updated_download.title == BIG_BUCK_BUNNY_TITLE
+    assert updated_download.remote_thumbnail_url is not None
+    assert thumbnail_refreshed is True
+
+    refreshed_download = await download_db.get_download_by_id(
+        feed_id, BIG_BUCK_BUNNY_VIDEO_ID
+    )
+    assert refreshed_download.thumbnail_ext == "jpg"
+
+    assert await file_manager.image_exists(feed_id, BIG_BUCK_BUNNY_VIDEO_ID, "jpg")
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_refresh_download_metadata_thumbnail_unchanged(
+    data_coordinator: DataCoordinator,
+    feed_db: FeedDatabase,
+    download_db: DownloadDatabase,
+):
+    """Tests metadata refresh skips thumbnail download when URL unchanged."""
+    feed_id = "test_thumbnail_unchanged"
+    feed_config = create_feed_config()
+
+    assert feed_config.url is not None
+    await setup_feed_with_initial_sync(
+        feed_db, feed_id, feed_config.url, SourceType.SINGLE_VIDEO
+    )
+
+    results = await data_coordinator.process_feed(feed_id, feed_config)
+    assert results.overall_success is True
+    assert results.total_downloaded >= 1
+
+    original_download = await download_db.get_download_by_id(
+        feed_id, BIG_BUCK_BUNNY_VIDEO_ID
+    )
+    original_thumbnail_url = original_download.remote_thumbnail_url
+    assert original_thumbnail_url is not None
+
+    (
+        updated_download,
+        thumbnail_refreshed,
+    ) = await data_coordinator.refresh_download_metadata(
+        feed_id=feed_id,
+        download_id=BIG_BUCK_BUNNY_VIDEO_ID,
+        feed_config=feed_config,
+    )
+
+    assert updated_download.remote_thumbnail_url == original_thumbnail_url
+    assert thumbnail_refreshed is False

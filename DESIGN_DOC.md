@@ -518,12 +518,13 @@ The `RSSFeedGenerator` module **persists RSS XML files to disk** under the data 
 
 ### Admin Endpoints (Private/Trusted Access)
 
-| Path                                                    | Description                                                                                |
-| ------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `POST /admin/feeds/{feed_id}/reset-errors`              | Reset all ERROR downloads for a feed to QUEUED status                                      |
-| `POST /admin/feeds/{feed_id}/downloads`                 | Queue a single URL for manual feeds                                                        |
-| `GET /admin/feeds/{feed_id}/downloads/{download_id}`    | Retrieve selected fields for a download record (supports `?fields=` query parameter)       |
-| `DELETE /admin/feeds/{feed_id}/downloads/{download_id}` | Delete a download from a manual feed with full cleanup (media, thumbnail); regenerates RSS |
+| Path                                                                   | Description                                                                                |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `POST /admin/feeds/{feed_id}/reset-errors`                             | Reset all ERROR downloads for a feed to QUEUED status                                      |
+| `POST /admin/feeds/{feed_id}/downloads`                                | Queue a single URL for manual feeds                                                        |
+| `GET /admin/feeds/{feed_id}/downloads/{download_id}`                   | Retrieve selected fields for a download record (supports `?fields=` query parameter)       |
+| `POST /admin/feeds/{feed_id}/downloads/{download_id}/refresh-metadata` | Re-fetch metadata from yt-dlp for a specific download; refreshes thumbnail if URL changed  |
+| `DELETE /admin/feeds/{feed_id}/downloads/{download_id}`                | Delete a download from a manual feed with full cleanup (media, thumbnail); regenerates RSS |
 
 ---
 

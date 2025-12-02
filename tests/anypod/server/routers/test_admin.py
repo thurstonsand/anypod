@@ -707,3 +707,245 @@ def test_delete_download_handles_missing_files(
     mock_file_manager.delete_download_file.assert_awaited_once()
     mock_file_manager.delete_image.assert_not_awaited()
     mock_data_coordinator.regenerate_rss.assert_awaited_once_with(FEED_ID)
+
+
+# --- Tests for refresh-metadata endpoint ---
+
+
+@pytest.mark.unit
+def test_refresh_metadata_success(
+    client: TestClient,
+    feed_configs: dict[str, FeedConfig],
+    mock_feed_database: Mock,
+    mock_download_database: Mock,
+    mock_data_coordinator: Mock,
+    scheduled_feed_config: FeedConfig,
+    sample_download: Download,
+) -> None:
+    """200 when metadata is successfully refreshed."""
+    download_id = sample_download.id
+    feed_configs[FEED_ID] = scheduled_feed_config
+    mock_feed_database.get_feed_by_id.return_value = object()
+    mock_download_database.get_download_by_id.return_value = sample_download
+
+    # Return an updated download with changed title
+    updated_download = sample_download.model_copy(
+        update={"title": "Updated Title", "description": "Updated description"}
+    )
+    mock_data_coordinator.refresh_download_metadata.return_value = (
+        updated_download,
+        False,
+    )
+
+    response = client.post(
+        f"{ADMIN_PREFIX}/feeds/{FEED_ID}/downloads/{download_id}/refresh-metadata"
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["feed_id"] == FEED_ID
+    assert data["download_id"] == download_id
+    assert data["metadata_changed"] is True
+    assert data["thumbnail_refreshed"] is False
+    assert "title" in data["updated_fields"]
+    assert "description" in data["updated_fields"]
+    mock_data_coordinator.refresh_download_metadata.assert_awaited_once_with(
+        feed_id=FEED_ID,
+        download_id=download_id,
+        feed_config=scheduled_feed_config,
+    )
+
+
+@pytest.mark.unit
+def test_refresh_metadata_no_changes(
+    client: TestClient,
+    feed_configs: dict[str, FeedConfig],
+    mock_feed_database: Mock,
+    mock_download_database: Mock,
+    mock_data_coordinator: Mock,
+    scheduled_feed_config: FeedConfig,
+    sample_download: Download,
+) -> None:
+    """200 with metadata_changed=False when no metadata changed."""
+    download_id = sample_download.id
+    feed_configs[FEED_ID] = scheduled_feed_config
+    mock_feed_database.get_feed_by_id.return_value = object()
+    mock_download_database.get_download_by_id.return_value = sample_download
+
+    # Return same download (no changes)
+    mock_data_coordinator.refresh_download_metadata.return_value = (
+        sample_download,
+        False,
+    )
+
+    response = client.post(
+        f"{ADMIN_PREFIX}/feeds/{FEED_ID}/downloads/{download_id}/refresh-metadata"
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["metadata_changed"] is False
+    assert data["thumbnail_refreshed"] is False
+    assert data["updated_fields"] == []
+
+
+@pytest.mark.unit
+def test_refresh_metadata_with_thumbnail_refresh(
+    client: TestClient,
+    feed_configs: dict[str, FeedConfig],
+    mock_feed_database: Mock,
+    mock_download_database: Mock,
+    mock_data_coordinator: Mock,
+    scheduled_feed_config: FeedConfig,
+    sample_download: Download,
+) -> None:
+    """200 with thumbnail_refreshed=True when thumbnail URL changed and was refreshed."""
+    download_id = sample_download.id
+    feed_configs[FEED_ID] = scheduled_feed_config
+    mock_feed_database.get_feed_by_id.return_value = object()
+    mock_download_database.get_download_by_id.return_value = sample_download
+
+    # Return an updated download with changed thumbnail URL
+    updated_download = sample_download.model_copy(
+        update={"remote_thumbnail_url": "https://example.com/new-thumb.jpg"}
+    )
+    mock_data_coordinator.refresh_download_metadata.return_value = (
+        updated_download,
+        True,
+    )
+
+    response = client.post(
+        f"{ADMIN_PREFIX}/feeds/{FEED_ID}/downloads/{download_id}/refresh-metadata"
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["thumbnail_refreshed"] is True
+    assert "remote_thumbnail_url" in data["updated_fields"]
+
+
+@pytest.mark.unit
+def test_refresh_metadata_feed_not_configured(
+    client: TestClient,
+    feed_configs: dict[str, FeedConfig],
+) -> None:
+    """404 when feed is not in configuration."""
+    # feed_configs is empty
+    response = client.post(
+        f"{ADMIN_PREFIX}/feeds/not-configured/downloads/dl-1/refresh-metadata"
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Feed not configured"
+
+
+@pytest.mark.unit
+def test_refresh_metadata_feed_disabled(
+    client: TestClient,
+    feed_configs: dict[str, FeedConfig],
+    disabled_feed_config: FeedConfig,
+) -> None:
+    """400 when feed is disabled."""
+    feed_configs[FEED_ID] = disabled_feed_config
+
+    response = client.post(
+        f"{ADMIN_PREFIX}/feeds/{FEED_ID}/downloads/dl-1/refresh-metadata"
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Feed is disabled"
+
+
+@pytest.mark.unit
+def test_refresh_metadata_feed_not_in_database(
+    client: TestClient,
+    feed_configs: dict[str, FeedConfig],
+    mock_feed_database: Mock,
+    scheduled_feed_config: FeedConfig,
+) -> None:
+    """404 when feed exists in config but not in database."""
+    feed_configs[FEED_ID] = scheduled_feed_config
+    mock_feed_database.get_feed_by_id.side_effect = FeedNotFoundError(
+        "Feed not found.", feed_id=FEED_ID
+    )
+
+    response = client.post(
+        f"{ADMIN_PREFIX}/feeds/{FEED_ID}/downloads/dl-1/refresh-metadata"
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Feed not found"
+
+
+@pytest.mark.unit
+def test_refresh_metadata_download_not_found(
+    client: TestClient,
+    feed_configs: dict[str, FeedConfig],
+    mock_feed_database: Mock,
+    mock_download_database: Mock,
+    scheduled_feed_config: FeedConfig,
+) -> None:
+    """404 when download does not exist."""
+    feed_configs[FEED_ID] = scheduled_feed_config
+    mock_feed_database.get_feed_by_id.return_value = object()
+    mock_download_database.get_download_by_id.side_effect = DownloadNotFoundError(
+        "Download not found", feed_id=FEED_ID, download_id="missing"
+    )
+
+    response = client.post(
+        f"{ADMIN_PREFIX}/feeds/{FEED_ID}/downloads/missing/refresh-metadata"
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Download not found"
+
+
+@pytest.mark.unit
+def test_refresh_metadata_database_error(
+    client: TestClient,
+    feed_configs: dict[str, FeedConfig],
+    mock_feed_database: Mock,
+    scheduled_feed_config: FeedConfig,
+) -> None:
+    """500 when database error occurs during feed lookup."""
+    feed_configs[FEED_ID] = scheduled_feed_config
+    mock_feed_database.get_feed_by_id.side_effect = DatabaseOperationError(
+        "Database error"
+    )
+
+    response = client.post(
+        f"{ADMIN_PREFIX}/feeds/{FEED_ID}/downloads/dl-1/refresh-metadata"
+    )
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "Database error"
+
+
+@pytest.mark.unit
+def test_refresh_metadata_enqueue_error(
+    client: TestClient,
+    feed_configs: dict[str, FeedConfig],
+    mock_feed_database: Mock,
+    mock_download_database: Mock,
+    mock_data_coordinator: Mock,
+    scheduled_feed_config: FeedConfig,
+    sample_download: Download,
+) -> None:
+    """500 when refresh_download_metadata raises EnqueueError."""
+    from anypod.exceptions import EnqueueError
+
+    feed_configs[FEED_ID] = scheduled_feed_config
+    mock_feed_database.get_feed_by_id.return_value = object()
+    mock_download_database.get_download_by_id.return_value = sample_download
+    mock_data_coordinator.refresh_download_metadata.side_effect = EnqueueError(
+        "Failed to fetch metadata from yt-dlp",
+        feed_id=FEED_ID,
+        download_id=sample_download.id,
+    )
+
+    response = client.post(
+        f"{ADMIN_PREFIX}/feeds/{FEED_ID}/downloads/{sample_download.id}/refresh-metadata"
+    )
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "Failed to refresh metadata"

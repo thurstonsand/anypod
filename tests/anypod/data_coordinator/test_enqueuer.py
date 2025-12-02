@@ -58,6 +58,7 @@ def mock_download_db() -> MagicMock:
     mock.get_downloads_by_status = AsyncMock()
     mock.get_download_by_id = AsyncMock()
     mock.upsert_download = AsyncMock()
+    mock.update_download = AsyncMock()
     mock.mark_as_queued_from_upcoming = AsyncMock()
     mock.bump_retries = AsyncMock()
     return mock
@@ -867,3 +868,338 @@ async def test_enqueue_deduplication_with_same_day_overlapping_windows(
     upserted_download = upsert_calls[0][0][0]
     assert upserted_download.id == "test_video_same_day"
     assert upserted_download.status == DownloadStatus.QUEUED
+
+
+# --- Tests for Enqueuer.refresh_download_metadata ---
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_fetch_refreshed_metadata_happy_path_metadata_changed(
+    enqueuer: Enqueuer,
+    mock_download_db: MagicMock,
+    mock_ytdlp_wrapper: MagicMock,
+    sample_feed_config: FeedConfig,
+):
+    """Test fetch_refreshed_metadata when metadata changes are detected."""
+    existing_download = create_download(
+        "video1", DownloadStatus.DOWNLOADED, title="Old Title", duration=100
+    )
+    fetched_download = create_download(
+        "video1", DownloadStatus.QUEUED, title="New Title", duration=150
+    )
+
+    mock_ytdlp_wrapper.fetch_new_downloads_metadata.return_value = [fetched_download]
+
+    result = await enqueuer.fetch_refreshed_metadata(
+        existing_download,
+        sample_feed_config.yt_args,
+        sample_feed_config.transcript_lang,
+        sample_feed_config.transcript_source_priority,
+        None,
+    )
+
+    mock_ytdlp_wrapper.fetch_new_downloads_metadata.assert_awaited_once_with(
+        FEED_ID,
+        SourceType.SINGLE_VIDEO,
+        existing_download.source_url,
+        None,
+        sample_feed_config.yt_args,
+        None,
+        None,
+        transcript_lang=sample_feed_config.transcript_lang,
+        transcript_source_priority=sample_feed_config.transcript_source_priority,
+        cookies_path=None,
+    )
+    # fetch_refreshed_metadata does NOT persist - caller is responsible
+    mock_download_db.upsert_download.assert_not_called()
+    assert result.title == "New Title"
+    assert result.duration == 100
+    assert result.status == DownloadStatus.DOWNLOADED  # Status preserved from existing
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_fetch_refreshed_metadata_happy_path_no_changes(
+    enqueuer: Enqueuer,
+    mock_download_db: MagicMock,
+    mock_ytdlp_wrapper: MagicMock,
+    sample_feed_config: FeedConfig,
+):
+    """Test fetch_refreshed_metadata when no metadata changes are detected."""
+    existing_download = create_download(
+        "video1", DownloadStatus.DOWNLOADED, title="Same Title", duration=100
+    )
+    # Create fetched download with identical content (except timestamps which are excluded from content_equals)
+    fetched_download = existing_download.model_copy()
+    fetched_download.status = DownloadStatus.QUEUED  # Status is merged from existing
+
+    mock_ytdlp_wrapper.fetch_new_downloads_metadata.return_value = [fetched_download]
+
+    result = await enqueuer.fetch_refreshed_metadata(
+        existing_download,
+        sample_feed_config.yt_args,
+        sample_feed_config.transcript_lang,
+        sample_feed_config.transcript_source_priority,
+        None,
+    )
+
+    mock_ytdlp_wrapper.fetch_new_downloads_metadata.assert_awaited_once_with(
+        FEED_ID,
+        SourceType.SINGLE_VIDEO,
+        existing_download.source_url,
+        None,
+        sample_feed_config.yt_args,
+        None,
+        None,
+        transcript_lang=sample_feed_config.transcript_lang,
+        transcript_source_priority=sample_feed_config.transcript_source_priority,
+        cookies_path=None,
+    )
+    mock_download_db.upsert_download.assert_not_called()
+    assert result == existing_download
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_fetch_refreshed_metadata_ytdlp_error_raises_enqueue_error(
+    enqueuer: Enqueuer,
+    mock_download_db: MagicMock,
+    mock_ytdlp_wrapper: MagicMock,
+    sample_feed_config: FeedConfig,
+):
+    """Test fetch_refreshed_metadata raises EnqueueError when yt-dlp fetch fails."""
+    existing_download = create_download("video1", DownloadStatus.DOWNLOADED)
+
+    mock_ytdlp_wrapper.fetch_new_downloads_metadata.side_effect = YtdlpApiError(
+        message="yt-dlp failure", feed_id=FEED_ID, url=existing_download.source_url
+    )
+
+    with pytest.raises(EnqueueError) as exc_info:
+        await enqueuer.fetch_refreshed_metadata(
+            existing_download,
+            sample_feed_config.yt_args,
+            sample_feed_config.transcript_lang,
+            sample_feed_config.transcript_source_priority,
+            None,
+        )
+
+    assert exc_info.value.feed_id == FEED_ID
+    assert exc_info.value.download_id == "video1"
+    mock_download_db.upsert_download.assert_not_called()
+
+
+# --- Tests for Enqueuer.persist_refreshed_metadata ---
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_persist_refreshed_metadata_thumbnail_refreshed_successfully(
+    enqueuer: Enqueuer,
+    mock_download_db: MagicMock,
+):
+    """Test persist_refreshed_metadata when thumbnail is successfully refreshed."""
+    existing_download = create_download(
+        "video1",
+        DownloadStatus.DOWNLOADED,
+        title="Old Title",
+    )
+    existing_download.remote_thumbnail_url = "https://example.com/old_thumb.jpg"
+    existing_download.thumbnail_ext = None
+
+    merged_download = existing_download.model_copy(
+        update={
+            "title": "New Title",
+            "remote_thumbnail_url": "https://example.com/new_thumb.jpg",
+        }
+    )
+
+    result = await enqueuer.persist_refreshed_metadata(
+        existing_download=existing_download,
+        merged_download=merged_download,
+        old_thumbnail_url="https://example.com/old_thumb.jpg",
+        thumbnail_refreshed=True,
+    )
+
+    mock_download_db.update_download.assert_awaited_once()
+    persisted_download = mock_download_db.update_download.call_args[0][0]
+    assert persisted_download.title == "New Title"
+    assert (
+        persisted_download.remote_thumbnail_url == "https://example.com/new_thumb.jpg"
+    )
+    assert persisted_download.thumbnail_ext == "jpg"
+    assert result == persisted_download
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_persist_refreshed_metadata_thumbnail_url_unchanged(
+    enqueuer: Enqueuer,
+    mock_download_db: MagicMock,
+):
+    """Test persist_refreshed_metadata when thumbnail URL didn't change."""
+    thumbnail_url = "https://example.com/thumb.jpg"
+    existing_download = create_download(
+        "video1",
+        DownloadStatus.DOWNLOADED,
+        title="Old Title",
+    )
+    existing_download.remote_thumbnail_url = thumbnail_url
+    existing_download.thumbnail_ext = "jpg"
+
+    merged_download = existing_download.model_copy(
+        update={
+            "title": "New Title",
+            "remote_thumbnail_url": thumbnail_url,
+        }
+    )
+
+    result = await enqueuer.persist_refreshed_metadata(
+        existing_download=existing_download,
+        merged_download=merged_download,
+        old_thumbnail_url=thumbnail_url,
+        thumbnail_refreshed=False,
+    )
+
+    mock_download_db.update_download.assert_awaited_once()
+    persisted_download = mock_download_db.update_download.call_args[0][0]
+    assert persisted_download.title == "New Title"
+    assert persisted_download.remote_thumbnail_url == thumbnail_url
+    assert result == persisted_download
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_persist_refreshed_metadata_thumbnail_url_changed_but_download_failed(
+    enqueuer: Enqueuer,
+    mock_download_db: MagicMock,
+):
+    """Test persist_refreshed_metadata when thumbnail URL changed but download failed."""
+    old_thumbnail_url = "https://example.com/old_thumb.jpg"
+    new_thumbnail_url = "https://example.com/new_thumb.jpg"
+    existing_download = create_download(
+        "video1",
+        DownloadStatus.DOWNLOADED,
+        title="Old Title",
+    )
+    existing_download.remote_thumbnail_url = old_thumbnail_url
+    existing_download.thumbnail_ext = "jpg"
+
+    merged_download = existing_download.model_copy(
+        update={
+            "title": "New Title",
+            "remote_thumbnail_url": new_thumbnail_url,
+        }
+    )
+
+    result = await enqueuer.persist_refreshed_metadata(
+        existing_download=existing_download,
+        merged_download=merged_download,
+        old_thumbnail_url=old_thumbnail_url,
+        thumbnail_refreshed=False,
+    )
+
+    mock_download_db.update_download.assert_awaited_once()
+    persisted_download = mock_download_db.update_download.call_args[0][0]
+    assert persisted_download.title == "New Title"
+    assert persisted_download.remote_thumbnail_url == old_thumbnail_url
+    assert result == persisted_download
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_persist_refreshed_metadata_no_changes_detected(
+    enqueuer: Enqueuer,
+    mock_download_db: MagicMock,
+):
+    """Test persist_refreshed_metadata when no changes detected."""
+    existing_download = create_download(
+        "video1",
+        DownloadStatus.DOWNLOADED,
+        title="Same Title",
+    )
+    existing_download.remote_thumbnail_url = "https://example.com/thumb.jpg"
+    existing_download.thumbnail_ext = "jpg"
+
+    # Merged download is identical in content
+    merged_download = existing_download.model_copy()
+
+    result = await enqueuer.persist_refreshed_metadata(
+        existing_download=existing_download,
+        merged_download=merged_download,
+        old_thumbnail_url="https://example.com/thumb.jpg",
+        thumbnail_refreshed=False,
+    )
+
+    mock_download_db.update_download.assert_not_called()
+    assert result == existing_download
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_persist_refreshed_metadata_database_operation_error(
+    enqueuer: Enqueuer,
+    mock_download_db: MagicMock,
+):
+    """Test persist_refreshed_metadata raises EnqueueError on DatabaseOperationError."""
+    existing_download = create_download(
+        "video1",
+        DownloadStatus.DOWNLOADED,
+        title="Old Title",
+    )
+    merged_download = existing_download.model_copy(
+        update={
+            "title": "New Title",
+        }
+    )
+
+    mock_download_db.update_download.side_effect = DatabaseOperationError(
+        "Database failure"
+    )
+
+    with pytest.raises(EnqueueError) as exc_info:
+        await enqueuer.persist_refreshed_metadata(
+            existing_download=existing_download,
+            merged_download=merged_download,
+            old_thumbnail_url=None,
+            thumbnail_refreshed=False,
+        )
+
+    assert exc_info.value.feed_id == FEED_ID
+    assert exc_info.value.download_id == "video1"
+    mock_download_db.update_download.assert_awaited_once()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_persist_refreshed_metadata_download_not_found_error(
+    enqueuer: Enqueuer,
+    mock_download_db: MagicMock,
+):
+    """Test persist_refreshed_metadata raises EnqueueError on DownloadNotFoundError."""
+    existing_download = create_download(
+        "video1",
+        DownloadStatus.DOWNLOADED,
+        title="Old Title",
+    )
+    merged_download = existing_download.model_copy(
+        update={
+            "title": "New Title",
+        }
+    )
+
+    mock_download_db.update_download.side_effect = DownloadNotFoundError(
+        message="Download not found", feed_id=FEED_ID, download_id="video1"
+    )
+
+    with pytest.raises(EnqueueError) as exc_info:
+        await enqueuer.persist_refreshed_metadata(
+            existing_download=existing_download,
+            merged_download=merged_download,
+            old_thumbnail_url=None,
+            thumbnail_refreshed=False,
+        )
+
+    assert exc_info.value.feed_id == FEED_ID
+    assert exc_info.value.download_id == "video1"
+    mock_download_db.update_download.assert_awaited_once()

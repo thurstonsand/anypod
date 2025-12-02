@@ -12,12 +12,14 @@ import time
 from typing import Any
 
 from ..config import FeedConfig
-from ..db import FeedDatabase
+from ..db import DownloadDatabase, FeedDatabase
+from ..db.types import Download
 from ..exceptions import (
     CoordinatorExecutionError,
     DatabaseOperationError,
     DataCoordinatorError,
     DownloadError,
+    DownloadNotFoundError,
     EnqueueError,
     FeedNotFoundError,
     PruneError,
@@ -45,6 +47,7 @@ class DataCoordinator:
         _downloader: Service for downloading queued media files.
         _pruner: Service for pruning old downloads based on retention policies.
         _rss_generator: Service for generating RSS feed XML.
+        _download_db: Database manager for download record operations.
         _feed_db: Database manager for feed record operations.
         _cookies_path: Path to cookies.txt file for yt-dlp authentication.
     """
@@ -55,6 +58,7 @@ class DataCoordinator:
         downloader: Downloader,
         pruner: Pruner,
         rss_generator: RSSFeedGenerator,
+        download_db: DownloadDatabase,
         feed_db: FeedDatabase,
         cookies_path: Path | None = None,
     ):
@@ -62,6 +66,7 @@ class DataCoordinator:
         self._downloader = downloader
         self._pruner = pruner
         self._rss_generator = rss_generator
+        self._download_db = download_db
         self._feed_db = feed_db
         self._cookies_path = cookies_path
         logger.debug("DataCoordinator initialized.")
@@ -394,6 +399,110 @@ class DataCoordinator:
         ).total_seconds()
 
         return results
+
+    async def refresh_download_metadata(
+        self,
+        feed_id: str,
+        download_id: str,
+        feed_config: FeedConfig,
+    ) -> tuple[Download, bool | None]:
+        """Refresh metadata for a specific download.
+
+        Re-fetches metadata from yt-dlp and updates the database with any
+        metadata changes. If the remote thumbnail URL changed, attempts to
+        download the new thumbnail. The new thumbnail URL is only persisted
+        if the thumbnail download succeeds; otherwise the old URL is retained.
+
+        Args:
+            feed_id: The feed identifier.
+            download_id: The download identifier to refresh.
+            feed_config: The feed configuration.
+
+        Returns:
+            A tuple of (updated_download, thumbnail_refreshed) where
+            thumbnail_refreshed is:
+                - True: Thumbnail was successfully refreshed
+                - False: Thumbnail refresh was attempted but failed
+                - None: No thumbnail refresh was needed (URL unchanged)
+
+        Raises:
+            EnqueueError: If the download is not found, metadata fetch fails,
+                or database update fails.
+        """
+        log_params: dict[str, Any] = {"feed_id": feed_id, "download_id": download_id}
+        logger.info("Refreshing metadata for download.", extra=log_params)
+
+        try:
+            existing_download = await self._download_db.get_download_by_id(
+                feed_id, download_id
+            )
+        except (DownloadNotFoundError, DatabaseOperationError) as e:
+            raise EnqueueError(
+                "Download not found for metadata refresh.",
+                feed_id=feed_id,
+                download_id=download_id,
+            ) from e
+
+        old_thumbnail_url = existing_download.remote_thumbnail_url
+
+        # Fetch and merge metadata without persisting
+        merged_download = await self._enqueuer.fetch_refreshed_metadata(
+            existing_download=existing_download,
+            yt_args=feed_config.yt_args,
+            transcript_lang=feed_config.transcript_lang,
+            transcript_source_priority=feed_config.transcript_source_priority,
+            cookies_path=self._cookies_path,
+        )
+
+        # Check if thumbnail URL changed
+        thumbnail_url_changed = (
+            merged_download.remote_thumbnail_url != old_thumbnail_url
+            and merged_download.remote_thumbnail_url is not None
+        )
+
+        thumbnail_refreshed: bool | None = None
+        if thumbnail_url_changed:
+            logger.info(
+                "Thumbnail URL changed, refreshing thumbnail.",
+                extra={
+                    **log_params,
+                    "old_url": old_thumbnail_url,
+                    "new_url": merged_download.remote_thumbnail_url,
+                },
+            )
+
+            try:
+                thumbnail_refreshed = (
+                    await self._downloader.download_thumbnail_for_existing_download(
+                        merged_download,
+                        feed_config.yt_args,
+                        self._cookies_path,
+                    )
+                )
+
+                if not thumbnail_refreshed:
+                    logger.warning(
+                        "Thumbnail download failed during metadata refresh.",
+                        extra=log_params,
+                    )
+            except DownloadError as e:
+                logger.warning(
+                    "Failed to download thumbnail during metadata refresh.",
+                    extra=log_params,
+                    exc_info=e,
+                )
+                thumbnail_refreshed = False
+
+        # Persist the final download
+        final_download = await self._enqueuer.persist_refreshed_metadata(
+            existing_download,
+            merged_download,
+            old_thumbnail_url,
+            thumbnail_refreshed is True,
+        )
+
+        logger.info("Metadata refresh completed.", extra=log_params)
+        return final_download, thumbnail_refreshed
 
     async def process_feed(
         self, feed_id: str, feed_config: FeedConfig

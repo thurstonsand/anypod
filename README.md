@@ -228,6 +228,7 @@ For the complete list of environment variables, see [docs/configuration.md](docs
 - `POST /admin/feeds/{feed_id}/reset-errors` – reset all ERROR downloads for a feed to QUEUED status
 - `POST /admin/feeds/{feed_id}/downloads` – queue a single URL for manual feeds (`schedule: "manual"`)
 - `GET /admin/feeds/{feed_id}/downloads/{download_id}` – retrieve selected fields for a download record (supports `?fields=` query parameter)
+- `POST /admin/feeds/{feed_id}/downloads/{download_id}/refresh-metadata` – re-fetch metadata from yt-dlp for a specific download (updates title, description, thumbnail URL, etc.)
 - `DELETE /admin/feeds/{feed_id}/downloads/{download_id}` – delete a download from a manual feed and clean up associated media files and thumbnails; regenerates RSS
 - `GET /api/health` – health check
 

@@ -16,6 +16,7 @@ from ...db.types import Download, DownloadStatus
 from ...exceptions import (
     DatabaseOperationError,
     DownloadNotFoundError,
+    EnqueueError,
     FeedNotFoundError,
     FileOperationError,
     ManualSubmissionError,
@@ -430,6 +431,130 @@ async def get_download_fields(
         feed_id=feed_id,
         download_id=download_id,
         download=filtered_data,
+    )
+
+
+class RefreshMetadataResponse(BaseModel):
+    """Response model for metadata refresh operations.
+
+    Attributes:
+        feed_id: The feed identifier.
+        download_id: The download identifier.
+        metadata_changed: Whether any metadata fields were updated.
+        updated_fields: List of field names that were updated.
+        thumbnail_refreshed: Thumbnail refresh result (True=success, False=failed,
+            None=not needed).
+    """
+
+    feed_id: str
+    download_id: str
+    metadata_changed: bool
+    updated_fields: list[str]
+    thumbnail_refreshed: bool | None
+
+
+@router.post(
+    "/feeds/{feed_id}/downloads/{download_id}/refresh-metadata",
+    response_model=RefreshMetadataResponse,
+)
+async def refresh_download_metadata(
+    feed_id: ValidatedFeedId,
+    download_id: str,
+    feed_db: FeedDatabaseDep,
+    feed_configs: FeedConfigsDep,
+    data_coordinator: DataCoordinatorDep,
+    download_db: DownloadDatabaseDep,
+) -> RefreshMetadataResponse:
+    """Re-fetch metadata for a specific download from yt-dlp.
+
+    Updates database metadata fields. Preserves the download's status
+    and file paths.
+    Can be called on any download status (QUEUED, DOWNLOADED, etc.).
+
+    Args:
+        feed_id: The feed identifier (validated and sanitized).
+        download_id: The download identifier.
+        feed_db: Feed database dependency.
+        feed_configs: Configured feeds keyed by identifier.
+        data_coordinator: Coordinator for refresh operations.
+        download_db: Download database dependency.
+
+    Returns:
+        RefreshMetadataResponse with details of updated fields.
+
+    Raises:
+        HTTPException: 404 if feed or download not found; 400 if feed is disabled
+            or not configured; 500 on database or yt-dlp errors.
+    """
+    log_params = {"feed_id": feed_id, "download_id": download_id}
+    logger.debug("Admin refresh-metadata request received.", extra=log_params)
+
+    feed_config = feed_configs.get(feed_id)
+    if feed_config is None:
+        raise HTTPException(status_code=404, detail="Feed not configured")
+    if not feed_config.enabled:
+        raise HTTPException(status_code=400, detail="Feed is disabled")
+
+    try:
+        await feed_db.get_feed_by_id(feed_id)
+    except FeedNotFoundError as e:
+        raise HTTPException(status_code=404, detail="Feed not found") from e
+    except DatabaseOperationError as e:
+        raise HTTPException(status_code=500, detail="Database error") from e
+
+    # Get existing download to compare fields after refresh
+    try:
+        existing_download = await download_db.get_download_by_id(feed_id, download_id)
+    except DownloadNotFoundError as e:
+        raise HTTPException(status_code=404, detail="Download not found") from e
+    except DatabaseOperationError as e:
+        raise HTTPException(status_code=500, detail="Database error") from e
+
+    try:
+        (
+            updated_download,
+            thumbnail_refreshed,
+        ) = await data_coordinator.refresh_download_metadata(
+            feed_id=feed_id,
+            download_id=download_id,
+            feed_config=feed_config,
+        )
+    except EnqueueError as e:
+        # Map specific error causes to appropriate HTTP status codes
+        if isinstance(e.__cause__, DownloadNotFoundError):
+            raise HTTPException(status_code=404, detail="Download not found") from e
+        raise HTTPException(status_code=500, detail="Failed to refresh metadata") from e
+
+    # Determine which fields changed
+    updated_fields: list[str] = []
+    if existing_download.title != updated_download.title:
+        updated_fields.append("title")
+    if existing_download.description != updated_download.description:
+        updated_fields.append("description")
+    if existing_download.duration != updated_download.duration:
+        updated_fields.append("duration")
+    if existing_download.quality_info != updated_download.quality_info:
+        updated_fields.append("quality_info")
+    if existing_download.remote_thumbnail_url != updated_download.remote_thumbnail_url:
+        updated_fields.append("remote_thumbnail_url")
+    if existing_download.transcript_ext != updated_download.transcript_ext:
+        updated_fields.append("transcript_ext")
+    if existing_download.transcript_lang != updated_download.transcript_lang:
+        updated_fields.append("transcript_lang")
+    if existing_download.transcript_source != updated_download.transcript_source:
+        updated_fields.append("transcript_source")
+
+    logger.info(
+        "Download metadata refreshed.",
+        extra={**log_params, "updated_fields": updated_fields},
+    )
+
+    return RefreshMetadataResponse(
+        feed_id=feed_id,
+        download_id=download_id,
+        metadata_changed=len(updated_fields) > 0,
+        updated_fields=updated_fields,
+        thumbnail_refreshed=thumbnail_refreshed,
     )
 
 

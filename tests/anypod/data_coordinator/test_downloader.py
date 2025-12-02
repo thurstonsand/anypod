@@ -7,7 +7,7 @@ for processing items in the download queue, interacting with YtdlpWrapper for
 media fetching, FileManager for storage, and DownloadDatabase for status updates.
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
@@ -58,6 +58,7 @@ def mock_download_db() -> MagicMock:
     mock.mark_as_downloaded = AsyncMock()
     mock.bump_retries = AsyncMock()
     mock.set_download_logs = AsyncMock()
+    mock.set_thumbnail_extension = AsyncMock()
     return mock
 
 
@@ -82,6 +83,7 @@ def mock_ytdlp_wrapper() -> MagicMock:
     # Set async methods to AsyncMock
     mock.fetch_metadata = AsyncMock()
     mock.download_media_to_file = AsyncMock()
+    mock.download_media_thumbnail = AsyncMock()
     return mock
 
 
@@ -483,3 +485,265 @@ async def test_download_queued_mixed_success_and_failure(
         ],
         any_order=False,
     )
+
+
+# --- Tests for download_delay filtering ---
+
+
+@pytest.fixture
+def feed_config_with_delay() -> FeedConfig:
+    """Provides a FeedConfig with download_delay configured."""
+    return FeedConfig(
+        url="http://example.com/feed_url",
+        yt_args="--format best",  # type: ignore # this gets preprocessed
+        schedule="0 0 * * *",  # type: ignore
+        keep_last=10,
+        since=None,
+        max_errors=3,
+        download_delay=timedelta(hours=24),
+        metadata=FeedMetadataOverrides(title="Test Podcast"),  # type: ignore
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@patch.object(Downloader, "_process_single_download", new_callable=AsyncMock)
+async def test_download_queued_with_delay_filters_recent_downloads(
+    mock_process_single: AsyncMock,
+    downloader: Downloader,
+    mock_download_db: MagicMock,
+    feed_config_with_delay: FeedConfig,
+    sample_download: Download,
+):
+    """Downloads published within the delay window are skipped."""
+    now = datetime.now(UTC)
+
+    # Create downloads with different publication times
+    old_download = sample_download.model_copy(
+        update={
+            "id": "old_dl",
+            "published": now - timedelta(hours=48),  # 48 hours ago - should process
+        }
+    )
+    recent_download = sample_download.model_copy(
+        update={
+            "id": "recent_dl",
+            "published": now - timedelta(hours=12),  # 12 hours ago - should skip
+        }
+    )
+
+    mock_download_db.get_downloads_by_status.return_value = [
+        old_download,
+        recent_download,
+    ]
+    mock_process_single.return_value = None
+
+    success, failure = await downloader.download_queued(
+        "test_feed", feed_config_with_delay
+    )
+
+    # Only the old download should be processed
+    assert success == 1
+    assert failure == 0
+    mock_process_single.assert_called_once_with(
+        old_download, feed_config_with_delay, None
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@patch.object(Downloader, "_process_single_download", new_callable=AsyncMock)
+async def test_download_queued_with_delay_at_boundary(
+    mock_process_single: AsyncMock,
+    downloader: Downloader,
+    mock_download_db: MagicMock,
+    feed_config_with_delay: FeedConfig,
+    sample_download: Download,
+):
+    """Downloads exactly at the delay boundary are processed."""
+    now = datetime.now(UTC)
+
+    # Download published exactly 24 hours ago (at boundary)
+    boundary_download = sample_download.model_copy(
+        update={
+            "id": "boundary_dl",
+            "published": now - timedelta(hours=24),
+        }
+    )
+
+    mock_download_db.get_downloads_by_status.return_value = [boundary_download]
+    mock_process_single.return_value = None
+
+    success, failure = await downloader.download_queued(
+        "test_feed", feed_config_with_delay
+    )
+
+    # Should be processed since it's at the boundary
+    assert success == 1
+    assert failure == 0
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_download_queued_with_delay_all_deferred(
+    downloader: Downloader,
+    mock_download_db: MagicMock,
+    feed_config_with_delay: FeedConfig,
+    sample_download: Download,
+):
+    """When all downloads are within delay window, returns (0, 0)."""
+    now = datetime.now(UTC)
+
+    recent_download = sample_download.model_copy(
+        update={
+            "id": "recent_dl",
+            "published": now - timedelta(hours=1),  # 1 hour ago - should skip
+        }
+    )
+
+    mock_download_db.get_downloads_by_status.return_value = [recent_download]
+
+    success, failure = await downloader.download_queued(
+        "test_feed", feed_config_with_delay
+    )
+
+    assert success == 0
+    assert failure == 0
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@patch.object(Downloader, "_process_single_download", new_callable=AsyncMock)
+async def test_download_queued_without_delay_processes_all(
+    mock_process_single: AsyncMock,
+    downloader: Downloader,
+    mock_download_db: MagicMock,
+    sample_feed_config: FeedConfig,  # No download_delay
+    sample_download: Download,
+):
+    """Without download_delay configured, all downloads are processed."""
+    now = datetime.now(UTC)
+
+    # Even very recent downloads should be processed
+    recent_download = sample_download.model_copy(
+        update={
+            "id": "recent_dl",
+            "published": now - timedelta(minutes=5),  # 5 minutes ago
+        }
+    )
+
+    mock_download_db.get_downloads_by_status.return_value = [recent_download]
+    mock_process_single.return_value = None
+
+    success, failure = await downloader.download_queued("test_feed", sample_feed_config)
+
+    assert success == 1
+    assert failure == 0
+    mock_process_single.assert_called_once()
+
+
+# --- Tests for download_thumbnail_for_existing_download ---
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_download_thumbnail_for_existing_download_success(
+    downloader: Downloader,
+    mock_ytdlp_wrapper: MagicMock,
+    mock_download_db: MagicMock,
+    mock_file_manager: MagicMock,
+    sample_download: Download,
+):
+    """Tests successful thumbnail download updates database and returns True."""
+    yt_args = ["--format", "best"]
+    mock_file_manager.image_exists.return_value = True
+
+    result = await downloader.download_thumbnail_for_existing_download(
+        sample_download, yt_args
+    )
+
+    assert result is True
+    mock_ytdlp_wrapper.download_media_thumbnail.assert_awaited_once_with(
+        sample_download, yt_args, None
+    )
+    mock_file_manager.image_exists.assert_awaited_once_with(
+        sample_download.feed_id, sample_download.id, "jpg"
+    )
+    mock_download_db.set_thumbnail_extension.assert_awaited_once_with(
+        sample_download.feed_id, sample_download.id, "jpg"
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_download_thumbnail_for_existing_download_ytdlp_failure(
+    downloader: Downloader,
+    mock_ytdlp_wrapper: MagicMock,
+    mock_download_db: MagicMock,
+    sample_download: Download,
+):
+    """Tests yt-dlp failure returns False without updating database."""
+    yt_args = ["--format", "best"]
+    mock_ytdlp_wrapper.download_media_thumbnail.side_effect = YtdlpApiError(
+        message="Thumbnail fetch failed",
+        feed_id=sample_download.feed_id,
+        download_id=sample_download.id,
+    )
+
+    result = await downloader.download_thumbnail_for_existing_download(
+        sample_download, yt_args
+    )
+
+    assert result is False
+    mock_ytdlp_wrapper.download_media_thumbnail.assert_awaited_once()
+    mock_download_db.set_thumbnail_extension.assert_not_awaited()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_download_thumbnail_for_existing_download_file_not_found(
+    downloader: Downloader,
+    mock_ytdlp_wrapper: MagicMock,
+    mock_download_db: MagicMock,
+    mock_file_manager: MagicMock,
+    sample_download: Download,
+):
+    """Tests returns False when thumbnail file not found after download."""
+    yt_args = ["--format", "best"]
+    mock_file_manager.image_exists.return_value = False
+
+    result = await downloader.download_thumbnail_for_existing_download(
+        sample_download, yt_args
+    )
+
+    assert result is False
+    mock_ytdlp_wrapper.download_media_thumbnail.assert_awaited_once()
+    mock_file_manager.image_exists.assert_awaited_once()
+    mock_download_db.set_thumbnail_extension.assert_not_awaited()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_download_thumbnail_for_existing_download_db_failure(
+    downloader: Downloader,
+    mock_ytdlp_wrapper: MagicMock,
+    mock_download_db: MagicMock,
+    mock_file_manager: MagicMock,
+    sample_download: Download,
+):
+    """Tests database failure raises DownloadError."""
+    yt_args = ["--format", "best"]
+    mock_file_manager.image_exists.return_value = True
+    db_error = DatabaseOperationError("DB update failed")
+    mock_download_db.set_thumbnail_extension.side_effect = db_error
+
+    with pytest.raises(DownloadError) as exc_info:
+        await downloader.download_thumbnail_for_existing_download(
+            sample_download, yt_args
+        )
+
+    assert exc_info.value.__cause__ is db_error
+    assert exc_info.value.feed_id == sample_download.feed_id
+    assert exc_info.value.download_id == sample_download.id
+    mock_ytdlp_wrapper.download_media_thumbnail.assert_awaited_once()
+    mock_download_db.set_thumbnail_extension.assert_awaited_once()
