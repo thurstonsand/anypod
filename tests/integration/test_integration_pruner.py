@@ -272,6 +272,7 @@ async def test_prune_feed_downloads_keep_last_success(
     download_db: DownloadDatabase,
     file_manager: FileManager,
     populated_test_data: list[Download],
+    subtests: pytest.Subtests,
 ):
     """Tests successful pruning with keep_last rule."""
     keep_last = 2
@@ -285,9 +286,10 @@ async def test_prune_feed_downloads_keep_last_success(
 
     # Verify files exist for all DOWNLOADED items
     for download in initial_downloaded:
-        assert await file_manager.download_exists(
-            TEST_FEED_ID, download.id, download.ext
-        )
+        with subtests.test(msg="file exists before prune", download_id=download.id):
+            assert await file_manager.download_exists(
+                TEST_FEED_ID, download.id, download.ext
+            )
 
     # Run pruner with keep_last=2
     archived_count, files_deleted_count = await pruner.prune_feed_downloads(
@@ -328,26 +330,27 @@ async def test_prune_feed_downloads_keep_last_success(
     # Verify files and images were deleted for pruned DOWNLOADED items
     kept_downloaded_ids = {dl.id for dl in most_recent_downloaded}
     for download in initial_downloaded:
-        if download.id in kept_downloaded_ids:
-            assert await file_manager.download_exists(
-                TEST_FEED_ID, download.id, download.ext
-            )
-            # Check image still exists if download has thumbnail_ext
-            if download.thumbnail_ext:
-                image_path = await file_manager._paths.image_path(
-                    download.feed_id, download.id, download.thumbnail_ext
+        with subtests.test(msg="file state after prune", download_id=download.id):
+            if download.id in kept_downloaded_ids:
+                assert await file_manager.download_exists(
+                    TEST_FEED_ID, download.id, download.ext
                 )
-                assert image_path.exists()
-        else:
-            assert not await file_manager.download_exists(
-                TEST_FEED_ID, download.id, download.ext
-            )
-            # Check image was deleted if download had thumbnail_ext
-            if download.thumbnail_ext:
-                image_path = await file_manager._paths.image_path(
-                    download.feed_id, download.id, download.thumbnail_ext
+                # Check image still exists if download has thumbnail_ext
+                if download.thumbnail_ext:
+                    image_path = await file_manager._paths.image_path(
+                        download.feed_id, download.id, download.thumbnail_ext
+                    )
+                    assert image_path.exists()
+            else:
+                assert not await file_manager.download_exists(
+                    TEST_FEED_ID, download.id, download.ext
                 )
-                assert not image_path.exists()
+                # Check image was deleted if download had thumbnail_ext
+                if download.thumbnail_ext:
+                    image_path = await file_manager._paths.image_path(
+                        download.feed_id, download.id, download.thumbnail_ext
+                    )
+                    assert not image_path.exists()
 
     # Verify archived downloads increased
     archived_downloads = await download_db.get_downloads_by_status(
@@ -825,6 +828,7 @@ async def test_archive_feed_success(
     feed_db: FeedDatabase,
     file_manager: FileManager,
     populated_test_data: list[Download],
+    subtests: pytest.Subtests,
 ):
     """Tests archive_feed successfully archives all non-terminal downloads and disables feed."""
     # Verify initial state
@@ -850,9 +854,10 @@ async def test_archive_feed_success(
 
     # Verify files exist for downloaded items
     for download in initial_downloaded:
-        assert await file_manager.download_exists(
-            TEST_FEED_ID, download.id, download.ext
-        )
+        with subtests.test(msg="file exists before archive", download_id=download.id):
+            assert await file_manager.download_exists(
+                TEST_FEED_ID, download.id, download.ext
+            )
 
     # Create a dummy feed XML file
     xml_path = await file_manager._paths.feed_xml_path(TEST_FEED_ID)
@@ -887,15 +892,16 @@ async def test_archive_feed_success(
 
     # Verify files and images are deleted for previously downloaded items
     for download in initial_downloaded:
-        assert not await file_manager.download_exists(
-            TEST_FEED_ID, download.id, download.ext
-        )
-        # Check image was deleted if download had thumbnail_ext
-        if download.thumbnail_ext:
-            image_path = await file_manager._paths.image_path(
-                download.feed_id, download.id, download.thumbnail_ext
+        with subtests.test(msg="file deleted after archive", download_id=download.id):
+            assert not await file_manager.download_exists(
+                TEST_FEED_ID, download.id, download.ext
             )
-            assert not image_path.exists()
+            # Check image was deleted if download had thumbnail_ext
+            if download.thumbnail_ext:
+                image_path = await file_manager._paths.image_path(
+                    download.feed_id, download.id, download.thumbnail_ext
+                )
+                assert not image_path.exists()
 
     # Verify feed XML was deleted
     assert not await file_manager.feed_xml_exists(TEST_FEED_ID)

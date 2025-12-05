@@ -226,6 +226,7 @@ async def test_download_queued_multiple_videos_success(
     download_db: DownloadDatabase,
     file_manager: FileManager,
     cookies_path: Path | None,
+    subtests: pytest.Subtests,
 ):
     """Tests successful download of multiple queued videos from a channel."""
     feed_id = "test_multiple_videos"
@@ -270,13 +271,14 @@ async def test_download_queued_multiple_videos_success(
 
     # Verify files were downloaded
     for downloaded_item in downloaded_items:
-        assert await file_manager.download_exists(
-            feed_id, downloaded_item.id, downloaded_item.ext
-        )
-        assert downloaded_item.filesize is not None and downloaded_item.filesize > 0
-        # Verify thumbnails saved and recorded for each
-        assert downloaded_item.thumbnail_ext == "jpg"
-        assert await file_manager.image_exists(feed_id, downloaded_item.id, "jpg")
+        with subtests.test(msg="downloaded_item", id=downloaded_item.id):
+            assert await file_manager.download_exists(
+                feed_id, downloaded_item.id, downloaded_item.ext
+            )
+            assert downloaded_item.filesize is not None and downloaded_item.filesize > 0
+            # Verify thumbnails saved and recorded for each
+            assert downloaded_item.thumbnail_ext == "jpg"
+            assert await file_manager.image_exists(feed_id, downloaded_item.id, "jpg")
 
 
 @pytest.mark.integration
@@ -515,6 +517,7 @@ async def test_download_queued_mixed_success_and_failure(
     download_db: DownloadDatabase,
     file_manager: FileManager,
     cookies_path: Path | None,
+    subtests: pytest.Subtests,
 ):
     """Tests handling of mixed successful and failed downloads."""
     feed_id = "test_mixed_results"
@@ -576,12 +579,13 @@ async def test_download_queued_mixed_success_and_failure(
     assert len(downloaded_items) == success_count
 
     for downloaded_item in downloaded_items:
-        assert await file_manager.download_exists(
-            feed_id, downloaded_item.id, downloaded_item.ext
-        )
-        # Verify thumbnails saved and recorded for successful items
-        assert downloaded_item.thumbnail_ext == "jpg"
-        assert await file_manager.image_exists(feed_id, downloaded_item.id, "jpg")
+        with subtests.test(msg="downloaded_item", id=downloaded_item.id):
+            assert await file_manager.download_exists(
+                feed_id, downloaded_item.id, downloaded_item.ext
+            )
+            # Verify thumbnails saved and recorded for successful items
+            assert downloaded_item.thumbnail_ext == "jpg"
+            assert await file_manager.image_exists(feed_id, downloaded_item.id, "jpg")
 
     # Verify failed download had retry bumped
     failed_download = await download_db.get_download_by_id(

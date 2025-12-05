@@ -15,6 +15,8 @@
       "Bash(./scripts/run_dev.sh:*)",
       "Bash(gh issue list:*)",
       "Bash(gh pr view:*)",
+      "Bash(gh issue view:*)",
+      "Bash(./.claude/skills/github-issue-filer/scripts/create_issue.py feature --describe)",
       "Bash(uv run pytest:*)",
       "Bash(uv run pre-commit:*)",
       "Bash(uv run basedpyright:*)",

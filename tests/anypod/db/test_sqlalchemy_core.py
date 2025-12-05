@@ -62,9 +62,10 @@ async def test_create_db_and_tables_creates_expected_schema(db_core: SqlalchemyC
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_sqlite_triggers_are_created(db_core: SqlalchemyCore):
+async def test_sqlite_triggers_are_created(
+    db_core: SqlalchemyCore, subtests: pytest.Subtests
+):
     """Test that SQLite triggers for timestamp management are created."""
-    # Check triggers exist
     async with db_core.engine.begin() as conn:
         result = await conn.execute(
             text("SELECT name FROM sqlite_master WHERE type='trigger' ORDER BY name")
@@ -82,7 +83,8 @@ async def test_sqlite_triggers_are_created(db_core: SqlalchemyCore):
     ]
 
     for trigger in expected_triggers:
-        assert trigger in triggers, f"Trigger {trigger} should exist"
+        with subtests.test(msg=f"trigger {trigger} exists"):
+            assert trigger in triggers
 
 
 @pytest.mark.unit

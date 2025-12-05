@@ -599,6 +599,7 @@ async def test_download_media_to_file_detects_corrupt_file(
 async def test_fetch_metadata_with_keep_last_limit(
     ytdlp_wrapper: YtdlpWrapper,
     cookies_path: Path | None,
+    subtests: pytest.Subtests,
 ):
     """Tests that keep_last parameter correctly limits the number of downloads returned.
 
@@ -648,11 +649,12 @@ async def test_fetch_metadata_with_keep_last_limit(
 
     # Verify all downloads have proper metadata
     for i, download in enumerate(downloads):
-        assert download.id, f"Download {i} should have an ID"
-        assert download.title, f"Download {i} should have a title"
-        assert download.source_url, f"Download {i} should have a source URL"
-        assert download.published, f"Download {i} should have a published date"
-        assert download.status == DownloadStatus.QUEUED
+        with subtests.test(msg=f"download {i}"):
+            assert download.id, f"Download {i} should have an ID"
+            assert download.title, f"Download {i} should have a title"
+            assert download.source_url, f"Download {i} should have a source URL"
+            assert download.published, f"Download {i} should have a published date"
+            assert download.status == DownloadStatus.QUEUED
 
 
 @pytest.mark.integration

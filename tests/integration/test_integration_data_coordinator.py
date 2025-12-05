@@ -150,6 +150,7 @@ async def test_process_feed_complete_success(
     download_db: DownloadDatabase,
     file_manager: FileManager,
     rss_generator: RSSFeedGenerator,
+    subtests: pytest.Subtests,
 ):
     """Tests complete end-to-end feed processing pipeline.
 
@@ -211,10 +212,11 @@ async def test_process_feed_complete_success(
 
     # Verify downloaded files exist
     for downloaded_item in downloaded_items:
-        assert await file_manager.download_exists(
-            feed_id, downloaded_item.id, downloaded_item.ext
-        ), f"Downloaded file should exist for {downloaded_item.id}"
-        assert downloaded_item.filesize > 0, "Downloaded item should have filesize"
+        with subtests.test(msg=f"downloaded_item={downloaded_item.id}"):
+            assert await file_manager.download_exists(
+                feed_id, downloaded_item.id, downloaded_item.ext
+            ), f"Downloaded file should exist for {downloaded_item.id}"
+            assert downloaded_item.filesize > 0, "Downloaded item should have filesize"
 
     # Verify no items left in QUEUED status
     queued_items = await download_db.get_downloads_by_status(

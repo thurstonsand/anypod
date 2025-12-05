@@ -95,7 +95,10 @@ async def test_admin_refresh_feed_disabled(
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_admin_reset_errors_happy_path(
-    admin_test_app: TestClient, feed_db: FeedDatabase, download_db: DownloadDatabase
+    admin_test_app: TestClient,
+    feed_db: FeedDatabase,
+    download_db: DownloadDatabase,
+    subtests: pytest.Subtests,
 ) -> None:
     """Resets all ERROR items to QUEUED for a feed and returns count."""
     feed_id = "int_admin_reset"
@@ -166,10 +169,11 @@ async def test_admin_reset_errors_happy_path(
 
     # Verify DB state for affected rows
     for dlid in ("err1", "err2"):
-        row = await download_db.get_download_by_id(feed_id, dlid)
-        assert row.status == DownloadStatus.QUEUED
-        assert row.retries == 0
-        assert row.last_error is None
+        with subtests.test(msg=dlid):
+            row = await download_db.get_download_by_id(feed_id, dlid)
+            assert row.status == DownloadStatus.QUEUED
+            assert row.retries == 0
+            assert row.last_error is None
 
     # Idempotent: re-run yields 0
     resp2 = admin_test_app.post(f"/admin/feeds/{feed_id}/reset-errors")

@@ -675,7 +675,7 @@ async def test_requeue_downloads_multi(
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bulk_requeue_by_status_only_updates_matching(
-    feed_db: FeedDatabase, download_db: DownloadDatabase
+    feed_db: FeedDatabase, download_db: DownloadDatabase, subtests: pytest.Subtests
 ):
     """Bulk requeue applies to all downloads with a given status for a feed."""
     base_time = datetime(2023, 2, 1, 12, 0, 0, tzinfo=UTC)
@@ -731,9 +731,10 @@ async def test_bulk_requeue_by_status_only_updates_matching(
     q_1 = await download_db.get_download_by_id(feed_id, "q_1")
 
     for row in (err_a, err_b):
-        assert row.status == DownloadStatus.QUEUED
-        assert row.retries == 0
-        assert row.last_error is None
+        with subtests.test(msg=f"requeued row {row.id}"):
+            assert row.status == DownloadStatus.QUEUED
+            assert row.retries == 0
+            assert row.last_error is None
 
     assert skip_1.status == DownloadStatus.SKIPPED  # unaffected
     assert q_1.status == DownloadStatus.QUEUED  # unaffected
@@ -1114,7 +1115,7 @@ async def test_get_downloads_to_prune_by_since(
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_get_downloads_by_status(
-    feed_db: FeedDatabase, download_db: DownloadDatabase
+    feed_db: FeedDatabase, download_db: DownloadDatabase, subtests: pytest.Subtests
 ):
     """Test fetching downloads by various statuses, including offset and limit."""
     base_time = datetime(2023, 1, 15, 12, 0, 0, tzinfo=UTC)
@@ -1243,7 +1244,8 @@ async def test_get_downloads_by_status(
     assert len(all_errors) == 3, "Should fetch all 3 ERROR downloads"
     assert [row.id for row in all_errors] == ["f1e2_new", "f1e1_old", "f2e1"]
     for row in all_errors:
-        assert row.status == DownloadStatus.ERROR
+        with subtests.test(msg=f"error status for {row.id}"):
+            assert row.status == DownloadStatus.ERROR
 
     feed1_errors = await download_db.get_downloads_by_status(
         status_to_filter=DownloadStatus.ERROR, feed_id=feed1
@@ -1265,7 +1267,8 @@ async def test_get_downloads_by_status(
     assert len(all_upcoming) == 2, "Should fetch all 2 UPCOMING downloads"
     assert [row.id for row in all_upcoming] == ["f1upcoming", "f2upcoming"]
     for row in all_upcoming:
-        assert row.status == DownloadStatus.UPCOMING
+        with subtests.test(msg=f"upcoming status for {row.id}"):
+            assert row.status == DownloadStatus.UPCOMING
 
     feed1_upcoming = await download_db.get_downloads_by_status(
         status_to_filter=DownloadStatus.UPCOMING, feed_id=feed1
