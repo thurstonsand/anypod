@@ -1,0 +1,62 @@
+#!/usr/bin/env python3
+"""Create a pull request from the current branch."""
+
+from pathlib import Path
+import subprocess
+import sys
+
+# Script is at .agents/commands/pr, so go up 2 levels to find project root
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+
+
+def run(cmd: str, cwd: Path = PROJECT_ROOT) -> str:
+    """Run a shell command and return its output."""
+    result = subprocess.run(cmd, shell=True, capture_output=True, text=True, cwd=cwd)
+    return result.stdout.strip() or result.stderr.strip() or "(no output)"
+
+
+# Gather context
+status = run("git status")
+
+branch = run("git branch --show-current")
+commits = run("git log main..HEAD")
+tracking = run("git status -b --porcelain | head -1")
+upstream = run(
+    "git rev-parse --abbrev-ref @{upstream} 2>/dev/null || echo 'No upstream tracking'"
+)
+
+# Additional arguments passed to the command
+args = " ".join(sys.argv[1:]) if len(sys.argv) > 1 else ""
+
+print(f"""\
+## Context
+
+**Current git status:**
+```
+{status}
+```
+
+**Current branch:** `{branch}`
+
+**Recent commits on this branch:**
+```
+{commits}
+```
+
+**Remote tracking status:** `{tracking}`
+
+**Upstream:** `{upstream}`
+
+## Your task
+
+Based on the above context, create a pull request from the current branch to main.
+
+- Run `git diff main...HEAD` to see the full diff of changes
+- Analyze ALL commits that will be included in the pull request (not just the latest commit)
+- Draft a comprehensive PR summary that covers the full scope of changes
+- Ensure the current branch is pushed to remote with proper upstream tracking
+- Write the PR description to a file (pr-description.md) first and let the user edit it before creating the PR
+- After user edits and approves, create the PR using `gh pr create` with proper title and body formatting
+- Use a HEREDOC for the PR body to ensure correct formatting
+- After publishing the pr, delete the `pr-description.md` file
+{f"- Additional notes: {args}" if args else ""}""")
