@@ -6,11 +6,12 @@ operations of feedgen and provides a clean interface for creating RSS feeds
 from Anypod download data.
 """
 
+from datetime import datetime
 import logging
 
 from feedgen.feed import FeedGenerator  # type: ignore
 
-from ..db.types import Download, Feed
+from ..db.types import Download, Feed, SourceType
 from ..exceptions import RSSGenerationError
 from ..mimetypes import mimetypes
 from ..path_manager import PathManager
@@ -124,6 +125,23 @@ class FeedgenCore:
         self._paths = paths
         self._feed = feed
 
+    def _get_rss_pubdate(self, download: Download) -> datetime:
+        """Determine the RSS pubDate for a download.
+
+        For manual feeds, uses discovered_at (when the video was added to the feed)
+        to ensure newly added videos appear at the top regardless of original
+        publication date. For other feed types, uses the original publication date.
+
+        Args:
+            download: The download to get the pubDate for.
+
+        Returns:
+            The datetime to use for RSS pubDate.
+        """
+        if self._feed.source_type == SourceType.MANUAL:
+            return download.discovered_at or download.published
+        return download.published
+
     def with_downloads(self, downloads: list[Download]) -> FeedgenCore:
         """Add download entries to the feed.
 
@@ -135,7 +153,7 @@ class FeedgenCore:
         """
         # Set feed publication date to the newest episode date
         if downloads:
-            self._fg.pubDate(downloads[0].published)  # type: ignore
+            self._fg.pubDate(self._get_rss_pubdate(downloads[0]))  # type: ignore
 
         for download in downloads:
             fe = self._fg.add_entry(order="append")  # type: ignore
@@ -194,7 +212,7 @@ class FeedgenCore:
                 type=download.mime_type,
             )
             fe.link(href=download.source_url, rel="alternate")  # type: ignore
-            fe.published(download.published)  # type: ignore
+            fe.published(self._get_rss_pubdate(download))  # type: ignore
             fe.source(  # type: ignore
                 url=self._source_url,
                 title=self._feed.title,

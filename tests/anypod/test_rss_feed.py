@@ -669,6 +669,58 @@ async def test_channel_publication_date_absent_when_no_episodes(
     assert pubdate is None
 
 
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_manual_feed_uses_discovered_at_for_pubdate(
+    rss_generator: RSSFeedGenerator,
+    mock_download_db: MagicMock,
+    test_feed: Feed,
+    capture_rss_write: dict[str, bytes],
+):
+    """Test that manual feeds use discovered_at instead of published for pubDate."""
+    feed_id = TEST_FEED_ID
+    test_feed.source_type = SourceType.MANUAL
+
+    older_published = datetime(2022, 6, 15, 12, 0, 0, tzinfo=UTC)
+    newer_discovered = datetime(2024, 1, 20, 10, 0, 0, tzinfo=UTC)
+
+    downloads = [
+        Download(
+            feed_id=TEST_FEED_ID,
+            id="old_video",
+            source_url="https://youtube.com/watch?v=old_video",
+            title="Old Video Added Recently",
+            published=older_published,
+            ext="mp4",
+            mime_type="video/mp4",
+            filesize=1048576,
+            duration=300,
+            status=DownloadStatus.DOWNLOADED,
+            discovered_at=newer_discovered,
+            updated_at=newer_discovered,
+        ),
+    ]
+
+    mock_download_db.get_downloads_by_status.return_value = downloads
+
+    await rss_generator.update_feed(feed_id, test_feed)
+    xml_bytes = capture_rss_write["data"]
+
+    root = ET.fromstring(xml_bytes)
+    channel = root.find("channel")
+    assert channel is not None
+
+    channel_pubdate = channel.find("pubDate")
+    assert channel_pubdate is not None and channel_pubdate.text is not None
+    assert "20 Jan 2024" in channel_pubdate.text
+
+    items = channel.findall("item")
+    assert len(items) == 1
+    item_pubdate = items[0].find("pubDate")
+    assert item_pubdate is not None and item_pubdate.text is not None
+    assert "20 Jan 2024" in item_pubdate.text
+
+
 # --- Tests for podcast:transcript elements ---
 
 
