@@ -56,7 +56,7 @@ For dev server/debug scripts, coverage runs, Docker workflows, and code-explorat
 - **Data Coordinator** (`data_coordinator/`): Orchestrates download lifecycle (Enqueuer → Downloader → Pruner)
 - **yt-dlp Wrapper** (`ytdlp_wrapper/`): Handler-based system for different sources
 - **RSS Generation** (`rss/`): feedgen-based RSS feed creation
-- **Server** (`server/`): FastAPI app serving RSS/media endpoints
+- **Server** (`server/`): FastAPI app serving RSS/media endpoints; see `README.md` for admin API endpoint reference
 - **Scheduler** (`schedule/`): APScheduler-based feed scheduling
 
 ### State Management

@@ -225,6 +225,7 @@ For the complete list of environment variables, see [docs/configuration.md](docs
 
 ### Admin endpoints (trusted/local access only)
 
+- `POST /admin/feeds/{feed_id}/refresh` – trigger immediate feed processing (enqueue + download cycle)
 - `POST /admin/feeds/{feed_id}/reset-errors` – reset all ERROR downloads for a feed to QUEUED status
 - `POST /admin/feeds/{feed_id}/downloads` – queue a single URL for manual feeds (`schedule: "manual"`)
 - `GET /admin/feeds/{feed_id}/downloads/{download_id}` – retrieve selected fields for a download record (supports `?fields=` query parameter)

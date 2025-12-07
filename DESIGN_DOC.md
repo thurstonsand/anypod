@@ -520,6 +520,7 @@ The `RSSFeedGenerator` module **persists RSS XML files to disk** under the data 
 
 | Path                                                                   | Description                                                                                |
 | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `POST /admin/feeds/{feed_id}/refresh`                                  | Trigger immediate feed processing (enqueue + download cycle)                               |
 | `POST /admin/feeds/{feed_id}/reset-errors`                             | Reset all ERROR downloads for a feed to QUEUED status                                      |
 | `POST /admin/feeds/{feed_id}/downloads`                                | Queue a single URL for manual feeds                                                        |
 | `GET /admin/feeds/{feed_id}/downloads/{download_id}`                   | Retrieve selected fields for a download record (supports `?fields=` query parameter)       |
