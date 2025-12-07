@@ -277,36 +277,50 @@ async def default(settings: AppSettings) -> None:
             shutdown_callback=lambda: graceful_shutdown(
                 scheduler, manual_feed_runner, db_core
             ),
+            include_admin=settings.single_server_mode,
         )
 
-        # Create admin HTTP server (no shutdown callback to avoid double-close)
-        admin_server = create_admin_server(
-            settings=settings,
-            file_manager=file_manager,
-            feed_database=feed_db,
-            download_database=download_db,
-            data_coordinator=data_coordinator,
-            ytdlp_wrapper=ytdlp_wrapper,
-            manual_feed_runner=manual_feed_runner,
-            manual_submission_service=manual_submission_service,
-            feed_configs=settings.feeds,
-            cookies_path=settings.cookies_path,
-        )
+        servers = [server]
+        log_extra: dict[str, object] = {
+            "scheduled_feeds": scheduler.get_scheduled_feed_ids(),
+            "server_host": settings.server_host,
+            "server_port": settings.server_port,
+        }
+
+        if settings.single_server_mode:
+            logger.warning(
+                "Single-server mode enabled: admin APIs are exposed on the public server port. "
+                "Ensure admin routes are protected at the infrastructure level (e.g., Cloudflare Access).",
+                extra={
+                    "server_host": settings.server_host,
+                    "server_port": settings.server_port,
+                },
+            )
+        else:
+            admin_server = create_admin_server(
+                settings=settings,
+                file_manager=file_manager,
+                feed_database=feed_db,
+                download_database=download_db,
+                data_coordinator=data_coordinator,
+                ytdlp_wrapper=ytdlp_wrapper,
+                manual_feed_runner=manual_feed_runner,
+                manual_submission_service=manual_submission_service,
+                feed_configs=settings.feeds,
+                cookies_path=settings.cookies_path,
+            )
+            servers.append(admin_server)
+            log_extra["admin_port"] = settings.admin_server_port
 
         logger.info(
-            "Starting scheduler and HTTP servers...",
-            extra={
-                "scheduled_feeds": scheduler.get_scheduled_feed_ids(),
-                "server_host": settings.server_host,
-                "server_port": settings.server_port,
-                "admin_port": settings.admin_server_port,
-            },
+            "Starting scheduler and HTTP server.",
+            extra=log_extra,
         )
 
         await scheduler.start()
 
         # Will gracefully shutdown on SIGINT/SIGTERM
-        await asyncio.gather(server.serve(), admin_server.serve())
+        await asyncio.gather(*(s.serve() for s in servers))
     except Exception as e:
         logger.error("Unexpected error during execution.", exc_info=e)
         await graceful_shutdown(scheduler, manual_feed_runner, db_core)

@@ -198,14 +198,15 @@ For full configuration details including manual feeds, metadata overrides, and r
 
 All can be provided via env or CLI flags (kebab‑case). Common ones:
 
-| Name                | Default                            | Description                                                 |
-| ------------------- | ---------------------------------- | ----------------------------------------------------------- |
-| `BASE_URL`          | `http://reverseproxy.example:8024` | Public base URL for feed/media links                        |
-| `SERVER_PORT`       | `8024`                             | Bind port for public server                                 |
-| `ADMIN_SERVER_PORT` | `8025`                             | Bind port for admin server (should not be exposed publicly) |
-| `TRUSTED_PROXIES`   | unset                              | Trusted proxy IPs/networks (e.g. `["192.168.1.0/24"]`)      |
-| `POT_PROVIDER_URL`  | unset                              | bgutil POT provider URL for YouTube PO Tokens               |
-| `PUID` / `PGID`     | `1000`                             | Container user/group                                        |
+| Name                 | Default                            | Description                                                       |
+| -------------------- | ---------------------------------- | ----------------------------------------------------------------- |
+| `BASE_URL`           | `http://reverseproxy.example:8024` | Public base URL for feed/media links                              |
+| `SERVER_PORT`        | `8024`                             | Bind port for public server                                       |
+| `ADMIN_SERVER_PORT`  | `8025`                             | Bind port for admin server (should not be exposed publicly)       |
+| `SINGLE_SERVER_MODE` | `false`                            | Mount admin routes on main server (requires external path gating) |
+| `TRUSTED_PROXIES`    | unset                              | Trusted proxy IPs/networks (e.g. `["192.168.1.0/24"]`)            |
+| `POT_PROVIDER_URL`   | unset                              | bgutil POT provider URL for YouTube PO Tokens                     |
+| `PUID` / `PGID`      | `1000`                             | Container user/group                                              |
 
 For the complete list of environment variables, see [docs/configuration.md](docs/configuration.md#environment-variables).
 
@@ -233,7 +234,9 @@ For the complete list of environment variables, see [docs/configuration.md](docs
 - `DELETE /admin/feeds/{feed_id}/downloads/{download_id}` – delete a download from a manual feed and clean up associated media files and thumbnails; regenerates RSS
 - `GET /api/health` – health check
 
-Admin endpoints run on a separate server. No authentication is implemented. Only expose the public server publicly.
+Admin endpoints run on a separate server by default. No authentication is implemented. Only expose the public server publicly.
+
+When `SINGLE_SERVER_MODE=true`, admin routes are mounted on the main server under `/admin/`. Use this only when external access control (e.g., Cloudflare Access, Nginx auth) protects admin paths. See [docs/configuration.md](docs/configuration.md#single-server-mode) for details.
 
 ## Reverse proxies
 

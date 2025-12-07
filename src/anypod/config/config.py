@@ -232,6 +232,15 @@ class AppSettings(BaseSettings):
         validation_alias="ADMIN_SERVER_PORT",
         description="Port number for the admin HTTP server (default: 8025). Should not be exposed to the public.",
     )
+    single_server_mode: bool = Field(
+        default=False,
+        validation_alias="SINGLE_SERVER_MODE",
+        description=(
+            "When enabled, mounts admin routes on the main server under /admin/ instead of running "
+            "a separate admin server. Use only when admin access is protected at the infrastructure level "
+            "(e.g., Cloudflare Access). WARNING: Admin APIs will be exposed on the public port."
+        ),
+    )
     trusted_proxies: list[str] | None = Field(
         default=None,
         validation_alias="TRUSTED_PROXIES",

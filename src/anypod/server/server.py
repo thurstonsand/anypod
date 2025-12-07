@@ -36,6 +36,7 @@ def create_server(
     feed_configs: dict[str, FeedConfig],
     cookies_path: Path | None,
     shutdown_callback: Callable[[], Awaitable[None]] | None = None,
+    include_admin: bool = False,
 ) -> uvicorn.Server:
     """Create and configure a uvicorn HTTP server with FastAPI app.
 
@@ -51,6 +52,7 @@ def create_server(
         feed_configs: The feed configurations.
         cookies_path: Path to cookies.txt file for authentication.
         shutdown_callback: Optional callback to execute during shutdown.
+        include_admin: When true, mount admin routes on the main app (single-server mode).
 
     Returns:
         Configured uvicorn server ready to run.
@@ -67,6 +69,7 @@ def create_server(
         manual_submission_service=manual_submission_service,
         cookies_path=cookies_path,
         shutdown_callback=shutdown_callback,
+        include_admin=include_admin,
     )
 
     # Configure proxy settings based on trusted_proxies

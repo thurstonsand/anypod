@@ -110,6 +110,7 @@ def create_app(
     manual_submission_service: ManualSubmissionService,
     cookies_path: Path | None = None,
     shutdown_callback: Callable[[], Awaitable[None]] | None = None,
+    include_admin: bool = False,
 ) -> FastAPI:
     """Create and configure a FastAPI application instance.
 
@@ -127,6 +128,7 @@ def create_app(
         manual_submission_service: Service for manual submission metadata fetches.
         cookies_path: Path to cookies.txt file for authentication.
         shutdown_callback: Optional callback function for graceful shutdown.
+        include_admin: When true, mount admin routes on this app (single-server mode).
 
     Returns:
         Configured FastAPI application instance.
@@ -178,6 +180,10 @@ def create_app(
     # Include public routers
     app.include_router(static.router, tags=["static"])
     app.include_router(health.router, tags=["health"])  # /api/health on public server
+
+    # Include admin router in single-server mode
+    if include_admin:
+        app.include_router(admin.router, tags=["admin"])
 
     logger.debug("FastAPI application created successfully")
 
