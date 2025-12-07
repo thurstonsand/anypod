@@ -162,12 +162,13 @@ Configure global application settings via environment variables. All can also be
 
 ### Server Settings
 
-| Variable            | Default   | Description                                             |
-| ------------------- | --------- | ------------------------------------------------------- |
-| `SERVER_HOST`       | `0.0.0.0` | HTTP server bind address                                |
-| `SERVER_PORT`       | `8024`    | Public HTTP server port                                 |
-| `ADMIN_SERVER_PORT` | `8025`    | Admin HTTP server port (keep private)                   |
-| `TRUSTED_PROXIES`   | unset     | Trusted proxy IPs/networks (e.g., `["192.168.1.0/24"]`) |
+| Variable             | Default   | Description                                                                                            |
+| -------------------- | --------- | ------------------------------------------------------------------------------------------------------ |
+| `SERVER_HOST`        | `0.0.0.0` | HTTP server bind address                                                                               |
+| `SERVER_PORT`        | `8024`    | Public HTTP server port                                                                                |
+| `ADMIN_SERVER_PORT`  | `8025`    | Admin HTTP server port (keep private)                                                                  |
+| `SINGLE_SERVER_MODE` | `false`   | Mount admin routes on main server (see [Single-Server Mode](#single-server-mode) for security details) |
+| `TRUSTED_PROXIES`    | unset     | Trusted proxy IPs/networks (e.g., `["192.168.1.0/24"]`)                                                |
 
 ### Logging Settings
 
@@ -198,6 +199,53 @@ Configure global application settings via environment variables. All can also be
 | `PUID`   | `1000`  | Container user ID                                   |
 | `PGID`   | `1000`  | Container group ID                                  |
 | `TZ`     | unset   | Timezone (alternative to mounting `/etc/localtime`) |
+
+## Single-Server Mode
+
+By default, Anypod runs two HTTP servers:
+
+- **Public server** (port 8024): Serves RSS feeds, media files, images, and transcripts
+- **Admin server** (port 8025): Exposes admin endpoints for feed management
+
+When `SINGLE_SERVER_MODE=true`, Anypod mounts the admin router on the main server under `/admin/` instead of running a separate admin server. This simplifies deployment when admin access is protected at the infrastructure level.
+
+### When to Use Single-Server Mode
+
+Use single-server mode when you have external access control that can protect URL paths:
+
+- **Cloudflare Access**: Gate `/admin/*` routes by identity
+- **Nginx/Caddy auth**: Require authentication for `/admin/` prefix
+- **VPN-only access**: Entire server behind VPN with no public exposure
+
+### Configuration
+
+```bash
+SINGLE_SERVER_MODE=true
+```
+
+Or in Docker Compose:
+
+```yaml
+environment:
+  SINGLE_SERVER_MODE: "true"
+```
+
+### Security Warning
+
+When single-server mode is enabled, Anypod logs a WARNING at startup:
+
+> Single-server mode enabled: admin APIs are exposed on the public server port. Ensure admin routes are protected at the infrastructure level.
+
+**Do not enable single-server mode unless you have confirmed that `/admin/` routes are protected.** Admin endpoints allow triggering downloads, resetting feed state, and deleting content.
+
+### Behavior Differences
+
+| Aspect              | Dual-Server Mode (default)   | Single-Server Mode                 |
+| ------------------- | ---------------------------- | ---------------------------------- |
+| Ports               | 8024 (public) + 8025 (admin) | 8024 only                          |
+| Admin routes        | Separate app on admin port   | Mounted at `/admin/` on main app   |
+| `ADMIN_SERVER_PORT` | Used                         | Ignored                            |
+| Proxy headers       | Public server only           | All routes honor `TRUSTED_PROXIES` |
 
 ## Where to Change Things
 
