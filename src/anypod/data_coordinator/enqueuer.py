@@ -398,7 +398,7 @@ class Enqueuer:
             "existing_db_status": existing_db_download.status,
         }
 
-        updated_download = merge_download_metadata(
+        updated_download, _ = merge_download_metadata(
             existing_db_download, fetched_download
         )
 
@@ -762,26 +762,18 @@ class Enqueuer:
 
         return total_queued_count, sync_timestamp
 
-    async def fetch_refreshed_metadata(
+    async def refresh_metadata(
         self,
         existing_download: Download,
         yt_args: list[str],
         transcript_lang: str | None = None,
         transcript_source_priority: list[TranscriptSource] | None = None,
         cookies_path: Path | None = None,
-    ) -> Download:
-        """Fetch fresh metadata and merge with existing download (read-only).
+    ) -> tuple[Download, list[str], bool, bool]:
+        """Refresh metadata for a download.
 
-        Fetches fresh metadata from yt-dlp for the specified download and merges
-        it with the existing download. Does NOT persist changes to the database.
-        The caller is responsible for persisting the returned Download.
-
-        See persist_refreshed_metadata for the second half of this flow.
-
-        Fields updated from yt-dlp (if non-empty):
-            - title, description, published, source_url
-            - quality_info, remote_thumbnail_url
-            - transcript_ext, transcript_lang, transcript_source
+        Fetches fresh metadata from yt-dlp, merges with the existing download,
+        and persists the result to the database.
 
         Args:
             existing_download: The current Download object from the database.
@@ -791,18 +783,19 @@ class Enqueuer:
             cookies_path: Path to cookies.txt file for yt-dlp authentication.
 
         Returns:
-            The merged Download object with updated metadata fields.
-            Returns the original download if no metadata changes detected.
+            A tuple of (updated_download, changed_fields, thumbnail_url_changed,
+            transcript_metadata_changed).
 
         Raises:
-            EnqueueError: If metadata fetch fails or download ID not found.
+            EnqueueError: If metadata fetch fails, download ID not found, or
+                database update fails.
         """
         feed_id = existing_download.feed_id
         download_id = existing_download.id
         log_params = {"feed_id": feed_id, "download_id": download_id}
-        logger.debug("Fetching refreshed metadata for download.", extra=log_params)
+        logger.debug("Refreshing metadata for download.", extra=log_params)
 
-        # Fetch fresh metadata from yt-dlp using the download's source URL
+        # Fetch fresh metadata from yt-dlp
         try:
             fetched_downloads = await self._ytdlp_wrapper.fetch_new_downloads_metadata(
                 feed_id,
@@ -835,79 +828,33 @@ class Enqueuer:
                 download_id=download_id,
             )
 
-        updated_download = merge_download_metadata(existing_download, fetched_download)
+        # Merge metadata
+        merged_download, changed_fields = merge_download_metadata(
+            existing_download, fetched_download
+        )
 
-        if updated_download.content_equals(existing_download):
+        # Calculate change indicators from changed_fields
+        thumbnail_url_changed = (
+            "remote_thumbnail_url" in changed_fields
+            and merged_download.remote_thumbnail_url is not None
+        )
+
+        transcript_metadata_changed = (
+            "transcript_ext" in changed_fields
+            or "transcript_lang" in changed_fields
+            or "transcript_source" in changed_fields
+        )
+
+        # Only persist if there are actual changes
+        if merged_download.content_equals(existing_download):
             logger.debug(
                 "No metadata changes detected during refresh.",
                 extra=log_params,
             )
-            return existing_download
-
-        logger.debug(
-            "Metadata changes detected, returning merged download.",
-            extra=log_params,
-        )
-        return updated_download
-
-    async def persist_refreshed_metadata(
-        self,
-        existing_download: Download,
-        merged_download: Download,
-        old_thumbnail_url: str | None,
-        thumbnail_refreshed: bool,
-    ) -> Download:
-        """Persist a refreshed download based on thumbnail outcome.
-
-        Determines the final state of a refreshed download by reconciling metadata
-        changes with thumbnail download results. If the thumbnail URL changed but
-        the download failed, reverts to the old URL to maintain database consistency.
-        Only persists if there are actual changes from the existing download.
-
-        See fetch_refreshed_download for the first half of this flow.
-
-        Args:
-            existing_download: The original download from the database.
-            merged_download: The download with merged metadata from yt-dlp.
-            old_thumbnail_url: The original thumbnail URL before refresh.
-            thumbnail_refreshed: Whether the thumbnail was successfully downloaded.
-
-        Returns:
-            The persisted Download (or existing if no changes).
-
-        Raises:
-            EnqueueError: If database update fails.
-        """
-        feed_id = merged_download.feed_id
-        download_id = merged_download.id
-        log_params = {"feed_id": feed_id, "download_id": download_id}
-
-        thumbnail_url_changed = (
-            merged_download.remote_thumbnail_url != old_thumbnail_url
-            and merged_download.remote_thumbnail_url is not None
-        )
-
-        if thumbnail_url_changed and not thumbnail_refreshed:
-            # Thumbnail download failed - keep old URL to maintain consistency
-            final_download = merged_download.model_copy(
-                update={"remote_thumbnail_url": old_thumbnail_url}
-            )
-            logger.info(
-                "Reverting to old thumbnail URL due to download failure.",
-                extra=log_params,
-            )
-        elif thumbnail_refreshed:
-            # Thumbnail download succeeded - set the extension
-            final_download = merged_download.model_copy(update={"thumbnail_ext": "jpg"})
-        else:
-            final_download = merged_download
-
-        # Only persist if there are actual changes
-        if final_download.content_equals(existing_download):
-            return existing_download
+            return existing_download, [], False, False
 
         try:
-            await self._download_db.update_download(final_download)
+            await self._download_db.update_download(merged_download)
         except (DownloadNotFoundError, DatabaseOperationError) as e:
             raise EnqueueError(
                 "Failed to persist refreshed metadata.",
@@ -915,5 +862,19 @@ class Enqueuer:
                 download_id=download_id,
             ) from e
 
-        logger.info("Refreshed metadata persisted.", extra=log_params)
-        return final_download
+        logger.info(
+            "Metadata refreshed and persisted.",
+            extra={
+                **log_params,
+                "changed_fields": changed_fields,
+                "thumbnail_url_changed": thumbnail_url_changed,
+                "transcript_metadata_changed": transcript_metadata_changed,
+            },
+        )
+
+        return (
+            merged_download,
+            changed_fields,
+            thumbnail_url_changed,
+            transcript_metadata_changed,
+        )

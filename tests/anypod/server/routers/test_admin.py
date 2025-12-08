@@ -18,6 +18,7 @@ from anypod.db.types import Download, DownloadStatus
 from anypod.exceptions import (
     DatabaseOperationError,
     DownloadNotFoundError,
+    EnqueueError,
     FeedNotFoundError,
 )
 from anypod.file_manager import FileManager
@@ -261,18 +262,25 @@ def test_reset_sync_naive_datetime_rejected(
 @pytest.mark.unit
 def test_reset_errors_success(
     client: TestClient,
+    feed_configs: dict[str, FeedConfig],
     mock_feed_database: Mock,
     mock_download_database: Mock,
+    scheduled_feed_config: FeedConfig,
 ) -> None:
-    """Returns feed_id + reset_count; calls bulk requeue for ERROR items only."""
+    """Returns feed_id + requeue_count; calls bulk requeue for ERROR items only."""
+    feed_configs[FEED_ID] = scheduled_feed_config
     mock_feed_database.get_feed_by_id.return_value = object()
     mock_download_database.requeue_downloads.return_value = RESET_COUNT
 
-    response = client.post(f"{ADMIN_PREFIX}/feeds/{FEED_ID}/reset-errors")
+    response = client.post(f"{ADMIN_PREFIX}/feeds/{FEED_ID}/requeue")
 
     assert response.status_code == 200
     data = response.json()
-    assert data == {"feed_id": FEED_ID, "reset_count": RESET_COUNT}
+    assert data == {
+        "feed_id": FEED_ID,
+        "download_id": None,
+        "requeue_count": RESET_COUNT,
+    }
     mock_feed_database.get_feed_by_id.assert_called_once_with(FEED_ID)
     mock_download_database.requeue_downloads.assert_called_once_with(
         feed_id=FEED_ID, download_ids=None, from_status=DownloadStatus.ERROR
@@ -282,15 +290,18 @@ def test_reset_errors_success(
 @pytest.mark.unit
 def test_reset_errors_feed_not_found(
     client: TestClient,
+    feed_configs: dict[str, FeedConfig],
     mock_feed_database: Mock,
+    scheduled_feed_config: FeedConfig,
 ) -> None:
-    """404 when feed does not exist."""
+    """404 when feed does not exist in database."""
     missing_feed_id = "missing"
+    feed_configs[missing_feed_id] = scheduled_feed_config
     mock_feed_database.get_feed_by_id.side_effect = FeedNotFoundError(
         "Feed not found.", feed_id=missing_feed_id
     )
 
-    response = client.post(f"{ADMIN_PREFIX}/feeds/{missing_feed_id}/reset-errors")
+    response = client.post(f"{ADMIN_PREFIX}/feeds/{missing_feed_id}/requeue")
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Feed not found"
@@ -299,16 +310,19 @@ def test_reset_errors_feed_not_found(
 @pytest.mark.unit
 def test_reset_errors_db_error_on_requeue(
     client: TestClient,
+    feed_configs: dict[str, FeedConfig],
     mock_feed_database: Mock,
     mock_download_database: Mock,
+    scheduled_feed_config: FeedConfig,
 ) -> None:
     """500 when DB error occurs during bulk requeue."""
+    feed_configs[FEED_ID] = scheduled_feed_config
     mock_feed_database.get_feed_by_id.return_value = object()
     mock_download_database.requeue_downloads.side_effect = DatabaseOperationError(
         "DB error"
     )
 
-    response = client.post(f"{ADMIN_PREFIX}/feeds/{FEED_ID}/reset-errors")
+    response = client.post(f"{ADMIN_PREFIX}/feeds/{FEED_ID}/requeue")
 
     assert response.status_code == 500
     assert response.json()["detail"] == "Database error"
@@ -728,17 +742,19 @@ def test_refresh_metadata_success(
     mock_feed_database.get_feed_by_id.return_value = object()
     mock_download_database.get_download_by_id.return_value = sample_download
 
-    # Return an updated download with changed title
     updated_download = sample_download.model_copy(
         update={"title": "Updated Title", "description": "Updated description"}
     )
     mock_data_coordinator.refresh_download_metadata.return_value = (
         updated_download,
-        False,
+        ["description", "title"],
+        None,
+        None,
     )
 
     response = client.post(
-        f"{ADMIN_PREFIX}/feeds/{FEED_ID}/downloads/{download_id}/refresh-metadata"
+        f"{ADMIN_PREFIX}/feeds/{FEED_ID}/downloads/{download_id}/refresh-metadata",
+        json={},
     )
 
     assert response.status_code == 200
@@ -746,13 +762,15 @@ def test_refresh_metadata_success(
     assert data["feed_id"] == FEED_ID
     assert data["download_id"] == download_id
     assert data["metadata_changed"] is True
-    assert data["thumbnail_refreshed"] is False
+    assert data["thumbnail_refreshed"] is None
+    assert data["transcript_refreshed"] is None
     assert "title" in data["updated_fields"]
     assert "description" in data["updated_fields"]
     mock_data_coordinator.refresh_download_metadata.assert_awaited_once_with(
         feed_id=FEED_ID,
         download_id=download_id,
         feed_config=scheduled_feed_config,
+        refresh_transcript=False,
     )
 
 
@@ -772,20 +790,23 @@ def test_refresh_metadata_no_changes(
     mock_feed_database.get_feed_by_id.return_value = object()
     mock_download_database.get_download_by_id.return_value = sample_download
 
-    # Return same download (no changes)
     mock_data_coordinator.refresh_download_metadata.return_value = (
         sample_download,
-        False,
+        [],
+        None,
+        None,
     )
 
     response = client.post(
-        f"{ADMIN_PREFIX}/feeds/{FEED_ID}/downloads/{download_id}/refresh-metadata"
+        f"{ADMIN_PREFIX}/feeds/{FEED_ID}/downloads/{download_id}/refresh-metadata",
+        json={},
     )
 
     assert response.status_code == 200
     data = response.json()
     assert data["metadata_changed"] is False
-    assert data["thumbnail_refreshed"] is False
+    assert data["thumbnail_refreshed"] is None
+    assert data["transcript_refreshed"] is None
     assert data["updated_fields"] == []
 
 
@@ -805,22 +826,25 @@ def test_refresh_metadata_with_thumbnail_refresh(
     mock_feed_database.get_feed_by_id.return_value = object()
     mock_download_database.get_download_by_id.return_value = sample_download
 
-    # Return an updated download with changed thumbnail URL
     updated_download = sample_download.model_copy(
         update={"remote_thumbnail_url": "https://example.com/new-thumb.jpg"}
     )
     mock_data_coordinator.refresh_download_metadata.return_value = (
         updated_download,
+        ["remote_thumbnail_url"],
         True,
+        None,
     )
 
     response = client.post(
-        f"{ADMIN_PREFIX}/feeds/{FEED_ID}/downloads/{download_id}/refresh-metadata"
+        f"{ADMIN_PREFIX}/feeds/{FEED_ID}/downloads/{download_id}/refresh-metadata",
+        json={},
     )
 
     assert response.status_code == 200
     data = response.json()
     assert data["thumbnail_refreshed"] is True
+    assert data["transcript_refreshed"] is None
     assert "remote_thumbnail_url" in data["updated_fields"]
 
 
@@ -832,7 +856,8 @@ def test_refresh_metadata_feed_not_configured(
     """404 when feed is not in configuration."""
     # feed_configs is empty
     response = client.post(
-        f"{ADMIN_PREFIX}/feeds/not-configured/downloads/dl-1/refresh-metadata"
+        f"{ADMIN_PREFIX}/feeds/not-configured/downloads/dl-1/refresh-metadata",
+        json={},
     )
 
     assert response.status_code == 404
@@ -849,7 +874,8 @@ def test_refresh_metadata_feed_disabled(
     feed_configs[FEED_ID] = disabled_feed_config
 
     response = client.post(
-        f"{ADMIN_PREFIX}/feeds/{FEED_ID}/downloads/dl-1/refresh-metadata"
+        f"{ADMIN_PREFIX}/feeds/{FEED_ID}/downloads/dl-1/refresh-metadata",
+        json={},
     )
 
     assert response.status_code == 400
@@ -870,7 +896,8 @@ def test_refresh_metadata_feed_not_in_database(
     )
 
     response = client.post(
-        f"{ADMIN_PREFIX}/feeds/{FEED_ID}/downloads/dl-1/refresh-metadata"
+        f"{ADMIN_PREFIX}/feeds/{FEED_ID}/downloads/dl-1/refresh-metadata",
+        json={},
     )
 
     assert response.status_code == 404
@@ -882,18 +909,22 @@ def test_refresh_metadata_download_not_found(
     client: TestClient,
     feed_configs: dict[str, FeedConfig],
     mock_feed_database: Mock,
-    mock_download_database: Mock,
+    mock_data_coordinator: Mock,
     scheduled_feed_config: FeedConfig,
 ) -> None:
     """404 when download does not exist."""
     feed_configs[FEED_ID] = scheduled_feed_config
     mock_feed_database.get_feed_by_id.return_value = object()
-    mock_download_database.get_download_by_id.side_effect = DownloadNotFoundError(
+    cause = DownloadNotFoundError(
         "Download not found", feed_id=FEED_ID, download_id="missing"
     )
+    error = EnqueueError("Download not found", feed_id=FEED_ID, download_id="missing")
+    error.__cause__ = cause
+    mock_data_coordinator.refresh_download_metadata.side_effect = error
 
     response = client.post(
-        f"{ADMIN_PREFIX}/feeds/{FEED_ID}/downloads/missing/refresh-metadata"
+        f"{ADMIN_PREFIX}/feeds/{FEED_ID}/downloads/missing/refresh-metadata",
+        json={},
     )
 
     assert response.status_code == 404
@@ -914,7 +945,8 @@ def test_refresh_metadata_database_error(
     )
 
     response = client.post(
-        f"{ADMIN_PREFIX}/feeds/{FEED_ID}/downloads/dl-1/refresh-metadata"
+        f"{ADMIN_PREFIX}/feeds/{FEED_ID}/downloads/dl-1/refresh-metadata",
+        json={},
     )
 
     assert response.status_code == 500
@@ -932,8 +964,6 @@ def test_refresh_metadata_enqueue_error(
     sample_download: Download,
 ) -> None:
     """500 when refresh_download_metadata raises EnqueueError."""
-    from anypod.exceptions import EnqueueError
-
     feed_configs[FEED_ID] = scheduled_feed_config
     mock_feed_database.get_feed_by_id.return_value = object()
     mock_download_database.get_download_by_id.return_value = sample_download
@@ -944,7 +974,8 @@ def test_refresh_metadata_enqueue_error(
     )
 
     response = client.post(
-        f"{ADMIN_PREFIX}/feeds/{FEED_ID}/downloads/{sample_download.id}/refresh-metadata"
+        f"{ADMIN_PREFIX}/feeds/{FEED_ID}/downloads/{sample_download.id}/refresh-metadata",
+        json={},
     )
 
     assert response.status_code == 500

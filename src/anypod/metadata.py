@@ -73,60 +73,85 @@ def merge_feed_metadata(
     return {k: v for k, v in candidate_metadata.items() if v is not None}
 
 
-def merge_download_metadata(existing: Download, fetched: Download) -> Download:
+def merge_download_metadata(
+    existing: Download, fetched: Download
+) -> tuple[Download, list[str]]:
     """Merge fetched metadata into a copy of existing download.
 
     Fetched values take precedence over existing values. Existing values are
-    preserved when fetched values are None/falsy.
+    preserved when fetched values are None.
 
-    Does not modify status, error tracking, retry state, timestamps, or
-    file-related fields (ext, filesize, thumbnail_ext).
+    Does not modify status, error tracking, retry state, or file-related fields
+    (ext, filesize, thumbnail_ext).
 
     Args:
         existing: The existing Download from the database.
         fetched: The newly fetched Download with fresh metadata.
 
     Returns:
-        A copy of existing with merged metadata fields.
+        A tuple of (merged Download, sorted list of changed field names).
     """
     updated = existing.model_copy()
+    changed: list[str] = []
 
-    # Core metadata
+    # Core metadata - use "fetched or existing" for required fields
     updated.source_url = fetched.source_url or existing.source_url
+    if updated.source_url != existing.source_url:
+        changed.append("source_url")
+
     updated.title = fetched.title or existing.title
+    if updated.title != existing.title:
+        changed.append("title")
+
     updated.published = fetched.published or existing.published
+    if updated.published != existing.published:
+        changed.append("published")
+
+    # Optional fields - use "fetched if not None, else existing"
     updated.description = (
         fetched.description if fetched.description is not None else existing.description
     )
+    if updated.description != existing.description:
+        changed.append("description")
 
     updated.quality_info = (
         fetched.quality_info
         if fetched.quality_info is not None
         else existing.quality_info
     )
+    if updated.quality_info != existing.quality_info:
+        changed.append("quality_info")
 
-    # Thumbnail (remote URL only; thumbnail_ext is set during download)
     updated.remote_thumbnail_url = (
         fetched.remote_thumbnail_url
         if fetched.remote_thumbnail_url is not None
         else existing.remote_thumbnail_url
     )
+    if updated.remote_thumbnail_url != existing.remote_thumbnail_url:
+        changed.append("remote_thumbnail_url")
 
-    # Transcript metadata
     updated.transcript_ext = (
         fetched.transcript_ext
         if fetched.transcript_ext is not None
         else existing.transcript_ext
     )
+    if updated.transcript_ext != existing.transcript_ext:
+        changed.append("transcript_ext")
+
     updated.transcript_lang = (
         fetched.transcript_lang
         if fetched.transcript_lang is not None
         else existing.transcript_lang
     )
+    if updated.transcript_lang != existing.transcript_lang:
+        changed.append("transcript_lang")
+
     updated.transcript_source = (
         fetched.transcript_source
         if fetched.transcript_source is not None
         else existing.transcript_source
     )
+    if updated.transcript_source != existing.transcript_source:
+        changed.append("transcript_source")
 
-    return updated
+    return updated, sorted(changed)

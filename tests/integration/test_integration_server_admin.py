@@ -94,15 +94,19 @@ async def test_admin_refresh_feed_disabled(
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_admin_reset_errors_happy_path(
+async def test_admin_requeue_happy_path(
     admin_test_app: TestClient,
     feed_db: FeedDatabase,
     download_db: DownloadDatabase,
+    feed_configs: dict[str, FeedConfig],
     subtests: pytest.Subtests,
 ) -> None:
     """Resets all ERROR items to QUEUED for a feed and returns count."""
-    feed_id = "int_admin_reset"
-    # Create feed
+    feed_id = "int_admin_requeue"
+    feed_configs[feed_id] = FeedConfig(
+        url="https://example.com/channel",
+        schedule="0 3 * * *",  # type: ignore[arg-type]
+    )
     await feed_db.upsert_feed(
         Feed(
             id=feed_id,
@@ -161,11 +165,11 @@ async def test_admin_reset_errors_happy_path(
     )
 
     # Invoke admin endpoint
-    resp = admin_test_app.post(f"/admin/feeds/{feed_id}/reset-errors")
+    resp = admin_test_app.post(f"/admin/feeds/{feed_id}/requeue")
     assert resp.status_code == 200
     data = resp.json()
     assert data["feed_id"] == feed_id
-    assert data["reset_count"] == 2
+    assert data["requeue_count"] == 2
 
     # Verify DB state for affected rows
     for dlid in ("err1", "err2"):
@@ -176,15 +180,18 @@ async def test_admin_reset_errors_happy_path(
             assert row.last_error is None
 
     # Idempotent: re-run yields 0
-    resp2 = admin_test_app.post(f"/admin/feeds/{feed_id}/reset-errors")
+    resp2 = admin_test_app.post(f"/admin/feeds/{feed_id}/requeue")
     assert resp2.status_code == 200
-    assert resp2.json()["reset_count"] == 0
+    assert resp2.json()["requeue_count"] == 0
 
 
 @pytest.mark.integration
-def test_admin_reset_errors_feed_not_found(admin_test_app: TestClient) -> None:
-    """404 when feed is missing."""
-    resp = admin_test_app.post("/admin/feeds/missing/reset-errors")
+def test_admin_requeue_feed_not_found(
+    admin_test_app: TestClient,
+    feed_configs: dict[str, FeedConfig],
+) -> None:
+    """404 when feed is not configured."""
+    resp = admin_test_app.post("/admin/feeds/missing/requeue")
     assert resp.status_code == 404
     assert "feed" in resp.json()["detail"].lower()
 

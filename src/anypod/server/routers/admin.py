@@ -108,42 +108,56 @@ async def refresh_feed(
     )
 
 
-class ResetErrorsResponse(BaseModel):
-    """Response model for resetting ERROR downloads for a feed.
+class RequeueResponse(BaseModel):
+    """Response model for requeue operations.
 
     Attributes:
         feed_id: The feed identifier.
-        reset_count: Number of downloads transitioned from ERROR to QUEUED.
+        download_id: The download identifier (for download-level requeue), or None.
+        requeue_count: Number of downloads transitioned from ERROR to QUEUED.
     """
 
     feed_id: str
-    reset_count: int
+    download_id: str | None = None
+    requeue_count: int
 
 
-@router.post("/feeds/{feed_id}/reset-errors", response_model=ResetErrorsResponse)
-async def reset_error_downloads(
+@router.post("/feeds/{feed_id}/requeue", response_model=RequeueResponse)
+async def requeue_error_downloads(
     feed_id: ValidatedFeedId,
     feed_db: FeedDatabaseDep,
     download_db: DownloadDatabaseDep,
-) -> ResetErrorsResponse:
-    """Reset all downloads in ERROR status for the specified feed.
+    feed_configs: FeedConfigsDep,
+    manual_feed_runner: ManualFeedRunnerDep,
+) -> RequeueResponse:
+    """Requeue all downloads in ERROR status for the specified feed.
 
     Validates the feed exists. Re-queues all downloads currently in ERROR
-    for that feed. The operation is idempotent.
+    for that feed and triggers the processing pipeline. The operation is
+    idempotent.
 
     Args:
         feed_id: The feed identifier (validated and sanitized).
         feed_db: Feed database dependency.
         download_db: Download database dependency.
+        feed_configs: Configured feeds keyed by identifier.
+        manual_feed_runner: Background runner for triggering feed processing.
 
     Returns:
-        ResetErrorsResponse containing the feed_id and number of items reset.
+        RequeueResponse containing the feed_id and number of items requeued.
 
     Raises:
-        HTTPException: 404 if feed not found; 500 on database errors.
+        HTTPException: 404 if feed not found or not configured;
+            400 if feed is disabled; 500 on database errors.
     """
     log_params = {"feed_id": feed_id}
-    logger.debug("Admin reset-errors request received.", extra=log_params)
+    logger.debug("Admin requeue request received.", extra=log_params)
+
+    feed_config = feed_configs.get(feed_id)
+    if feed_config is None:
+        raise HTTPException(status_code=404, detail="Feed not configured")
+    if not feed_config.enabled:
+        raise HTTPException(status_code=400, detail="Feed is disabled")
 
     try:
         # Validate feed exists (discard returned value; we only need existence)
@@ -162,8 +176,96 @@ async def reset_error_downloads(
     except DatabaseOperationError as e:
         raise HTTPException(status_code=500, detail="Database error") from e
 
-    logger.info("Reset errors for feed.", extra={**log_params, "reset_count": count})
-    return ResetErrorsResponse(feed_id=feed_id, reset_count=count)
+    # Trigger processing pipeline if any downloads were requeued
+    if count > 0:
+        await manual_feed_runner.trigger(feed_id, feed_config)
+
+    logger.info(
+        "Requeued errors for feed.", extra={**log_params, "requeue_count": count}
+    )
+    return RequeueResponse(feed_id=feed_id, requeue_count=count)
+
+
+@router.post(
+    "/feeds/{feed_id}/downloads/{download_id}/requeue", response_model=RequeueResponse
+)
+async def requeue_download(
+    feed_id: ValidatedFeedId,
+    download_id: str,
+    feed_db: FeedDatabaseDep,
+    download_db: DownloadDatabaseDep,
+    feed_configs: FeedConfigsDep,
+    manual_feed_runner: ManualFeedRunnerDep,
+) -> RequeueResponse:
+    """Requeue a single ERROR download and trigger processing.
+
+    Validates the download exists and is in ERROR status. Re-queues the
+    download and triggers the processing pipeline.
+
+    Args:
+        feed_id: The feed identifier (validated and sanitized).
+        download_id: The download identifier to requeue.
+        feed_db: Feed database dependency.
+        download_db: Download database dependency.
+        feed_configs: Configured feeds keyed by identifier.
+        manual_feed_runner: Background runner for triggering feed processing.
+
+    Returns:
+        RequeueResponse with requeue_count of 1 if successful.
+
+    Raises:
+        HTTPException: 404 if feed or download not found or not configured;
+            400 if feed is disabled or download is not in ERROR status;
+            500 on database errors.
+    """
+    log_params = {"feed_id": feed_id, "download_id": download_id}
+    logger.debug("Admin download requeue request received.", extra=log_params)
+
+    feed_config = feed_configs.get(feed_id)
+    if feed_config is None:
+        raise HTTPException(status_code=404, detail="Feed not configured")
+    if not feed_config.enabled:
+        raise HTTPException(status_code=400, detail="Feed is disabled")
+
+    try:
+        # Validate feed exists
+        await feed_db.get_feed_by_id(feed_id)
+    except FeedNotFoundError as e:
+        raise HTTPException(status_code=404, detail="Feed not found") from e
+    except DatabaseOperationError as e:
+        raise HTTPException(status_code=500, detail="Database error") from e
+
+    # Validate download exists and is in ERROR status
+    try:
+        download = await download_db.get_download_by_id(feed_id, download_id)
+    except DownloadNotFoundError as e:
+        raise HTTPException(status_code=404, detail="Download not found") from e
+    except DatabaseOperationError as e:
+        raise HTTPException(status_code=500, detail="Database error") from e
+
+    if download.status != DownloadStatus.ERROR:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Download is not in ERROR status (current: {download.status.value})",
+        )
+
+    try:
+        count = await download_db.requeue_downloads(
+            feed_id=feed_id,
+            download_ids=download_id,
+            from_status=DownloadStatus.ERROR,
+        )
+    except DatabaseOperationError as e:
+        raise HTTPException(status_code=500, detail="Database error") from e
+
+    # Trigger processing pipeline if download was requeued
+    if count > 0:
+        await manual_feed_runner.trigger(feed_id, feed_config)
+
+    logger.info("Requeued download.", extra={**log_params, "requeue_count": count})
+    return RequeueResponse(
+        feed_id=feed_id, download_id=download_id, requeue_count=count
+    )
 
 
 class ResetSyncRequest(BaseModel):
@@ -434,6 +536,16 @@ async def get_download_fields(
     )
 
 
+class RefreshMetadataRequest(BaseModel):
+    """Request model for metadata refresh operations.
+
+    Attributes:
+        refresh_transcript: Force re-download transcript even if metadata unchanged.
+    """
+
+    refresh_transcript: bool = False
+
+
 class RefreshMetadataResponse(BaseModel):
     """Response model for metadata refresh operations.
 
@@ -444,6 +556,8 @@ class RefreshMetadataResponse(BaseModel):
         updated_fields: List of field names that were updated.
         thumbnail_refreshed: Thumbnail refresh result (True=success, False=failed,
             None=not needed).
+        transcript_refreshed: Transcript refresh result (True=success, False=failed,
+            None=not needed).
     """
 
     feed_id: str
@@ -451,6 +565,7 @@ class RefreshMetadataResponse(BaseModel):
     metadata_changed: bool
     updated_fields: list[str]
     thumbnail_refreshed: bool | None
+    transcript_refreshed: bool | None
 
 
 @router.post(
@@ -463,7 +578,7 @@ async def refresh_download_metadata(
     feed_db: FeedDatabaseDep,
     feed_configs: FeedConfigsDep,
     data_coordinator: DataCoordinatorDep,
-    download_db: DownloadDatabaseDep,
+    payload: RefreshMetadataRequest,
 ) -> RefreshMetadataResponse:
     """Re-fetch metadata for a specific download from yt-dlp.
 
@@ -477,7 +592,7 @@ async def refresh_download_metadata(
         feed_db: Feed database dependency.
         feed_configs: Configured feeds keyed by identifier.
         data_coordinator: Coordinator for refresh operations.
-        download_db: Download database dependency.
+        payload: request body with refresh options.
 
     Returns:
         RefreshMetadataResponse with details of updated fields.
@@ -502,47 +617,23 @@ async def refresh_download_metadata(
     except DatabaseOperationError as e:
         raise HTTPException(status_code=500, detail="Database error") from e
 
-    # Get existing download to compare fields after refresh
-    try:
-        existing_download = await download_db.get_download_by_id(feed_id, download_id)
-    except DownloadNotFoundError as e:
-        raise HTTPException(status_code=404, detail="Download not found") from e
-    except DatabaseOperationError as e:
-        raise HTTPException(status_code=500, detail="Database error") from e
-
     try:
         (
-            updated_download,
+            _,
+            updated_fields,
             thumbnail_refreshed,
+            transcript_refreshed,
         ) = await data_coordinator.refresh_download_metadata(
             feed_id=feed_id,
             download_id=download_id,
             feed_config=feed_config,
+            refresh_transcript=payload.refresh_transcript,
         )
     except EnqueueError as e:
         # Map specific error causes to appropriate HTTP status codes
         if isinstance(e.__cause__, DownloadNotFoundError):
             raise HTTPException(status_code=404, detail="Download not found") from e
         raise HTTPException(status_code=500, detail="Failed to refresh metadata") from e
-
-    # Determine which fields changed
-    updated_fields: list[str] = []
-    if existing_download.title != updated_download.title:
-        updated_fields.append("title")
-    if existing_download.description != updated_download.description:
-        updated_fields.append("description")
-    if existing_download.duration != updated_download.duration:
-        updated_fields.append("duration")
-    if existing_download.quality_info != updated_download.quality_info:
-        updated_fields.append("quality_info")
-    if existing_download.remote_thumbnail_url != updated_download.remote_thumbnail_url:
-        updated_fields.append("remote_thumbnail_url")
-    if existing_download.transcript_ext != updated_download.transcript_ext:
-        updated_fields.append("transcript_ext")
-    if existing_download.transcript_lang != updated_download.transcript_lang:
-        updated_fields.append("transcript_lang")
-    if existing_download.transcript_source != updated_download.transcript_source:
-        updated_fields.append("transcript_source")
 
     logger.info(
         "Download metadata refreshed.",
@@ -555,6 +646,7 @@ async def refresh_download_metadata(
         metadata_changed=len(updated_fields) > 0,
         updated_fields=updated_fields,
         thumbnail_refreshed=thumbnail_refreshed,
+        transcript_refreshed=transcript_refreshed,
     )
 
 
