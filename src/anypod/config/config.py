@@ -13,13 +13,12 @@ from typing import Any, Literal, cast
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import Field, field_validator
-from pydantic.fields import FieldInfo
-from pydantic_core import PydanticUndefined
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
     SettingsConfigDict,
 )
+from pydantic_settings.sources import InitSettingsSource, YamlConfigSettingsSource
 import yaml
 
 from ..exceptions import ConfigLoadError
@@ -40,125 +39,62 @@ class DebugMode(str, Enum):
     DOWNLOADER = "downloader"
 
 
-class YamlFileFromFieldSource(PydanticBaseSettingsSource):
-    """Load configuration from a YAML file specified by a field.
+class DynamicYamlConfigSettingsSource(YamlConfigSettingsSource):
+    """YAML settings source that resolves its path from earlier sources.
 
-    A settings source that loads configuration from a YAML file specified
-    by a field within the settings model itself. This source should be run
-    after all other sources that might populate the path field.
-
-    Attributes:
-        yaml_file_encoding: Encoding to use when reading the YAML file.
-        yaml_data: Cached YAML data loaded from the file.
+    Extends the built-in YamlConfigSettingsSource to dynamically determine
+    the YAML file path from the `config_file` field, which may be set via
+    environment variables or CLI arguments processed by earlier sources.
     """
 
-    def _get_current_state_of(self, field_name: str) -> Any:
-        """Get the current state of a field from the settings model."""
-        value = self.current_state.get(field_name)
-        if value not in (None, PydanticUndefined):
-            return value
+    CONFIG_PATH_FIELD = "config_file"
 
-        field_info = self.settings_cls.model_fields[field_name]
-        if isinstance(field_info.validation_alias, str):
-            value = self.current_state.get(field_info.validation_alias)
-            if value not in (None, PydanticUndefined):
-                return value
-        return field_info.get_default()
-
-    def __init__(
-        self,
-        settings_cls: type[BaseSettings],
-        yaml_file_encoding: str | None = None,
-    ):
-        super().__init__(settings_cls)
-        self.yaml_file_encoding = yaml_file_encoding or "utf-8"
+    def __init__(self, settings_cls: type[BaseSettings]):
+        """Initialize without loading YAML yet (path comes from current_state)."""
+        PydanticBaseSettingsSource.__init__(self, settings_cls)
+        self._initialized = False
+        self.yaml_file_path: Path | None = None
+        self.yaml_file_encoding = "utf-8"
         self.yaml_data: dict[str, Any] = {}
 
-    def _get_yaml_path(self) -> Path | None:
-        """Determines the YAML path from the already processed settings state."""
-        path_value = self._get_current_state_of("config_file")
-        logger.debug(
-            "Attempting to resolve YAML configuration file path.",
-            extra={
-                "current_path_value_type": type(path_value).__name__,
-                "current_path_value": "None" if path_value is None else str(path_value),
-            },
-        )
-
-        if isinstance(path_value, Path):
-            return path_value.expanduser()
-        elif isinstance(path_value, str):
-            return Path(path_value).expanduser()
-        elif path_value is not None:
+    def _resolve_config_path(self) -> Path:
+        """Resolve the config file path from current_state or field default."""
+        field_info = self.settings_cls.model_fields[self.CONFIG_PATH_FIELD]
+        alias = field_info.validation_alias
+        if not isinstance(alias, str):
             raise TypeError(
-                f"Field 'config_file' must resolve to a Path or string, "
-                f"received type '{type(path_value).__name__}'"
-            )
-        else:  # path_value is None
-            return None
-
-    def _read_yaml_file(self, file_path: Path) -> dict[str, Any]:
-        """Reads and parses the YAML file."""
-        logger.debug(
-            "Attempting to read and parse YAML file.",
-            extra={"file_path": str(file_path)},
-        )
-        with Path.open(file_path, encoding=self.yaml_file_encoding) as f:
-            loaded_yaml = yaml.safe_load(f)  # This can raise yaml.YAMLError
-
-        # Process loaded_yaml after successful loading
-        if isinstance(loaded_yaml, dict):
-            logger.debug(
-                "Successfully parsed YAML configuration file.",
-                extra={"file_path": str(file_path)},
-            )
-            return cast(dict[str, Any], loaded_yaml)
-        elif loaded_yaml is None:  # Empty YAML file often loads as None
-            logger.info(
-                "YAML configuration file is empty.",
-                extra={"file_path": str(file_path)},
-            )
-            return {}
-        else:
-            # Valid YAML, but not a dictionary (e.g., a list or a scalar)
-            raise TypeError(
-                f"Invalid YAML config format: expected dict, got {type(loaded_yaml).__name__}"
+                f"{self.CONFIG_PATH_FIELD} validation_alias must be a string"
             )
 
-    def get_field_value(
-        self, field: FieldInfo, field_name: str
-    ) -> tuple[Any, str, bool]:
-        """Get value from loaded YAML data."""
-        field_value = self.yaml_data.get(field_name)
-        return field_value, field_name, self.field_is_complex(field)
+        value = self.current_state.get(
+            self.CONFIG_PATH_FIELD
+        ) or self.current_state.get(alias)
+        if value is None:
+            value = field_info.default
+
+        path = Path(value) if isinstance(value, str) else cast(Path, value)
+        return path.expanduser()
 
     def __call__(self) -> dict[str, Any]:
-        """Load YAML data from file specified in the config_file field."""
+        """Load YAML and delegate to parent for alias-aware processing."""
+        if self._initialized:
+            return super().__call__()
+
+        self._initialized = True
+        path = self._resolve_config_path()
+
+        logger.debug("Loading YAML configuration.", extra={"file_path": str(path)})
+
+        self.yaml_file_path = path
         try:
-            yaml_path = self._get_yaml_path()
-        except TypeError as e:
+            self.yaml_data = self._read_file(path)
+        except (FileNotFoundError, OSError, yaml.YAMLError) as e:
             raise ConfigLoadError(
-                "Failed to resolve YAML configuration file path.",
+                "Failed to load or parse YAML configuration file.",
+                config_file=str(path),
             ) from e
-
-        if yaml_path:
-            logger.debug(
-                "Loading YAML configuration.", extra={"file_path": str(yaml_path)}
-            )
-            try:
-                self.yaml_data = self._read_yaml_file(yaml_path)
-            except (TypeError, FileNotFoundError, OSError, yaml.YAMLError) as e:
-                raise ConfigLoadError(
-                    "Failed to load or parse YAML configuration file.",
-                    config_file=str(yaml_path),
-                ) from e
-        else:
-            logger.debug(
-                "No YAML configuration file specified or resolved; skipping YAML loading.",
-            )
-            self.yaml_data = {}
-
-        return self.yaml_data.copy()
+        InitSettingsSource.__init__(self, self.settings_cls, self.yaml_data)
+        return super().__call__()
 
 
 class AppSettings(BaseSettings):
@@ -298,7 +234,8 @@ class AppSettings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="",
         env_nested_delimiter="__",
-        # yaml_file=None, # Removed as we handle YAML via YamlFileFromFieldSource
+        validate_by_name=True,
+        validate_by_alias=True,
         cli_parse_args=True,
         cli_ignore_unknown_args=True,
         cli_kebab_case=True,
@@ -367,7 +304,7 @@ class AppSettings(BaseSettings):
 
         This method customizes the order in which settings sources are processed.
         Environment variables and initialization parameters are processed first to
-        potentially set the `config_file`. After that, the `YamlFileFromFieldSource`
+        potentially set the `config_file`. After that, the `DynamicYamlConfigSettingsSource`
         reads the `config_file` field and loads the YAML configuration.
 
         Args:
@@ -384,6 +321,6 @@ class AppSettings(BaseSettings):
             init_settings,
             env_settings,
             dotenv_settings,
-            YamlFileFromFieldSource(settings_cls=settings_cls),
+            DynamicYamlConfigSettingsSource(settings_cls=settings_cls),
             file_secret_settings,
         )

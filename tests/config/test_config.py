@@ -13,7 +13,11 @@ from pydantic import ValidationError
 import pytest
 import yaml
 
-from anypod.config.config import AppSettings, FeedConfig, YamlFileFromFieldSource
+from anypod.config.config import (
+    AppSettings,
+    DynamicYamlConfigSettingsSource,
+    FeedConfig,
+)
 from anypod.config.types import FeedMetadataOverrides
 from anypod.exceptions import ConfigLoadError
 
@@ -55,7 +59,7 @@ def sample_config_file(tmp_path: Path) -> Path:
 
 
 @pytest.mark.unit
-@patch.object(YamlFileFromFieldSource, "_get_yaml_path")
+@patch.object(DynamicYamlConfigSettingsSource, "_resolve_config_path")
 def test_load_from_default_location(mock_get_yaml_path: Mock, tmp_path: Path):
     """Tests if AppSettings loads configuration from the default file path when no overrides are provided."""
     default_config_path = tmp_path / "default_feeds.yaml"
@@ -328,26 +332,103 @@ def test_yaml_file_with_only_other_keys(tmp_path: Path):
     )
 
 
+# --- Tests for AppSettings loading from YAML vs env vars ---
+
+
 @pytest.mark.unit
-def test_invalid_yaml_returns_non_dict_type_raises_error(tmp_path: Path):
-    """Tests that AppSettings raises an OSError with a TypeError cause if the YAML content is valid YAML but not a dictionary (e.g., a list)."""
-    invalid_type_yaml_path = tmp_path / "invalid_type.yaml"
-    # YAML content that is a list, not a dictionary
-    list_content = "- download1\n- download2"
-    with Path.open(invalid_type_yaml_path, "w", encoding="utf-8") as f:
-        f.write(list_content)
+def test_yaml_settings_override_defaults(tmp_path: Path):
+    """Settings defined in YAML override default values."""
+    config_path = tmp_path / "settings.yaml"
+    yaml_data: dict[str, Any] = {
+        "log_level": "DEBUG",
+        "log_format": "human",
+        "server_port": 9999,
+        "base_url": "https://custom.example.com",
+        "feeds": {},
+    }
+    with Path.open(config_path, "w", encoding="utf-8") as f:
+        yaml.dump(yaml_data, f)
 
-    with pytest.raises(
-        ConfigLoadError, match="Failed to load or parse YAML configuration file"
-    ) as exc_info:
-        AppSettings(config_file=invalid_type_yaml_path)
+    settings = AppSettings(config_file=config_path)
 
-    assert isinstance(exc_info.value.__cause__, TypeError), (
-        f"Cause of OSError should be TypeError, got {type(exc_info.value.__cause__).__name__}"
-    )
-    assert "Invalid YAML config format: expected dict, got list" in str(
-        exc_info.value.__cause__
-    ), "TypeError message did not match expected format for list input"
+    assert settings.log_level == "DEBUG"
+    assert settings.log_format == "human"
+    assert settings.server_port == 9999
+    assert settings.base_url == "https://custom.example.com"
+
+
+@pytest.mark.unit
+@patch.dict(
+    os.environ,
+    {
+        "LOG_LEVEL": "ERROR",
+        "LOG_FORMAT": "json",
+        "SERVER_PORT": "8888",
+        "BASE_URL": "https://env.example.com",
+    },
+    clear=False,
+)
+def test_env_vars_override_defaults(tmp_path: Path):
+    """Environment variables override default values."""
+    config_path = tmp_path / "empty.yaml"
+    with Path.open(config_path, "w", encoding="utf-8") as f:
+        yaml.dump({"feeds": {}}, f)
+
+    settings = AppSettings(config_file=config_path)
+
+    assert settings.log_level == "ERROR"
+    assert settings.log_format == "json"
+    assert settings.server_port == 8888
+    assert settings.base_url == "https://env.example.com"
+
+
+@pytest.mark.unit
+@patch.dict(
+    os.environ,
+    {
+        "LOG_LEVEL": "ERROR",
+        "SERVER_PORT": "7777",
+    },
+    clear=False,
+)
+def test_env_vars_take_priority_over_yaml(tmp_path: Path):
+    """Environment variables override YAML settings (env has higher priority)."""
+    config_path = tmp_path / "settings.yaml"
+    yaml_data: dict[str, Any] = {
+        "log_level": "DEBUG",
+        "log_format": "human",
+        "server_port": 9999,
+        "feeds": {},
+    }
+    with Path.open(config_path, "w", encoding="utf-8") as f:
+        yaml.dump(yaml_data, f)
+
+    settings = AppSettings(config_file=config_path)
+
+    assert settings.log_level == "ERROR", "Env var should override YAML"
+    assert settings.log_format == "human", "YAML should be used when no env var"
+    assert settings.server_port == 7777, "Env var should override YAML"
+
+
+@pytest.mark.unit
+def test_yaml_complex_types_load_correctly(tmp_path: Path):
+    """Complex types like lists and timedeltas load correctly from YAML."""
+    config_path = tmp_path / "complex.yaml"
+    yaml_data: dict[str, Any] = {
+        "trusted_proxies": ["192.168.1.0/24", "10.0.0.1"],
+        "yt_dlp_update_freq": 21600,  # seconds
+        "tz": "America/Los_Angeles",
+        "feeds": {},
+    }
+    with Path.open(config_path, "w", encoding="utf-8") as f:
+        yaml.dump(yaml_data, f)
+
+    settings = AppSettings(config_file=config_path)
+
+    assert settings.trusted_proxies == ["192.168.1.0/24", "10.0.0.1"]
+    assert settings.yt_dlp_update_freq == timedelta(hours=6)
+    assert settings.tz is not None
+    assert str(settings.tz) == "America/Los_Angeles"
 
 
 # --- Tests for FeedConfig.yt_args validator ---
