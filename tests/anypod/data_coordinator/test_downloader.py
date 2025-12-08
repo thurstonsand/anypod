@@ -16,6 +16,7 @@ import pytest
 from anypod.config import FeedConfig
 from anypod.config.types import FeedMetadataOverrides
 from anypod.data_coordinator.downloader import Downloader
+from anypod.data_coordinator.types import ArtifactDownloadResult, DownloadArtifact
 from anypod.db import DownloadDatabase
 from anypod.db.types import Download, DownloadStatus, Feed, SourceType, TranscriptSource
 from anypod.exceptions import (
@@ -276,7 +277,7 @@ async def test_handle_download_failure_db_error_logged(
         )
 
 
-# --- Tests for _process_single_download ---
+# --- Tests for download_artifacts ---
 
 
 @pytest.mark.unit
@@ -289,7 +290,7 @@ async def test_handle_download_failure_db_error_logged(
     ],
 )
 @patch.object(Downloader, "_handle_download_success", new_callable=AsyncMock)
-async def test_process_single_download_success_flow(
+async def test_download_artifacts_all_success_flow(
     mock_handle_success: AsyncMock,
     downloader: Downloader,
     mock_ytdlp_wrapper: MagicMock,
@@ -297,7 +298,7 @@ async def test_process_single_download_success_flow(
     sample_feed_config: FeedConfig,
     transcript: TranscriptInfo | None,
 ):
-    """Tests the success path of _process_single_download with and without transcripts."""
+    """Tests the success path of download_artifacts with ALL artifacts."""
     downloaded_path = Path("/final/video.mp4")
     logs = "yt-dlp stdout/stderr"
     mock_ytdlp_wrapper.download_media_to_file.return_value = DownloadedMedia(
@@ -306,8 +307,18 @@ async def test_process_single_download_success_flow(
         transcript=transcript,
     )
 
-    await downloader._process_single_download(sample_download, sample_feed_config)
+    def set_thumbnail_ext(*_args: object, **_kwargs: object) -> None:
+        sample_download.thumbnail_ext = "jpg"
 
+    mock_handle_success.side_effect = set_thumbnail_ext
+
+    result = await downloader.download_artifacts(
+        sample_download, sample_feed_config, DownloadArtifact.ALL
+    )
+
+    assert result.media_downloaded is True
+    assert result.thumbnail_downloaded is True
+    assert result.transcript_downloaded is None
     mock_ytdlp_wrapper.download_media_to_file.assert_called_once_with(
         sample_download,
         sample_feed_config.yt_args,
@@ -321,13 +332,13 @@ async def test_process_single_download_success_flow(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_process_single_download_ytdlp_failure_raises_downloader_error(
+async def test_download_artifacts_all_ytdlp_failure_returns_failure(
     downloader: Downloader,
     mock_ytdlp_wrapper: MagicMock,
     sample_download: Download,
     sample_feed_config: FeedConfig,
 ):
-    """Tests that YtdlpApiError during download raises DownloadError."""
+    """Tests that YtdlpApiError during download returns failure result."""
     original_ytdlp_error = YtdlpApiError(
         message="yt-dlp failed",
         feed_id=sample_download.feed_id,
@@ -336,12 +347,13 @@ async def test_process_single_download_ytdlp_failure_raises_downloader_error(
     )
     mock_ytdlp_wrapper.download_media_to_file.side_effect = original_ytdlp_error
 
-    with pytest.raises(DownloadError) as exc_info:
-        await downloader._process_single_download(sample_download, sample_feed_config)
+    result = await downloader.download_artifacts(
+        sample_download, sample_feed_config, DownloadArtifact.ALL
+    )
 
-    assert exc_info.value.feed_id == sample_download.feed_id
-    assert exc_info.value.download_id == sample_download.id
-    assert exc_info.value.__cause__ is original_ytdlp_error
+    assert result.all_succeeded is False
+    assert result.media_downloaded is False
+    assert len(result.errors) == 1
     downloader.download_db.set_download_logs.assert_awaited_once_with(  # type: ignore[attr-defined] this is an AsyncMock
         feed_id=sample_download.feed_id,
         download_id=sample_download.id,
@@ -389,30 +401,31 @@ async def test_download_queued_db_fetch_error_raises_downloader_error(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-@patch.object(Downloader, "_process_single_download", new_callable=AsyncMock)
+@patch.object(Downloader, "download_artifacts", new_callable=AsyncMock)
 async def test_download_queued_processes_items_and_counts_success(
-    mock_process_single: AsyncMock,
+    mock_download_artifacts: AsyncMock,
     downloader: Downloader,
     mock_download_db: MagicMock,
     sample_feed_config: FeedConfig,
-    sample_download: Download,  # Re-use for creating a list
+    sample_download: Download,
 ):
     """Tests download_queued iterates and counts successful processing."""
     download2 = sample_download.model_copy(update={"id": "test_dl_id_2"})
     queued_items = [sample_download, download2]
     mock_download_db.get_downloads_by_status.return_value = queued_items
 
-    # _process_single_download does not raise for success
-    mock_process_single.return_value = None
+    mock_download_artifacts.return_value = ArtifactDownloadResult(
+        media_downloaded=True, thumbnail_downloaded=True, transcript_downloaded=True
+    )
 
     success, failure = await downloader.download_queued("test_feed", sample_feed_config)
 
     assert success == 2
     assert failure == 0
-    mock_process_single.assert_has_calls(
+    mock_download_artifacts.assert_has_calls(
         [
-            call(sample_download, sample_feed_config, None),
-            call(download2, sample_feed_config, None),
+            call(sample_download, sample_feed_config, DownloadArtifact.ALL, None),
+            call(download2, sample_feed_config, DownloadArtifact.ALL, None),
         ],
         any_order=False,
     )
@@ -420,30 +433,34 @@ async def test_download_queued_processes_items_and_counts_success(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-@patch.object(Downloader, "_process_single_download", new_callable=AsyncMock)
+@patch.object(Downloader, "download_artifacts", new_callable=AsyncMock)
+@patch.object(Downloader, "_handle_download_failure", new_callable=AsyncMock)
 async def test_download_queued_processes_items_and_counts_failures(
-    mock_process_single: AsyncMock,
+    mock_handle_failure: AsyncMock,
+    mock_download_artifacts: AsyncMock,
     downloader: Downloader,
     mock_download_db: MagicMock,
     sample_feed_config: FeedConfig,
     sample_download: Download,
 ):
-    """Tests download_queued iterates and counts failures from _process_single_download."""
+    """Tests download_queued iterates and counts failures from download_artifacts."""
     download2 = sample_download.model_copy(update={"id": "test_dl_id_2"})
     queued_items = [sample_download, download2]
     mock_download_db.get_downloads_by_status.return_value = queued_items
 
-    # Simulate _process_single_download raising DownloadError for all items
-    mock_process_single.side_effect = DownloadError("Processing failed")
+    failure_error = DownloadError("Processing failed")
+    mock_download_artifacts.return_value = ArtifactDownloadResult(
+        media_downloaded=False, errors=[failure_error]
+    )
 
     success, failure = await downloader.download_queued("test_feed", sample_feed_config)
 
     assert success == 0
     assert failure == 2
-    mock_process_single.assert_has_calls(
+    mock_download_artifacts.assert_has_calls(
         [
-            call(sample_download, sample_feed_config, None),
-            call(download2, sample_feed_config, None),
+            call(sample_download, sample_feed_config, DownloadArtifact.ALL, None),
+            call(download2, sample_feed_config, DownloadArtifact.ALL, None),
         ],
         any_order=False,
     )
@@ -451,9 +468,11 @@ async def test_download_queued_processes_items_and_counts_failures(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-@patch.object(Downloader, "_process_single_download", new_callable=AsyncMock)
+@patch.object(Downloader, "download_artifacts", new_callable=AsyncMock)
+@patch.object(Downloader, "_handle_download_failure", new_callable=AsyncMock)
 async def test_download_queued_mixed_success_and_failure(
-    mock_process_single: AsyncMock,
+    mock_handle_failure: AsyncMock,
+    mock_download_artifacts: AsyncMock,
     downloader: Downloader,
     mock_download_db: MagicMock,
     sample_feed_config: FeedConfig,
@@ -466,22 +485,29 @@ async def test_download_queued_mixed_success_and_failure(
     queued_items = [dl1, dl2, dl3]
     mock_download_db.get_downloads_by_status.return_value = queued_items
 
-    # dl1 succeeds, dl2 fails, dl3 succeeds
-    mock_process_single.side_effect = [
-        None,  # dl1 success
-        DownloadError("dl2 failed"),  # dl2 failure
-        None,  # dl3 success
+    success_result = ArtifactDownloadResult(
+        media_downloaded=True, thumbnail_downloaded=True, transcript_downloaded=True
+    )
+    failure_error = DownloadError("dl2 failed")
+    failure_result = ArtifactDownloadResult(
+        media_downloaded=False, errors=[failure_error]
+    )
+
+    mock_download_artifacts.side_effect = [
+        success_result,
+        failure_result,
+        success_result,
     ]
 
     success, failure = await downloader.download_queued("test_feed", sample_feed_config)
 
     assert success == 2
     assert failure == 1
-    mock_process_single.assert_has_calls(
+    mock_download_artifacts.assert_has_calls(
         [
-            call(dl1, sample_feed_config, None),
-            call(dl2, sample_feed_config, None),
-            call(dl3, sample_feed_config, None),
+            call(dl1, sample_feed_config, DownloadArtifact.ALL, None),
+            call(dl2, sample_feed_config, DownloadArtifact.ALL, None),
+            call(dl3, sample_feed_config, DownloadArtifact.ALL, None),
         ],
         any_order=False,
     )
@@ -507,9 +533,9 @@ def feed_config_with_delay() -> FeedConfig:
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-@patch.object(Downloader, "_process_single_download", new_callable=AsyncMock)
+@patch.object(Downloader, "download_artifacts", new_callable=AsyncMock)
 async def test_download_queued_with_delay_filters_recent_downloads(
-    mock_process_single: AsyncMock,
+    mock_download_artifacts: AsyncMock,
     downloader: Downloader,
     mock_download_db: MagicMock,
     feed_config_with_delay: FeedConfig,
@@ -518,17 +544,16 @@ async def test_download_queued_with_delay_filters_recent_downloads(
     """Downloads published within the delay window are skipped."""
     now = datetime.now(UTC)
 
-    # Create downloads with different publication times
     old_download = sample_download.model_copy(
         update={
             "id": "old_dl",
-            "published": now - timedelta(hours=48),  # 48 hours ago - should process
+            "published": now - timedelta(hours=48),
         }
     )
     recent_download = sample_download.model_copy(
         update={
             "id": "recent_dl",
-            "published": now - timedelta(hours=12),  # 12 hours ago - should skip
+            "published": now - timedelta(hours=12),
         }
     )
 
@@ -536,25 +561,26 @@ async def test_download_queued_with_delay_filters_recent_downloads(
         old_download,
         recent_download,
     ]
-    mock_process_single.return_value = None
+    mock_download_artifacts.return_value = ArtifactDownloadResult(
+        media_downloaded=True, thumbnail_downloaded=True, transcript_downloaded=True
+    )
 
     success, failure = await downloader.download_queued(
         "test_feed", feed_config_with_delay
     )
 
-    # Only the old download should be processed
     assert success == 1
     assert failure == 0
-    mock_process_single.assert_called_once_with(
-        old_download, feed_config_with_delay, None
+    mock_download_artifacts.assert_called_once_with(
+        old_download, feed_config_with_delay, DownloadArtifact.ALL, None
     )
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-@patch.object(Downloader, "_process_single_download", new_callable=AsyncMock)
+@patch.object(Downloader, "download_artifacts", new_callable=AsyncMock)
 async def test_download_queued_with_delay_at_boundary(
-    mock_process_single: AsyncMock,
+    mock_download_artifacts: AsyncMock,
     downloader: Downloader,
     mock_download_db: MagicMock,
     feed_config_with_delay: FeedConfig,
@@ -563,7 +589,6 @@ async def test_download_queued_with_delay_at_boundary(
     """Downloads exactly at the delay boundary are processed."""
     now = datetime.now(UTC)
 
-    # Download published exactly 24 hours ago (at boundary)
     boundary_download = sample_download.model_copy(
         update={
             "id": "boundary_dl",
@@ -572,13 +597,14 @@ async def test_download_queued_with_delay_at_boundary(
     )
 
     mock_download_db.get_downloads_by_status.return_value = [boundary_download]
-    mock_process_single.return_value = None
+    mock_download_artifacts.return_value = ArtifactDownloadResult(
+        media_downloaded=True, thumbnail_downloaded=True, transcript_downloaded=True
+    )
 
     success, failure = await downloader.download_queued(
         "test_feed", feed_config_with_delay
     )
 
-    # Should be processed since it's at the boundary
     assert success == 1
     assert failure == 0
 
@@ -613,33 +639,34 @@ async def test_download_queued_with_delay_all_deferred(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-@patch.object(Downloader, "_process_single_download", new_callable=AsyncMock)
+@patch.object(Downloader, "download_artifacts", new_callable=AsyncMock)
 async def test_download_queued_without_delay_processes_all(
-    mock_process_single: AsyncMock,
+    mock_download_artifacts: AsyncMock,
     downloader: Downloader,
     mock_download_db: MagicMock,
-    sample_feed_config: FeedConfig,  # No download_delay
+    sample_feed_config: FeedConfig,
     sample_download: Download,
 ):
     """Without download_delay configured, all downloads are processed."""
     now = datetime.now(UTC)
 
-    # Even very recent downloads should be processed
     recent_download = sample_download.model_copy(
         update={
             "id": "recent_dl",
-            "published": now - timedelta(minutes=5),  # 5 minutes ago
+            "published": now - timedelta(minutes=5),
         }
     )
 
     mock_download_db.get_downloads_by_status.return_value = [recent_download]
-    mock_process_single.return_value = None
+    mock_download_artifacts.return_value = ArtifactDownloadResult(
+        media_downloaded=True, thumbnail_downloaded=True, transcript_downloaded=True
+    )
 
     success, failure = await downloader.download_queued("test_feed", sample_feed_config)
 
     assert success == 1
     assert failure == 0
-    mock_process_single.assert_called_once()
+    mock_download_artifacts.assert_called_once()
 
 
 # --- Tests for download_thumbnail_for_existing_download ---
@@ -647,24 +674,24 @@ async def test_download_queued_without_delay_processes_all(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_download_thumbnail_for_existing_download_success(
+async def test_download_artifacts_thumbnail_only_success(
     downloader: Downloader,
     mock_ytdlp_wrapper: MagicMock,
     mock_download_db: MagicMock,
     mock_file_manager: MagicMock,
     sample_download: Download,
+    sample_feed_config: FeedConfig,
 ):
-    """Tests successful thumbnail download updates database and returns True."""
-    yt_args = ["--format", "best"]
+    """Tests successful thumbnail-only download updates database and returns True."""
     mock_file_manager.image_exists.return_value = True
 
-    result = await downloader.download_thumbnail_for_existing_download(
-        sample_download, yt_args
+    result = await downloader.download_artifacts(
+        sample_download, sample_feed_config, DownloadArtifact.THUMBNAIL
     )
 
-    assert result is True
+    assert result.thumbnail_downloaded is True
     mock_ytdlp_wrapper.download_media_thumbnail.assert_awaited_once_with(
-        sample_download, yt_args, None
+        sample_download, sample_feed_config.yt_args, None
     )
     mock_file_manager.image_exists.assert_awaited_once_with(
         sample_download.feed_id, sample_download.id, "jpg"
@@ -676,47 +703,47 @@ async def test_download_thumbnail_for_existing_download_success(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_download_thumbnail_for_existing_download_ytdlp_failure(
+async def test_download_artifacts_thumbnail_only_ytdlp_failure(
     downloader: Downloader,
     mock_ytdlp_wrapper: MagicMock,
     mock_download_db: MagicMock,
     sample_download: Download,
+    sample_feed_config: FeedConfig,
 ):
     """Tests yt-dlp failure returns False without updating database."""
-    yt_args = ["--format", "best"]
     mock_ytdlp_wrapper.download_media_thumbnail.side_effect = YtdlpApiError(
         message="Thumbnail fetch failed",
         feed_id=sample_download.feed_id,
         download_id=sample_download.id,
     )
 
-    result = await downloader.download_thumbnail_for_existing_download(
-        sample_download, yt_args
+    result = await downloader.download_artifacts(
+        sample_download, sample_feed_config, DownloadArtifact.THUMBNAIL
     )
 
-    assert result is False
+    assert result.thumbnail_downloaded is False
     mock_ytdlp_wrapper.download_media_thumbnail.assert_awaited_once()
     mock_download_db.set_thumbnail_extension.assert_not_awaited()
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_download_thumbnail_for_existing_download_file_not_found(
+async def test_download_artifacts_thumbnail_only_file_not_found(
     downloader: Downloader,
     mock_ytdlp_wrapper: MagicMock,
     mock_download_db: MagicMock,
     mock_file_manager: MagicMock,
     sample_download: Download,
+    sample_feed_config: FeedConfig,
 ):
     """Tests returns False when thumbnail file not found after download."""
-    yt_args = ["--format", "best"]
     mock_file_manager.image_exists.return_value = False
 
-    result = await downloader.download_thumbnail_for_existing_download(
-        sample_download, yt_args
+    result = await downloader.download_artifacts(
+        sample_download, sample_feed_config, DownloadArtifact.THUMBNAIL
     )
 
-    assert result is False
+    assert result.thumbnail_downloaded is False
     mock_ytdlp_wrapper.download_media_thumbnail.assert_awaited_once()
     mock_file_manager.image_exists.assert_awaited_once()
     mock_download_db.set_thumbnail_extension.assert_not_awaited()
@@ -724,26 +751,28 @@ async def test_download_thumbnail_for_existing_download_file_not_found(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_download_thumbnail_for_existing_download_db_failure(
+async def test_download_artifacts_thumbnail_only_db_failure(
     downloader: Downloader,
     mock_ytdlp_wrapper: MagicMock,
     mock_download_db: MagicMock,
     mock_file_manager: MagicMock,
     sample_download: Download,
+    sample_feed_config: FeedConfig,
 ):
-    """Tests database failure raises DownloadError."""
-    yt_args = ["--format", "best"]
+    """Tests database failure returns error in result."""
     mock_file_manager.image_exists.return_value = True
     db_error = DatabaseOperationError("DB update failed")
     mock_download_db.set_thumbnail_extension.side_effect = db_error
 
-    with pytest.raises(DownloadError) as exc_info:
-        await downloader.download_thumbnail_for_existing_download(
-            sample_download, yt_args
-        )
+    result = await downloader.download_artifacts(
+        sample_download, sample_feed_config, DownloadArtifact.THUMBNAIL
+    )
 
-    assert exc_info.value.__cause__ is db_error
-    assert exc_info.value.feed_id == sample_download.feed_id
-    assert exc_info.value.download_id == sample_download.id
+    assert result.thumbnail_downloaded is False
+    assert len(result.errors) == 1
+    assert isinstance(result.errors[0], DownloadError)
+    assert result.errors[0].__cause__ is db_error
+    assert result.errors[0].feed_id == sample_download.feed_id
+    assert result.errors[0].download_id == sample_download.id
     mock_ytdlp_wrapper.download_media_thumbnail.assert_awaited_once()
     mock_download_db.set_thumbnail_extension.assert_awaited_once()

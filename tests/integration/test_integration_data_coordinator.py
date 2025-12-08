@@ -697,7 +697,9 @@ async def test_refresh_download_metadata_with_thumbnail_refresh(
 
     (
         updated_download,
+        _,
         thumbnail_refreshed,
+        transcript_refreshed,
     ) = await data_coordinator.refresh_download_metadata(
         feed_id=feed_id,
         download_id=BIG_BUCK_BUNNY_VIDEO_ID,
@@ -707,6 +709,7 @@ async def test_refresh_download_metadata_with_thumbnail_refresh(
     assert updated_download.title == BIG_BUCK_BUNNY_TITLE
     assert updated_download.remote_thumbnail_url is not None
     assert thumbnail_refreshed is True
+    assert transcript_refreshed is None  # No transcript configured
 
     refreshed_download = await download_db.get_download_by_id(
         feed_id, BIG_BUCK_BUNNY_VIDEO_ID
@@ -744,7 +747,9 @@ async def test_refresh_download_metadata_thumbnail_unchanged(
 
     (
         updated_download,
+        _,
         thumbnail_refreshed,
+        transcript_refreshed,
     ) = await data_coordinator.refresh_download_metadata(
         feed_id=feed_id,
         download_id=BIG_BUCK_BUNNY_VIDEO_ID,
@@ -752,4 +757,6 @@ async def test_refresh_download_metadata_thumbnail_unchanged(
     )
 
     assert updated_download.remote_thumbnail_url == original_thumbnail_url
-    assert thumbnail_refreshed is False
+    # thumbnail_refreshed is None because URL didn't change (not False)
+    assert thumbnail_refreshed is None
+    assert transcript_refreshed is None

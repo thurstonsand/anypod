@@ -384,7 +384,7 @@ def test_merge_download_metadata_or_pattern_fields():
         status=DownloadStatus.UPCOMING,
     )
 
-    result = merge_download_metadata(existing, fetched)
+    result, changed_fields = merge_download_metadata(existing, fetched)
 
     # All 'or' pattern fields should preserve existing values when fetched is falsy
     assert result.source_url == "https://example.com/original"
@@ -394,6 +394,7 @@ def test_merge_download_metadata_or_pattern_fields():
     assert result.mime_type == "video/mp4"
     assert result.filesize == 1000
     assert result.duration == 120
+    assert changed_fields == []
 
 
 @pytest.mark.unit
@@ -426,7 +427,7 @@ def test_merge_download_metadata_or_pattern_fields_overwrites_when_truthy():
         status=DownloadStatus.UPCOMING,
     )
 
-    result = merge_download_metadata(existing, fetched)
+    result, changed_fields = merge_download_metadata(existing, fetched)
 
     # Core 'or' pattern fields should use fetched values
     assert result.source_url == "https://example.com/new"
@@ -438,6 +439,7 @@ def test_merge_download_metadata_or_pattern_fields_overwrites_when_truthy():
     assert result.mime_type == "video/mp4"
     assert result.filesize == 1000
     assert result.duration == 120
+    assert set(changed_fields) == {"source_url", "title", "published"}
 
 
 @pytest.mark.unit
@@ -474,11 +476,12 @@ def test_merge_download_metadata_is_not_none_pattern_fields():
         quality_info="",  # Empty string should overwrite
     )
 
-    result = merge_download_metadata(existing, fetched)
+    result, changed_fields = merge_download_metadata(existing, fetched)
 
     # Empty strings should overwrite for 'is not None' pattern fields
     assert result.description == ""
     assert result.quality_info == ""
+    assert set(changed_fields) == {"description", "quality_info"}
 
 
 @pytest.mark.unit
@@ -515,11 +518,12 @@ def test_merge_download_metadata_is_not_none_preserves_on_none():
         quality_info=None,  # None should preserve existing
     )
 
-    result = merge_download_metadata(existing, fetched)
+    result, changed_fields = merge_download_metadata(existing, fetched)
 
     # None should preserve existing values
     assert result.description == "Original description"
     assert result.quality_info == "1080p"
+    assert changed_fields == []
 
 
 @pytest.mark.unit
@@ -556,7 +560,7 @@ def test_merge_download_metadata_thumbnail_fields():
         thumbnail_ext="png",  # This should be ignored, not part of merge
     )
 
-    result = merge_download_metadata(existing, fetched)
+    result, _ = merge_download_metadata(existing, fetched)
 
     # remote_thumbnail_url should be updated
     assert result.remote_thumbnail_url == "https://example.com/new_thumb.jpg"
@@ -596,7 +600,7 @@ def test_merge_download_metadata_thumbnail_preserves_on_none():
         remote_thumbnail_url=None,
     )
 
-    result = merge_download_metadata(existing, fetched)
+    result, _ = merge_download_metadata(existing, fetched)
 
     # Should preserve existing remote_thumbnail_url
     assert result.remote_thumbnail_url == "https://example.com/thumb.jpg"
@@ -634,7 +638,7 @@ def test_merge_download_metadata_thumbnail_overwrites_with_empty_string():
         remote_thumbnail_url="",
     )
 
-    result = merge_download_metadata(existing, fetched)
+    result, _ = merge_download_metadata(existing, fetched)
 
     # Empty string should overwrite (uses 'is not None' pattern)
     assert result.remote_thumbnail_url == ""
@@ -676,7 +680,7 @@ def test_merge_download_metadata_transcript_fields():
         transcript_source=TranscriptSource.AUTO,
     )
 
-    result = merge_download_metadata(existing, fetched)
+    result, _ = merge_download_metadata(existing, fetched)
 
     # All transcript fields should be updated
     assert result.transcript_ext == "srt"
@@ -720,7 +724,7 @@ def test_merge_download_metadata_transcript_preserves_on_none():
         transcript_source=None,
     )
 
-    result = merge_download_metadata(existing, fetched)
+    result, _ = merge_download_metadata(existing, fetched)
 
     # All transcript fields should preserve existing values
     assert result.transcript_ext == "vtt"
@@ -762,7 +766,7 @@ def test_merge_download_metadata_transcript_overwrites_with_empty_string():
         transcript_lang="",
     )
 
-    result = merge_download_metadata(existing, fetched)
+    result, _ = merge_download_metadata(existing, fetched)
 
     # Empty strings should overwrite
     assert result.transcript_ext == ""
@@ -805,7 +809,7 @@ def test_merge_download_metadata_status_fields_not_modified():
         download_logs=None,
     )
 
-    result = merge_download_metadata(existing, fetched)
+    result, _ = merge_download_metadata(existing, fetched)
 
     # Status and error fields should be preserved from existing
     assert result.status == DownloadStatus.ERROR
@@ -856,7 +860,7 @@ def test_merge_download_metadata_timestamp_fields_not_modified():
         downloaded_at=datetime(2024, 12, 3, tzinfo=UTC),
     )
 
-    result = merge_download_metadata(existing, fetched)
+    result, _ = merge_download_metadata(existing, fetched)
 
     # Timestamp fields should be preserved from existing
     assert result.discovered_at == discovered_time
@@ -897,7 +901,7 @@ def test_merge_download_metadata_does_not_mutate_existing():
         description="New description",
     )
 
-    result = merge_download_metadata(existing, fetched)
+    result, _ = merge_download_metadata(existing, fetched)
 
     # Existing should remain unchanged
     assert existing.title == "Original Title"
@@ -960,7 +964,7 @@ def test_merge_download_metadata_all_field_categories():
         transcript_source=TranscriptSource.AUTO,
     )
 
-    result = merge_download_metadata(existing, fetched)
+    result, _ = merge_download_metadata(existing, fetched)
 
     # Core metadata - all updated
     assert result.source_url == "https://example.com/new"
