@@ -6,10 +6,12 @@ on:
 
 jobs:
   claude-review:
+    # TEMPORARILY DISABLED: Testing CodeRabbit for AI reviews
+    if: false
     # Skip Claude Code review for bot-initiated PRs (Dependabot, Renovate, etc.)
     # Bots don't have access to repository secrets required for Claude Code OAuth
     # GitHub bots follow the naming convention: <name>[bot]
-    if: ${{ !endsWith(github.actor, '[bot]') }}
+    # Original condition: if: ${{ !endsWith(github.actor, '[bot]') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
