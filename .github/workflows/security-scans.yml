@@ -88,3 +88,4 @@ jobs:
         if: always()
         with:
           sarif_file: ${{ steps.scan.outputs.sarif }}
+          category: grype-${{ matrix.platform }}
