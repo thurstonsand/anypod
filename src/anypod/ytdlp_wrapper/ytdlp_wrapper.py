@@ -624,18 +624,26 @@ class YtdlpWrapper:
         for feeds that already have downloaded media. The caller must determine
         transcript_source via metadata refresh before calling this method.
 
+        Delegates to the appropriate handler's download_transcript() method,
+        which uses the best approach for each source:
+        - YouTube: Uses youtube-transcript-api for clean VTT output
+        - Others: Uses yt-dlp subtitle download
+
         Args:
             feed_id: The feed identifier.
             download_id: The download identifier.
             source_url: The source URL of the video.
             transcript_lang: Language code for subtitles (e.g., "en").
             transcript_source: Source type (creator or auto-generated) determined by caller.
-            cookies_path: Path to cookies.txt file for authentication.
+            cookies_path: Path to cookies.txt file for authentication, or None.
 
         Returns:
             Extension string ("vtt") if transcript was downloaded, None otherwise.
         """
-        transcripts_dir = await self._paths.feed_transcripts_dir(feed_id)
+        output_path = await self._paths.transcript_path(
+            feed_id, download_id, transcript_lang, "vtt"
+        )
+
         log_params: dict[str, Any] = {
             "feed_id": feed_id,
             "download_id": download_id,
@@ -644,35 +652,26 @@ class YtdlpWrapper:
             "transcript_source": str(transcript_source),
         }
 
-        logger.debug(
-            "Requesting transcript-only download via yt-dlp.", extra=log_params
+        logger.debug("Requesting transcript-only download.", extra=log_params)
+
+        handler = self._handler_selector.select(source_url)
+        success = await handler.download_transcript(
+            download_id=download_id,
+            source_url=source_url,
+            transcript_lang=transcript_lang,
+            transcript_source=transcript_source,
+            output_path=output_path,
+            cookies_path=cookies_path,
         )
 
-        args = (
-            YtdlpArgs()
-            .quiet()
-            .no_warnings()
-            .skip_download()
-            .sub_format("vtt")
-            .sub_langs(transcript_lang)
-            .convert_subs("vtt")
-            .paths_temp(transcripts_dir)
-            .paths_subtitle(transcripts_dir)
-            .output_subtitle(f"{download_id}.%(ext)s")
-        )
-        # Only request the specific subtitle type detected
-        if transcript_source == TranscriptSource.CREATOR:
-            args = args.write_subs()
-        elif transcript_source == TranscriptSource.AUTO:
-            args = args.write_auto_subs()
+        if not success:
+            logger.debug(
+                "Handler reported transcript download failed or unavailable.",
+                extra=log_params,
+            )
+            return None
 
-        args = self._pot_extractor_args(args)
-
-        if cookies_path:
-            args = args.cookies(cookies_path)
-
-        await YtdlpCore.download(args, source_url)
-
+        # Verify file exists and normalize language code casing if needed
         transcript_path = await self._find_and_normalize_transcript(
             feed_id, download_id, transcript_lang
         )
