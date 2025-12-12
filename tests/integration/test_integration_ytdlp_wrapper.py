@@ -31,7 +31,7 @@ TEST_URLS_SINGLE_AND_PLAYLIST = [
     ),
 ]
 
-# (url_type, url, expected_source_type, expected_feed_title_contains, expected_resolved_url)
+# (url_type, url, expected_source_type, expected_feed_title_contains, expected_resolved_url, transcript_source)
 TEST_URLS_PARAMS = [
     (
         "video_short_link",
@@ -39,6 +39,7 @@ TEST_URLS_PARAMS = [
         SourceType.SINGLE_VIDEO,
         "Big Buck Bunny",
         "https://www.youtube.com/watch?v=aqz-KE-bpKQ",
+        TranscriptSource.NOT_AVAILABLE,
     ),
     (
         "video_in_playlist_link",
@@ -46,6 +47,7 @@ TEST_URLS_PARAMS = [
         SourceType.PLAYLIST,
         "single video playlist",
         "https://www.youtube.com/playlist?list=PLt5yu3-wZAlSLRHmI1qNm0wjyVNWw1pCU",
+        TranscriptSource.NOT_AVAILABLE,
     ),
     (
         "channel",
@@ -53,6 +55,7 @@ TEST_URLS_PARAMS = [
         SourceType.CHANNEL,
         "cole-dlp-test-acc",
         "https://www.youtube.com/@coletdjnz/videos",
+        TranscriptSource.NOT_AVAILABLE,
     ),
     (
         "channel_shorts_tab",
@@ -60,6 +63,7 @@ TEST_URLS_PARAMS = [
         SourceType.PLAYLIST,
         "cole-dlp-test-acc",
         "https://www.youtube.com/@coletdjnz/shorts",
+        TranscriptSource.NOT_AVAILABLE,
     ),
     (
         "channel_videos_tab",
@@ -67,6 +71,7 @@ TEST_URLS_PARAMS = [
         SourceType.PLAYLIST,
         "cole-dlp-test-acc",
         "https://www.youtube.com/@coletdjnz/videos",
+        TranscriptSource.NOT_AVAILABLE,
     ),
     (
         "playlist",
@@ -74,13 +79,15 @@ TEST_URLS_PARAMS = [
         SourceType.PLAYLIST,
         "single video playlist",
         "https://www.youtube.com/playlist?list=PLt5yu3-wZAlSLRHmI1qNm0wjyVNWw1pCU&si=ZSBBgcLWYf2bxd5l",
+        TranscriptSource.NOT_AVAILABLE,
     ),
     (
-        "video_standard_link",
+        "youtube_video_with_auto_subs",
         "https://www.youtube.com/watch?v=ZY6TS8Q4C8s",
         SourceType.SINGLE_VIDEO,
         "VFX Artists React to Bad and Great CGi 173",
         "https://www.youtube.com/watch?v=ZY6TS8Q4C8s",
+        TranscriptSource.AUTO,
     ),
     (
         "twitter_single_video",
@@ -88,6 +95,15 @@ TEST_URLS_PARAMS = [
         SourceType.SINGLE_VIDEO,
         "Neil Patrick Harris",
         "https://x.com/ActuallyNPH/status/560049149836808192",
+        TranscriptSource.NOT_AVAILABLE,
+    ),
+    (
+        "twitter_video_with_subs",
+        "https://x.com/jakkuh_t/status/1999932135608811618",
+        SourceType.SINGLE_VIDEO,
+        "Jake Tivy",
+        "https://x.com/jakkuh_t/status/1999932135608811618",
+        TranscriptSource.CREATOR,
     ),
 ]
 
@@ -98,7 +114,7 @@ INVALID_VIDEO_URL = "https://www.youtube.com/watch?v=thisvideodoesnotexistxyz"
 @pytest.mark.integration
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "url_type, url, expected_source_type, expected_title_contains, expected_resolved_url",
+    "url_type, url, expected_source_type, expected_title_contains, expected_resolved_url, transcript_source",
     TEST_URLS_PARAMS,
 )
 async def test_discover_feed_properties(
@@ -108,6 +124,7 @@ async def test_discover_feed_properties(
     expected_source_type: SourceType,
     expected_title_contains: str,
     expected_resolved_url: str,
+    transcript_source: TranscriptSource,
     cookies_path: Path | None,
 ):
     """Tests discover_feed_properties method for various URL types.
@@ -163,7 +180,7 @@ BIG_BUCK_BUNNY_DOWNLOAD = Download(
 @pytest.mark.integration
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "url_type, url, expected_source_type, expected_title_contains, expected_resolved_url",
+    "url_type, url, expected_source_type, expected_title_contains, expected_resolved_url, transcript_source",
     TEST_URLS_PARAMS,
 )
 async def test_fetch_metadata_success(
@@ -174,6 +191,7 @@ async def test_fetch_metadata_success(
     expected_source_type: SourceType,
     expected_title_contains: str,
     expected_resolved_url: str,
+    transcript_source: TranscriptSource,
     cookies_path: Path | None,
 ):
     """Tests successful metadata fetching for various URL types.
@@ -242,7 +260,7 @@ async def test_fetch_metadata_success(
 @pytest.mark.integration
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "url_type, url, expected_source_type, expected_title_contains, expected_resolved_url",
+    "url_type, url, expected_source_type, expected_title_contains, expected_resolved_url, transcript_source",
     TEST_URLS_PARAMS,
 )
 async def test_download_feed_thumbnail_success(
@@ -253,6 +271,7 @@ async def test_download_feed_thumbnail_success(
     expected_source_type: SourceType,
     expected_title_contains: str,
     expected_resolved_url: str,
+    transcript_source: TranscriptSource,
     cookies_path: Path | None,
 ):
     """Tests successful feed thumbnail downloading for various URL types."""
@@ -293,7 +312,7 @@ async def test_download_feed_thumbnail_success(
 @pytest.mark.integration
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "url_type, url, expected_source_type, expected_title_contains, expected_resolved_url",
+    "url_type, url, expected_source_type, expected_title_contains, expected_resolved_url, transcript_source",
     TEST_URLS_PARAMS,
 )
 async def test_thumbnail_format_validation(
@@ -303,6 +322,7 @@ async def test_thumbnail_format_validation(
     expected_source_type: SourceType,
     expected_title_contains: str,
     expected_resolved_url: str,
+    transcript_source: TranscriptSource,
     cookies_path: Path | None,
 ):
     """Tests that thumbnail URLs returned are in valid PNG or JPG format.
@@ -344,6 +364,68 @@ async def test_thumbnail_format_validation(
     assert download.remote_thumbnail_url.startswith("http"), (
         f"Thumbnail should be a valid HTTP URL, got: {download.remote_thumbnail_url}"
     )
+
+
+# Filter TEST_URLS_PARAMS to only entries with transcripts available
+TEST_URLS_WITH_TRANSCRIPTS = [
+    entry for entry in TEST_URLS_PARAMS if entry[5] != TranscriptSource.NOT_AVAILABLE
+]
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "url_type, url, expected_source_type, expected_title_contains, expected_resolved_url, transcript_source",
+    TEST_URLS_WITH_TRANSCRIPTS,
+)
+async def test_download_transcript_only(
+    path_manager: PathManager,
+    ytdlp_wrapper: YtdlpWrapper,
+    url_type: str,
+    url: str,
+    expected_source_type: SourceType,
+    expected_title_contains: str,
+    expected_resolved_url: str,
+    transcript_source: TranscriptSource,
+    cookies_path: Path | None,
+) -> None:
+    """Verifies transcript download via download_transcript_only returns valid VTT content."""
+    feed_id = f"test_transcript_{url_type}"
+
+    downloads = await ytdlp_wrapper.fetch_new_downloads_metadata(
+        feed_id=feed_id,
+        source_type=expected_source_type,
+        source_url=url,
+        resolved_url=expected_resolved_url,
+        user_yt_cli_args=YT_DLP_MINIMAL_ARGS,
+        keep_last=1,
+        cookies_path=cookies_path,
+    )
+
+    assert len(downloads) == 1, f"Expected 1 download for {url_type}"
+    download = downloads[0]
+
+    result = await ytdlp_wrapper.download_transcript_only(
+        feed_id=feed_id,
+        download_id=download.id,
+        source_url=download.source_url,
+        transcript_lang="en",
+        transcript_source=transcript_source,
+        cookies_path=cookies_path,
+    )
+
+    assert result == "vtt", (
+        f"Expected transcript download to return 'vtt' for {url_type}"
+    )
+
+    transcript_path = await path_manager.transcript_path(
+        feed_id, download.id, "en", "vtt"
+    )
+    assert transcript_path.exists(), f"Expected VTT file at {transcript_path}"
+
+    content = transcript_path.read_text(encoding="utf-8")
+    assert content.startswith("WEBVTT"), "Expected VTT file to start with WEBVTT header"
+    assert "-->" in content, "Expected VTT file to contain timing markers"
 
 
 @pytest.mark.integration
