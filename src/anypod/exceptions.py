@@ -406,3 +406,37 @@ class FFmpegError(AnypodError):
     def __init__(self, message: str, stderr: str | None = None):
         super().__init__(message)
         self.stderr = stderr
+
+
+class YouTubeTranscriptError(AnypodError):
+    """Raised when fetching a transcript from the YouTube Transcript API fails.
+
+    Attributes:
+        video_id: The YouTube video ID associated with the error.
+        lang: The language code requested for the transcript.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        video_id: str | None = None,
+        lang: str | None = None,
+    ):
+        super().__init__(message)
+        self.video_id = video_id
+        self.lang = lang
+
+
+class YouTubeTranscriptUnavailableError(YouTubeTranscriptError):
+    """Raised when transcript is unavailable for a video (disabled, age-restricted, etc.)."""
+
+    def __init__(
+        self,
+        video_id: str | None = None,
+        lang: str | None = None,
+    ):
+        super().__init__(
+            message="Transcript unavailable for video.",
+            video_id=video_id,
+            lang=lang,
+        )
