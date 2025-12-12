@@ -9,16 +9,20 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 import logging
+from pathlib import Path
 from typing import Any, NoReturn
 
 from ...db.types import Download, DownloadStatus, Feed, SourceType, TranscriptSource
 from ...exceptions import (
+    YouTubeTranscriptError,
+    YtdlpApiError,
     YtdlpDataError,
     YtdlpDownloadFilteredOutError,
     YtdlpFieldInvalidError,
     YtdlpFieldMissingError,
 )
 from ...mimetypes import mimetypes
+from .. import youtube_transcript
 from ..core import YtdlpArgs, YtdlpCore, YtdlpInfo
 
 logger = logging.getLogger(__name__)
@@ -864,3 +868,44 @@ class YoutubeHandler:
             Unmodified YtdlpArgs.
         """
         return args
+
+    async def download_transcript(
+        self,
+        download_id: str,
+        source_url: str,
+        transcript_lang: str,
+        transcript_source: TranscriptSource,
+        output_path: Path,
+        cookies_path: Path | None = None,
+    ) -> bool:
+        """Download transcript using youtube-transcript-api.
+
+        Uses the youtube-transcript-api library to fetch clean transcripts
+        directly from YouTube's transcript API, avoiding the overlapping
+        cues that appear in yt-dlp's auto-generated subtitle download.
+
+        Args:
+            download_id: The YouTube video ID.
+            source_url: The source URL for the video (unused, download_id is used directly).
+            transcript_lang: Language code for transcripts (e.g., "en").
+            transcript_source: Source type (CREATOR or AUTO).
+            output_path: Full path where the VTT file should be written.
+            cookies_path: Path to cookies.txt file for authentication, or None.
+
+        Returns:
+            True if transcript was downloaded successfully, False otherwise.
+        """
+        try:
+            return await youtube_transcript.download_transcript(
+                video_id=download_id,
+                lang=transcript_lang,
+                source=transcript_source,
+                output_path=output_path,
+                cookies_path=cookies_path,
+            )
+        except YouTubeTranscriptError as e:
+            raise YtdlpApiError(
+                message="YouTube transcript API request failed.",
+                download_id=download_id,
+                url=source_url,
+            ) from e

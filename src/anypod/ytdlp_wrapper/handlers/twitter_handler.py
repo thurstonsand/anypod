@@ -9,9 +9,11 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 import logging
+from pathlib import Path
 
 from ...db.types import Download, DownloadStatus, Feed, SourceType, TranscriptSource
 from ...exceptions import (
+    YtdlpApiError,
     YtdlpDataError,
     YtdlpDownloadFilteredOutError,
     YtdlpFieldInvalidError,
@@ -617,3 +619,65 @@ class TwitterHandler:
             Unmodified YtdlpArgs.
         """
         return args
+
+    async def download_transcript(
+        self,
+        download_id: str,
+        source_url: str,
+        transcript_lang: str,
+        transcript_source: TranscriptSource,
+        output_path: Path,
+        cookies_path: Path | None = None,
+    ) -> bool:
+        """Download transcript using yt-dlp subtitle download.
+
+        Uses yt-dlp to download VTT subtitles for Twitter content.
+        Currently Twitter only supports creator-uploaded captions,
+        but this method supports both CREATOR and AUTO sources in case Twitter
+        or yt-dlp add auto-caption support in the future.
+
+        Args:
+            download_id: The Twitter post ID.
+            source_url: The source URL for the post.
+            transcript_lang: Language code for transcripts (e.g., "en").
+            transcript_source: Source type (CREATOR or AUTO).
+            output_path: Full path where the VTT file should be written.
+            cookies_path: Path to cookies.txt file for authentication, or None.
+
+        Returns:
+            True if transcript was downloaded successfully, False otherwise.
+        """
+        transcripts_dir = output_path.parent
+        transcripts_dir.mkdir(parents=True, exist_ok=True)
+
+        args = (
+            YtdlpArgs()
+            .quiet()
+            .no_warnings()
+            .skip_download()
+            .sub_format("vtt")
+            .sub_langs(transcript_lang)
+            .convert_subs("vtt")
+            .paths_temp(transcripts_dir)
+            .paths_subtitle(transcripts_dir)
+            .output_subtitle(f"{download_id}.%(ext)s")
+        )
+
+        if cookies_path is not None:
+            args = args.cookies(cookies_path)
+
+        if transcript_source == TranscriptSource.CREATOR:
+            args = args.write_subs()
+        elif transcript_source == TranscriptSource.AUTO:
+            args = args.write_auto_subs()
+        else:
+            return False
+
+        try:
+            await YtdlpCore.download(args, source_url)
+        except YtdlpApiError as e:
+            e.download_id = download_id
+            e.url = source_url
+            raise
+
+        return output_path.exists()
