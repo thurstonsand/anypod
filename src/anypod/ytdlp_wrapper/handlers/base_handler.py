@@ -5,6 +5,7 @@ implementing source-specific strategies for yt-dlp operations, including
 fetch strategy determination and metadata parsing.
 """
 
+from pathlib import Path
 from typing import Protocol
 
 from ...db.types import Download, Feed, SourceType, TranscriptSource
@@ -134,5 +135,30 @@ class SourceHandlerBase(Protocol):
 
         Returns:
             The same builder instance for chaining.
+        """
+        ...
+
+    async def download_transcript(
+        self,
+        download_id: str,
+        source_url: str,
+        transcript_lang: str,
+        transcript_source: TranscriptSource,
+        output_path: Path,
+    ) -> bool:
+        """Download transcript for a video.
+
+        Downloads the transcript file using the handler's preferred method
+        (YouTube uses transcript API, others use yt-dlp subtitle download).
+
+        Args:
+            download_id: The video/download identifier.
+            source_url: The source URL for the video.
+            transcript_lang: Language code for transcripts (e.g., "en").
+            transcript_source: Source type (creator or auto-generated).
+            output_path: Full path where the VTT file should be written.
+
+        Returns:
+            True if transcript was downloaded successfully, False otherwise.
         """
         ...
