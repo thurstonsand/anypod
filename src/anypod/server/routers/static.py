@@ -1,13 +1,22 @@
 """Static file serving endpoints for RSS feeds and media files."""
 
+from collections.abc import AsyncIterator
 import html
 import logging
+from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import FileResponse, Response
+from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import FileResponse, Response, StreamingResponse
 
+from ...clip_streamer import (
+    generate_clip_filename,
+    get_clip_content_type,
+    parse_timestamp,
+    stream_clip,
+    validate_clip_range,
+)
 from ...db.types import DownloadStatus
-from ...exceptions import DatabaseOperationError, FileOperationError
+from ...exceptions import DatabaseOperationError, FFmpegError, FileOperationError
 from ...mimetypes import mimetypes
 from ..dependencies import (
     DownloadDatabaseDep,
@@ -239,20 +248,36 @@ async def serve_media(
     filename: ValidatedFilename,
     ext: ValidatedExtension,
     file_manager: FileManagerDep,
-) -> FileResponse:
-    """Serve media file for a specific feed and filename.
+    start: str | None = Query(
+        default=None,
+        description="Clip start time (seconds, MM:SS, or HH:MM:SS)",
+        examples=["30", "1:30", "0:01:30"],
+    ),
+    end: str | None = Query(
+        default=None,
+        description="Clip end time (seconds, MM:SS, or HH:MM:SS)",
+        examples=["60", "2:00", "0:02:00"],
+    ),
+) -> FileResponse | StreamingResponse:
+    """Serve media file or clip for a specific feed and filename.
+
+    When both ``start`` and ``end`` query parameters are provided, returns a
+    transcoded clip of the specified time range. The clip is streamed directly
+    from FFmpeg without writing to disk.
 
     Args:
         feed_id: The unique identifier for the feed.
         filename: The media filename to serve.
         ext: The file extension of the media file.
         file_manager: The file manager dependency.
+        start: Clip start time (optional). Accepts seconds, MM:SS, or HH:MM:SS.
+        end: Clip end time (optional). Accepts seconds, MM:SS, or HH:MM:SS.
 
     Returns:
-        File response with media content.
+        File response with full media content, or streaming response with clip.
 
     Raises:
-        HTTPException: If file not found or cannot be served.
+        HTTPException: If file not found, cannot be served, or clip parameters invalid.
     """
     logger.debug(
         "Serving media file",
@@ -265,11 +290,112 @@ async def serve_media(
     except FileOperationError as e:
         raise HTTPException(status_code=500, detail="Internal server error") from e
 
+    # Check if clip parameters are provided
+    if start is not None and end is not None:
+        return await _serve_media_clip(file_path, filename, ext, start, end)
+
+    # If only one clip parameter is provided, that's an error
+    if start is not None or end is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="Both 'start' and 'end' parameters are required for clips",
+        )
+
     return FileResponse(
         path=file_path,
         media_type=mimetypes.guess_type(f"file.{ext}")[0],
         headers={
             "Cache-Control": "public, max-age=86400",  # Cache for 24 hours
+        },
+    )
+
+
+async def _serve_media_clip(
+    file_path: Path,
+    filename: str,
+    ext: str,
+    start: str,
+    end: str,
+) -> StreamingResponse:
+    """Serve a clip of a media file using FFmpeg streaming.
+
+    Args:
+        file_path: Path to the source media file.
+        filename: Original filename (for generating clip filename).
+        ext: File extension.
+        start: Start time string.
+        end: End time string.
+
+    Returns:
+        StreamingResponse with the transcoded clip.
+
+    Raises:
+        HTTPException: If clip parameters are invalid or FFmpeg fails.
+    """
+    # Parse and validate timestamps
+    try:
+        start_seconds = parse_timestamp(start)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid start time: {e}",
+        ) from e
+
+    try:
+        end_seconds = parse_timestamp(end)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid end time: {e}",
+        ) from e
+
+    # Validate the clip range
+    try:
+        clip_range = validate_clip_range(start_seconds, end_seconds)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=str(e),
+        ) from e
+
+    logger.info(
+        "Serving media clip",
+        extra={
+            "file_path": str(file_path),
+            "start": start_seconds,
+            "end": end_seconds,
+            "duration": clip_range.duration_seconds,
+        },
+    )
+
+    # Generate clip filename for Content-Disposition header
+    original_filename = f"{filename}.{ext}"
+    clip_filename = generate_clip_filename(original_filename, clip_range)
+
+    # Get content type for the clip
+    content_type = get_clip_content_type(ext)
+
+    async def clip_generator() -> AsyncIterator[bytes]:
+        """Wrap stream_clip to handle FFmpegError."""
+        try:
+            async for chunk in stream_clip(file_path, clip_range, ext):
+                yield chunk
+        except FFmpegError as e:
+            # Log the error; at this point we've already started streaming
+            # so we can't return an HTTP error. The stream will just end.
+            logger.error(
+                "FFmpeg error during clip streaming",
+                extra={"error": str(e), "stderr": e.stderr},
+            )
+
+    return StreamingResponse(
+        clip_generator(),
+        media_type=content_type,
+        headers={
+            # Short cache since clip URLs are unique per start/end
+            "Cache-Control": "public, max-age=3600",
+            # Suggest filename for downloads
+            "Content-Disposition": f'inline; filename="{clip_filename}"',
         },
     )
 
