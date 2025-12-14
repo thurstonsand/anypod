@@ -82,6 +82,7 @@ jobs:
           image: ${{ steps.build.outputs.imageid }}
           fail-build: true
           severity-cutoff: critical
+          cache-db: true
 
       - name: Upload scan results to GitHub Security
         uses: github/codeql-action/upload-sarif@v4
