@@ -1092,7 +1092,15 @@ class StateReconciler:
         failed_feeds: dict[str, str] = {}  # Track feeds that failed with error summary
 
         # Process all feeds from configuration
-        for feed_id, feed_config in config_feeds.items():
+        total_feeds = len(config_feeds)
+        for idx, (feed_id, feed_config) in enumerate(config_feeds.items(), start=1):
+            logger.info(
+                "Reconciling feed.",
+                extra={
+                    "feed_id": feed_id,
+                    "progress": f"{idx}/{total_feeds}",
+                },
+            )
             processed_feed_ids.add(feed_id)
             db_feed = db_feed_lookup.get(feed_id)
 
@@ -1147,7 +1155,7 @@ class StateReconciler:
                 else:
                     removed_count += 1
 
-        logger.debug(
+        logger.info(
             "State reconciliation completed successfully.",
             extra={
                 "new_feeds": new_count,
