@@ -33,7 +33,7 @@ FROM debian:trixie-slim
 # Cache-busting arg for security updates (changes weekly to force package refresh)
 # Format: YYYY-WW (ISO week number)
 # Updated automatically by update-dockerfile-deps.yml workflow
-ARG CACHE_BUST_WEEK=2026-W01
+ARG CACHE_BUST_WEEK=2026-W02
 
 ARG BGUTIL_POT_PROVIDER_VERSION=1.2.2
 
