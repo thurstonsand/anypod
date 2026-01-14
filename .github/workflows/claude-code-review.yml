@@ -18,7 +18,7 @@ jobs:
       pull-requests: write
       issues: read
       id-token: write
-      actions: read # Required for Claude to read CI results on PRs
+      actions: read
 
     steps:
       - name: Checkout repository
@@ -26,20 +26,28 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: latest
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install project dependencies
+        run: uv sync --locked --all-extras --dev
+
       - name: Run Claude Code Review
         id: claude-review
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           track_progress: true
-
-          # Slash command for automated review
-          prompt: /review
           use_sticky_comment: true
-
-          # allows Claude to read CI results on PRs
           additional_permissions: |
             actions: read
 
+          plugin_marketplaces: "https://github.com/anthropics/claude-plugins-official.git"
+          plugins: "code-review@claude-plugins-official"
+          prompt: "/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}"
           claude_args: |
-            --allowedTools "Bash(ls:*),Bash(rg:*),Bash(grep:*),Bash(uvx --from ast-grep-cli sg:*),Bash(uvx --from ast-grep-cli ast-grep:*),Bash(uv run pytest:*),Bash(uv run ruff:*),Bash(uv run basedpyright:*),Bash(uv run pre-commit:*),Bash(uvx yt-dlp:*),Bash(sqlite3:*),Bash(alembic:*),mcp__github_inline_comment__create_inline_comment,mcp__github_comment__update_claude_comment,Bash(gh pr comment:*)"
+            --allowedTools "Bash(ls:*),Bash(rg:*),Bash(grep:*),Bash(uv:*),Bash(uv:*),Bash(sqlite3:*),Bash(alembic:*),mcp__github_inline_comment__create_inline_comment,mcp__github_comment__update_claude_comment,Bash(gh pr comment:*)"
