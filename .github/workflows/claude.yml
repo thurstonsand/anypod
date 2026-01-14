@@ -41,4 +41,4 @@ jobs:
             actions: read
 
           claude_args: |
-            --allowedTools "Bash(uv run:*),Bash(uvx:*),Bash(rg:*),Bash(grep:*),Bash(sqlite3:*),Bash(alembic:*)"
+            --allowedTools "Bash(uv:*),Bash(uvx:*),Bash(rg:*),Bash(grep:*),Bash(sqlite3:*),Bash(alembic:*)"
