@@ -1,0 +1,8 @@
+# Grype vulnerability scanner configuration
+# https://github.com/anchore/grype#configuration
+
+ignore:
+  - vulnerability: CVE-2026-24515
+    reason: "No fix in Debian trixie yet (expat 2.7.4 released 2026-01-31). Remove when patched."
+    # Review by mid-February
+    until: 2026-02-15
