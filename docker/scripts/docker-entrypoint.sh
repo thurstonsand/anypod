@@ -11,7 +11,7 @@ if [ "$(id -u)" = '0' ]; then
     chown -R "${TARGET_USER_ID}:${TARGET_GROUP_ID}" /config /data /app/bin
 
     # Re-exec this script as the target user
-    exec gosu "${TARGET_USER_ID}:${TARGET_GROUP_ID}" "$0" "$@"
+    exec setpriv --reuid="${TARGET_USER_ID}" --regid="${TARGET_GROUP_ID}" --clear-groups "$0" "$@"
 fi
 
 # Now running as non-root user

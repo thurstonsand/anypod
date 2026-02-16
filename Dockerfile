@@ -40,13 +40,12 @@ ARG BGUTIL_POT_PROVIDER_VERSION=1.2.2
 # Copy deno binary from official image
 COPY --from=denoland/deno:bin /deno /usr/local/bin/deno
 
-# Install curl for health check, ca-certificates for SSL verification, gosu for user switching, and yt-dlp
+# Install curl for health check, ca-certificates for SSL verification, and yt-dlp
 RUN apt-get update && \
     apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
-    gosu \
     ffmpeg && \
     # Install yt-dlp binary into dedicated writable directory
     mkdir -p /app/bin && \
