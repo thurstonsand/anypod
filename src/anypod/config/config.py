@@ -6,7 +6,7 @@ YAML file loading capabilities.
 """
 
 from datetime import timedelta
-from enum import Enum
+from enum import StrEnum
 import logging
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -27,7 +27,7 @@ from .feed_config import FeedConfig
 logger = logging.getLogger(__name__)
 
 
-class DebugMode(str, Enum):
+class DebugMode(StrEnum):
     """Represent available debug modes for the application.
 
     Debug modes provide isolated testing of specific application components
