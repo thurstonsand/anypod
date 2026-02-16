@@ -394,7 +394,7 @@ async def test_download_feed_thumbnail_args(
     try:
         output_index = cmd_list.index("--output")
         output_value = cmd_list[output_index + 1]
-    except (ValueError, IndexError):
+    except ValueError, IndexError:
         pytest.fail("--output flag not found or has no value")
 
     if source_type == SourceType.SINGLE_VIDEO:

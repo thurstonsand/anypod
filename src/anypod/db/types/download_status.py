@@ -1,9 +1,9 @@
 """Download status lifecycle values."""
 
-from enum import Enum
+from enum import StrEnum
 
 
-class DownloadStatus(str, Enum):
+class DownloadStatus(StrEnum):
     """Represent the status of a download in the processing lifecycle.
 
     Indicates the current state of a download item as it progresses through

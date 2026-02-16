@@ -16,6 +16,7 @@ mimetypes.add_type("audio/mp4", ".m4a")
 mimetypes.add_type("audio/flac", ".flac")
 mimetypes.add_type("application/x-subrip", ".srt")
 mimetypes.add_type("text/vtt", ".vtt")
+mimetypes.add_type("video/x-matroska", ".mkv")
 
 # Re-export mimetypes module for use throughout the application
 # This ensures the custom mappings are applied everywhere

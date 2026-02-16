@@ -1,13 +1,13 @@
 """Enumeration of podcast types."""
 
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import GetCoreSchemaHandler
 from pydantic_core import CoreSchema, core_schema
 
 
-class PodcastType(str, Enum):
+class PodcastType(StrEnum):
     """Represent the type of podcast for iTunes metadata.
 
     Indicates how episodes should be presented in podcast players.
