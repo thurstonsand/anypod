@@ -240,7 +240,7 @@ class FeedConfig(BaseModel):
                 return None
             case str() as s:
                 code = s.strip().lower()
-                if not pycountry.languages.get(alpha_2=code):
+                if not pycountry.languages.get(alpha_2=code):  # pyright: ignore[reportUnknownMemberType]
                     raise ValueError(
                         f"Invalid ISO 639-1 language code '{s}'. "
                         "Use two-letter codes like 'en', 'fr', 'de'."
