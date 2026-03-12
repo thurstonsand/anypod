@@ -541,7 +541,11 @@ class Downloader:
             logger.debug("Media artifact downloaded successfully.", extra=log_params)
 
             thumbnail_downloaded = download.thumbnail_ext is not None
-            if feed_config.transcript_lang is None:
+            if (
+                feed_config.transcript_lang is None
+                or download.transcript_source
+                not in [TranscriptSource.CREATOR, TranscriptSource.AUTO]
+            ):
                 transcript_downloaded = None
             else:
                 transcript_downloaded = downloaded_media.transcript is not None
