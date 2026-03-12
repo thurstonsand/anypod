@@ -332,6 +332,47 @@ async def test_download_artifacts_all_success_flow(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "transcript_source",
+    [TranscriptSource.NOT_AVAILABLE, None],
+)
+@patch.object(Downloader, "_handle_download_success", new_callable=AsyncMock)
+async def test_download_artifacts_all_transcript_not_applicable_is_none(
+    mock_handle_success: AsyncMock,
+    downloader: Downloader,
+    mock_ytdlp_wrapper: MagicMock,
+    sample_download: Download,
+    sample_feed_config: FeedConfig,
+    transcript_source: TranscriptSource | None,
+):
+    """Returns None for transcript_downloaded when transcript is not applicable."""
+    sample_download.transcript_source = transcript_source
+    sample_feed_config.transcript_lang = "en"
+
+    downloaded_path = Path("/final/video.mp4")
+    mock_ytdlp_wrapper.download_media_to_file.return_value = DownloadedMedia(
+        file_path=downloaded_path,
+        logs="ok",
+        transcript=None,
+    )
+
+    def set_thumbnail_ext(*_args: object, **_kwargs: object) -> None:
+        sample_download.thumbnail_ext = "jpg"
+
+    mock_handle_success.side_effect = set_thumbnail_ext
+
+    result = await downloader.download_artifacts(
+        sample_download, sample_feed_config, DownloadArtifact.ALL
+    )
+
+    assert result.media_downloaded is True
+    assert result.thumbnail_downloaded is True
+    assert result.transcript_downloaded is None
+    assert result.all_succeeded is True
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 async def test_download_artifacts_all_ytdlp_failure_returns_failure(
     downloader: Downloader,
     mock_ytdlp_wrapper: MagicMock,
