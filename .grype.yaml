@@ -5,3 +5,19 @@ ignore:
   - vulnerability: CVE-2026-3731
     reason: "libssh-4 critical CVE, no fix in Debian trixie base image yet. Remove when patched."
     until: 2026-04-10
+
+  - vulnerability: CVE-2026-34872
+    reason: "libmbedcrypto16 critical CVE, no fix in Debian trixie base image yet. Remove when patched."
+    until: 2026-04-13
+
+  - vulnerability: CVE-2026-34873
+    reason: "libmbedcrypto16 critical CVE, no fix in Debian trixie base image yet. Remove when patched."
+    until: 2026-04-13
+
+  - vulnerability: CVE-2026-34875
+    reason: "libmbedcrypto16 critical CVE, no fix in Debian trixie base image yet. Remove when patched."
+    until: 2026-04-13
+
+  - vulnerability: CVE-2026-34877
+    reason: "libmbedcrypto16 critical CVE, no fix in Debian trixie base image yet. Remove when patched."
+    until: 2026-04-13
