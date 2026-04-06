@@ -2,7 +2,7 @@
 # https://github.com/anchore/grype#configuration
 
 ignore:
-  - vulnerability: CVE-2026-3731
+  - vulnerability: CVE-2026-0968
     reason: "libssh-4 critical CVE, no fix in Debian trixie base image yet. Remove when patched."
     until: 2026-04-10
 
