@@ -41,7 +41,7 @@ jobs:
 
       - name: Run pre-commit checks
         if: steps.lockcheck.outputs.ytdlp_version != ''
-        uses: pre-commit/action@v3.0.1
+        run: uv run pre-commit run --all-files --show-diff-on-failure
 
       - name: Run tests
         if: steps.lockcheck.outputs.ytdlp_version != ''

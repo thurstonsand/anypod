@@ -21,7 +21,7 @@ jobs:
       - name: Install project dependencies
         run: uv sync --locked --all-extras --dev
       - name: Run pre-commit
-        uses: pre-commit/action@v3.0.1
+        run: uv run pre-commit run --all-files --show-diff-on-failure
 
   test:
     name: Test
