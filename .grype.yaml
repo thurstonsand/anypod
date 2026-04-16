@@ -21,3 +21,11 @@ ignore:
   - vulnerability: CVE-2026-34877
     reason: "libmbedcrypto16 critical CVE, no fix in Debian trixie base image yet. Remove when patched."
     until: 2026-04-13
+
+  - vulnerability: CVE-2026-6100
+    reason: "Python 3.14.4 critical CVE reported by Grype; no fixed version is available yet in the scanner/GitHub alert metadata. Remove when Python ships a patched release."
+    until: 2026-04-23
+
+  - vulnerability: CVE-2025-61144
+    reason: "libtiff6 critical CVE reported by Grype for Debian trixie; no fixed package version is available yet in the scanner/GitHub alert metadata. Remove when Debian publishes a fix."
+    until: 2026-04-23
