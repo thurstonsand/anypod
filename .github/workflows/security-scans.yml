@@ -76,6 +76,7 @@ jobs:
           image: ${{ steps.build.outputs.imageid }}
           fail-build: true
           severity-cutoff: critical
+          only-fixed: true
           cache-db: true
 
       - name: Upload scan results to GitHub Security
