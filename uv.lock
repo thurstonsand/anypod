@@ -140,7 +140,7 @@ dev = [
     { name = "pytest-xdist", specifier = ">=3.7.0" },
     { name = "respx", specifier = ">=0.22.0" },
     { name = "ruff", specifier = ">=0.11.7" },
-    { name = "yt-dlp", extras = ["default"], specifier = ">=2025.8.22" },
+    { name = "yt-dlp", extras = ["default"], specifier = ">=2026.3.17" },
 ]
 
 [[package]]
