@@ -22,6 +22,29 @@ def _format_run_output(stdout: str, stderr: str) -> str:
     return "\n\n".join(sections)
 
 
+_NETWORK_ERROR_MARKERS = (
+    "temporary failure in name resolution",
+    "name or service not known",
+    "failed to resolve",
+    "could not resolve",
+    "network is unreachable",
+    "no route to host",
+    "connection timed out",
+    "timed out",
+    "connection reset by peer",
+    "connection refused",
+    "remote end closed connection",
+    "ssl: certificate_verify_failed",
+    "tlsv1 alert",
+)
+
+
+def _looks_like_network_error(stderr: str) -> bool:
+    """Return true for yt-dlp failures that indicate an unreliable network fetch."""
+    normalized = stderr.lower()
+    return any(marker in normalized for marker in _NETWORK_ERROR_MARKERS)
+
+
 @dataclass(frozen=True, slots=True)
 class YtdlpRunResult[T]:
     """Container for yt-dlp subprocess payloads and raw log output."""
@@ -211,6 +234,15 @@ class YtdlpCore:
                                 "exit_code": proc.returncode,
                             },
                         )
+            if _looks_like_network_error(stderr_text):
+                raise YtdlpApiError(
+                    message=(
+                        "yt-dlp downloads metadata extraction failed due to a "
+                        "network error."
+                    ),
+                    url=url,
+                    logs=combined_logs,
+                )
             if not entries and proc.returncode != 101:  # 101 == filtered out
                 logger.warning(
                     "yt-dlp completed with errors and extracted no entries.",
