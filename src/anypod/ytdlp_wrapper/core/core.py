@@ -22,27 +22,25 @@ def _format_run_output(stdout: str, stderr: str) -> str:
     return "\n\n".join(sections)
 
 
-_NETWORK_ERROR_MARKERS = (
-    "temporary failure in name resolution",
-    "name or service not known",
-    "failed to resolve",
-    "could not resolve",
-    "network is unreachable",
-    "no route to host",
-    "connection timed out",
-    "timed out",
-    "connection reset by peer",
-    "connection refused",
-    "remote end closed connection",
-    "ssl: certificate_verify_failed",
-    "tlsv1 alert",
-)
+_DNS_RESOLUTION_ERROR_MARKERS = ("[Errno -3] Temporary failure in name resolution",)
 
 
-def _looks_like_network_error(stderr: str) -> bool:
-    """Return true for yt-dlp failures that indicate an unreliable network fetch."""
-    normalized = stderr.lower()
-    return any(marker in normalized for marker in _NETWORK_ERROR_MARKERS)
+def _looks_like_dns_resolution_error(stderr: str) -> bool:
+    """Return true for yt-dlp DNS-resolution failures.
+
+    This intentionally matches the concrete socket.gaierror text observed from
+    yt-dlp when YouTube metadata extraction cannot resolve a hostname. Other
+    non-network yt-dlp errors are left as non-fatal so playlist processing can
+    continue to tolerate private, deleted, filtered, or otherwise unavailable
+    entries.
+
+    Args:
+        stderr: The raw stderr text from the yt-dlp subprocess.
+
+    Returns:
+        True if stderr contains a known DNS-resolution marker; otherwise False.
+    """
+    return any(marker in stderr for marker in _DNS_RESOLUTION_ERROR_MARKERS)
 
 
 @dataclass(frozen=True, slots=True)
@@ -234,11 +232,11 @@ class YtdlpCore:
                                 "exit_code": proc.returncode,
                             },
                         )
-            if _looks_like_network_error(stderr_text):
+            if _looks_like_dns_resolution_error(stderr_text):
                 raise YtdlpApiError(
                     message=(
                         "yt-dlp downloads metadata extraction failed due to a "
-                        "network error."
+                        "DNS resolution error."
                     ),
                     url=url,
                     logs=combined_logs,

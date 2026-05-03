@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false
 """Tests for low-level yt-dlp subprocess handling."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -11,10 +12,10 @@ from anypod.ytdlp_wrapper.core import YtdlpArgs, YtdlpCore
 @pytest.mark.unit
 @pytest.mark.asyncio
 @patch("asyncio.create_subprocess_exec", new_callable=AsyncMock)
-async def test_extract_downloads_info_raises_on_network_error(
+async def test_extract_downloads_info_raises_on_dns_resolution_error(
     mock_create_subprocess_exec: AsyncMock,
 ):
-    """Network failures make playlist metadata unreliable and should fail the sync."""
+    """DNS failures make playlist metadata unreliable and should fail the sync."""
     mock_proc = MagicMock()
     mock_proc.returncode = 1
     mock_proc.communicate = AsyncMock(
@@ -27,7 +28,7 @@ async def test_extract_downloads_info_raises_on_network_error(
     mock_proc.wait = AsyncMock()
     mock_create_subprocess_exec.return_value = mock_proc
 
-    with pytest.raises(YtdlpApiError, match="network error"):
+    with pytest.raises(YtdlpApiError):
         await YtdlpCore.extract_downloads_info(
             YtdlpArgs(), "https://youtube.com/playlist?list=test"
         )
@@ -54,5 +55,25 @@ async def test_extract_downloads_info_ignores_non_network_ytdlp_errors(
     result = await YtdlpCore.extract_downloads_info(
         YtdlpArgs(), "https://youtube.com/playlist?list=test"
     )
+
+    assert result.payload == []
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@patch("asyncio.create_subprocess_exec", new_callable=AsyncMock)
+async def test_extract_downloads_info_ignores_generic_non_network_ytdlp_errors(
+    mock_create_subprocess_exec: AsyncMock,
+):
+    """Generic non-network yt-dlp errors return an empty payload without raising."""
+    mock_proc = MagicMock()
+    mock_proc.returncode = 1
+    mock_proc.communicate = AsyncMock(
+        return_value=(b"", b"ERROR: Unsupported URL: https://example.com")
+    )
+    mock_proc.wait = AsyncMock()
+    mock_create_subprocess_exec.return_value = mock_proc
+
+    result = await YtdlpCore.extract_downloads_info(YtdlpArgs(), "https://example.com")
 
     assert result.payload == []
