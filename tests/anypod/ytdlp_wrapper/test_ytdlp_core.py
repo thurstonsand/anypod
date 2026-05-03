@@ -43,7 +43,10 @@ async def test_extract_downloads_info_ignores_non_network_ytdlp_errors(
     mock_proc = MagicMock()
     mock_proc.returncode = 101
     mock_proc.communicate = AsyncMock(
-        return_value=(b"", b"ERROR: [youtube] abc123: Video unavailable. This video is private")
+        return_value=(
+            b"",
+            b"ERROR: [youtube] abc123: Video unavailable. This video is private",
+        )
     )
     mock_proc.wait = AsyncMock()
     mock_create_subprocess_exec.return_value = mock_proc
