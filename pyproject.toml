@@ -42,7 +42,7 @@ dev = [
     "respx>=0.22.0",
     "ruff>=0.15.13",
     "yt-dlp[default]>=2026.3.17",
-    "basedpyright>=1.39.5",
+    "basedpyright>=1.39.6",
 ]
 
 [project.scripts]
