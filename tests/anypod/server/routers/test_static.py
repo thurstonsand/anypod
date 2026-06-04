@@ -8,7 +8,11 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from fastapi import FastAPI, Response
-from fastapi.testclient import TestClient
+from helpers.test_client import (
+    ClientProtocol,
+    ClientProtocol as TestClient,
+    create_test_client,
+)
 import pytest
 
 from anypod.db import DownloadDatabase, FeedDatabase
@@ -105,9 +109,9 @@ def app(
 
 
 @pytest.fixture
-def client(app: FastAPI) -> TestClient:
+def client(app: FastAPI) -> ClientProtocol:
     """Create a test client for the static router."""
-    return TestClient(app)
+    return create_test_client(app)
 
 
 def _file_response_side_effect(

@@ -5,7 +5,7 @@
 from datetime import UTC, datetime
 import xml.etree.ElementTree as ET
 
-from fastapi.testclient import TestClient
+from helpers.test_client import ClientProtocol as TestClient
 import pytest
 
 from anypod.db import DownloadDatabase, FeedDatabase

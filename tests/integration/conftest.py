@@ -5,8 +5,8 @@ from collections.abc import AsyncGenerator, Iterator
 from datetime import timedelta
 from pathlib import Path
 
-from fastapi.testclient import TestClient
 from helpers.alembic import run_migrations
+from helpers.test_client import ClientProtocol, create_test_client
 import pytest
 import pytest_asyncio
 
@@ -311,7 +311,7 @@ def test_app(
     manual_submission_service: ManualSubmissionService,
     feed_configs: dict[str, FeedConfig],
     cookies_path: Path | None,
-) -> Iterator[TestClient]:
+) -> Iterator[ClientProtocol]:
     """Create a FastAPI test client with real dependencies.
 
     Returns:
@@ -328,7 +328,7 @@ def test_app(
         manual_submission_service=manual_submission_service,
         cookies_path=cookies_path,
     )
-    client = TestClient(app)
+    client = create_test_client(app)
     try:
         yield client
     finally:
@@ -346,7 +346,7 @@ def admin_test_app(
     manual_submission_service: ManualSubmissionService,
     feed_configs: dict[str, FeedConfig],
     cookies_path: Path | None,
-) -> Iterator[TestClient]:
+) -> Iterator[ClientProtocol]:
     """Create a FastAPI admin test client with real dependencies.
 
     Returns:
@@ -363,7 +363,7 @@ def admin_test_app(
         manual_submission_service=manual_submission_service,
         cookies_path=cookies_path,
     )
-    client = TestClient(app)
+    client = create_test_client(app)
     try:
         yield client
     finally:

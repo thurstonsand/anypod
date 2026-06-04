@@ -4,7 +4,7 @@
 
 from datetime import UTC, datetime
 
-from fastapi.testclient import TestClient
+from helpers.test_client import ClientProtocol as TestClient
 import pytest
 
 from anypod.config import FeedConfig

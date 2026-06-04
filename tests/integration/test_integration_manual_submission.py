@@ -6,7 +6,7 @@ import asyncio
 from datetime import UTC, datetime
 import time
 
-from fastapi.testclient import TestClient
+from helpers.test_client import ClientProtocol as TestClient
 import pytest
 import pytest_asyncio
 

@@ -6,7 +6,11 @@ from datetime import UTC, datetime
 from unittest.mock import Mock
 
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
+from helpers.test_client import (
+    ClientProtocol,
+    ClientProtocol as TestClient,
+    create_test_client,
+)
 import pytest
 
 from anypod.config import FeedConfig
@@ -93,9 +97,9 @@ def app(
 
 
 @pytest.fixture
-def client(app: FastAPI) -> TestClient:
+def client(app: FastAPI) -> ClientProtocol:
     """Create a test client for the admin router."""
-    return TestClient(app)
+    return create_test_client(app)
 
 
 @pytest.fixture

@@ -5,7 +5,7 @@
 from unittest.mock import Mock
 
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
+from helpers.test_client import ClientProtocol, create_test_client
 import pytest
 
 from anypod.config import FeedConfig
@@ -93,9 +93,9 @@ def app_with_mocks(
 
 
 @pytest.fixture
-def client(app_with_mocks: FastAPI) -> TestClient:
+def client(app_with_mocks: FastAPI) -> ClientProtocol:
     """Create a test client for the FastAPI app."""
-    return TestClient(app_with_mocks)
+    return create_test_client(app_with_mocks)
 
 
 # --- Tests for create_app ---

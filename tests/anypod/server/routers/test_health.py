@@ -3,7 +3,7 @@
 """Tests for the health check router."""
 
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
+from helpers.test_client import ClientProtocol, create_test_client
 import pytest
 
 from anypod.server.routers.health import router
@@ -18,16 +18,16 @@ def app() -> FastAPI:
 
 
 @pytest.fixture
-def client(app: FastAPI) -> TestClient:
+def client(app: FastAPI) -> ClientProtocol:
     """Create a test client for the health router."""
-    return TestClient(app)
+    return create_test_client(app)
 
 
 # --- Tests for health endpoint ---
 
 
 @pytest.mark.unit
-def test_health_check_success(client: TestClient):
+def test_health_check_success(client: ClientProtocol):
     """Test that health check returns 200 with correct structure."""
     response = client.get("/api/health")
 
