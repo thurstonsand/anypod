@@ -42,7 +42,7 @@ dev = [
     "respx>=0.22.0",
     "ruff>=0.15.16",
     "yt-dlp[default]>=2026.3.17",
-    "basedpyright>=1.39.6",
+    "basedpyright>=1.39.7",
     "httpx2>=2.3.0",
 ]
 
