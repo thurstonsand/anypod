@@ -26,6 +26,10 @@ ignore:
     reason: "Python 3.14.4 critical CVE reported by Grype; no fixed version is available yet in the scanner/GitHub alert metadata. Remove when Python ships a patched release."
     until: 2026-04-23
 
+  - vulnerability: CVE-2026-7210
+    reason: "Python 3.14.5 critical CVE reported by Grype; scanner metadata only lists Python 3.15.0b2 as fixed. Remove when Python 3.14 has a patched release."
+    until: 2026-06-23
+
   - vulnerability: CVE-2025-61144
     reason: "libtiff6 critical CVE reported by Grype for Debian trixie; no fixed package version is available yet in the scanner/GitHub alert metadata. Remove when Debian publishes a fix."
     until: 2026-04-23
