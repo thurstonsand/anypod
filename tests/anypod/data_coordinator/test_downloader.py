@@ -173,11 +173,53 @@ async def test_handle_download_success_updates_db(
     updated = mock_download_db.update_download.call_args[0][0]
     assert updated.status == DownloadStatus.DOWNLOADED
     assert updated.ext == "mp4"
+    assert updated.mime_type == "video/mp4"
     assert updated.filesize == 1024
     assert updated.duration == 321
     assert updated.retries == 0
     assert updated.last_error is None
     assert updated.download_logs == logs
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@patch("aiofiles.os.stat", new_callable=AsyncMock, return_value=MagicMock(st_size=1024))
+async def test_handle_download_success_updates_mime_type_from_final_file(
+    _mock_stat: AsyncMock,
+    downloader: Downloader,
+    mock_download_db: MagicMock,
+    sample_download: Download,
+):
+    """MIME type follows the final file path after post-processing."""
+    sample_download.ext = "webm"
+    sample_download.mime_type = "video/webm"
+
+    await downloader._handle_download_success(
+        sample_download, Path("/path/to/downloaded_video.mp4"), "logs"
+    )
+
+    updated = mock_download_db.update_download.call_args[0][0]
+    assert updated.ext == "mp4"
+    assert updated.mime_type == "video/mp4"
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@patch("aiofiles.os.stat", new_callable=AsyncMock, return_value=MagicMock(st_size=1024))
+async def test_handle_download_success_uses_octet_stream_for_unknown_extension(
+    _mock_stat: AsyncMock,
+    downloader: Downloader,
+    mock_download_db: MagicMock,
+    sample_download: Download,
+):
+    """Unknown media extensions use a safe generic MIME type."""
+    await downloader._handle_download_success(
+        sample_download, Path("/path/to/downloaded_video.unknownext"), "logs"
+    )
+
+    updated = mock_download_db.update_download.call_args[0][0]
+    assert updated.ext == "unknownext"
+    assert updated.mime_type == "application/octet-stream"
 
 
 @pytest.mark.unit

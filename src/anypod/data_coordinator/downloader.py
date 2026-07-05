@@ -8,6 +8,7 @@ to update download statuses and metadata.
 
 from datetime import UTC, datetime
 import logging
+import mimetypes
 from pathlib import Path
 from typing import Any
 
@@ -144,6 +145,10 @@ class Downloader:
 
         download.status = DownloadStatus.DOWNLOADED
         download.ext = downloaded_file_path.suffix.lstrip(".")
+        download.mime_type = (
+            mimetypes.guess_type(downloaded_file_path.name)[0]
+            or "application/octet-stream"
+        )
         download.filesize = file_stat.st_size
         if duration_seconds is not None:
             download.duration = duration_seconds
