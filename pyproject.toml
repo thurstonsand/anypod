@@ -41,7 +41,7 @@ dev = [
     "pytest-xdist>=3.7.0",
     "respx>=0.22.0",
     "ruff>=0.15.18",
-    "yt-dlp[default]>=2026.6.9",
+    "yt-dlp[default]>=2026.7.4",
     "basedpyright>=1.39.9",
     "httpx2>=2.3.0",
 ]
