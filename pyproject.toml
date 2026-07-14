@@ -1,5 +1,5 @@
 [build-system]
-requires = ["uv_build>=0.11.26,<0.12"]
+requires = ["uv_build>=0.11.28,<0.12"]
 build-backend = "uv_build"
 
 [project]
@@ -13,7 +13,7 @@ dependencies = [
     "aiosqlite>=0.21.0",
     "alembic>=1.16.2",
     "apscheduler>=3.11.3",
-    "croniter>=6.2.3",
+    "croniter>=6.2.4",
     "fastapi>=0.139.0",
     "feedgen>=1.0.0",
     "httpx>=0.28.1",
@@ -25,9 +25,9 @@ dependencies = [
     "pyyaml>=6.0.2",
     "readerwriterlock>=1.0.9",
     "sqlalchemy[asyncio]>=2.0.51",
-    "sqlite-utils>=3.38",
+    "sqlite-utils>=4.1.1",
     "sqlmodel>=0.0.39",
-    "uvicorn[standard]>=0.50.2",
+    "uvicorn[standard]>=0.51.0",
     "youtube-transcript-api>=1.2.3",
 ]
 
@@ -40,7 +40,7 @@ dev = [
     "pytest-cov>=5.0.0",
     "pytest-xdist>=3.7.0",
     "respx>=0.22.0",
-    "ruff>=0.15.18",
+    "ruff>=0.15.21",
     "yt-dlp[default]>=2026.7.4",
     "basedpyright>=1.39.9",
     "httpx2>=2.3.0",
