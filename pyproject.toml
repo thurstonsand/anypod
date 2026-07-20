@@ -1,5 +1,5 @@
 [build-system]
-requires = ["uv_build>=0.11.28,<0.12"]
+requires = ["uv_build>=0.11.29,<0.12"]
 build-backend = "uv_build"
 
 [project]
@@ -14,7 +14,7 @@ dependencies = [
     "alembic>=1.16.2",
     "apscheduler>=3.11.3",
     "croniter>=6.2.4",
-    "fastapi>=0.139.0",
+    "fastapi>=0.139.2",
     "feedgen>=1.0.0",
     "httpx>=0.28.1",
     "pycountry>=24.6.1",
@@ -40,10 +40,10 @@ dev = [
     "pytest-cov>=5.0.0",
     "pytest-xdist>=3.7.0",
     "respx>=0.22.0",
-    "ruff>=0.15.21",
+    "ruff>=0.15.22",
     "yt-dlp[default]>=2026.7.4",
     "basedpyright>=1.39.9",
-    "httpx2>=2.3.0",
+    "httpx2>=2.7.0",
 ]
 
 [project.scripts]
