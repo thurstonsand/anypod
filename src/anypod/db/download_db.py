@@ -211,7 +211,7 @@ class DownloadDatabase:
     async def requeue_downloads(
         self,
         feed_id: str,
-        download_ids: None | list[str] | str,
+        download_ids: list[str] | str | None,
         from_status: DownloadStatus | None = None,
     ) -> int:
         """Re-queue downloads by resetting status and error counters.
