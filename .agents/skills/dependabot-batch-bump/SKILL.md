@@ -15,10 +15,11 @@ Use this skill when Dependabot has opened a batch of dependency PRs and the main
 
 ### 1. Inspect repository state
 
-Confirm the worktree is clean and identify open Dependabot PRs:
+Confirm the worktree is clean, sync with the remote, and identify open Dependabot PRs:
 
 ```bash
 git status --short --branch
+git pull --rebase origin main
 gh pr list --author app/dependabot --state open \
   --json number,title,headRefName,url,updatedAt,baseRefName --limit 50
 ```
