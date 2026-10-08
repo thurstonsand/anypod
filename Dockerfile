@@ -35,7 +35,7 @@ FROM debian:trixie-slim
 # Updated automatically by update-dockerfile-deps.yml workflow
 ARG CACHE_BUST_WEEK=2026-W41
 
-ARG BGUTIL_POT_PROVIDER_VERSION=2.0.1
+ARG BGUTIL_POT_PROVIDER_VERSION=2.0.2
 
 # Copy deno binary from official image
 COPY --from=denoland/deno:bin /deno /usr/local/bin/deno
