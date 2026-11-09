@@ -1,0 +1,22 @@
+min_version = "2026.10.4"
+
+[settings]
+# Every tool, and every package mise locks under it, waits 3 days after release, like Dependabot.
+minimum_release_age = "3d"
+
+[tools]
+hk = "2.11.1"
+# hk's check and fix hooks run jactionlint, which runs shellcheck over every `run:` script.
+"aqua:jdx/jactionlint" = "2.5.0"
+shellcheck = "0.11.0"
+
+[env]
+HK_MISE = "1"
+
+[tasks."lint:actions"]
+description = "Lint GitHub Actions workflows"
+run = "hk check --all --step jactionlint"
+
+[tasks."fix:actions"]
+description = "Apply jactionlint's safe fixes to GitHub Actions workflows"
+run = "hk fix --all --step jactionlint"

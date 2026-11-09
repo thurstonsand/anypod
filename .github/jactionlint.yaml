@@ -1,0 +1,46 @@
+rules:
+  # Thurston's standing decision: every dependency waits 3 days after release, Dependabot included.
+  dependabot-cooldown:
+    days: 3
+
+ignores:
+  - rule: constant-condition
+    file: .github/workflows/claude-code-review.yml
+    job: claude-review
+    reason: >-
+      Deliberately switched off while CodeRabbit is trialled for reviews; the original condition is
+      kept beside it so the job can be turned back on.
+  - rule: cache-poisoning
+    file: .github/workflows/main-pipeline.yml
+    job: docker-build
+    step: Build and push by digest
+    reason: >-
+      Only runs on main read or write this buildkit cache scope: pull requests build in their own
+      ref's scope, which main never reads, so no unreviewed code can seed the published image.
+  - rule: checkout-static-credentials
+    file: .github/workflows/update-dockerfile-deps.yml
+    job: update-and-commit
+    step: Checkout repository
+    reason: >-
+      ANYPOD_DEPLOY_KEY pushes the updated Dockerfile to main, and a deploy-key push is what starts
+      the main pipeline that publishes the image; a GITHUB_TOKEN push would not.
+  - rule: checkout-static-credentials
+    file: .github/workflows/update-ytdlp-commit.yml
+    job: update-and-commit
+    step: Checkout repository
+    reason: >-
+      ANYPOD_DEPLOY_KEY pushes the yt-dlp lock update to main, and a deploy-key push is what starts
+      the main pipeline that publishes the image; a GITHUB_TOKEN push would not.
+  - rule: dangerous-triggers
+    file: .github/workflows/claude.yml
+    reason: >-
+      The job starts only for comments, reviews and issues from the repository's owner, members and
+      collaborators (the author_association check in its if), and claude-code-action also refuses
+      any actor without write access.
+  - rule: agentic-actions
+    file: .github/workflows/claude.yml
+    job: claude
+    step: Run Claude Code
+    reason: >-
+      Only people with write access can start this agent (see dangerous-triggers above), and it
+      needs uv and uvx to run the project's tests and tools.

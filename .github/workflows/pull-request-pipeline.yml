@@ -6,8 +6,6 @@ on:
 
 permissions:
   contents: read
-  security-events: write
-  packages: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -16,8 +14,14 @@ concurrency:
 jobs:
   ci:
     name: CI
+    permissions:
+      contents: read
     uses: ./.github/workflows/ci.yml
 
   security-scans:
     name: Security Scans
+    permissions:
+      contents: read
+      security-events: write
+      packages: read
     uses: ./.github/workflows/security-scans.yml

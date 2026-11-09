@@ -26,6 +26,8 @@ local_*.yaml
 
 # lsp
 *.pkl
+# hk.pkl is hk's Pkl config, not a pickle
+!/hk.pkl
 
 # AI
 references/

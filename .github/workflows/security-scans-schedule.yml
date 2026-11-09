@@ -7,10 +7,12 @@ on:
 
 permissions:
   contents: read
-  security-events: write
-  packages: read
 
 jobs:
   security-scans:
     name: Security Scans
+    permissions:
+      contents: read
+      security-events: write
+      packages: read
     uses: ./.github/workflows/security-scans.yml

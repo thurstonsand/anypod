@@ -1,7 +1,7 @@
 name: "Update yt-dlp and Commit to Main"
 
 permissions:
-  contents: write
+  contents: read
 
 on:
   workflow_dispatch: # Allow manual triggering
@@ -11,14 +11,15 @@ on:
 jobs:
   update-and-commit:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ssh-key: ${{ secrets.ANYPOD_DEPLOY_KEY }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v10.3.3
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: latest
           enable-cache: true
@@ -30,12 +31,12 @@ jobs:
           set -euo pipefail
           uv lock --upgrade-package yt-dlp
           if git diff --quiet -- uv.lock; then
-            echo "ytdlp_version=" >> $GITHUB_OUTPUT
+            echo "ytdlp_version=" >> "$GITHUB_OUTPUT"
             echo "No changes to uv.lock"
           else
             uv sync --locked --all-extras --dev
             YTDLP_VERSION=$(uv pip show yt-dlp | grep '^Version' | awk '{print $2}')
-            echo "ytdlp_version=${YTDLP_VERSION}" >> $GITHUB_OUTPUT
+            echo "ytdlp_version=${YTDLP_VERSION}" >> "$GITHUB_OUTPUT"
             echo "uv.lock updated"
           fi
 
