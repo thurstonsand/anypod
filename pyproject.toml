@@ -51,6 +51,10 @@ anypod = "anypod.__main__:main"
 
 [tool.uv]
 managed = true
+# Resolve only releases at least 3 days old, like the Dependabot cooldown. yt-dlp is exempt: the
+# update-ytdlp workflow takes each release as it ships, since YouTube changes break older ones.
+exclude-newer = "3 days"
+exclude-newer-package = { yt-dlp = false, yt-dlp-ejs = false }
 
 [tool.pytest.ini_options]
 minversion = "7.0"

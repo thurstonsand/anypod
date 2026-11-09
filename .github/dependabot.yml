@@ -1,10 +1,19 @@
 version: 2
 updates:
+  # Every update waits 3 days after release, as uv's exclude-newer does. yt-dlp is exempt in both:
+  # the update-ytdlp workflow takes each release as it ships, since YouTube changes break older ones.
   - package-ecosystem: "uv"
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 3
+      exclude: ["yt-dlp", "yt-dlp-ejs"]
+  # Claude Code's action takes each release the day it ships, like Claude Code everywhere else.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 3
+      exclude: ["anthropics/claude-code-action"]
