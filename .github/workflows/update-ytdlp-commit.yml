@@ -47,7 +47,7 @@ jobs:
       - name: Run tests
         if: steps.lockcheck.outputs.ytdlp_version != ''
         run: |
-          uv run pytest --cov-report xml
+          uv run pytest
 
       - name: Commit and push
         if: steps.lockcheck.outputs.ytdlp_version != ''

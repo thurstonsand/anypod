@@ -74,7 +74,7 @@ uv run pytest --integration
 uv run pytest --integration --cov=src --cov-report=html --cov-report=term-missing
 ```
 
-Coverage reports are generated in `htmlcov/`.
+Coverage reports are generated in `coverage_html_report/`.
 
 ## Docker
 

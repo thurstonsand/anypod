@@ -76,7 +76,7 @@ jobs:
       - name: Run tests
         if: steps.update.outputs.has_changes == 'true'
         run: |
-          uv run pytest --cov-report xml
+          uv run pytest
 
       - name: Commit and push
         if: steps.update.outputs.has_changes == 'true'
