@@ -180,16 +180,16 @@ Migrations are managed with Alembic. Migration files are in `alembic/versions/`.
 When changing database models in `src/anypod/db/types/`:
 
 1. Make your changes to the SQLModel classes
-2. Generate a migration: `uv run alembic revision --autogenerate -m "describe your changes"`
+2. Run `./scripts/new_migration.sh "describe your changes"`. It autogenerates the migration against a temporary database at head, applies it, and runs `./scripts/check_migrations.sh`.
 3. Review the generated migration in `alembic/versions/`
 4. Commit your changes
 
-The drift check runs automatically via pre-commit on any model or migration changes. You can also run it manually with `./scripts/check_migrations.sh` to verify no uncommitted schema changes exist.
+The drift check also runs via pre-commit on any model or migration change.
 
 ### Commands
 
 ```bash
-uv run alembic revision --autogenerate -m "description"  # Create migration
+./scripts/new_migration.sh "description"                 # Create and verify a migration
 uv run alembic upgrade head                              # Apply migrations
 uv run alembic downgrade -1                              # Rollback one migration
 ./scripts/check_migrations.sh                            # Check for schema drift

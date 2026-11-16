@@ -19,13 +19,7 @@ set -euo pipefail
 TMP_DIR="$(mktemp -d)"
 TMP_DB="$TMP_DIR/check_migrations.db"
 TMP_DB_FK="$TMP_DIR/check_fk_migrations.db"
-cleanup() {
-    rm -rf "$TMP_DIR"
-    # Clean up any temporary migration files that might have been created
-    # (e.g., if script was interrupted during a previous run)
-    rm -f alembic/versions/*tmp_drift_check*.py
-}
-trap cleanup EXIT
+trap 'rm -rf "$TMP_DIR"' EXIT
 
 # ------------------------------------------------------------------
 # Check 1: Schema drift detection

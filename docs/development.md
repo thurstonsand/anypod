@@ -55,7 +55,8 @@ All tools are configured in `pyproject.toml`.
 ## Database Migrations
 
 ```bash
-./scripts/check_migrations.sh    # Check for schema drift between models and migrations
+./scripts/new_migration.sh "describe your changes"   # Generate a migration and run the checks below
+./scripts/check_migrations.sh                        # Check for schema drift between models and migrations
 ```
 
 Validates that SQLAlchemy models and Alembic migrations are in sync.
