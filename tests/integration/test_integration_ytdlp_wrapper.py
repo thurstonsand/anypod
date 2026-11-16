@@ -111,7 +111,6 @@ TEST_URLS_PARAMS = [
 INVALID_VIDEO_URL = "https://www.youtube.com/watch?v=thisvideodoesnotexistxyz"
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "url_type, url, expected_source_type, expected_title_contains, expected_resolved_url, transcript_source",
@@ -177,7 +176,6 @@ BIG_BUCK_BUNNY_DOWNLOAD = Download(
 )
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "url_type, url, expected_source_type, expected_title_contains, expected_resolved_url, transcript_source",
@@ -257,7 +255,6 @@ async def test_fetch_metadata_success(
     )
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "url_type, url, expected_source_type, expected_title_contains, expected_resolved_url, transcript_source",
@@ -309,7 +306,6 @@ async def test_download_feed_thumbnail_success(
     )
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "url_type, url, expected_source_type, expected_title_contains, expected_resolved_url, transcript_source",
@@ -372,7 +368,6 @@ TEST_URLS_WITH_TRANSCRIPTS = [
 ]
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "url_type, url, expected_source_type, expected_title_contains, expected_resolved_url, transcript_source",
@@ -428,7 +423,6 @@ async def test_download_transcript_only(
     assert "-->" in content, "Expected VTT file to contain timing markers"
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_fetch_metadata_non_existent_video(
     ytdlp_wrapper: YtdlpWrapper,
@@ -458,7 +452,6 @@ async def test_fetch_metadata_non_existent_video(
     )
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "url_type, url, expected_source_type, expected_title_contains, expected_resolved_url",
@@ -515,7 +508,6 @@ async def test_fetch_metadata_with_impossible_filter(
     )
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_download_media_to_file_success(
     ytdlp_wrapper: YtdlpWrapper,
@@ -582,7 +574,6 @@ async def test_download_media_to_file_success(
     )
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_download_media_to_file_non_existent(
     ytdlp_wrapper: YtdlpWrapper,
@@ -618,7 +609,6 @@ async def test_download_media_to_file_non_existent(
     )
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_download_media_to_file_impossible_filter(
     ytdlp_wrapper: YtdlpWrapper,
@@ -643,7 +633,6 @@ async def test_download_media_to_file_impossible_filter(
     assert "might have filtered" in str(excinfo.value).lower()
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 @patch.object(YtdlpCore, "download", new_callable=AsyncMock)
 async def test_download_media_to_file_detects_corrupt_file(
@@ -676,7 +665,6 @@ async def test_download_media_to_file_detects_corrupt_file(
     assert not corrupt_file.exists()
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_fetch_metadata_with_keep_last_limit(
     ytdlp_wrapper: YtdlpWrapper,
@@ -739,7 +727,6 @@ async def test_fetch_metadata_with_keep_last_limit(
             assert download.status == DownloadStatus.QUEUED
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_fetch_metadata_with_keep_last_none_vs_limit(
     ytdlp_wrapper: YtdlpWrapper,

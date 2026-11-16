@@ -162,7 +162,6 @@ def create_feed_config(
 # --- Integration Tests ---
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_scheduler_lifecycle_basic(
     mock_data_coordinator: MagicMock,
@@ -193,7 +192,6 @@ async def test_scheduler_lifecycle_basic(
     assert scheduler.running is False
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_scheduler_job_execution_with_mock(
     mock_data_coordinator: MagicMock,
@@ -229,7 +227,6 @@ async def test_scheduler_job_execution_with_mock(
         await asyncio.sleep(0.1)  # Give time to shut down
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_scheduler_multiple_feeds(
     mock_data_coordinator: MagicMock,
@@ -284,7 +281,6 @@ async def test_scheduler_multiple_feeds(
         await asyncio.sleep(0.1)  # Give time to shut down
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_scheduler_graceful_shutdown_wait_for_jobs(
     mock_data_coordinator: MagicMock,
@@ -313,7 +309,6 @@ async def test_scheduler_graceful_shutdown_wait_for_jobs(
     assert scheduler.running is False
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_scheduler_shutdown_no_wait(
     mock_data_coordinator: MagicMock,
@@ -364,7 +359,6 @@ async def test_scheduler_shutdown_no_wait(
     assert scheduler.running is False
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_scheduler_job_failure_handling(
     mock_data_coordinator: MagicMock,
@@ -409,7 +403,6 @@ async def test_scheduler_job_failure_handling(
         await asyncio.sleep(0.1)  # Give time to shut down
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_scheduler_with_real_data_coordinator_and_file_download(
     data_coordinator: DataCoordinator,

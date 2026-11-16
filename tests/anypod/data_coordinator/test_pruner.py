@@ -149,7 +149,6 @@ def sample_skipped_item() -> Download:
 # --- Tests for Pruner._identify_prune_candidates ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_identify_prune_candidates_keep_last_only(
     pruner: Pruner,
@@ -175,7 +174,6 @@ async def test_identify_prune_candidates_keep_last_only(
     mock_download_db.get_downloads_to_prune_by_since.assert_not_called()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_identify_prune_candidates_date_only(
     pruner: Pruner,
@@ -200,7 +198,6 @@ async def test_identify_prune_candidates_date_only(
     mock_download_db.get_downloads_to_prune_by_keep_last.assert_not_called()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_identify_prune_candidates_both_rules_union(
     pruner: Pruner,
@@ -234,7 +231,6 @@ async def test_identify_prune_candidates_both_rules_union(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_identify_prune_candidates_no_rules_returns_empty(
     pruner: Pruner,
@@ -250,7 +246,6 @@ async def test_identify_prune_candidates_no_rules_returns_empty(
     mock_download_db.get_downloads_to_prune_by_since.assert_not_called()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_identify_prune_candidates_keep_last_db_error_raises_prune_error(
     pruner: Pruner,
@@ -272,7 +267,6 @@ async def test_identify_prune_candidates_keep_last_db_error_raises_prune_error(
 # --- Tests for Pruner._handle_image_deletion ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_image_deletion_success(
     pruner: Pruner,
@@ -292,7 +286,6 @@ async def test_handle_image_deletion_success(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_image_deletion_no_thumbnail_ext(
     pruner: Pruner,
@@ -309,7 +302,6 @@ async def test_handle_image_deletion_no_thumbnail_ext(
 # --- Tests for Pruner._handle_transcript_deletion ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_transcript_deletion_success(
     pruner: Pruner,
@@ -328,7 +320,6 @@ async def test_handle_transcript_deletion_success(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_transcript_deletion_no_transcript_metadata(
     pruner: Pruner,
@@ -342,7 +333,6 @@ async def test_handle_transcript_deletion_no_transcript_metadata(
     mock_file_manager.delete_transcript.assert_not_called()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_transcript_deletion_missing_lang_skips(
     pruner: Pruner,
@@ -359,7 +349,6 @@ async def test_handle_transcript_deletion_missing_lang_skips(
     mock_file_manager.delete_transcript.assert_not_called()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_transcript_deletion_missing_ext_skips(
     pruner: Pruner,
@@ -376,7 +365,6 @@ async def test_handle_transcript_deletion_missing_ext_skips(
     mock_file_manager.delete_transcript.assert_not_called()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_transcript_deletion_file_not_found_continues(
     pruner: Pruner,
@@ -399,7 +387,6 @@ async def test_handle_transcript_deletion_file_not_found_continues(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_transcript_deletion_file_operation_error_raises_prune_error(
     pruner: Pruner,
@@ -424,7 +411,6 @@ async def test_handle_transcript_deletion_file_operation_error_raises_prune_erro
 # --- Tests for Pruner._handle_file_deletion ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_file_deletion_success(
     pruner: Pruner,
@@ -439,7 +425,6 @@ async def test_handle_file_deletion_success(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_file_deletion_file_operation_error_raises_prune_error(
     pruner: Pruner,
@@ -461,7 +446,6 @@ async def test_handle_file_deletion_file_operation_error_raises_prune_error(
 # --- Tests for Pruner._archive_download ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_archive_download_success(
     pruner: Pruner,
@@ -476,7 +460,6 @@ async def test_archive_download_success(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_archive_download_db_error_raises_prune_error(
     pruner: Pruner,
@@ -495,7 +478,6 @@ async def test_archive_download_db_error_raises_prune_error(
     assert exc_info.value.__cause__ is db_error
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_archive_download_not_found_error_raises_prune_error(
     pruner: Pruner,
@@ -517,7 +499,6 @@ async def test_archive_download_not_found_error_raises_prune_error(
 # --- Tests for Pruner._process_single_download_for_pruning ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_process_single_download_downloaded_file_deleted_successfully(
     pruner: Pruner,
@@ -539,7 +520,6 @@ async def test_process_single_download_downloaded_file_deleted_successfully(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_process_single_download_downloaded_file_not_found_returns_false(
     pruner: Pruner,
@@ -565,7 +545,6 @@ async def test_process_single_download_downloaded_file_not_found_returns_false(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_process_single_download_non_downloaded_no_file_deletion(
     pruner: Pruner,
@@ -585,7 +564,6 @@ async def test_process_single_download_non_downloaded_no_file_deletion(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_process_single_download_upcoming_no_file_deletion(
     pruner: Pruner,
@@ -605,7 +583,6 @@ async def test_process_single_download_upcoming_no_file_deletion(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_process_single_download_downloaded_with_image_deletes_both(
     pruner: Pruner,
@@ -634,7 +611,6 @@ async def test_process_single_download_downloaded_with_image_deletes_both(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_process_single_download_downloaded_with_transcript_deletes_all(
     pruner: Pruner,
@@ -670,7 +646,6 @@ async def test_process_single_download_downloaded_with_transcript_deletes_all(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_process_single_download_transcript_deletion_error_continues(
     pruner: Pruner,
@@ -705,7 +680,6 @@ async def test_process_single_download_transcript_deletion_error_continues(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_process_single_download_archive_error_raises_prune_error(
     pruner: Pruner,
@@ -727,7 +701,6 @@ async def test_process_single_download_archive_error_raises_prune_error(
 # --- Tests for Pruner.prune_feed_downloads ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_prune_feed_downloads_no_candidates_returns_zero_counts(
     pruner: Pruner,
@@ -745,7 +718,6 @@ async def test_prune_feed_downloads_no_candidates_returns_zero_counts(
     assert files_deleted_count == 0
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_prune_feed_downloads_processes_candidates_and_counts(
     pruner: Pruner,
@@ -768,7 +740,6 @@ async def test_prune_feed_downloads_processes_candidates_and_counts(
     assert mock_download_db.archive_download.call_count == 2
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_prune_feed_downloads_candidate_identification_error_raises_prune_error(
     pruner: Pruner,
@@ -787,7 +758,6 @@ async def test_prune_feed_downloads_candidate_identification_error_raises_prune_
     assert exc_info.value.__cause__ is db_error
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_prune_feed_downloads_individual_failure_continues_processing(
     pruner: Pruner,
@@ -823,7 +793,6 @@ async def test_prune_feed_downloads_individual_failure_continues_processing(
 # --- Tests for Pruner.archive_feed ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_archive_feed_success_with_downloads(
     pruner: Pruner,
@@ -881,7 +850,6 @@ async def test_archive_feed_success_with_downloads(
     mock_feed_db.set_feed_enabled.assert_awaited_once_with("test_feed", False)
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_archive_feed_skips_archived_and_skipped_downloads(
     pruner: Pruner,
@@ -939,7 +907,6 @@ async def test_archive_feed_skips_archived_and_skipped_downloads(
     mock_feed_db.set_feed_enabled.assert_awaited_once_with("test_feed", False)
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_archive_feed_feed_xml_deletion_failure_raises_prune_error(
     pruner: Pruner,
@@ -972,7 +939,6 @@ async def test_archive_feed_feed_xml_deletion_failure_raises_prune_error(
     assert exc_info.value.__cause__ is file_error
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_archive_feed_feed_xml_not_found_continues(
     pruner: Pruner,
@@ -1005,7 +971,6 @@ async def test_archive_feed_feed_xml_not_found_continues(
     mock_feed_db.set_feed_enabled.assert_awaited_once_with("test_feed", False)
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_archive_feed_empty_feed_only_disables(
     pruner: Pruner,
@@ -1032,7 +997,6 @@ async def test_archive_feed_empty_feed_only_disables(
     mock_feed_db.set_feed_enabled.assert_awaited_once_with("test_feed", False)
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_archive_feed_database_fetch_error_raises_prune_error(
     pruner: Pruner,
@@ -1049,7 +1013,6 @@ async def test_archive_feed_database_fetch_error_raises_prune_error(
     assert exc_info.value.__cause__ is db_error
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_archive_feed_file_deletion_error_continues_archival(
     pruner: Pruner,
@@ -1091,7 +1054,6 @@ async def test_archive_feed_file_deletion_error_continues_archival(
     mock_feed_db.set_feed_enabled.assert_awaited_once_with("test_feed", False)
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_archive_feed_feed_image_deletion_failure_raises_prune_error(
     pruner: Pruner,
@@ -1132,7 +1094,6 @@ async def test_archive_feed_feed_image_deletion_failure_raises_prune_error(
     assert exc_info.value.__cause__ is file_error
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_archive_feed_feed_image_not_found_continues(
     pruner: Pruner,

@@ -72,7 +72,6 @@ def sample_feed_configs(sample_feed_config: FeedConfig) -> dict[str, FeedConfig]
 # --- Tests for FeedScheduler.__init__ ---
 
 
-@pytest.mark.unit
 def test_init_with_valid_feeds_succeeds(
     mock_data_coordinator: MagicMock,
     sample_feed_configs: dict[str, FeedConfig],
@@ -91,7 +90,6 @@ def test_init_with_valid_feeds_succeeds(
     assert scheduler.running is False  # Should not be running initially
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "valid_cron",
     [
@@ -127,7 +125,6 @@ def test_init_with_valid_cron_succeeds(
     assert scheduler.get_scheduled_feed_ids() == ["valid_feed"]
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "invalid_cron",
     [
@@ -157,7 +154,6 @@ def test_init_with_invalid_cron_raises_error(
     assert invalid_cron in str(exc_info.value)
 
 
-@pytest.mark.unit
 def test_init_with_empty_ready_feeds(
     mock_data_coordinator: MagicMock,
 ):
@@ -175,7 +171,6 @@ def test_init_with_empty_ready_feeds(
 # --- Tests for get_scheduled_feed_ids ---
 
 
-@pytest.mark.unit
 def test_get_scheduled_feed_ids_returns_correct_feeds(
     mock_data_coordinator: MagicMock,
     sample_feed_configs: dict[str, FeedConfig],
@@ -196,7 +191,6 @@ def test_get_scheduled_feed_ids_returns_correct_feeds(
 # --- Tests for static helper methods ---
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "feed_id,expected_job_id",
     [
@@ -210,7 +204,6 @@ def test_feed_to_job_id(feed_id: str, expected_job_id: str):
     assert FeedScheduler._feed_to_job_id(feed_id) == expected_job_id
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "job_id,expected_feed_id",
     [
@@ -229,7 +222,6 @@ def test_job_to_feed_id(job_id: str, expected_feed_id: str | None):
 # --- Tests for _process_feed_with_context ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @patch.object(scheduler, "set_context_id")
 @patch.object(time, "time", return_value=1234567890)

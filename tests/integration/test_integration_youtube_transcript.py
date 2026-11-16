@@ -22,7 +22,6 @@ VIDEO_WITH_AUTO_SUBS_ONLY = "ZY6TS8Q4C8s"
 VIDEO_WITH_NO_SUBS = "aqz-KE-bpKQ"
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_download_creator_transcript_success(
     tmp_path: Path,
@@ -47,7 +46,6 @@ async def test_download_creator_transcript_success(
     assert "-->" in content
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_download_auto_transcript_success(
     tmp_path: Path,
@@ -72,7 +70,6 @@ async def test_download_auto_transcript_success(
     assert "-->" in content
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_download_transcript_creates_parent_directories(
     tmp_path: Path,
@@ -93,7 +90,6 @@ async def test_download_transcript_creates_parent_directories(
     assert output_path.exists()
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_download_transcript_unavailable_returns_false(
     tmp_path: Path,
@@ -114,7 +110,6 @@ async def test_download_transcript_unavailable_returns_false(
     assert not output_path.exists()
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_download_creator_transcript_when_only_auto_available(
     tmp_path: Path,
@@ -135,7 +130,6 @@ async def test_download_creator_transcript_when_only_auto_available(
     assert not output_path.exists()
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_download_transcript_unsupported_language_returns_false(
     tmp_path: Path,
@@ -156,7 +150,6 @@ async def test_download_transcript_unsupported_language_returns_false(
     assert not output_path.exists()
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_download_transcript_not_available_source_returns_false(
     tmp_path: Path,
@@ -177,7 +170,6 @@ async def test_download_transcript_not_available_source_returns_false(
     assert not output_path.exists()
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_download_transcript_different_language(
     tmp_path: Path,

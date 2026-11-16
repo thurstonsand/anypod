@@ -18,7 +18,6 @@ from anypod.path_manager import PathManager
 # --- Integration Tests ---
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_download_feed_image_direct_jpg_no_conversion(
     respx_mock: respx.Router,
@@ -43,7 +42,6 @@ async def test_download_feed_image_direct_jpg_no_conversion(
     assert expected_path.read_bytes() == jpg_content
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_download_feed_image_direct_png_with_conversion(
     respx_mock: respx.Router,

@@ -98,7 +98,6 @@ def manual_admin_app(
 # --- Integration Tests ---
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_manual_submission_full_flow(
     manual_admin_app: TestClient,
@@ -144,7 +143,6 @@ async def test_manual_submission_full_flow(
     assert rss_path.exists()
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_manual_submission_resubmit_downloaded(
     manual_admin_app: TestClient,
@@ -186,7 +184,6 @@ async def test_manual_submission_resubmit_downloaded(
     assert "already completed" in body["message"].lower()
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_manual_submission_requeue_error(
     manual_admin_app: TestClient,
@@ -244,7 +241,6 @@ async def test_manual_submission_requeue_error(
     assert download.status == DownloadStatus.QUEUED
 
 
-@pytest.mark.integration
 def test_manual_submission_feed_not_configured(
     manual_admin_app: TestClient,
     manual_feed_setup: Feed,
@@ -258,7 +254,6 @@ def test_manual_submission_feed_not_configured(
     assert "not configured" in resp.json()["detail"].lower()
 
 
-@pytest.mark.integration
 def test_manual_submission_feed_disabled(
     manual_admin_app: TestClient,
     feed_configs: dict[str, FeedConfig],
@@ -282,7 +277,6 @@ def test_manual_submission_feed_disabled(
     assert "disabled" in resp.json()["detail"].lower()
 
 
-@pytest.mark.integration
 def test_manual_submission_scheduled_feed_rejects(
     manual_admin_app: TestClient,
     feed_configs: dict[str, FeedConfig],
@@ -304,7 +298,6 @@ def test_manual_submission_scheduled_feed_rejects(
     assert "does not accept manual" in resp.json()["detail"].lower()
 
 
-@pytest.mark.integration
 def test_manual_submission_invalid_url(
     manual_admin_app: TestClient,
     manual_feed_setup: Feed,
@@ -319,7 +312,6 @@ def test_manual_submission_invalid_url(
     assert resp.status_code in (400, 422)
 
 
-@pytest.mark.integration
 def test_manual_submission_empty_url(
     manual_admin_app: TestClient,
     manual_feed_setup: Feed,
@@ -332,7 +324,6 @@ def test_manual_submission_empty_url(
     assert resp.status_code == 422  # Pydantic validation error
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_manual_submission_multiple_submissions(
     manual_admin_app: TestClient,
@@ -380,7 +371,6 @@ async def test_manual_submission_multiple_submissions(
     assert download2.status == DownloadStatus.DOWNLOADED
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_manual_submission_delete_flow(
     manual_admin_app: TestClient,

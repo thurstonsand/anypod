@@ -99,7 +99,6 @@ async def create_test_feed(
     return feed
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 @pytest.mark.parametrize("url_type, url, source_type, resolved_url", TEST_URLS_PARAMS)
 async def test_enqueue_new_downloads_success(
@@ -162,7 +161,6 @@ async def test_enqueue_new_downloads_success(
     assert download.status == DownloadStatus.QUEUED
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_enqueue_new_downloads_invalid_url(
     enqueuer: Enqueuer,
@@ -213,7 +211,6 @@ async def test_enqueue_new_downloads_invalid_url(
     )
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_enqueue_new_downloads_with_date_filter(
     enqueuer: Enqueuer,
@@ -261,7 +258,6 @@ async def test_enqueue_new_downloads_with_date_filter(
     assert len(queued_downloads) == queued_count
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_enqueue_handles_existing_upcoming_downloads(
     enqueuer: Enqueuer,
@@ -335,7 +331,6 @@ async def test_enqueue_handles_existing_upcoming_downloads(
     assert len(remaining_upcoming) == 0
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_enqueue_handles_existing_downloaded_items(
     enqueuer: Enqueuer,
@@ -397,7 +392,6 @@ async def test_enqueue_handles_existing_downloaded_items(
     assert len(queued_downloads) == 0
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_enqueue_multiple_runs_idempotent(
     enqueuer: Enqueuer,
@@ -448,7 +442,6 @@ async def test_enqueue_multiple_runs_idempotent(
     assert len(second_run_downloads) == len(first_run_downloads)
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_enqueue_with_impossible_filter(
     enqueuer: Enqueuer,
@@ -492,7 +485,6 @@ async def test_enqueue_with_impossible_filter(
     assert len(queued_downloads) == 0
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_enqueue_feed_metadata_partial_overrides(
     enqueuer: Enqueuer,

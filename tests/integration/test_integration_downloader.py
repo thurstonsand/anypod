@@ -136,7 +136,6 @@ async def enqueue_test_items(
     return newly_queued_count
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "feed_id, feed_config, source_type, resolved_url", TEST_SINGLE_VIDEO_CASES
@@ -217,7 +216,6 @@ async def test_download_queued_single_video_success(
     assert len(remaining_queued) == 0
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_download_queued_multiple_videos_success(
     enqueuer: Enqueuer,
@@ -281,7 +279,6 @@ async def test_download_queued_multiple_videos_success(
             assert await file_manager.image_exists(feed_id, downloaded_item.id, "jpg")
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_download_queued_with_limit(
     enqueuer: Enqueuer,
@@ -333,7 +330,6 @@ async def test_download_queued_with_limit(
             assert await file_manager.image_exists(feed_id, dl.id, "jpg")
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_download_queued_no_queued_items(
     downloader: Downloader,
@@ -364,7 +360,6 @@ async def test_download_queued_no_queued_items(
     assert len(all_downloads) == 0
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_download_queued_handles_invalid_urls(
     downloader: Downloader,
@@ -436,7 +431,6 @@ async def test_download_queued_handles_invalid_urls(
     assert updated_download.thumbnail_ext is None
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_download_queued_retry_logic_max_errors(
     downloader: Downloader,
@@ -508,7 +502,6 @@ async def test_download_queued_retry_logic_max_errors(
     assert updated_download.thumbnail_ext is None
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_download_queued_mixed_success_and_failure(
     enqueuer: Enqueuer,
@@ -597,7 +590,6 @@ async def test_download_queued_mixed_success_and_failure(
     assert failed_download.thumbnail_ext is None
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_download_queued_file_properties(
     enqueuer: Enqueuer,
@@ -666,7 +658,6 @@ async def test_download_queued_file_properties(
     assert download.filesize == actual_size
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_filesize_metadata_flow(
     enqueuer: Enqueuer,

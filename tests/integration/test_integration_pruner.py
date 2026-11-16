@@ -265,7 +265,6 @@ async def populated_test_data(
     yield SAMPLE_DOWNLOADS
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_prune_feed_downloads_keep_last_success(
     pruner: Pruner,
@@ -367,7 +366,6 @@ async def test_prune_feed_downloads_keep_last_success(
     assert len(skipped_downloads) == 1
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_prune_feed_downloads_since_date_success(
     pruner: Pruner,
@@ -431,7 +429,6 @@ async def test_prune_feed_downloads_since_date_success(
     assert len(skipped_downloads) == 1
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_prune_feed_downloads_combined_rules(
     pruner: Pruner,
@@ -484,7 +481,6 @@ async def test_prune_feed_downloads_combined_rules(
     assert files_deleted_count == expected_files_deleted
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_prune_feed_downloads_no_candidates(
     pruner: Pruner,
@@ -512,7 +508,6 @@ async def test_prune_feed_downloads_no_candidates(
     assert len(downloaded_items) == 5
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_prune_feed_downloads_missing_files(
     pruner: Pruner,
@@ -559,7 +554,6 @@ async def test_prune_feed_downloads_missing_files(
     assert "downloaded_old_1" in archived_ids
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_prune_feed_downloads_empty_feed(
     pruner: Pruner,
@@ -590,7 +584,6 @@ async def test_prune_feed_downloads_empty_feed(
     assert files_deleted_count == 0
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_prune_feed_downloads_only_excluded_statuses(
     pruner: Pruner,
@@ -671,7 +664,6 @@ async def test_prune_feed_downloads_only_excluded_statuses(
     assert len(archived_items) == 1
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_prune_feed_downloads_large_dataset(
     pruner: Pruner,
@@ -745,7 +737,6 @@ async def test_prune_feed_downloads_large_dataset(
     assert total_remaining == 10
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_prune_feed_downloads_zero_keep_last(
     pruner: Pruner,
@@ -763,7 +754,6 @@ async def test_prune_feed_downloads_zero_keep_last(
     assert files_deleted_count == 0
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_prune_feed_downloads_future_date(
     pruner: Pruner,
@@ -820,7 +810,6 @@ async def test_prune_feed_downloads_future_date(
 # --- Tests for Pruner.archive_feed ---
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_archive_feed_success(
     pruner: Pruner,
@@ -914,7 +903,6 @@ async def test_archive_feed_success(
     assert feed.total_downloads == 0
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_archive_feed_transaction_rollback_on_failure(
     pruner: Pruner,

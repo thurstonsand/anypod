@@ -131,7 +131,6 @@ def ytdlp_wrapper(
 # --- Tests for POT provider extractor args injection ---
 
 
-@pytest.mark.unit
 @patch.object(YtdlpCore, "extract_playlist_info")
 @pytest.mark.asyncio
 async def test_extractor_args_default_none_sets_fetch_pot_never(
@@ -167,7 +166,6 @@ async def test_extractor_args_default_none_sets_fetch_pot_never(
     )
 
 
-@pytest.mark.unit
 @patch.object(YtdlpCore, "extract_playlist_info")
 @pytest.mark.asyncio
 async def test_extractor_args_with_provider_url_sets_http_base_url(
@@ -207,7 +205,6 @@ async def test_extractor_args_with_provider_url_sets_http_base_url(
 # --- Tests for YtdlpWrapper._match_filter_since_date ---
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "since_date,expected_expr",
     [
@@ -229,7 +226,6 @@ def test_match_filter_since_date(
 # --- Tests for YtdlpWrapper.fetch_playlist_metadata and fetch_new_downloads_metadata ---
 
 
-@pytest.mark.unit
 @patch.object(YtdlpCore, "extract_playlist_info")
 @pytest.mark.asyncio
 async def test_fetch_playlist_metadata_returns_feed(
@@ -286,7 +282,6 @@ async def test_fetch_playlist_metadata_returns_feed(
     )
 
 
-@pytest.mark.unit
 @patch.object(YtdlpCore, "extract_downloads_info")
 @pytest.mark.asyncio
 async def test_fetch_new_downloads_metadata_returns_downloads(
@@ -346,7 +341,6 @@ async def test_fetch_new_downloads_metadata_returns_downloads(
 # --- Tests for YtdlpWrapper.download_feed_thumbnail ---
 
 
-@pytest.mark.unit
 @patch.object(YtdlpCore, "download")
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
@@ -405,7 +399,6 @@ async def test_download_feed_thumbnail_args(
         assert output_value == expected_template
 
 
-@pytest.mark.unit
 @patch.object(YtdlpCore, "download")
 @patch("aiofiles.os.path.isfile")
 @pytest.mark.asyncio
@@ -431,7 +424,6 @@ async def test_download_feed_thumbnail_success_return_value(
     assert mock_is_file.call_count == 1
 
 
-@pytest.mark.unit
 @patch.object(YtdlpCore, "download")
 @patch("aiofiles.os.path.isfile")
 @pytest.mark.asyncio
@@ -460,7 +452,6 @@ async def test_download_feed_thumbnail_file_not_found(
 # --- Tests for YtdlpWrapper.download_media_thumbnail ---
 
 
-@pytest.mark.unit
 @patch.object(YtdlpCore, "download")
 @pytest.mark.asyncio
 async def test_download_media_thumbnail_success(
@@ -507,7 +498,6 @@ async def test_download_media_thumbnail_success(
     assert call_args[1] == source_url
 
 
-@pytest.mark.unit
 @patch.object(YtdlpCore, "download")
 @pytest.mark.asyncio
 async def test_download_media_thumbnail_failure(
@@ -548,7 +538,6 @@ async def test_download_media_thumbnail_failure(
 # --- Tests for YtdlpWrapper.download_media_to_file ---
 
 
-@pytest.mark.unit
 @patch.object(YtdlpCore, "download")
 @patch("aiofiles.os.path.isfile", return_value=True)
 @patch.object(YtdlpWrapper, "_prepare_download_dir")
@@ -619,7 +608,6 @@ async def test_download_media_to_file_success_simplified(
     assert mock_is_file.call_count >= 1
 
 
-@pytest.mark.unit
 @patch.object(YtdlpCore, "download")
 @patch("aiofiles.os.path.isfile", return_value=True)
 @patch("aiofiles.os.stat")
@@ -673,7 +661,6 @@ async def test_download_media_to_file_propagates_error_when_no_file(
 # --- Tests for date filtering behavior ---
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "source_type,url,should_call_set_date_range",
     [
@@ -729,7 +716,6 @@ async def test_date_filtering_behavior_by_reference_type(
 # --- Tests for keep_last filtering behavior ---
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "source_type,url,should_call_set_playlist_limit",
     [

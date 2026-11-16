@@ -73,7 +73,6 @@ def entry_info(entry_payload: dict[str, Any]) -> YtdlpInfo:
 # --- TwitterEntry tests -------------------------------------------------------
 
 
-@pytest.mark.unit
 def test_twitter_entry_fields(
     entry_info: YtdlpInfo, entry_payload: dict[str, Any]
 ) -> None:
@@ -88,14 +87,12 @@ def test_twitter_entry_fields(
     assert entry.description == entry_payload["description"]
 
 
-@pytest.mark.unit
 def test_twitter_entry_mime_type(entry_info: YtdlpInfo) -> None:
     """MIME type is derived from the extension."""
     entry = TwitterEntry(entry_info, FEED_ID)
     assert entry.mime_type == "video/mp4"
 
 
-@pytest.mark.unit
 def test_twitter_entry_missing_extension_raises() -> None:
     """Missing ext triggers data error."""
     payload = {
@@ -112,7 +109,6 @@ def test_twitter_entry_missing_extension_raises() -> None:
 # --- TwitterHandler tests -----------------------------------------------------
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @patch.object(YtdlpCore, "extract_playlist_info", new_callable=AsyncMock)
 async def test_determine_fetch_strategy_single_video(
@@ -132,7 +128,6 @@ async def test_determine_fetch_strategy_single_video(
     assert final_url == STATUS_URL
 
 
-@pytest.mark.unit
 def test_extract_feed_metadata(
     twitter_handler: TwitterHandler,
     entry_info: YtdlpInfo,
@@ -152,7 +147,6 @@ def test_extract_feed_metadata(
     assert feed.remote_image_url == entry_payload["thumbnail"]
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_extract_download_metadata_success(
     twitter_handler: TwitterHandler,
@@ -171,7 +165,6 @@ async def test_extract_download_metadata_success(
     assert download.status == DownloadStatus.QUEUED
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_extract_download_metadata_missing_filesize(
     twitter_handler: TwitterHandler,
@@ -188,7 +181,6 @@ async def test_extract_download_metadata_missing_filesize(
     assert download.filesize == 1
 
 
-@pytest.mark.unit
 def test_prepare_methods_return_unchanged(twitter_handler: TwitterHandler) -> None:
     """Prepare helpers are pass-through for Twitter."""
     base_args = YtdlpArgs()

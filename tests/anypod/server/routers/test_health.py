@@ -26,7 +26,6 @@ def client(app: FastAPI) -> ClientProtocol:
 # --- Tests for health endpoint ---
 
 
-@pytest.mark.unit
 def test_health_check_success(client: ClientProtocol):
     """Test that health check returns 200 with correct structure."""
     response = client.get("/api/health")

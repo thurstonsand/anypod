@@ -16,7 +16,6 @@ from anypod.manual_feed_runner import ManualFeedRunner
 # admin_test_app fixture provided by tests/integration/conftest.py
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_admin_refresh_feed_happy_path(
     admin_test_app: TestClient,
@@ -46,14 +45,12 @@ async def test_admin_refresh_feed_happy_path(
     assert "triggered" in data["message"].lower()
 
 
-@pytest.mark.integration
 def test_admin_refresh_feed_not_found(admin_test_app: TestClient) -> None:
     """404 when feed is missing from database."""
     resp = admin_test_app.post("/admin/feeds/missing/refresh")
     assert resp.status_code == 404
 
 
-@pytest.mark.integration
 def test_admin_refresh_feed_not_configured(
     admin_test_app: TestClient,
 ) -> None:
@@ -63,7 +60,6 @@ def test_admin_refresh_feed_not_configured(
     assert "not configured" in resp.json()["detail"].lower()
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_admin_refresh_feed_disabled(
     admin_test_app: TestClient,
@@ -92,7 +88,6 @@ async def test_admin_refresh_feed_disabled(
     assert "disabled" in resp.json()["detail"].lower()
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_admin_requeue_happy_path(
     admin_test_app: TestClient,
@@ -185,7 +180,6 @@ async def test_admin_requeue_happy_path(
     assert resp2.json()["requeue_count"] == 0
 
 
-@pytest.mark.integration
 def test_admin_requeue_feed_not_found(
     admin_test_app: TestClient,
     feed_configs: dict[str, FeedConfig],
@@ -196,7 +190,6 @@ def test_admin_requeue_feed_not_found(
     assert "feed" in resp.json()["detail"].lower()
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_admin_reset_sync_happy_path(
     admin_test_app: TestClient, feed_db: FeedDatabase
@@ -233,7 +226,6 @@ async def test_admin_reset_sync_happy_path(
     assert updated_feed.consecutive_failures == 0
 
 
-@pytest.mark.integration
 def test_admin_reset_sync_feed_not_found(admin_test_app: TestClient) -> None:
     """404 when feed is missing."""
     sync_time = datetime(2024, 6, 15, 12, 0, 0, tzinfo=UTC)
@@ -245,7 +237,6 @@ def test_admin_reset_sync_feed_not_found(admin_test_app: TestClient) -> None:
     assert "feed" in resp.json()["detail"].lower()
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_manual_submission_endpoint_enqueues_download(
     admin_test_app: TestClient,
@@ -286,7 +277,6 @@ async def test_manual_submission_endpoint_enqueues_download(
     assert stored.status == DownloadStatus.DOWNLOADED
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_manual_submission_requeue_existing_downloads(
     admin_test_app: TestClient,
@@ -346,7 +336,6 @@ async def test_manual_submission_requeue_existing_downloads(
     assert stored.status == DownloadStatus.QUEUED
 
 
-@pytest.mark.integration
 def test_manual_submission_feed_not_in_database(
     admin_test_app: TestClient,
     feed_configs: dict[str, FeedConfig],
@@ -367,7 +356,6 @@ def test_manual_submission_feed_not_in_database(
     assert "not found" in resp.json()["detail"].lower()
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_manual_submission_empty_url_validation(
     admin_test_app: TestClient,
@@ -400,7 +388,6 @@ async def test_manual_submission_empty_url_validation(
     assert resp.status_code == 422  # Pydantic validation error
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_manual_submission_missing_url_field(
     admin_test_app: TestClient,

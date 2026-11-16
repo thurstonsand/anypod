@@ -127,7 +127,6 @@ def _file_response_side_effect(
 # --- Tests for RSS feed endpoint ---
 
 
-@pytest.mark.unit
 @patch("anypod.server.routers.static.FileResponse")
 def test_serve_feed_success(
     mock_file_response: Mock, client: TestClient, mock_file_manager: Mock
@@ -149,7 +148,6 @@ def test_serve_feed_success(
     )
 
 
-@pytest.mark.unit
 def test_serve_feed_not_found(client: TestClient, mock_file_manager: Mock):
     """Test RSS feed serving when file is missing."""
     mock_file_manager.get_feed_xml_path.side_effect = FileNotFoundError("No file")
@@ -163,7 +161,6 @@ def test_serve_feed_not_found(client: TestClient, mock_file_manager: Mock):
 # --- Tests for media file endpoint ---
 
 
-@pytest.mark.unit
 @patch("anypod.server.routers.static.FileResponse")
 def test_serve_media_success(
     mock_file_response: Mock,
@@ -194,7 +191,6 @@ def test_serve_media_success(
     )
 
 
-@pytest.mark.unit
 def test_serve_media_file_not_found(client: TestClient, mock_file_manager: Mock):
     """Test media file serving when file doesn't exist."""
     mock_file_manager.get_download_file_path.side_effect = FileNotFoundError(
@@ -207,7 +203,6 @@ def test_serve_media_file_not_found(client: TestClient, mock_file_manager: Mock)
     assert response.json()["detail"] == "File not found"
 
 
-@pytest.mark.unit
 def test_serve_media_file_operation_error(client: TestClient, mock_file_manager: Mock):
     """Test media file serving when file operation fails."""
     mock_file_manager.get_download_file_path.side_effect = FileOperationError(
@@ -220,7 +215,6 @@ def test_serve_media_file_operation_error(client: TestClient, mock_file_manager:
     assert response.json()["detail"] == "Internal server error"
 
 
-@pytest.mark.unit
 @patch("anypod.server.routers.static.FileResponse")
 @pytest.mark.parametrize(
     "filename,ext,expected_content_type",
@@ -267,7 +261,6 @@ def test_serve_media_content_type_guessing(
 # --- Tests for feed browser endpoint ---
 
 
-@pytest.mark.unit
 def test_browse_feeds_success(client: TestClient, mock_feed_database: Mock):
     """Test successful feed directory browsing."""
     # Mock feed database to return test feeds
@@ -318,7 +311,6 @@ def test_browse_feeds_success(client: TestClient, mock_feed_database: Mock):
     mock_feed_database.get_feeds.assert_called_once_with(enabled=True)
 
 
-@pytest.mark.unit
 def test_browse_feeds_empty(client: TestClient, mock_feed_database: Mock):
     """Test feed directory browsing with no feeds."""
     mock_feed_database.get_feeds.return_value = []
@@ -338,7 +330,6 @@ def test_browse_feeds_empty(client: TestClient, mock_feed_database: Mock):
     assert len(parsed.links) == 0
 
 
-@pytest.mark.unit
 def test_browse_feeds_database_error(client: TestClient, mock_feed_database: Mock):
     """Test feed directory browsing when database fails."""
     mock_feed_database.get_feeds.side_effect = DatabaseOperationError("Database error")
@@ -352,7 +343,6 @@ def test_browse_feeds_database_error(client: TestClient, mock_feed_database: Moc
 # --- Tests for media browser endpoint ---
 
 
-@pytest.mark.unit
 def test_browse_media_success(client: TestClient, mock_feed_database: Mock):
     """Test successful media directory browsing."""
     # Mock feed database to return test feeds
@@ -403,7 +393,6 @@ def test_browse_media_success(client: TestClient, mock_feed_database: Mock):
     mock_feed_database.get_feeds.assert_called_once_with(enabled=True)
 
 
-@pytest.mark.unit
 def test_browse_media_empty(client: TestClient, mock_feed_database: Mock):
     """Test media directory browsing with no feeds."""
     mock_feed_database.get_feeds.return_value = []
@@ -426,7 +415,6 @@ def test_browse_media_empty(client: TestClient, mock_feed_database: Mock):
 # --- Tests for media feed browser endpoint ---
 
 
-@pytest.mark.unit
 def test_browse_media_feed_success(client: TestClient, mock_download_database: Mock):
     """Test successful media feed directory browsing."""
     # Mock download database to return test downloads
@@ -494,7 +482,6 @@ def test_browse_media_feed_success(client: TestClient, mock_download_database: M
     )
 
 
-@pytest.mark.unit
 def test_browse_media_feed_empty(client: TestClient, mock_download_database: Mock):
     """Test media feed directory browsing with no downloads."""
     mock_download_database.get_downloads_by_status.return_value = []
@@ -521,7 +508,6 @@ def test_browse_media_feed_empty(client: TestClient, mock_download_database: Moc
     assert len(parsed.links) == 1
 
 
-@pytest.mark.unit
 def test_browse_media_feed_database_error(
     client: TestClient, mock_download_database: Mock
 ):
@@ -536,7 +522,6 @@ def test_browse_media_feed_database_error(
     assert response.json()["detail"] == "Internal server error"
 
 
-@pytest.mark.unit
 def test_browse_media_feed_html_escaping(
     client: TestClient, mock_download_database: Mock
 ):
@@ -586,7 +571,6 @@ def test_browse_media_feed_html_escaping(
 # --- Tests for image serving endpoints ---
 
 
-@pytest.mark.unit
 @patch("anypod.server.routers.static.FileResponse")
 def test_serve_feed_image_success(
     mock_file_response: Mock,
@@ -607,7 +591,6 @@ def test_serve_feed_image_success(
     mock_file_manager.get_image_path.assert_called_once_with("test_feed", None, "jpg")
 
 
-@pytest.mark.unit
 def test_serve_feed_image_not_found(client: TestClient, mock_file_manager: Mock):
     """Test feed image serving when file doesn't exist."""
     mock_file_manager.get_image_path.side_effect = FileNotFoundError("File not found")
@@ -618,7 +601,6 @@ def test_serve_feed_image_not_found(client: TestClient, mock_file_manager: Mock)
     assert response.json()["detail"] == "Feed image not found"
 
 
-@pytest.mark.unit
 def test_serve_feed_image_operation_error(client: TestClient, mock_file_manager: Mock):
     """Test feed image serving when file operation fails."""
     mock_file_manager.get_image_path.side_effect = FileOperationError(
@@ -631,7 +613,6 @@ def test_serve_feed_image_operation_error(client: TestClient, mock_file_manager:
     assert response.json()["detail"] == "Internal server error"
 
 
-@pytest.mark.unit
 @patch("anypod.server.routers.static.FileResponse")
 def test_serve_download_image_success(
     mock_file_response: Mock,
@@ -654,7 +635,6 @@ def test_serve_download_image_success(
     )
 
 
-@pytest.mark.unit
 def test_serve_download_image_not_found(client: TestClient, mock_file_manager: Mock):
     """Test download image serving when file doesn't exist."""
     mock_file_manager.get_image_path.side_effect = FileNotFoundError("File not found")
@@ -665,7 +645,6 @@ def test_serve_download_image_not_found(client: TestClient, mock_file_manager: M
     assert response.json()["detail"] == "Download image not found"
 
 
-@pytest.mark.unit
 def test_serve_download_image_operation_error(
     client: TestClient, mock_file_manager: Mock
 ):
@@ -680,7 +659,6 @@ def test_serve_download_image_operation_error(
     assert response.json()["detail"] == "Internal server error"
 
 
-@pytest.mark.unit
 @patch("anypod.server.routers.static.FileResponse")
 @pytest.mark.parametrize(
     "ext,expected_content_type",
@@ -719,7 +697,6 @@ def test_serve_image_content_type_guessing(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "feed_id",
     [
@@ -745,7 +722,6 @@ def test_serve_feed_image_valid_ids_reach_handler(
     mock_file_manager.get_image_path.assert_called_once_with(feed_id, None, "jpg")
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "feed_id,expected_status",
     [
@@ -778,7 +754,6 @@ def test_serve_feed_image_invalid_ids_rejected(
     mock_file_manager.get_image_path.assert_not_called()
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "filename,expected_status",
     [
@@ -806,7 +781,6 @@ def test_serve_download_image_validation(
     assert response.status_code == expected_status
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "ext,expected_status",
     [
@@ -837,7 +811,6 @@ def test_serve_image_extension_validation(
     assert response.status_code == expected_status
 
 
-@pytest.mark.unit
 def test_serve_image_security_validation(client: TestClient, mock_file_manager: Mock):
     """Test that security validation prevents path traversal for images."""
     # Mock should never be called for malicious input
@@ -852,7 +825,6 @@ def test_serve_image_security_validation(client: TestClient, mock_file_manager: 
 # --- Security Tests ---
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "feed_id",
     [
@@ -876,7 +848,6 @@ def test_serve_feed_valid_ids_reach_handler(
     mock_file_manager.get_feed_xml_path.assert_called_once_with(feed_id)
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "feed_id,expected_status",
     [
@@ -907,7 +878,6 @@ def test_serve_feed_invalid_ids_rejected(
     mock_file_manager.get_feed_xml_path.assert_not_called()
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "feed_id,expected_status",
     [
@@ -930,7 +900,6 @@ def test_browse_media_feed_validation(
     assert response.status_code == expected_status
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "filename,expected_status",
     [
@@ -957,7 +926,6 @@ def test_serve_media_filename_validation(
     assert response.status_code == expected_status
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "ext,expected_status",
     [
@@ -988,7 +956,6 @@ def test_serve_media_extension_validation(
     assert response.status_code == expected_status
 
 
-@pytest.mark.unit
 def test_serve_media_path_traversal_basic(client: TestClient):
     """Test basic path traversal protection."""
     # FastAPI routing should reject these before they reach our handlers
@@ -996,7 +963,6 @@ def test_serve_media_path_traversal_basic(client: TestClient):
     assert response.status_code in [422, 404]
 
 
-@pytest.mark.unit
 def test_serve_media_security_validation(client: TestClient, mock_file_manager: Mock):
     """Test that security validation prevents path traversal."""
     # Mock should never be called for malicious input
@@ -1013,7 +979,6 @@ def test_serve_media_security_validation(client: TestClient, mock_file_manager: 
 # --- Tests for transcript serving endpoint ---
 
 
-@pytest.mark.unit
 @patch("anypod.server.routers.static.FileResponse")
 def test_serve_transcript_success(
     mock_file_response: Mock,
@@ -1045,7 +1010,6 @@ def test_serve_transcript_success(
     )
 
 
-@pytest.mark.unit
 def test_serve_transcript_not_found(client: TestClient, mock_file_manager: Mock):
     """Test transcript serving when file doesn't exist."""
     mock_file_manager.get_transcript_path.side_effect = FileNotFoundError(
@@ -1058,7 +1022,6 @@ def test_serve_transcript_not_found(client: TestClient, mock_file_manager: Mock)
     assert response.json()["detail"] == "Transcript not found"
 
 
-@pytest.mark.unit
 def test_serve_transcript_file_operation_error(
     client: TestClient, mock_file_manager: Mock
 ):
@@ -1073,7 +1036,6 @@ def test_serve_transcript_file_operation_error(
     assert response.json()["detail"] == "Internal server error"
 
 
-@pytest.mark.unit
 @patch("anypod.server.routers.static.FileResponse")
 @pytest.mark.parametrize(
     "lang,ext,expected_content_type",
@@ -1116,7 +1078,6 @@ def test_serve_transcript_content_type_guessing(
     )
 
 
-@pytest.mark.unit
 @patch("anypod.server.routers.static.FileResponse")
 def test_serve_transcript_head_request(
     mock_file_response: Mock,
@@ -1141,7 +1102,6 @@ def test_serve_transcript_head_request(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "filename,expected_status",
     [
@@ -1169,7 +1129,6 @@ def test_serve_transcript_filename_validation(
     assert response.status_code == expected_status
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "lang,expected_status",
     [
@@ -1201,7 +1160,6 @@ def test_serve_transcript_lang_validation(
     assert response.status_code == expected_status
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "ext,expected_status",
     [
@@ -1229,7 +1187,6 @@ def test_serve_transcript_extension_validation(
     assert response.status_code == expected_status
 
 
-@pytest.mark.unit
 def test_serve_transcript_security_validation(
     client: TestClient, mock_file_manager: Mock
 ):

@@ -108,7 +108,6 @@ def sample_download_upcoming(test_feed: Feed) -> Download:
 # --- Tests ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_add_and_get_download(
     download_db: DownloadDatabase, sample_download_queued: Download
@@ -141,7 +140,6 @@ async def test_add_and_get_download(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_upsert_download_updates_existing(
     download_db: DownloadDatabase, sample_download_queued: Download
@@ -194,7 +192,6 @@ async def test_upsert_download_updates_existing(
     assert retrieved_download.last_error == modified_download.last_error
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_update_download_raises_when_not_found(
     download_db: DownloadDatabase, test_feed: Feed
@@ -217,7 +214,6 @@ async def test_update_download_raises_when_not_found(
         await download_db.update_download(nonexistent_download)
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_update_download_updates_existing(
     download_db: DownloadDatabase, sample_download_queued: Download
@@ -242,7 +238,6 @@ async def test_update_download_updates_existing(
     assert retrieved.filesize == 4096
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_status_transitions(
     download_db: DownloadDatabase,
@@ -408,7 +403,6 @@ async def test_status_transitions(
         )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_set_thumbnail_extension_sets_and_clears(
     download_db: DownloadDatabase, sample_download_queued: Download
@@ -442,7 +436,6 @@ async def test_set_thumbnail_extension_sets_and_clears(
     assert after_clear.thumbnail_ext is None
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_set_thumbnail_extension_updates_existing_value(
     download_db: DownloadDatabase, sample_download_queued: Download
@@ -463,7 +456,6 @@ async def test_set_thumbnail_extension_updates_existing_value(
     assert updated.thumbnail_ext == "png"
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_set_thumbnail_extension_nonexistent_download(
     download_db: DownloadDatabase,
@@ -473,7 +465,6 @@ async def test_set_thumbnail_extension_nonexistent_download(
         await download_db.set_thumbnail_extension("missing_feed", "missing_id", "jpg")
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_set_download_logs_persists_value(
     download_db: DownloadDatabase, sample_download_queued: Download
@@ -495,7 +486,6 @@ async def test_set_download_logs_persists_value(
     assert stored.download_logs == logs
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_set_download_logs_overwrites_existing_value(
     download_db: DownloadDatabase, sample_download_queued: Download
@@ -523,7 +513,6 @@ async def test_set_download_logs_overwrites_existing_value(
     assert stored.download_logs == logs2
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_set_download_logs_nonexistent_download_raises(
     download_db: DownloadDatabase,
@@ -533,7 +522,6 @@ async def test_set_download_logs_nonexistent_download_raises(
         await download_db.set_download_logs("missing_feed", "missing_id", "logs")
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_requeue_downloads_multi(
     feed_db: FeedDatabase, download_db: DownloadDatabase
@@ -672,7 +660,6 @@ async def test_requeue_downloads_multi(
         await download_db.requeue_downloads(feed_id, ["nonexistent"])
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bulk_requeue_by_status_only_updates_matching(
     feed_db: FeedDatabase, download_db: DownloadDatabase, subtests: pytest.Subtests
@@ -746,7 +733,6 @@ async def test_bulk_requeue_by_status_only_updates_matching(
     assert count_second == 0
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bulk_requeue_requires_status(
     feed_db: FeedDatabase, download_db: DownloadDatabase
@@ -785,7 +771,6 @@ async def test_bulk_requeue_requires_status(
         await download_db.requeue_downloads(feed_id, None)
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_get_downloads_to_prune_by_keep_last(
     feed_db: FeedDatabase, download_db: DownloadDatabase
@@ -952,7 +937,6 @@ async def test_get_downloads_to_prune_by_keep_last(
     assert len(prune_keep0) == 0, "Should return 0 if keep_last is 0"
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_get_downloads_to_prune_by_since(
     feed_db: FeedDatabase, download_db: DownloadDatabase
@@ -1112,7 +1096,6 @@ async def test_get_downloads_to_prune_by_since(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_get_downloads_by_status(
     feed_db: FeedDatabase, download_db: DownloadDatabase, subtests: pytest.Subtests
@@ -1343,7 +1326,6 @@ async def test_get_downloads_by_status(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_get_downloads_by_status_date_filtering(
     feed_db: FeedDatabase, download_db: DownloadDatabase
@@ -1523,7 +1505,6 @@ async def test_get_downloads_by_status_date_filtering(
 # --- Tests for DownloadDatabase.count_downloads_by_status ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_count_downloads_by_status(
     feed_db: FeedDatabase, download_db: DownloadDatabase
@@ -1715,7 +1696,6 @@ async def test_count_downloads_by_status(
 # --- Tests for Download.from_row ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_upsert_download_with_default_timestamps(
     feed_db: FeedDatabase, download_db: DownloadDatabase
@@ -1771,7 +1751,6 @@ async def test_upsert_download_with_default_timestamps(
     assert time_diff_updated < 5, "updated_at should be close to current time"
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_database_triggers_update_timestamps(
     feed_db: FeedDatabase, download_db: DownloadDatabase
@@ -2037,7 +2016,6 @@ async def test_bump_retries_max_errors_is_one(
     assert updated_row.last_error == "First and only error allowed"
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bump_retries_downloaded_item_does_not_become_error(
     download_db: DownloadDatabase,
@@ -2091,7 +2069,6 @@ async def test_bump_retries_downloaded_item_does_not_become_error(
 # --- Tests validating computed total_downloads column ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_total_downloads_computed_column(
     feed_db: FeedDatabase,

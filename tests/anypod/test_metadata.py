@@ -3,8 +3,6 @@
 
 from datetime import UTC, datetime
 
-import pytest
-
 from anypod.config import FeedConfig
 from anypod.config.types import (
     CronExpression,
@@ -16,7 +14,6 @@ from anypod.db.types import Download, DownloadStatus, Feed, SourceType, Transcri
 from anypod.metadata import merge_download_metadata, merge_feed_metadata
 
 
-@pytest.mark.unit
 def test_merge_feed_metadata_no_overrides():
     """Test merging when no metadata overrides are provided."""
     # Create a fetched feed with some metadata
@@ -63,7 +60,6 @@ def test_merge_feed_metadata_no_overrides():
     assert result["explicit"] is False
 
 
-@pytest.mark.unit
 def test_merge_feed_metadata_with_overrides():
     """Test merging when metadata overrides are provided."""
     # Create a fetched feed with some metadata
@@ -130,7 +126,6 @@ def test_merge_feed_metadata_with_overrides():
     assert result["explicit"] is True  # overridden
 
 
-@pytest.mark.unit
 def test_merge_feed_metadata_explicit_false_overrides_true():
     """Test that explicit=False override correctly overrides explicit=True from feed.
 
@@ -170,7 +165,6 @@ def test_merge_feed_metadata_explicit_false_overrides_true():
     assert result["explicit"] is False
 
 
-@pytest.mark.unit
 def test_merge_feed_metadata_partial_overrides():
     """Test merging when only some metadata fields are overridden."""
     # Create a fetched feed with some metadata
@@ -223,7 +217,6 @@ def test_merge_feed_metadata_partial_overrides():
     assert result["explicit"] is False  # from fetched
 
 
-@pytest.mark.unit
 def test_merge_feed_metadata_removes_none_values():
     """Test that None values are excluded from the result."""
     # Create a fetched feed with some None values
@@ -270,7 +263,6 @@ def test_merge_feed_metadata_removes_none_values():
     assert result["category"] == PodcastCategories("Technology")
 
 
-@pytest.mark.unit
 def test_merge_feed_metadata_category_mapping():
     """Test that categories field is correctly mapped to category."""
     # Create a fetched feed
@@ -308,7 +300,6 @@ def test_merge_feed_metadata_category_mapping():
     assert "categories" not in result
 
 
-@pytest.mark.unit
 def test_merge_feed_metadata_authoritative_fields():
     """Test that source_type, since, and keep_last come from authoritative sources."""
     # Create a fetched feed
@@ -351,7 +342,6 @@ def test_merge_feed_metadata_authoritative_fields():
 # --- merge_download_metadata tests ---
 
 
-@pytest.mark.unit
 def test_merge_download_metadata_or_pattern_fields():
     """Test fields using 'or' pattern preserve existing when fetched is empty string."""
     existing = Download(
@@ -397,7 +387,6 @@ def test_merge_download_metadata_or_pattern_fields():
     assert changed_fields == []
 
 
-@pytest.mark.unit
 def test_merge_download_metadata_or_pattern_fields_overwrites_when_truthy():
     """Test fields using 'or' pattern overwrite when fetched is truthy."""
     existing = Download(
@@ -442,7 +431,6 @@ def test_merge_download_metadata_or_pattern_fields_overwrites_when_truthy():
     assert set(changed_fields) == {"source_url", "title", "published"}
 
 
-@pytest.mark.unit
 def test_merge_download_metadata_is_not_none_pattern_fields():
     """Test fields using 'is not None' pattern allow empty string to overwrite."""
     existing = Download(
@@ -484,7 +472,6 @@ def test_merge_download_metadata_is_not_none_pattern_fields():
     assert set(changed_fields) == {"description", "quality_info"}
 
 
-@pytest.mark.unit
 def test_merge_download_metadata_is_not_none_preserves_on_none():
     """Test fields using 'is not None' pattern preserve when fetched is None."""
     existing = Download(
@@ -526,7 +513,6 @@ def test_merge_download_metadata_is_not_none_preserves_on_none():
     assert changed_fields == []
 
 
-@pytest.mark.unit
 def test_merge_download_metadata_thumbnail_fields():
     """Test thumbnail-related fields merge correctly."""
     existing = Download(
@@ -568,7 +554,6 @@ def test_merge_download_metadata_thumbnail_fields():
     assert result.thumbnail_ext == "jpg"
 
 
-@pytest.mark.unit
 def test_merge_download_metadata_thumbnail_preserves_on_none():
     """Test thumbnail URL preserved when fetched is None."""
     existing = Download(
@@ -606,7 +591,6 @@ def test_merge_download_metadata_thumbnail_preserves_on_none():
     assert result.remote_thumbnail_url == "https://example.com/thumb.jpg"
 
 
-@pytest.mark.unit
 def test_merge_download_metadata_thumbnail_overwrites_with_empty_string():
     """Test thumbnail URL overwrites when fetched is empty string."""
     existing = Download(
@@ -644,7 +628,6 @@ def test_merge_download_metadata_thumbnail_overwrites_with_empty_string():
     assert result.remote_thumbnail_url == ""
 
 
-@pytest.mark.unit
 def test_merge_download_metadata_transcript_fields():
     """Test transcript-related fields merge correctly."""
     existing = Download(
@@ -688,7 +671,6 @@ def test_merge_download_metadata_transcript_fields():
     assert result.transcript_source == TranscriptSource.AUTO
 
 
-@pytest.mark.unit
 def test_merge_download_metadata_transcript_preserves_on_none():
     """Test transcript fields preserved when fetched is None."""
     existing = Download(
@@ -732,7 +714,6 @@ def test_merge_download_metadata_transcript_preserves_on_none():
     assert result.transcript_source == TranscriptSource.CREATOR
 
 
-@pytest.mark.unit
 def test_merge_download_metadata_transcript_overwrites_with_empty_string():
     """Test transcript fields overwrite when fetched is empty string."""
     existing = Download(
@@ -773,7 +754,6 @@ def test_merge_download_metadata_transcript_overwrites_with_empty_string():
     assert result.transcript_lang == ""
 
 
-@pytest.mark.unit
 def test_merge_download_metadata_status_fields_not_modified():
     """Test status and error tracking fields are not modified by merge."""
     existing = Download(
@@ -820,7 +800,6 @@ def test_merge_download_metadata_status_fields_not_modified():
     assert result.title == "Updated Title"
 
 
-@pytest.mark.unit
 def test_merge_download_metadata_timestamp_fields_not_modified():
     """Test timestamp fields are not modified by merge."""
     discovered_time = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
@@ -870,7 +849,6 @@ def test_merge_download_metadata_timestamp_fields_not_modified():
     assert result.title == "Updated Title"
 
 
-@pytest.mark.unit
 def test_merge_download_metadata_does_not_mutate_existing():
     """Test merge returns a new copy without mutating the existing download."""
     existing = Download(
@@ -913,7 +891,6 @@ def test_merge_download_metadata_does_not_mutate_existing():
     assert result is not existing
 
 
-@pytest.mark.unit
 def test_merge_download_metadata_all_field_categories():
     """Test comprehensive merge covering all field categories."""
     existing = Download(

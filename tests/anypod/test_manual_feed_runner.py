@@ -72,7 +72,6 @@ def sample_processing_results() -> ProcessingResults:
 # --- Tests for trigger ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_trigger_creates_task_when_none_exists(
     manual_feed_runner: ManualFeedRunner,
@@ -104,7 +103,6 @@ async def test_trigger_creates_task_when_none_exists(
     await task
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_trigger_creates_task_before_previous_starts_running(
     manual_feed_runner: ManualFeedRunner,
@@ -143,7 +141,6 @@ async def test_trigger_creates_task_before_previous_starts_running(
     await first_task
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_trigger_creates_new_task_after_previous_completes(
     manual_feed_runner: ManualFeedRunner,
@@ -179,7 +176,6 @@ async def test_trigger_creates_new_task_after_previous_completes(
 # --- Tests for _run_feed ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_run_feed_acquires_and_releases_semaphore(
     manual_feed_runner: ManualFeedRunner,
@@ -213,7 +209,6 @@ async def test_run_feed_acquires_and_releases_semaphore(
     assert result == sample_processing_results
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_run_feed_removes_task_from_queued_tasks(
     manual_feed_runner: ManualFeedRunner,
@@ -241,7 +236,6 @@ async def test_run_feed_removes_task_from_queued_tasks(
     await dummy_task
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_run_feed_calls_data_coordinator_with_correct_args(
     manual_feed_runner: ManualFeedRunner,
@@ -260,7 +254,6 @@ async def test_run_feed_calls_data_coordinator_with_correct_args(
     mock_data_coordinator.process_feed.assert_awaited_once_with(FEED_ID, feed_config)
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_run_feed_propagates_coordinator_errors(
     manual_feed_runner: ManualFeedRunner,

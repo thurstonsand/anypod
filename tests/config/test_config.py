@@ -58,7 +58,6 @@ def sample_config_file(tmp_path: Path) -> Path:
     return config_path
 
 
-@pytest.mark.unit
 @patch.object(DynamicYamlConfigSettingsSource, "_resolve_config_path")
 def test_load_from_default_location(mock_get_yaml_path: Mock, tmp_path: Path):
     """Tests if AppSettings loads configuration from the default file path when no overrides are provided."""
@@ -118,7 +117,6 @@ def test_load_from_default_location(mock_get_yaml_path: Mock, tmp_path: Path):
     )
 
 
-@pytest.mark.unit
 @patch.dict(os.environ, {"CONFIG_FILE": ""})
 def test_override_location_with_env_var(sample_config_file: Path):
     """Tests if AppSettings loads configuration from the path specified by the CONFIG_FILE environment variable."""
@@ -148,7 +146,6 @@ def test_override_location_with_env_var(sample_config_file: Path):
     )
 
 
-@pytest.mark.unit
 @patch.dict(os.environ, {"CONFIG_FILE": "/path/to/nonexistent/file.yaml"})
 def test_override_location_with_init_arg(sample_config_file: Path):
     """Tests if AppSettings loads configuration from the path specified via an initialization argument, overriding defaults and env vars."""
@@ -202,7 +199,6 @@ def test_override_location_with_init_arg(sample_config_file: Path):
     )
 
 
-@pytest.mark.unit
 def test_manual_feed_requires_title():
     """Schedule 'manual' enforces metadata title override."""
     with pytest.raises(ValidationError):
@@ -213,7 +209,6 @@ def test_manual_feed_requires_title():
         )
 
 
-@pytest.mark.unit
 def test_manual_feed_parses_successfully_when_title_present():
     """Manual feeds accept schedule sentinel and expose helper flag."""
     cfg = FeedConfig(
@@ -226,7 +221,6 @@ def test_manual_feed_parses_successfully_when_title_present():
     assert cfg.metadata.title == "Manual"
 
 
-@pytest.mark.unit
 def test_manual_feed_url_optional_stays_none():
     """Manual feeds may omit the URL entirely."""
     cfg = FeedConfig(
@@ -237,7 +231,6 @@ def test_manual_feed_url_optional_stays_none():
     assert cfg.url is None
 
 
-@pytest.mark.unit
 def test_scheduled_feed_requires_url():
     """Non-manual feeds must define `url`."""
     with pytest.raises(ValidationError):
@@ -249,7 +242,6 @@ def test_scheduled_feed_requires_url():
         )
 
 
-@pytest.mark.unit
 @patch.dict(os.environ, {"CONFIG_FILE": "/path/to/hopefully/nonexistent/feeds.yaml"})
 def test_nonexistent_config_file_raises_error():
     """Tests that instantiating AppSettings raises an error if the specified config file does not exist, and that the cause is FileNotFoundError."""
@@ -263,7 +255,6 @@ def test_nonexistent_config_file_raises_error():
     )
 
 
-@pytest.mark.unit
 def test_invalid_yaml_format_raises_error(tmp_path: Path):
     """Tests that instantiating AppSettings raises an error if the specified config file contains invalid YAML, and that the cause is a yaml.YAMLError."""
     invalid_yaml_path = tmp_path / "invalid_feeds.yaml"
@@ -282,7 +273,6 @@ def test_invalid_yaml_format_raises_error(tmp_path: Path):
     )
 
 
-@pytest.mark.unit
 def test_empty_yaml_file_loads_defaults(tmp_path: Path):
     """Tests that an empty YAML file results in default settings values."""
     empty_yaml_path = tmp_path / "empty_feeds.yaml"
@@ -297,7 +287,6 @@ def test_empty_yaml_file_loads_defaults(tmp_path: Path):
     )
 
 
-@pytest.mark.unit
 def test_yaml_file_with_only_other_keys(tmp_path: Path):
     """Tests that a YAML file with keys not defined in AppSettings is ignored for the main settings, but the 'feeds' key is still processed if present."""
     config_path = tmp_path / "other_keys.yaml"
@@ -335,7 +324,6 @@ def test_yaml_file_with_only_other_keys(tmp_path: Path):
 # --- Tests for AppSettings loading from YAML vs env vars ---
 
 
-@pytest.mark.unit
 def test_yaml_settings_override_defaults(tmp_path: Path):
     """Settings defined in YAML override default values."""
     config_path = tmp_path / "settings.yaml"
@@ -357,7 +345,6 @@ def test_yaml_settings_override_defaults(tmp_path: Path):
     assert settings.base_url == "https://custom.example.com"
 
 
-@pytest.mark.unit
 @patch.dict(
     os.environ,
     {
@@ -382,7 +369,6 @@ def test_env_vars_override_defaults(tmp_path: Path):
     assert settings.base_url == "https://env.example.com"
 
 
-@pytest.mark.unit
 @patch.dict(
     os.environ,
     {
@@ -410,7 +396,6 @@ def test_env_vars_take_priority_over_yaml(tmp_path: Path):
     assert settings.server_port == 7777, "Env var should override YAML"
 
 
-@pytest.mark.unit
 def test_yaml_complex_types_load_correctly(tmp_path: Path):
     """Complex types like lists and timedeltas load correctly from YAML."""
     config_path = tmp_path / "complex.yaml"
@@ -434,7 +419,6 @@ def test_yaml_complex_types_load_correctly(tmp_path: Path):
 # --- Tests for FeedConfig.yt_args validator ---
 
 
-@pytest.mark.unit
 def test_feed_config_yt_args_valid_string():
     """Tests that a valid yt_args string is correctly parsed."""
     feed = FeedConfig(  # type: ignore
@@ -447,14 +431,12 @@ def test_feed_config_yt_args_valid_string():
     assert feed.yt_args == expected_args
 
 
-@pytest.mark.unit
 def test_feed_config_yt_args_empty_string():
     """Tests that an empty yt_args string results in an empty list."""
     feed = FeedConfig(url="http://example.com", schedule="* * * * *", yt_args="")  # type: ignore
     assert feed.yt_args == []
 
 
-@pytest.mark.unit
 def test_feed_config_yt_args_invalid_string_shlex_raises_validation_error():
     """Tests that a malformed yt_args string (shlex error) raises ValidationError."""
     with pytest.raises(ValidationError) as exc_info:
@@ -468,14 +450,12 @@ def test_feed_config_yt_args_invalid_string_shlex_raises_validation_error():
     assert "no closing quotation" in exc_info.value.errors()[0]["msg"].lower()
 
 
-@pytest.mark.unit
 def test_feed_config_yt_args_invalid_type_raises_type_error():
     """Tests that a non-string/non-None yt_args type raises ValidationError (wrapping TypeError)."""
     with pytest.raises(TypeError):
         FeedConfig(url="http://example.com", schedule="* * * * *", yt_args=123)  # type: ignore
 
 
-@pytest.mark.unit
 def test_feed_config_no_yt_args_uses_default_factory():
     """Tests that if yt_args is not provided, it defaults to an empty list."""
     feed = FeedConfig(url="http://example.com", schedule="* * * * *")  # type: ignore
@@ -485,7 +465,6 @@ def test_feed_config_no_yt_args_uses_default_factory():
 # --- Tests for FeedConfig.since validator ---
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "since_value,expected_year,expected_month,expected_day,expected_hour",
     [
@@ -516,7 +495,6 @@ def test_feed_config_since_valid_values(
     assert feed.since.second == 0
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "since_value,expected_exception",
     [
@@ -541,7 +519,6 @@ def test_feed_config_since_invalid_values(
 # --- Tests for FeedConfig.download_delay validator ---
 
 
-@pytest.mark.unit
 def test_feed_config_download_delay_valid_string():
     """Valid duration string is parsed into timedelta."""
     feed = FeedConfig(  # type: ignore[call-arg]
@@ -552,7 +529,6 @@ def test_feed_config_download_delay_valid_string():
     assert feed.download_delay == timedelta(hours=24)
 
 
-@pytest.mark.unit
 def test_feed_config_download_delay_none_preserved():
     """None value is preserved."""
     feed = FeedConfig(  # type: ignore[call-arg]
@@ -563,7 +539,6 @@ def test_feed_config_download_delay_none_preserved():
     assert feed.download_delay is None
 
 
-@pytest.mark.unit
 def test_feed_config_download_delay_empty_string_becomes_none():
     """Empty string is treated as None."""
     feed = FeedConfig(  # type: ignore[call-arg]
@@ -574,7 +549,6 @@ def test_feed_config_download_delay_empty_string_becomes_none():
     assert feed.download_delay is None
 
 
-@pytest.mark.unit
 def test_feed_config_download_delay_whitespace_becomes_none():
     """Whitespace-only string is treated as None."""
     feed = FeedConfig(  # type: ignore[call-arg]
@@ -585,7 +559,6 @@ def test_feed_config_download_delay_whitespace_becomes_none():
     assert feed.download_delay is None
 
 
-@pytest.mark.unit
 def test_feed_config_download_delay_timedelta_passthrough():
     """Timedelta values pass through unchanged."""
     td = timedelta(hours=24)
@@ -597,7 +570,6 @@ def test_feed_config_download_delay_timedelta_passthrough():
     assert feed.download_delay == td
 
 
-@pytest.mark.unit
 def test_feed_config_download_delay_invalid_format_raises_value_error():
     """Invalid format strings raise ValueError."""
     with pytest.raises(ValidationError) as exc_info:
@@ -609,7 +581,6 @@ def test_feed_config_download_delay_invalid_format_raises_value_error():
     assert "Invalid duration format" in str(exc_info.value)
 
 
-@pytest.mark.unit
 def test_feed_config_download_delay_negative_raises_value_error():
     """Negative duration strings raise ValueError."""
     with pytest.raises(ValidationError) as exc_info:
@@ -621,7 +592,6 @@ def test_feed_config_download_delay_negative_raises_value_error():
     assert "non-negative" in str(exc_info.value)
 
 
-@pytest.mark.unit
 def test_feed_config_download_delay_invalid_type_raises_type_error():
     """Invalid types raise TypeError."""
     with pytest.raises(TypeError, match="duration string"):

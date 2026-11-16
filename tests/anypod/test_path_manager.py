@@ -28,7 +28,6 @@ def path_manager(data_dir: Path) -> PathManager:
 # --- Tests for initialization and properties ---
 
 
-@pytest.mark.unit
 def test_init_normalizes_paths(tmp_path_factory: pytest.TempPathFactory):
     """Tests that PathManager normalizes and resolves provided paths."""
     data_dir = tmp_path_factory.mktemp("data")
@@ -42,7 +41,6 @@ def test_init_normalizes_paths(tmp_path_factory: pytest.TempPathFactory):
     assert path_manager.base_url == "http://example.com"
 
 
-@pytest.mark.unit
 def test_properties_return_correct_values(path_manager: PathManager, data_dir: Path):
     """Tests that properties return the initialized values."""
     assert path_manager.base_data_dir == data_dir.resolve() / "media"
@@ -54,7 +52,6 @@ def test_properties_return_correct_values(path_manager: PathManager, data_dir: P
 # --- Tests for feed_data_dir ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_feed_data_dir_creates_directory(path_manager: PathManager):
     """Tests that feed_data_dir creates the directory if it doesn't exist."""
@@ -68,7 +65,6 @@ async def test_feed_data_dir_creates_directory(path_manager: PathManager):
     assert feed_dir.parent == path_manager.base_data_dir
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_feed_data_dir_idempotent(path_manager: PathManager):
     """Tests that calling feed_data_dir multiple times is safe."""
@@ -81,7 +77,6 @@ async def test_feed_data_dir_idempotent(path_manager: PathManager):
     assert first_call.exists()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @patch(
     "aiofiles.os.makedirs",
@@ -104,7 +99,6 @@ async def test_feed_data_dir_handles_mkdir_error(
 # --- Tests for feed_tmp_dir ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_feed_tmp_dir_creates_directory(path_manager: PathManager):
     """Tests that feed_tmp_dir creates the directory if it doesn't exist."""
@@ -118,7 +112,6 @@ async def test_feed_tmp_dir_creates_directory(path_manager: PathManager):
     assert tmp_dir.parent == path_manager.base_tmp_dir
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_feed_tmp_dir_idempotent(path_manager: PathManager):
     """Tests that calling feed_tmp_dir multiple times is safe."""
@@ -131,7 +124,6 @@ async def test_feed_tmp_dir_idempotent(path_manager: PathManager):
     assert first_call.exists()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @patch("aiofiles.os.makedirs", new_callable=AsyncMock, side_effect=OSError("Disk full"))
 async def test_feed_tmp_dir_handles_mkdir_error(
@@ -150,7 +142,6 @@ async def test_feed_tmp_dir_handles_mkdir_error(
 # --- Tests for feed_images_dir ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_feed_images_dir_creates_directory(path_manager: PathManager):
     """Tests that feed_images_dir creates the directory if it doesn't exist."""
@@ -164,7 +155,6 @@ async def test_feed_images_dir_creates_directory(path_manager: PathManager):
     assert feed_dir.parent == path_manager.base_images_dir
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_feed_images_dir_idempotent(path_manager: PathManager):
     """Tests that calling feed_images_dir multiple times is safe."""
@@ -177,7 +167,6 @@ async def test_feed_images_dir_idempotent(path_manager: PathManager):
     assert first_call.exists()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @patch(
     "aiofiles.os.makedirs",
@@ -200,7 +189,6 @@ async def test_feed_images_dir_handles_mkdir_error(
 # --- Tests for download_images_dir ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_download_images_dir_creates_directory(path_manager: PathManager):
     """Tests that download_images_dir creates the downloads directory under the feed images dir."""
@@ -215,7 +203,6 @@ async def test_download_images_dir_creates_directory(path_manager: PathManager):
     assert downloads_dir.parent.parent == path_manager.base_images_dir
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_download_images_dir_idempotent(path_manager: PathManager):
     """Tests that calling download_images_dir multiple times is safe and returns the same path."""
@@ -231,7 +218,6 @@ async def test_download_images_dir_idempotent(path_manager: PathManager):
 # --- Tests for URL generation methods ---
 
 
-@pytest.mark.unit
 def test_feed_url_generation(path_manager: PathManager):
     """Tests that feed_url generates correct RSS feed URLs."""
     feed_id = "my_podcast"
@@ -241,7 +227,6 @@ def test_feed_url_generation(path_manager: PathManager):
     assert url == f"{path_manager.base_url}/feeds/{feed_id}.xml"
 
 
-@pytest.mark.unit
 def test_feed_url_special_characters(path_manager: PathManager):
     """Tests feed_url with special characters in feed_id."""
     feed_id = "feed-with_special.chars"
@@ -251,7 +236,6 @@ def test_feed_url_special_characters(path_manager: PathManager):
     assert url == f"{path_manager.base_url}/feeds/{feed_id}.xml"
 
 
-@pytest.mark.unit
 def test_feed_media_url_generation(path_manager: PathManager):
     """Tests that feed_media_url generates correct base media URLs."""
     feed_id = "video_feed"
@@ -261,7 +245,6 @@ def test_feed_media_url_generation(path_manager: PathManager):
     assert url == f"{path_manager.base_url}/media/{feed_id}/"
 
 
-@pytest.mark.unit
 def test_media_file_url_generation(path_manager: PathManager):
     """Tests that media_file_url generates correct individual file URLs."""
     feed_id = "content_feed"
@@ -273,7 +256,6 @@ def test_media_file_url_generation(path_manager: PathManager):
     assert url == f"{path_manager.feed_media_url(feed_id)}{download_id}.{ext}"
 
 
-@pytest.mark.unit
 def test_media_file_url_different_extensions(path_manager: PathManager):
     """Tests media_file_url with various file extensions."""
     feed_id = "multi_format"
@@ -289,7 +271,6 @@ def test_media_file_url_different_extensions(path_manager: PathManager):
     assert m4a_url == f"{path_manager.feed_media_url(feed_id)}{download_id}.m4a"
 
 
-@pytest.mark.unit
 def test_image_url_feed_level(path_manager: PathManager):
     """Tests that image_url generates correct feed-level image URLs."""
     feed_id = "my_podcast"
@@ -300,7 +281,6 @@ def test_image_url_feed_level(path_manager: PathManager):
     assert url == f"{path_manager.base_url}/images/{feed_id}.{ext}"
 
 
-@pytest.mark.unit
 def test_image_url_download_level(path_manager: PathManager):
     """Tests that image_url generates correct download-level image URLs."""
     feed_id = "content_feed"
@@ -312,7 +292,6 @@ def test_image_url_download_level(path_manager: PathManager):
     assert url == f"{path_manager.base_url}/images/{feed_id}/{download_id}.{ext}"
 
 
-@pytest.mark.unit
 def test_image_url_special_characters(path_manager: PathManager):
     """Tests image_url with special characters in identifiers."""
     feed_id = "feed-with_special.chars"
@@ -330,7 +309,6 @@ def test_image_url_special_characters(path_manager: PathManager):
     )
 
 
-@pytest.mark.unit
 def test_image_url_different_extensions(path_manager: PathManager):
     """Tests image_url with various file extensions."""
     feed_id = "multi_format"
@@ -349,7 +327,6 @@ def test_image_url_different_extensions(path_manager: PathManager):
 # --- Tests for file path generation methods ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_media_file_path_generation(path_manager: PathManager):
     """Tests that media_file_path generates correct file system paths."""
@@ -363,7 +340,6 @@ async def test_media_file_path_generation(path_manager: PathManager):
     assert file_path == expected_path
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_media_file_path_creates_parent_dir(path_manager: PathManager):
     """Tests that media_file_path creates the parent directory."""
@@ -378,7 +354,6 @@ async def test_media_file_path_creates_parent_dir(path_manager: PathManager):
     assert file_path.parent.name == feed_id
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_media_file_path_different_extensions(path_manager: PathManager):
     """Tests media_file_path with various file extensions."""
@@ -396,7 +371,6 @@ async def test_media_file_path_different_extensions(path_manager: PathManager):
     assert flv_path == expected_base / "content_item.flv"
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_image_path_feed_level(path_manager: PathManager):
     """Tests that image_path generates correct feed-level image file system paths."""
@@ -409,7 +383,6 @@ async def test_image_path_feed_level(path_manager: PathManager):
     assert file_path == expected_path
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_image_path_download_level(path_manager: PathManager):
     """Tests that image_path generates correct download-level image file system paths."""
@@ -425,7 +398,6 @@ async def test_image_path_download_level(path_manager: PathManager):
     assert file_path == expected_path
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_image_path_different_extensions(path_manager: PathManager):
     """Tests image_path with various file extensions."""
@@ -446,7 +418,6 @@ async def test_image_path_different_extensions(path_manager: PathManager):
 # --- Integration tests for URL and path consistency ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_url_path_consistency(path_manager: PathManager):
     """Tests that URLs and file paths maintain consistent 1:1 mapping."""
@@ -467,7 +438,6 @@ async def test_url_path_consistency(path_manager: PathManager):
     assert ext in str(file_path)
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_special_characters_in_identifiers(path_manager: PathManager):
     """Tests handling of special characters in feed_id and download_id."""
@@ -498,7 +468,6 @@ async def test_special_characters_in_identifiers(path_manager: PathManager):
 # --- Edge cases and error handling ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "invalid_feed_id",
@@ -546,7 +515,6 @@ async def test_invalid_feed_id_raises_error(
         await path_manager.download_images_dir(invalid_feed_id)
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "invalid_download_id",
@@ -577,7 +545,6 @@ async def test_invalid_download_id_raises_error(
         await path_manager.image_path(feed_id, invalid_download_id, ext)
 
 
-@pytest.mark.unit
 def test_url_base_without_trailing_slash():
     """Tests that base_url normalization removes trailing slashes."""
     data_dir = Path("/tmp/data")
@@ -591,7 +558,6 @@ def test_url_base_without_trailing_slash():
     assert pm1.feed_url("test") == pm2.feed_url("test")
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_multiple_directory_levels(path_manager: PathManager):
     """Tests that deep directory structures work correctly."""
@@ -613,7 +579,6 @@ async def test_multiple_directory_levels(path_manager: PathManager):
 # --- Tests for transcript_path ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_transcript_path_generation(path_manager: PathManager):
     """Tests that transcript_path generates correct file system paths."""
@@ -630,7 +595,6 @@ async def test_transcript_path_generation(path_manager: PathManager):
     assert file_path == expected_path
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_transcript_path_creates_parent_dir(path_manager: PathManager):
     """Tests that transcript_path creates the parent directory."""
@@ -646,7 +610,6 @@ async def test_transcript_path_creates_parent_dir(path_manager: PathManager):
     assert file_path.parent.name == feed_id
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_transcript_path_different_languages(path_manager: PathManager):
     """Tests transcript_path with various language codes."""
@@ -665,7 +628,6 @@ async def test_transcript_path_different_languages(path_manager: PathManager):
     assert fr_path == expected_base / f"{download_id}.fr.{ext}"
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_transcript_path_different_extensions(path_manager: PathManager):
     """Tests transcript_path with various file extensions."""
@@ -684,7 +646,6 @@ async def test_transcript_path_different_extensions(path_manager: PathManager):
     assert txt_path == expected_base / f"{download_id}.{lang}.txt"
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "invalid_download_id",
@@ -706,7 +667,6 @@ async def test_transcript_path_invalid_download_id(
         await path_manager.transcript_path(feed_id, invalid_download_id, lang, ext)
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "invalid_lang",
@@ -731,7 +691,6 @@ async def test_transcript_path_invalid_lang(
 # --- Tests for transcript_url ---
 
 
-@pytest.mark.unit
 def test_transcript_url_generation(path_manager: PathManager):
     """Tests that transcript_url generates correct URLs."""
     feed_id = "my_podcast"
@@ -747,7 +706,6 @@ def test_transcript_url_generation(path_manager: PathManager):
     )
 
 
-@pytest.mark.unit
 def test_transcript_url_different_languages(path_manager: PathManager):
     """Tests transcript_url with various language codes."""
     feed_id = "multi_lang"
@@ -765,7 +723,6 @@ def test_transcript_url_different_languages(path_manager: PathManager):
     assert fr_url == f"{base}/{download_id}.fr.{ext}"
 
 
-@pytest.mark.unit
 def test_transcript_url_different_extensions(path_manager: PathManager):
     """Tests transcript_url with various file extensions."""
     feed_id = "multi_format"
@@ -783,7 +740,6 @@ def test_transcript_url_different_extensions(path_manager: PathManager):
     assert txt_url == f"{base}.txt"
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "invalid_feed_id",
     [
@@ -804,7 +760,6 @@ def test_transcript_url_invalid_feed_id(
         path_manager.transcript_url(invalid_feed_id, download_id, lang, ext)
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "invalid_download_id",
     [
@@ -825,7 +780,6 @@ def test_transcript_url_invalid_download_id(
         path_manager.transcript_url(feed_id, invalid_download_id, lang, ext)
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "invalid_lang",
     [
@@ -844,7 +798,6 @@ def test_transcript_url_invalid_lang(path_manager: PathManager, invalid_lang: st
         path_manager.transcript_url(feed_id, download_id, invalid_lang, ext)
 
 
-@pytest.mark.unit
 def test_transcript_url_special_characters(path_manager: PathManager):
     """Tests transcript_url with special characters in identifiers."""
     feed_id = "feed-with_special.chars"
@@ -863,7 +816,6 @@ def test_transcript_url_special_characters(path_manager: PathManager):
 # --- Integration tests for transcript URL and path consistency ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_transcript_url_path_consistency(path_manager: PathManager):
     """Tests that transcript URLs and file paths maintain consistent 1:1 mapping."""

@@ -143,7 +143,6 @@ async def setup_feed_with_channel_sync(
 
 
 @pytest.mark.asyncio
-@pytest.mark.integration
 async def test_process_feed_complete_success(
     data_coordinator: DataCoordinator,
     feed_db: FeedDatabase,
@@ -239,7 +238,6 @@ async def test_process_feed_complete_success(
 
 
 @pytest.mark.asyncio
-@pytest.mark.integration
 async def test_process_feed_incremental_processing(
     data_coordinator: DataCoordinator,
     feed_db: FeedDatabase,
@@ -323,7 +321,6 @@ async def test_process_feed_incremental_processing(
 
 
 @pytest.mark.asyncio
-@pytest.mark.integration
 async def test_process_feed_idempotency(
     data_coordinator: DataCoordinator,
     feed_db: FeedDatabase,
@@ -403,7 +400,6 @@ async def test_process_feed_idempotency(
 
 
 @pytest.mark.asyncio
-@pytest.mark.integration
 async def test_process_feed_with_retention_pruning(
     data_coordinator: DataCoordinator,
     feed_db: FeedDatabase,
@@ -520,7 +516,6 @@ async def test_process_feed_with_retention_pruning(
 
 
 @pytest.mark.asyncio
-@pytest.mark.integration
 @pytest.mark.parametrize(
     "test_case, url, source_type, resolved_url, sync_timestamp, expected_enqueue_count, description",
     [
@@ -651,7 +646,6 @@ async def test_date_filtering_behavior(
 
 
 @pytest.mark.asyncio
-@pytest.mark.integration
 async def test_refresh_download_metadata_with_thumbnail_refresh(
     data_coordinator: DataCoordinator,
     feed_db: FeedDatabase,
@@ -720,7 +714,6 @@ async def test_refresh_download_metadata_with_thumbnail_refresh(
 
 
 @pytest.mark.asyncio
-@pytest.mark.integration
 async def test_refresh_download_metadata_thumbnail_unchanged(
     data_coordinator: DataCoordinator,
     feed_db: FeedDatabase,

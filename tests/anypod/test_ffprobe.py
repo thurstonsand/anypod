@@ -11,7 +11,6 @@ from anypod.exceptions import FFProbeError
 from anypod.ffprobe import FFProbe
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @patch("asyncio.create_subprocess_exec", new_callable=AsyncMock)
 async def test_ffprobe_is_jpg_file_success(mock_cse: AsyncMock, tmp_path: Path) -> None:
@@ -27,7 +26,6 @@ async def test_ffprobe_is_jpg_file_success(mock_cse: AsyncMock, tmp_path: Path) 
     assert await probe.is_jpg_file(tmp_path / "file") is True
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @patch("asyncio.create_subprocess_exec", new_callable=AsyncMock)
 async def test_ffprobe_is_jpg_file_failure(mock_cse: AsyncMock, tmp_path: Path) -> None:
@@ -42,7 +40,6 @@ async def test_ffprobe_is_jpg_file_failure(mock_cse: AsyncMock, tmp_path: Path) 
         await probe.is_jpg_file(tmp_path / "file")
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @patch("asyncio.create_subprocess_exec", new_callable=AsyncMock)
 async def test_ffprobe_duration_from_url_success(mock_cse: AsyncMock) -> None:
@@ -56,7 +53,6 @@ async def test_ffprobe_duration_from_url_success(mock_cse: AsyncMock) -> None:
     assert await probe.get_duration_seconds_from_url("http://x") == 123
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @patch("asyncio.create_subprocess_exec", new_callable=AsyncMock)
 async def test_ffprobe_duration_from_url_error(mock_cse: AsyncMock) -> None:

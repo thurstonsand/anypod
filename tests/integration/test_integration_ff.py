@@ -19,7 +19,6 @@ BIG_BUCK_BUNNY_SHORT_URL = "https://youtu.be/aqz-KE-bpKQ"
 BIG_BUCK_BUNNY_EXPECTED_DURATION_SECONDS = 635  # Retrieved via yt-dlp --print duration
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_is_jpg_file_detects_jpg(
     ffprobe: FFProbe, test_images: dict[str, Path]
@@ -29,7 +28,6 @@ async def test_is_jpg_file_detects_jpg(
     assert result is True
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_is_jpg_file_detects_non_jpg(
     ffprobe: FFProbe, test_images: dict[str, Path]
@@ -39,7 +37,6 @@ async def test_is_jpg_file_detects_non_jpg(
     assert result is False
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_ffmpeg_convert_image_to_jpg(
     ffmpeg: FFmpeg, ffprobe: FFProbe, test_images: dict[str, Path], tmp_path: Path
@@ -56,7 +53,6 @@ async def test_ffmpeg_convert_image_to_jpg(
     assert is_jpg is True
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def _get_direct_media_url_for_video(video_url: str) -> str:
     """Return a direct media URL for the given YouTube video using yt-dlp.
@@ -95,7 +91,6 @@ async def _get_direct_media_url_for_video(video_url: str) -> str:
     return candidates[0]
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_ffprobe_get_duration_from_url_basic(ffprobe: FFProbe) -> None:
     """FFProbe can obtain duration (in seconds) from a direct media URL."""

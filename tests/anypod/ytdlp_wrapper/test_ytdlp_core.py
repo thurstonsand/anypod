@@ -9,7 +9,6 @@ from anypod.exceptions import YtdlpApiError
 from anypod.ytdlp_wrapper.core import YtdlpArgs, YtdlpCore
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @patch("asyncio.create_subprocess_exec", new_callable=AsyncMock)
 async def test_extract_downloads_info_raises_on_dns_resolution_error(
@@ -34,7 +33,6 @@ async def test_extract_downloads_info_raises_on_dns_resolution_error(
         )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @patch("asyncio.create_subprocess_exec", new_callable=AsyncMock)
 async def test_extract_downloads_info_ignores_non_network_ytdlp_errors(
@@ -59,7 +57,6 @@ async def test_extract_downloads_info_ignores_non_network_ytdlp_errors(
     assert result.payload == []
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @patch("asyncio.create_subprocess_exec", new_callable=AsyncMock)
 async def test_extract_downloads_info_ignores_generic_non_network_ytdlp_errors(

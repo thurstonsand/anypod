@@ -151,7 +151,6 @@ def sample_download() -> Download:
 # --- Tests for reset-sync endpoint ---
 
 
-@pytest.mark.unit
 def test_reset_sync_success(
     client: TestClient,
     mock_feed_database: Mock,
@@ -174,7 +173,6 @@ def test_reset_sync_success(
     )
 
 
-@pytest.mark.unit
 def test_reset_sync_feed_not_found(
     client: TestClient,
     mock_feed_database: Mock,
@@ -195,7 +193,6 @@ def test_reset_sync_feed_not_found(
     assert response.json()["detail"] == "Feed not found"
 
 
-@pytest.mark.unit
 def test_reset_sync_db_error(
     client: TestClient,
     mock_feed_database: Mock,
@@ -215,7 +212,6 @@ def test_reset_sync_db_error(
     assert response.json()["detail"] == "Database error"
 
 
-@pytest.mark.unit
 def test_reset_sync_invalid_timestamp_format(
     client: TestClient,
     mock_feed_database: Mock,
@@ -230,7 +226,6 @@ def test_reset_sync_invalid_timestamp_format(
     mock_feed_database.mark_sync_success.assert_not_called()
 
 
-@pytest.mark.unit
 def test_reset_sync_missing_timestamp(
     client: TestClient,
     mock_feed_database: Mock,
@@ -245,7 +240,6 @@ def test_reset_sync_missing_timestamp(
     mock_feed_database.mark_sync_success.assert_not_called()
 
 
-@pytest.mark.unit
 def test_reset_sync_naive_datetime_rejected(
     client: TestClient,
     mock_feed_database: Mock,
@@ -263,7 +257,6 @@ def test_reset_sync_naive_datetime_rejected(
 # --- Tests for reset-errors endpoint ---
 
 
-@pytest.mark.unit
 def test_reset_errors_success(
     client: TestClient,
     feed_configs: dict[str, FeedConfig],
@@ -291,7 +284,6 @@ def test_reset_errors_success(
     )
 
 
-@pytest.mark.unit
 def test_reset_errors_feed_not_found(
     client: TestClient,
     feed_configs: dict[str, FeedConfig],
@@ -311,7 +303,6 @@ def test_reset_errors_feed_not_found(
     assert response.json()["detail"] == "Feed not found"
 
 
-@pytest.mark.unit
 def test_reset_errors_db_error_on_requeue(
     client: TestClient,
     feed_configs: dict[str, FeedConfig],
@@ -335,7 +326,6 @@ def test_reset_errors_db_error_on_requeue(
 # --- Tests for refresh endpoint ---
 
 
-@pytest.mark.unit
 def test_refresh_feed_success_scheduled_feed(
     client: TestClient,
     feed_configs: dict[str, FeedConfig],
@@ -359,7 +349,6 @@ def test_refresh_feed_success_scheduled_feed(
     )
 
 
-@pytest.mark.unit
 def test_refresh_feed_success_manual_feed(
     client: TestClient,
     feed_configs: dict[str, FeedConfig],
@@ -383,7 +372,6 @@ def test_refresh_feed_success_manual_feed(
     )
 
 
-@pytest.mark.unit
 def test_refresh_feed_not_configured(
     client: TestClient,
     feed_configs: dict[str, FeedConfig],
@@ -397,7 +385,6 @@ def test_refresh_feed_not_configured(
     assert response.json()["detail"] == "Feed not configured"
 
 
-@pytest.mark.unit
 def test_refresh_feed_disabled(
     client: TestClient,
     feed_configs: dict[str, FeedConfig],
@@ -412,7 +399,6 @@ def test_refresh_feed_disabled(
     assert response.json()["detail"] == "Feed is disabled"
 
 
-@pytest.mark.unit
 def test_refresh_feed_not_in_database(
     client: TestClient,
     feed_configs: dict[str, FeedConfig],
@@ -431,7 +417,6 @@ def test_refresh_feed_not_in_database(
     assert response.json()["detail"] == "Feed not found"
 
 
-@pytest.mark.unit
 def test_refresh_feed_database_error(
     client: TestClient,
     feed_configs: dict[str, FeedConfig],
@@ -453,7 +438,6 @@ def test_refresh_feed_database_error(
 # --- Tests for get-download-fields endpoint ---
 
 
-@pytest.mark.unit
 def test_get_download_fields_success_default_fields(
     client: TestClient,
     mock_download_database: Mock,
@@ -492,7 +476,6 @@ def test_get_download_fields_success_default_fields(
     download.model_dump.assert_called_once()
 
 
-@pytest.mark.unit
 def test_get_download_fields_success_with_filter(
     client: TestClient,
     mock_download_database: Mock,
@@ -532,7 +515,6 @@ def test_get_download_fields_success_with_filter(
     download.model_dump.assert_called_once()
 
 
-@pytest.mark.unit
 def test_get_download_fields_invalid_field_returns_400(
     client: TestClient,
     mock_download_database: Mock,
@@ -550,7 +532,6 @@ def test_get_download_fields_invalid_field_returns_400(
     mock_download_database.get_download_by_id.assert_not_called()
 
 
-@pytest.mark.unit
 def test_get_download_fields_empty_fields_returns_400(
     client: TestClient,
     mock_download_database: Mock,
@@ -568,7 +549,6 @@ def test_get_download_fields_empty_fields_returns_400(
     mock_download_database.get_download_by_id.assert_not_called()
 
 
-@pytest.mark.unit
 def test_get_download_fields_not_found_returns_404(
     client: TestClient,
     mock_download_database: Mock,
@@ -587,7 +567,6 @@ def test_get_download_fields_not_found_returns_404(
     assert response.json()["detail"] == "Download not found"
 
 
-@pytest.mark.unit
 def test_get_download_fields_database_error_returns_500(
     client: TestClient,
     mock_download_database: Mock,
@@ -609,7 +588,6 @@ def test_get_download_fields_database_error_returns_500(
 # --- Tests for delete-download endpoint ---
 
 
-@pytest.mark.unit
 def test_delete_download_success(
     client: TestClient,
     feed_configs: dict[str, FeedConfig],
@@ -649,7 +627,6 @@ def test_delete_download_success(
     mock_data_coordinator.regenerate_rss.assert_awaited_once_with(FEED_ID)
 
 
-@pytest.mark.unit
 def test_delete_download_not_found(
     client: TestClient,
     feed_configs: dict[str, FeedConfig],
@@ -673,7 +650,6 @@ def test_delete_download_not_found(
     mock_download_database.delete_download.assert_awaited_once_with(FEED_ID, missing_id)
 
 
-@pytest.mark.unit
 def test_delete_download_rejects_non_manual_feed(
     client: TestClient,
     feed_configs: dict[str, FeedConfig],
@@ -691,7 +667,6 @@ def test_delete_download_rejects_non_manual_feed(
     )
 
 
-@pytest.mark.unit
 def test_delete_download_handles_missing_files(
     client: TestClient,
     feed_configs: dict[str, FeedConfig],
@@ -730,7 +705,6 @@ def test_delete_download_handles_missing_files(
 # --- Tests for refresh-metadata endpoint ---
 
 
-@pytest.mark.unit
 def test_refresh_metadata_success(
     client: TestClient,
     feed_configs: dict[str, FeedConfig],
@@ -778,7 +752,6 @@ def test_refresh_metadata_success(
     )
 
 
-@pytest.mark.unit
 def test_refresh_metadata_no_changes(
     client: TestClient,
     feed_configs: dict[str, FeedConfig],
@@ -814,7 +787,6 @@ def test_refresh_metadata_no_changes(
     assert data["updated_fields"] == []
 
 
-@pytest.mark.unit
 def test_refresh_metadata_with_thumbnail_refresh(
     client: TestClient,
     feed_configs: dict[str, FeedConfig],
@@ -852,7 +824,6 @@ def test_refresh_metadata_with_thumbnail_refresh(
     assert "remote_thumbnail_url" in data["updated_fields"]
 
 
-@pytest.mark.unit
 def test_refresh_metadata_feed_not_configured(
     client: TestClient,
     feed_configs: dict[str, FeedConfig],
@@ -868,7 +839,6 @@ def test_refresh_metadata_feed_not_configured(
     assert response.json()["detail"] == "Feed not configured"
 
 
-@pytest.mark.unit
 def test_refresh_metadata_feed_disabled(
     client: TestClient,
     feed_configs: dict[str, FeedConfig],
@@ -886,7 +856,6 @@ def test_refresh_metadata_feed_disabled(
     assert response.json()["detail"] == "Feed is disabled"
 
 
-@pytest.mark.unit
 def test_refresh_metadata_feed_not_in_database(
     client: TestClient,
     feed_configs: dict[str, FeedConfig],
@@ -908,7 +877,6 @@ def test_refresh_metadata_feed_not_in_database(
     assert response.json()["detail"] == "Feed not found"
 
 
-@pytest.mark.unit
 def test_refresh_metadata_download_not_found(
     client: TestClient,
     feed_configs: dict[str, FeedConfig],
@@ -935,7 +903,6 @@ def test_refresh_metadata_download_not_found(
     assert response.json()["detail"] == "Download not found"
 
 
-@pytest.mark.unit
 def test_refresh_metadata_database_error(
     client: TestClient,
     feed_configs: dict[str, FeedConfig],
@@ -957,7 +924,6 @@ def test_refresh_metadata_database_error(
     assert response.json()["detail"] == "Database error"
 
 
-@pytest.mark.unit
 def test_refresh_metadata_enqueue_error(
     client: TestClient,
     feed_configs: dict[str, FeedConfig],

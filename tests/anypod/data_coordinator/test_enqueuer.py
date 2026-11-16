@@ -153,7 +153,6 @@ FETCH_SINCE_DATE = datetime.now(UTC) - timedelta(days=1)
 # --- Tests for Enqueuer._handle_remaining_upcoming_downloads ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_existing_upcoming_downloads_none_found(
     enqueuer: Enqueuer,
@@ -172,7 +171,6 @@ async def test_handle_existing_upcoming_downloads_none_found(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_existing_upcoming_download_transitions_to_queued(
     enqueuer: Enqueuer,
@@ -209,7 +207,6 @@ async def test_handle_existing_upcoming_download_transitions_to_queued(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_existing_upcoming_download_remains_upcoming(
     enqueuer: Enqueuer,
@@ -248,7 +245,6 @@ async def test_handle_existing_upcoming_download_remains_upcoming(
     mock_download_db.requeue_downloads.assert_not_called()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_existing_upcoming_download_refetch_fails_bumps_retries(
     enqueuer: Enqueuer,
@@ -280,7 +276,6 @@ async def test_handle_existing_upcoming_download_refetch_fails_bumps_retries(
     mock_download_db.requeue_downloads.assert_not_called()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_existing_upcoming_download_refetch_fails_transitions_to_error(
     enqueuer: Enqueuer,
@@ -318,7 +313,6 @@ async def test_handle_existing_upcoming_download_refetch_fails_transitions_to_er
     mock_download_db.requeue_downloads.assert_not_called()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_existing_upcoming_download_refetch_returns_no_match(
     enqueuer: Enqueuer,
@@ -351,7 +345,6 @@ async def test_handle_existing_upcoming_download_refetch_returns_no_match(
 # --- Tests for Enqueuer._fetch_and_process_new_feed_downloads ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_fetch_and_process_new_feed_downloads_no_new_downloads(
     enqueuer: Enqueuer,
@@ -382,7 +375,6 @@ async def test_fetch_and_process_new_feed_downloads_no_new_downloads(
     mock_download_db.upsert_download.assert_not_called()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_fetch_and_process_new_feed_downloads_new_vod_download(
     enqueuer: Enqueuer,
@@ -406,7 +398,6 @@ async def test_fetch_and_process_new_feed_downloads_new_vod_download(
     mock_download_db.upsert_download.assert_awaited_once_with(new_vod)
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_fetch_and_process_new_feed_downloads_new_upcoming_download(
     enqueuer: Enqueuer,
@@ -432,7 +423,6 @@ async def test_fetch_and_process_new_feed_downloads_new_upcoming_download(
     mock_download_db.upsert_download.assert_awaited_once_with(new_upcoming)
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_fetch_and_process_new_feed_downloads_existing_upcoming_now_vod(
     enqueuer: Enqueuer,
@@ -458,7 +448,6 @@ async def test_fetch_and_process_new_feed_downloads_existing_upcoming_now_vod(
     assert upserted_download == fetched_as_vod
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_fetch_and_process_new_feed_downloads_existing_downloaded_ignored(
     enqueuer: Enqueuer,
@@ -485,7 +474,6 @@ async def test_fetch_and_process_new_feed_downloads_existing_downloaded_ignored(
     mock_download_db.upsert_download.assert_not_called()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_fetch_and_process_new_feed_downloads_existing_error_requeued(
     enqueuer: Enqueuer,
@@ -514,7 +502,6 @@ async def test_fetch_and_process_new_feed_downloads_existing_error_requeued(
 # --- Tests for Enqueuer.enqueue_new_downloads ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_enqueue_new_downloads_full_flow_mixed_scenarios(
     enqueuer: Enqueuer,
@@ -673,7 +660,6 @@ async def test_enqueue_new_downloads_full_flow_mixed_scenarios(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_enqueue_new_downloads_db_error_on_get_upcoming(
     enqueuer: Enqueuer,
@@ -697,7 +683,6 @@ async def test_enqueue_new_downloads_db_error_on_get_upcoming(
     assert exc_info.value.feed_id == FEED_ID
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_enqueue_new_downloads_ytdlp_error_on_main_feed_fetch(
     enqueuer: Enqueuer,
@@ -736,7 +721,6 @@ async def test_enqueue_new_downloads_ytdlp_error_on_main_feed_fetch(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_enqueue_new_downloads_no_upcoming_no_new(
     enqueuer: Enqueuer,
@@ -774,7 +758,6 @@ async def test_enqueue_new_downloads_no_upcoming_no_new(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_enqueue_deduplication_with_same_day_overlapping_windows(
     enqueuer: Enqueuer,
@@ -873,7 +856,6 @@ async def test_enqueue_deduplication_with_same_day_overlapping_windows(
 # --- Tests for Enqueuer.refresh_metadata ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_refresh_metadata_happy_path_metadata_changed(
     enqueuer: Enqueuer,
@@ -925,7 +907,6 @@ async def test_refresh_metadata_happy_path_metadata_changed(
     assert transcript_metadata_changed is False
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_refresh_metadata_happy_path_no_changes(
     enqueuer: Enqueuer,
@@ -964,7 +945,6 @@ async def test_refresh_metadata_happy_path_no_changes(
     assert transcript_metadata_changed is False
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_refresh_metadata_ytdlp_error_raises_enqueue_error(
     enqueuer: Enqueuer,
@@ -993,7 +973,6 @@ async def test_refresh_metadata_ytdlp_error_raises_enqueue_error(
     mock_download_db.update_download.assert_not_called()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_refresh_metadata_thumbnail_url_changed(
     enqueuer: Enqueuer,
@@ -1036,7 +1015,6 @@ async def test_refresh_metadata_thumbnail_url_changed(
     assert transcript_metadata_changed is False
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_refresh_metadata_transcript_metadata_changed(
     enqueuer: Enqueuer,
@@ -1080,7 +1058,6 @@ async def test_refresh_metadata_transcript_metadata_changed(
     assert transcript_metadata_changed is True
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_refresh_metadata_database_operation_error(
     enqueuer: Enqueuer,

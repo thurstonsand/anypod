@@ -150,7 +150,6 @@ def sample_feed_config() -> FeedConfig:
 # --- Tests for _handle_download_success ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @patch("aiofiles.os.stat", new_callable=AsyncMock, return_value=MagicMock(st_size=1024))
 async def test_handle_download_success_updates_db(
@@ -181,7 +180,6 @@ async def test_handle_download_success_updates_db(
     assert updated.download_logs == logs
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @patch("aiofiles.os.stat", new_callable=AsyncMock, return_value=MagicMock(st_size=1024))
 async def test_handle_download_success_updates_mime_type_from_final_file(
@@ -203,7 +201,6 @@ async def test_handle_download_success_updates_mime_type_from_final_file(
     assert updated.mime_type == "video/mp4"
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @patch("aiofiles.os.stat", new_callable=AsyncMock, return_value=MagicMock(st_size=1024))
 async def test_handle_download_success_uses_octet_stream_for_unknown_extension(
@@ -222,7 +219,6 @@ async def test_handle_download_success_uses_octet_stream_for_unknown_extension(
     assert updated.mime_type == "application/octet-stream"
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @patch("aiofiles.os.stat", new_callable=AsyncMock, return_value=MagicMock(st_size=1024))
 async def test_handle_download_success_db_update_fails_raises_downloader_error(
@@ -247,7 +243,6 @@ async def test_handle_download_success_db_update_fails_raises_downloader_error(
     assert exc_info.value.download_id == sample_download.id
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @patch("aiofiles.os.stat", new_callable=AsyncMock, return_value=MagicMock(st_size=1024))
 async def test_handle_download_success_handles_ffprobe_errors(
@@ -273,7 +268,6 @@ async def test_handle_download_success_handles_ffprobe_errors(
 # --- Tests for _handle_download_failure ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_download_failure_bumps_retries(
     downloader: Downloader,
@@ -295,7 +289,6 @@ async def test_handle_download_failure_bumps_retries(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_download_failure_db_error_logged(
     downloader: Downloader,
@@ -322,7 +315,6 @@ async def test_handle_download_failure_db_error_logged(
 # --- Tests for download_artifacts ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "transcript",
@@ -372,7 +364,6 @@ async def test_download_artifacts_all_success_flow(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "transcript_source",
@@ -413,7 +404,6 @@ async def test_download_artifacts_all_transcript_not_applicable_is_none(
     assert result.all_succeeded is True
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_download_artifacts_all_ytdlp_failure_returns_failure(
     downloader: Downloader,
@@ -447,7 +437,6 @@ async def test_download_artifacts_all_ytdlp_failure_returns_failure(
 # --- Tests for download_queued ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_download_queued_no_items_returns_zero_counts(
     downloader: Downloader, mock_download_db: MagicMock, sample_feed_config: FeedConfig
@@ -466,7 +455,6 @@ async def test_download_queued_no_items_returns_zero_counts(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_download_queued_db_fetch_error_raises_downloader_error(
     downloader: Downloader, mock_download_db: MagicMock, sample_feed_config: FeedConfig
@@ -482,7 +470,6 @@ async def test_download_queued_db_fetch_error_raises_downloader_error(
     assert exc_info.value.__cause__ is db_error
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @patch.object(Downloader, "download_artifacts", new_callable=AsyncMock)
 async def test_download_queued_processes_items_and_counts_success(
@@ -514,7 +501,6 @@ async def test_download_queued_processes_items_and_counts_success(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @patch.object(Downloader, "download_artifacts", new_callable=AsyncMock)
 @patch.object(Downloader, "_handle_download_failure", new_callable=AsyncMock)
@@ -549,7 +535,6 @@ async def test_download_queued_processes_items_and_counts_failures(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @patch.object(Downloader, "download_artifacts", new_callable=AsyncMock)
 @patch.object(Downloader, "_handle_download_failure", new_callable=AsyncMock)
@@ -614,7 +599,6 @@ def feed_config_with_delay() -> FeedConfig:
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @patch.object(Downloader, "download_artifacts", new_callable=AsyncMock)
 async def test_download_queued_with_delay_filters_recent_downloads(
@@ -659,7 +643,6 @@ async def test_download_queued_with_delay_filters_recent_downloads(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @patch.object(Downloader, "download_artifacts", new_callable=AsyncMock)
 async def test_download_queued_with_delay_at_boundary(
@@ -692,7 +675,6 @@ async def test_download_queued_with_delay_at_boundary(
     assert failure == 0
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_download_queued_with_delay_all_deferred(
     downloader: Downloader,
@@ -720,7 +702,6 @@ async def test_download_queued_with_delay_all_deferred(
     assert failure == 0
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @patch.object(Downloader, "download_artifacts", new_callable=AsyncMock)
 async def test_download_queued_without_delay_processes_all(
@@ -755,7 +736,6 @@ async def test_download_queued_without_delay_processes_all(
 # --- Tests for download_thumbnail_for_existing_download ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_download_artifacts_thumbnail_only_success(
     downloader: Downloader,
@@ -784,7 +764,6 @@ async def test_download_artifacts_thumbnail_only_success(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_download_artifacts_thumbnail_only_ytdlp_failure(
     downloader: Downloader,
@@ -809,7 +788,6 @@ async def test_download_artifacts_thumbnail_only_ytdlp_failure(
     mock_download_db.set_thumbnail_extension.assert_not_awaited()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_download_artifacts_thumbnail_only_file_not_found(
     downloader: Downloader,
@@ -832,7 +810,6 @@ async def test_download_artifacts_thumbnail_only_file_not_found(
     mock_download_db.set_thumbnail_extension.assert_not_awaited()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_download_artifacts_thumbnail_only_db_failure(
     downloader: Downloader,

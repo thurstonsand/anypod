@@ -17,7 +17,6 @@ from anypod.rss import RSSFeedGenerator
 # --- Tests for RSS feed serving integration ---
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_serve_feed_integration_with_cached_feed(
     test_app: TestClient,
@@ -71,7 +70,6 @@ async def test_serve_feed_integration_with_cached_feed(
     assert description_elem.text == "A test channel for integration testing"
 
 
-@pytest.mark.integration
 def test_serve_feed_integration_not_cached(test_app: TestClient):
     """Test RSS feed serving when feed is not in cache."""
     response = test_app.get("/feeds/nonexistent_feed.xml")
@@ -80,7 +78,6 @@ def test_serve_feed_integration_not_cached(test_app: TestClient):
     assert response.json()["detail"] == "Feed not found"
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_serve_feed_head_request(
     test_app: TestClient,
@@ -119,7 +116,6 @@ async def test_serve_feed_head_request(
 # --- Tests for media file serving integration ---
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_serve_media_integration_with_real_file(
     test_app: TestClient,
@@ -147,7 +143,6 @@ async def test_serve_media_integration_with_real_file(
     assert response.headers["cache-control"] == "public, max-age=86400"
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_serve_media_head_request(
     test_app: TestClient,
@@ -177,7 +172,6 @@ async def test_serve_media_head_request(
     assert len(response.content) == 0
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_serve_media_range_request(
     test_app: TestClient,
@@ -219,7 +213,6 @@ async def test_serve_media_range_request(
     assert response.content == test_content[500:600]
 
 
-@pytest.mark.integration
 def test_serve_media_integration_file_not_found(test_app: TestClient):
     """Test media file serving when file doesn't exist."""
     response = test_app.get("/media/test_feed/nonexistent.mp4")
@@ -228,7 +221,6 @@ def test_serve_media_integration_file_not_found(test_app: TestClient):
     assert response.json()["detail"] == "File not found"
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_serve_media_integration_with_downloads(
     test_app: TestClient,
@@ -286,7 +278,6 @@ async def test_serve_media_integration_with_downloads(
 # --- Tests for dependency injection integration ---
 
 
-@pytest.mark.integration
 def test_dependency_injection_integration(
     test_app: TestClient,
     file_manager: FileManager,

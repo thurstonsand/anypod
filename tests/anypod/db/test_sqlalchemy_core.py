@@ -28,7 +28,6 @@ async def db_core(tmp_path: Path) -> AsyncGenerator[SqlalchemyCore]:
     await core.close()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_create_db_and_tables_creates_expected_schema(db_core: SqlalchemyCore):
     """Test that all expected tables and indexes are created."""
@@ -60,7 +59,6 @@ async def test_create_db_and_tables_creates_expected_schema(db_core: SqlalchemyC
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_sqlite_triggers_are_created(
     db_core: SqlalchemyCore, subtests: pytest.Subtests
@@ -87,7 +85,6 @@ async def test_sqlite_triggers_are_created(
             assert trigger in triggers
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_event_listener_sets_wal_mode(db_core: SqlalchemyCore):
     """Test that the connect event listener enables WAL mode."""
@@ -99,7 +96,6 @@ async def test_event_listener_sets_wal_mode(db_core: SqlalchemyCore):
     assert journal_mode == "wal", "Journal mode should be WAL"
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_event_listener_sets_foreign_keys(db_core: SqlalchemyCore):
     """Test that the connect event listener enables foreign key constraints."""
@@ -139,7 +135,6 @@ async def test_event_listener_sets_foreign_keys(db_core: SqlalchemyCore):
         assert "FOREIGN KEY constraint failed" in str(exc_info.value)
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_event_listener_runs_on_each_connection(db_core: SqlalchemyCore):
     """Test that event listener runs on each new connection."""

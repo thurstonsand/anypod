@@ -161,7 +161,6 @@ def capture_rss_write(monkeypatch: pytest.MonkeyPatch) -> dict[str, bytes]:
 # --- Tests for RSSFeedGenerator.update_feed ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_update_feed_success(
     rss_generator: RSSFeedGenerator,
@@ -186,7 +185,6 @@ async def test_update_feed_success(
     assert len(xml_bytes) > 0
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_update_feed_database_error(
     rss_generator: RSSFeedGenerator,
@@ -209,7 +207,6 @@ async def test_update_feed_database_error(
 # --- Tests for RSS XML content ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_generated_xml_structure(
     rss_generator: RSSFeedGenerator,
@@ -353,7 +350,6 @@ async def test_generated_xml_structure(
     assert itunes_episode_type.text == "full"
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_channel_and_items_use_hosted_images_when_exts_present(
     rss_generator: RSSFeedGenerator,
@@ -412,7 +408,6 @@ async def test_channel_and_items_use_hosted_images_when_exts_present(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_items_use_original_thumbnail_when_no_ext(
     rss_generator: RSSFeedGenerator,
@@ -451,7 +446,6 @@ async def test_items_use_original_thumbnail_when_no_ext(
     assert second_itunes_image.get("href") == "https://example.com/thumb2.jpg"
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_generated_xml_enclosure_urls(
     rss_generator: RSSFeedGenerator,
@@ -491,7 +485,6 @@ async def test_generated_xml_enclosure_urls(
     assert audio_enclosure.get("type") == "audio/mp4"
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_generated_xml_mime_types(
     rss_generator: RSSFeedGenerator,
@@ -564,7 +557,6 @@ async def test_generated_xml_mime_types(
     assert mp4_enclosure is not None and mp4_enclosure.get("type") == "video/mp4"
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_empty_downloads_list(
     rss_generator: RSSFeedGenerator,
@@ -593,7 +585,6 @@ async def test_empty_downloads_list(
 # --- Tests for FeedgenCore feed metadata validation ---
 
 
-@pytest.mark.unit
 def test_feed_config_without_metadata_fails():
     """Test that FeedgenCore raises error when feed has no required metadata."""
     from anypod.rss.feedgen_core import FeedgenCore
@@ -616,7 +607,6 @@ def test_feed_config_without_metadata_fails():
     assert "Feed title is required when creating an RSS feed" in str(exc_info.value)
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_channel_publication_date_set_to_newest_episode(
     rss_generator: RSSFeedGenerator,
@@ -644,7 +634,6 @@ async def test_channel_publication_date_set_to_newest_episode(
     assert "15 Jan 2023" in pubdate.text
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_channel_publication_date_absent_when_no_episodes(
     rss_generator: RSSFeedGenerator,
@@ -669,7 +658,6 @@ async def test_channel_publication_date_absent_when_no_episodes(
     assert pubdate is None
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_manual_feed_uses_discovered_at_for_pubdate(
     rss_generator: RSSFeedGenerator,
@@ -724,7 +712,6 @@ async def test_manual_feed_uses_discovered_at_for_pubdate(
 # --- Tests for podcast:transcript elements ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_transcript_element_included_when_metadata_present(
     rss_generator: RSSFeedGenerator,
@@ -770,7 +757,6 @@ async def test_transcript_element_included_when_metadata_present(
     assert second_transcript is None
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_transcript_mime_type_for_srt_format(
     rss_generator: RSSFeedGenerator,
@@ -822,7 +808,6 @@ async def test_transcript_mime_type_for_srt_format(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_transcript_with_different_language_codes(
     rss_generator: RSSFeedGenerator,

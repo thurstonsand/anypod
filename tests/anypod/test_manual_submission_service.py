@@ -66,7 +66,6 @@ def sample_download() -> Download:
 # --- Tests for fetch_submission_download ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_fetch_submission_download_success(
     manual_submission_service: ManualSubmissionService,
@@ -101,7 +100,6 @@ async def test_fetch_submission_download_success(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_fetch_submission_download_ytdlp_error_raises_unsupported(
     manual_submission_service: ManualSubmissionService,
@@ -125,7 +123,6 @@ async def test_fetch_submission_download_ytdlp_error_raises_unsupported(
     assert exc_info.value.url == TEST_URL
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_fetch_submission_download_empty_results_raises_unavailable(
     manual_submission_service: ManualSubmissionService,
@@ -147,7 +144,6 @@ async def test_fetch_submission_download_empty_results_raises_unavailable(
     assert exc_info.value.url == TEST_URL
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_fetch_submission_download_upcoming_status_raises_unavailable(
     manual_submission_service: ManualSubmissionService,
@@ -171,7 +167,6 @@ async def test_fetch_submission_download_upcoming_status_raises_unavailable(
     assert exc_info.value.url == TEST_URL
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_fetch_submission_download_allows_non_queued_status(
     manual_submission_service: ManualSubmissionService,
@@ -193,7 +188,6 @@ async def test_fetch_submission_download_allows_non_queued_status(
     assert result == sample_download
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_fetch_submission_download_uses_first_result_when_multiple(
     manual_submission_service: ManualSubmissionService,

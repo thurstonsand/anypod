@@ -69,7 +69,6 @@ def image_downloader(
 # --- Tests: download_feed_image_direct ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_download_feed_image_direct_invalid_feed_id(
     image_downloader: ImageDownloader,
@@ -81,7 +80,6 @@ async def test_download_feed_image_direct_invalid_feed_id(
     assert exc.value.url == "https://x"
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_download_feed_image_direct_http_error(
     respx_mock: respx.Router,
@@ -103,7 +101,6 @@ async def test_download_feed_image_direct_http_error(
 # --- Tests: download_feed_image_ytdlp ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_download_feed_image_ytdlp_success(
     image_downloader: ImageDownloader,
@@ -139,7 +136,6 @@ async def test_download_feed_image_ytdlp_success(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_download_feed_image_ytdlp_returns_none(
     image_downloader: ImageDownloader,
@@ -158,7 +154,6 @@ async def test_download_feed_image_ytdlp_returns_none(
     assert res is None
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_download_feed_image_ytdlp_wraps_error(
     image_downloader: ImageDownloader,

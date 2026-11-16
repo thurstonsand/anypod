@@ -281,7 +281,6 @@ def feed_config_with_metadata() -> FeedConfig:
 # --- Tests for StateReconciler._handle_new_feed ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_new_feed_basic(
     state_reconciler: StateReconciler,
@@ -300,7 +299,6 @@ async def test_handle_new_feed_basic(
     assert inserted_feed.last_successful_sync is not None
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_new_feed_with_metadata(
     state_reconciler: StateReconciler,
@@ -327,7 +325,6 @@ async def test_handle_new_feed_with_metadata(
     assert inserted_feed.explicit == metadata.explicit
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_new_feed_with_since(
     state_reconciler: StateReconciler,
@@ -347,7 +344,6 @@ async def test_handle_new_feed_with_since(
     assert inserted_feed.since == since_date
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_new_feed_database_error(
     state_reconciler: StateReconciler,
@@ -364,7 +360,6 @@ async def test_handle_new_feed_database_error(
 # --- Tests for StateReconciler._handle_removed_feed ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_removed_feed(
     state_reconciler: StateReconciler, mock_pruner: MagicMock
@@ -375,7 +370,6 @@ async def test_handle_removed_feed(
     mock_pruner.archive_feed.assert_called_once_with(REMOVED_FEED_ID)
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_removed_feed_pruner_error(
     state_reconciler: StateReconciler, mock_pruner: MagicMock
@@ -392,7 +386,6 @@ async def test_handle_removed_feed_pruner_error(
 # --- Tests for StateReconciler._handle_existing_feed ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_existing_feed_no_changes(
     state_reconciler: StateReconciler,
@@ -410,7 +403,6 @@ async def test_handle_existing_feed_no_changes(
     mock_feed_db.upsert_feed.assert_not_called()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_existing_feed_enable(
     state_reconciler: StateReconciler,
@@ -438,7 +430,6 @@ async def test_handle_existing_feed_enable(
     assert updated_feed.last_failed_sync is None
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_existing_feed_disable(
     state_reconciler: StateReconciler,
@@ -460,7 +451,6 @@ async def test_handle_existing_feed_disable(
     assert updated_feed.is_enabled is False
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_existing_feed_url_change(
     state_reconciler: StateReconciler,
@@ -491,7 +481,6 @@ async def test_handle_existing_feed_url_change(
     assert updated_feed.consecutive_failures == 0
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_existing_feed_metadata_changes(
     state_reconciler: StateReconciler,
@@ -523,7 +512,6 @@ async def test_handle_existing_feed_metadata_changes(
     assert updated_feed.remote_image_url == metadata.image_url
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_existing_feed_since_removal_resets_sync_timestamp(
     state_reconciler: StateReconciler,
@@ -557,7 +545,6 @@ async def test_handle_existing_feed_since_removal_resets_sync_timestamp(
     assert updated_feed.since is None
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_existing_feed_enable_with_since(
     state_reconciler: StateReconciler,
@@ -595,7 +582,6 @@ async def test_handle_existing_feed_enable_with_since(
 # --- Tests for StateReconciler._handle_constraint_changes ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_constraint_changes_no_changes(
     state_reconciler: StateReconciler,
@@ -619,7 +605,6 @@ async def test_handle_constraint_changes_no_changes(
     mock_download_db.get_downloads_by_status.assert_not_called()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_constraint_changes_since_expansion_only(
     state_reconciler: StateReconciler,
@@ -658,7 +643,6 @@ async def test_handle_constraint_changes_since_expansion_only(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_constraint_changes_since_removal_only(
     state_reconciler: StateReconciler,
@@ -693,7 +677,6 @@ async def test_handle_constraint_changes_since_removal_only(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_constraint_changes_since_stricter_no_restoration(
     state_reconciler: StateReconciler,
@@ -717,7 +700,6 @@ async def test_handle_constraint_changes_since_stricter_no_restoration(
     mock_download_db.get_downloads_by_status.assert_not_called()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_constraint_changes_keep_last_increase_only(
     state_reconciler: StateReconciler,
@@ -756,7 +738,6 @@ async def test_handle_constraint_changes_keep_last_increase_only(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_constraint_changes_since_removal_with_keep_last_limit(
     state_reconciler: StateReconciler,
@@ -795,7 +776,6 @@ async def test_handle_constraint_changes_since_removal_with_keep_last_limit(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_constraint_changes_since_expansion_blocked_by_keep_last(
     state_reconciler: StateReconciler,
@@ -822,7 +802,6 @@ async def test_handle_constraint_changes_since_expansion_blocked_by_keep_last(
     mock_download_db.get_downloads_by_status.assert_not_called()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_constraint_changes_both_policies_change(
     state_reconciler: StateReconciler,
@@ -861,7 +840,6 @@ async def test_handle_constraint_changes_both_policies_change(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_constraint_changes_since_expansion_limited_by_new_keep_last(
     state_reconciler: StateReconciler,
@@ -903,7 +881,6 @@ async def test_handle_constraint_changes_since_expansion_limited_by_new_keep_las
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_constraint_changes_no_archived_downloads(
     state_reconciler: StateReconciler,
@@ -930,7 +907,6 @@ async def test_handle_constraint_changes_no_archived_downloads(
     mock_download_db.requeue_downloads.assert_not_called()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_constraint_changes_database_error(
     state_reconciler: StateReconciler,
@@ -958,7 +934,6 @@ async def test_handle_constraint_changes_database_error(
     assert exc_info.value.feed_id == FEED_ID
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_keep_last_removed_with_since_sets_sync_to_since(
     state_reconciler: StateReconciler, mock_download_db: MagicMock
@@ -992,7 +967,6 @@ async def test_keep_last_removed_with_since_sets_sync_to_since(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_keep_last_increase_with_since_sets_sync_to_since(
     state_reconciler: StateReconciler, mock_download_db: MagicMock
@@ -1026,7 +1000,6 @@ async def test_keep_last_increase_with_since_sets_sync_to_since(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_constraint_changes_keep_last_decrease_no_restoration(
     state_reconciler: StateReconciler,
@@ -1051,7 +1024,6 @@ async def test_handle_constraint_changes_keep_last_decrease_no_restoration(
     mock_download_db.get_downloads_by_status.assert_not_called()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_keep_last_removed_without_since_sets_sync_to_min(
     state_reconciler: StateReconciler, mock_download_db: MagicMock
@@ -1082,7 +1054,6 @@ async def test_keep_last_removed_without_since_sets_sync_to_min(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_keep_last_increase_no_archived_no_since_sets_sync_to_min(
     state_reconciler: StateReconciler, mock_download_db: MagicMock
@@ -1113,7 +1084,6 @@ async def test_keep_last_increase_no_archived_no_since_sets_sync_to_min(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_keep_last_increase_no_archived_with_since_sets_sync_to_since(
     state_reconciler: StateReconciler, mock_download_db: MagicMock
@@ -1148,7 +1118,6 @@ async def test_keep_last_increase_no_archived_with_since_sets_sync_to_since(
 # --- Tests for StateReconciler._handle_image_url_changes ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_image_url_changes_override_added(
     state_reconciler: StateReconciler,
@@ -1183,7 +1152,6 @@ async def test_handle_image_url_changes_override_added(
     mock_image_downloader.download_feed_image_ytdlp.assert_not_called()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_image_url_changes_override_changed(
     state_reconciler: StateReconciler,
@@ -1217,7 +1185,6 @@ async def test_handle_image_url_changes_override_changed(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_image_url_changes_override_removed_with_natural_url(
     state_reconciler: StateReconciler,
@@ -1255,7 +1222,6 @@ async def test_handle_image_url_changes_override_removed_with_natural_url(
     mock_image_downloader.download_feed_image_direct.assert_not_called()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_image_url_changes_no_change_needed(
     state_reconciler: StateReconciler,
@@ -1286,7 +1252,6 @@ async def test_handle_image_url_changes_no_change_needed(
     mock_image_downloader.download_feed_image_ytdlp.assert_not_called()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_image_url_changes_override_removed_same_natural_url(
     state_reconciler: StateReconciler,
@@ -1315,7 +1280,6 @@ async def test_handle_image_url_changes_override_removed_same_natural_url(
     mock_image_downloader.download_feed_image_ytdlp.assert_not_called()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_image_url_changes_direct_download_failure(
     state_reconciler: StateReconciler,
@@ -1354,7 +1318,6 @@ async def test_handle_image_url_changes_direct_download_failure(
     mock_image_downloader.download_feed_image_direct.assert_called_once()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_image_url_changes_ytdlp_download_failure(
     state_reconciler: StateReconciler,
@@ -1386,7 +1349,6 @@ async def test_handle_image_url_changes_ytdlp_download_failure(
     mock_image_downloader.download_feed_image_ytdlp.assert_called_once()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_image_url_changes_direct_download_error(
     state_reconciler: StateReconciler,
@@ -1419,7 +1381,6 @@ async def test_handle_image_url_changes_direct_download_error(
     mock_image_downloader.download_feed_image_direct.assert_called_once()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_image_url_changes_ytdlp_download_returns_none(
     state_reconciler: StateReconciler,
@@ -1452,7 +1413,6 @@ async def test_handle_image_url_changes_ytdlp_download_returns_none(
 # --- Tests for StateReconciler.reconcile_startup_state ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_reconcile_startup_state_all_scenarios(
     state_reconciler: StateReconciler,
@@ -1514,7 +1474,6 @@ async def test_reconcile_startup_state_all_scenarios(
     mock_pruner.archive_feed.assert_called_once_with(REMOVED_FEED_ID)
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_reconcile_startup_state_database_error(
     state_reconciler: StateReconciler,
@@ -1527,7 +1486,6 @@ async def test_reconcile_startup_state_database_error(
         await state_reconciler.reconcile_startup_state({})
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_reconcile_startup_state_disabled_feeds_not_ready(
     state_reconciler: StateReconciler,
@@ -1547,7 +1505,6 @@ async def test_reconcile_startup_state_disabled_feeds_not_ready(
     assert ready_feeds == []
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_reconcile_startup_state_continues_on_individual_errors(
     state_reconciler: StateReconciler,
@@ -1584,7 +1541,6 @@ async def test_reconcile_startup_state_continues_on_individual_errors(
     assert mock_feed_db.upsert_feed.call_count == 2
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_manual_feed_not_scheduled_but_inserted(
     state_reconciler: StateReconciler,
@@ -1610,7 +1566,6 @@ async def test_manual_feed_not_scheduled_but_inserted(
     assert inserted_feed.title == "Manual Feed"
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_fetch_feed_metadata_manual_skips_discovery(
     state_reconciler: StateReconciler,
@@ -1633,7 +1588,6 @@ async def test_fetch_feed_metadata_manual_skips_discovery(
     mock_ytdlp_wrapper.fetch_playlist_metadata.assert_not_called()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_existing_manual_feed_updates_metadata_and_image(
     state_reconciler: StateReconciler,
@@ -1690,7 +1644,6 @@ async def test_handle_existing_manual_feed_updates_metadata_and_image(
 # --- Tests for StateReconciler._handle_transcript_config_changes ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_transcript_config_changes_enable_transcripts(
     state_reconciler: StateReconciler,
@@ -1733,7 +1686,6 @@ async def test_handle_transcript_config_changes_enable_transcripts(
     assert mock_download_db.set_transcript_metadata.await_count == 2
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_transcript_config_changes_disable_transcripts(
     state_reconciler: StateReconciler,
@@ -1771,7 +1723,6 @@ async def test_handle_transcript_config_changes_disable_transcripts(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_transcript_config_changes_language_change(
     state_reconciler: StateReconciler,
@@ -1808,7 +1759,6 @@ async def test_handle_transcript_config_changes_language_change(
     assert mock_download_db.set_transcript_metadata.await_count == 2
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_transcript_config_changes_priority_change(
     state_reconciler: StateReconciler,
@@ -1843,7 +1793,6 @@ async def test_handle_transcript_config_changes_priority_change(
     assert mock_download_db.set_transcript_metadata.await_count == 2
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_transcript_config_changes_no_changes(
     state_reconciler: StateReconciler,
@@ -1865,7 +1814,6 @@ async def test_handle_transcript_config_changes_no_changes(
     mock_download_db.get_downloads_by_status.assert_not_called()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_transcript_config_changes_no_downloads(
     state_reconciler: StateReconciler,
@@ -1894,7 +1842,6 @@ async def test_handle_transcript_config_changes_no_downloads(
 # --- Tests for StateReconciler._download_transcripts_for_downloads ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_download_transcripts_for_downloads_success(
     state_reconciler: StateReconciler,
@@ -1932,7 +1879,6 @@ async def test_download_transcripts_for_downloads_success(
     assert mock_download_db.set_transcript_metadata.await_count == 2
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_download_transcripts_for_downloads_skips_existing(
     state_reconciler: StateReconciler,
@@ -1956,7 +1902,6 @@ async def test_download_transcripts_for_downloads_skips_existing(
     mock_ytdlp_wrapper.download_transcript_only.assert_not_called()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_download_transcripts_for_downloads_transcript_unavailable(
     state_reconciler: StateReconciler,
@@ -1987,7 +1932,6 @@ async def test_download_transcripts_for_downloads_transcript_unavailable(
     mock_download_db.set_transcript_metadata.assert_not_called()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_download_transcripts_for_downloads_download_returns_none(
     state_reconciler: StateReconciler,
@@ -2021,7 +1965,6 @@ async def test_download_transcripts_for_downloads_download_returns_none(
 # --- Tests for StateReconciler._delete_transcripts_for_downloads ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_delete_transcripts_for_downloads_success(
     state_reconciler: StateReconciler,
@@ -2050,7 +1993,6 @@ async def test_delete_transcripts_for_downloads_success(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_delete_transcripts_for_downloads_skips_without_transcript(
     state_reconciler: StateReconciler,
@@ -2071,7 +2013,6 @@ async def test_delete_transcripts_for_downloads_skips_without_transcript(
     mock_download_db.set_transcript_metadata.assert_not_called()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_delete_transcripts_for_downloads_file_not_found(
     state_reconciler: StateReconciler,
@@ -2100,7 +2041,6 @@ async def test_delete_transcripts_for_downloads_file_not_found(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_delete_transcripts_for_downloads_file_operation_error(
     state_reconciler: StateReconciler,
@@ -2123,7 +2063,6 @@ async def test_delete_transcripts_for_downloads_file_operation_error(
     mock_download_db.set_transcript_metadata.assert_awaited_once()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_delete_transcripts_for_downloads_db_error(
     state_reconciler: StateReconciler,
@@ -2150,7 +2089,6 @@ async def test_delete_transcripts_for_downloads_db_error(
 # --- Tests for StateReconciler._handle_existing_feed with transcripts ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_existing_feed_transcript_lang_added(
     state_reconciler: StateReconciler,
@@ -2186,7 +2124,6 @@ async def test_handle_existing_feed_transcript_lang_added(
     mock_ytdlp_wrapper.fetch_new_downloads_metadata.assert_awaited_once()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_existing_feed_transcript_lang_removed(
     state_reconciler: StateReconciler,

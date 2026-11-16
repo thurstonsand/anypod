@@ -11,7 +11,6 @@ from anypod.exceptions import FFmpegError
 from anypod.ffmpeg import FFmpeg
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @patch("asyncio.create_subprocess_exec", new_callable=AsyncMock)
 async def test_ffmpeg_convert_image_to_jpg_success(
@@ -27,7 +26,6 @@ async def test_ffmpeg_convert_image_to_jpg_success(
     await ffm.convert_image_to_jpg(tmp_path / "in.png", tmp_path / "out.jpg")
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @patch("asyncio.create_subprocess_exec", new_callable=AsyncMock)
 async def test_ffmpeg_convert_image_to_jpg_failure(

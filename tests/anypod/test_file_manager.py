@@ -42,7 +42,6 @@ def save_file(
 # --- Tests for delete_download_file ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_delete_download_file_success(file_manager: FileManager):
     """Tests successful deletion of an existing file."""
@@ -61,7 +60,6 @@ async def test_delete_download_file_success(file_manager: FileManager):
     assert not file_to_delete_path.exists(), "File should be deleted from disk."
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_delete_download_file_not_found(file_manager: FileManager):
     """Tests delete_download_file raises FileNotFoundError for a non-existent file."""
@@ -76,7 +74,6 @@ async def test_delete_download_file_not_found(file_manager: FileManager):
 # --- Tests for download_exists ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_download_exists_true(file_manager: FileManager):
     """Tests download_exists returns True when a file exists."""
@@ -90,7 +87,6 @@ async def test_download_exists_true(file_manager: FileManager):
     assert await file_manager.download_exists(feed_id, download_id, ext) is True
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_download_exists_false_not_found(file_manager: FileManager):
     """Tests download_exists returns False when a file does not exist."""
@@ -101,7 +97,6 @@ async def test_download_exists_false_not_found(file_manager: FileManager):
     assert await file_manager.download_exists(feed_id, download_id, ext) is False
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_download_exists_false_is_directory(
     file_manager: FileManager, temp_base_download_path: Path
@@ -123,7 +118,6 @@ async def test_download_exists_false_is_directory(
 # --- Tests for get_download_stream ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_get_download_stream_success(file_manager: FileManager):
     """Tests successfully getting a stream for an existing file and checks its content."""
@@ -143,7 +137,6 @@ async def test_get_download_stream_success(file_manager: FileManager):
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_get_download_stream_file_not_found(file_manager: FileManager):
     """Tests get_download_stream raises FileNotFoundError for a non-existent file."""
@@ -159,7 +152,6 @@ async def test_get_download_stream_file_not_found(file_manager: FileManager):
             pass
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_get_download_stream_path_is_directory(
     file_manager: FileManager, temp_base_download_path: Path
@@ -182,7 +174,6 @@ async def test_get_download_stream_path_is_directory(
             pass
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_get_download_stream_file_operation_error(file_manager: FileManager):
     """Tests get_download_stream raises FileOperationError for a file operation error."""
@@ -220,7 +211,6 @@ async def test_get_download_stream_file_operation_error(file_manager: FileManage
 # --- Tests for get_image_path ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_get_image_path_feed_level(file_manager: FileManager):
     """Tests get_image_path returns correct path for feed-level images."""
@@ -237,7 +227,6 @@ async def test_get_image_path_feed_level(file_manager: FileManager):
     assert result_path.exists()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_get_image_path_download_level(file_manager: FileManager):
     """Tests get_image_path returns correct path for download-level images."""
@@ -255,7 +244,6 @@ async def test_get_image_path_download_level(file_manager: FileManager):
     assert result_path.exists()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_get_image_path_not_found(file_manager: FileManager):
     """Tests get_image_path raises FileNotFoundError for non-existent files."""
@@ -267,7 +255,6 @@ async def test_get_image_path_not_found(file_manager: FileManager):
         await file_manager.get_image_path(feed_id, download_id, ext)
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_get_image_path_invalid_feed_id(file_manager: FileManager):
     """Tests get_image_path raises FileOperationError for invalid feed_id."""
@@ -279,7 +266,6 @@ async def test_get_image_path_invalid_feed_id(file_manager: FileManager):
         await file_manager.get_image_path(feed_id, download_id, ext)
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_get_image_path_invalid_download_id(file_manager: FileManager):
     """Tests get_image_path raises FileOperationError for invalid download_id."""
@@ -294,7 +280,6 @@ async def test_get_image_path_invalid_download_id(file_manager: FileManager):
 # --- Tests for image_exists ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_image_exists_feed_level_true(file_manager: FileManager):
     """Tests image_exists returns True for existing feed-level images."""
@@ -308,7 +293,6 @@ async def test_image_exists_feed_level_true(file_manager: FileManager):
     assert await file_manager.image_exists(feed_id, None, ext)
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_image_exists_download_level_true(file_manager: FileManager):
     """Tests image_exists returns True for existing download-level images."""
@@ -323,7 +307,6 @@ async def test_image_exists_download_level_true(file_manager: FileManager):
     assert await file_manager.image_exists(feed_id, download_id, ext)
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_image_exists_false_not_found(file_manager: FileManager):
     """Tests image_exists returns False for non-existent images."""
@@ -334,7 +317,6 @@ async def test_image_exists_false_not_found(file_manager: FileManager):
     assert not await file_manager.image_exists(feed_id, download_id, ext)
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_image_exists_false_invalid_feed_id(file_manager: FileManager):
     """Tests image_exists returns False for invalid feed_id."""
@@ -345,7 +327,6 @@ async def test_image_exists_false_invalid_feed_id(file_manager: FileManager):
     assert not await file_manager.image_exists(feed_id, download_id, ext)
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_image_exists_false_invalid_download_id(file_manager: FileManager):
     """Tests image_exists returns False for invalid download_id."""
@@ -359,7 +340,6 @@ async def test_image_exists_false_invalid_download_id(file_manager: FileManager)
 # --- Tests for delete_image ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_delete_image_feed_level_success(file_manager: FileManager):
     """Tests successful deletion of feed-level images."""
@@ -375,7 +355,6 @@ async def test_delete_image_feed_level_success(file_manager: FileManager):
     assert not image_path.exists()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_delete_image_download_level_success(file_manager: FileManager):
     """Tests successful deletion of download-level images."""
@@ -392,7 +371,6 @@ async def test_delete_image_download_level_success(file_manager: FileManager):
     assert not image_path.exists()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_delete_image_not_found(file_manager: FileManager):
     """Tests delete_image raises FileNotFoundError for non-existent images."""
@@ -404,7 +382,6 @@ async def test_delete_image_not_found(file_manager: FileManager):
         await file_manager.delete_image(feed_id, download_id, ext)
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_delete_image_invalid_feed_id(file_manager: FileManager):
     """Tests delete_image raises FileOperationError for invalid feed_id."""
@@ -419,7 +396,6 @@ async def test_delete_image_invalid_feed_id(file_manager: FileManager):
     assert exc_info.value.download_id == download_id
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_delete_image_invalid_download_id(file_manager: FileManager):
     """Tests delete_image raises FileOperationError for invalid download_id."""
@@ -434,7 +410,6 @@ async def test_delete_image_invalid_download_id(file_manager: FileManager):
     assert exc_info.value.download_id == download_id
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_delete_image_os_error(file_manager: FileManager):
     """Tests delete_image raises FileOperationError for OS-level errors."""
@@ -457,7 +432,6 @@ async def test_delete_image_os_error(file_manager: FileManager):
 # --- Tests for get_transcript_path ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_get_transcript_path_success(file_manager: FileManager):
     """Tests get_transcript_path returns correct path for existing transcripts."""
@@ -480,7 +454,6 @@ async def test_get_transcript_path_success(file_manager: FileManager):
     assert result_path.exists()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_get_transcript_path_not_found(file_manager: FileManager):
     """Tests get_transcript_path raises FileNotFoundError for non-existent files."""
@@ -493,7 +466,6 @@ async def test_get_transcript_path_not_found(file_manager: FileManager):
         await file_manager.get_transcript_path(feed_id, download_id, lang, ext)
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_get_transcript_path_invalid_feed_id(file_manager: FileManager):
     """Tests get_transcript_path raises FileNotFoundError for invalid feed_id."""
@@ -506,7 +478,6 @@ async def test_get_transcript_path_invalid_feed_id(file_manager: FileManager):
         await file_manager.get_transcript_path(feed_id, download_id, lang, ext)
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_get_transcript_path_invalid_download_id(file_manager: FileManager):
     """Tests get_transcript_path raises FileNotFoundError for invalid download_id."""
@@ -522,7 +493,6 @@ async def test_get_transcript_path_invalid_download_id(file_manager: FileManager
 # --- Tests for transcript_exists ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_transcript_exists_true(file_manager: FileManager):
     """Tests transcript_exists returns True for existing transcripts."""
@@ -540,7 +510,6 @@ async def test_transcript_exists_true(file_manager: FileManager):
     assert await file_manager.transcript_exists(feed_id, download_id, lang, ext)
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_transcript_exists_false_not_found(file_manager: FileManager):
     """Tests transcript_exists returns False for non-existent transcripts."""
@@ -552,7 +521,6 @@ async def test_transcript_exists_false_not_found(file_manager: FileManager):
     assert not await file_manager.transcript_exists(feed_id, download_id, lang, ext)
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_transcript_exists_false_invalid_feed_id(file_manager: FileManager):
     """Tests transcript_exists returns False for invalid feed_id."""
@@ -564,7 +532,6 @@ async def test_transcript_exists_false_invalid_feed_id(file_manager: FileManager
     assert not await file_manager.transcript_exists(feed_id, download_id, lang, ext)
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_transcript_exists_false_invalid_download_id(file_manager: FileManager):
     """Tests transcript_exists returns False for invalid download_id."""
@@ -579,7 +546,6 @@ async def test_transcript_exists_false_invalid_download_id(file_manager: FileMan
 # --- Tests for delete_transcript ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_delete_transcript_success(file_manager: FileManager):
     """Tests successful deletion of transcript files."""
@@ -599,7 +565,6 @@ async def test_delete_transcript_success(file_manager: FileManager):
     assert not transcript_path.exists()
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_delete_transcript_not_found(file_manager: FileManager):
     """Tests delete_transcript raises FileNotFoundError for non-existent files."""
@@ -612,7 +577,6 @@ async def test_delete_transcript_not_found(file_manager: FileManager):
         await file_manager.delete_transcript(feed_id, download_id, lang, ext)
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_delete_transcript_invalid_feed_id(file_manager: FileManager):
     """Tests delete_transcript raises FileOperationError for invalid feed_id."""
@@ -628,7 +592,6 @@ async def test_delete_transcript_invalid_feed_id(file_manager: FileManager):
     assert exc_info.value.download_id == download_id
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_delete_transcript_invalid_download_id(file_manager: FileManager):
     """Tests delete_transcript raises FileOperationError for invalid download_id."""

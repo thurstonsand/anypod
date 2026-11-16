@@ -71,7 +71,6 @@ def valid_video_entry_data(minimal_entry_data: dict[str, Any]) -> dict[str, Any]
 # --- Feed metadata tests ---
 
 
-@pytest.mark.unit
 def test_extract_feed_metadata_full(
     patreon_handler: PatreonHandler, minimal_entry_data: dict[str, Any]
 ):
@@ -96,7 +95,6 @@ def test_extract_feed_metadata_full(
     assert feed.remote_image_url == data["thumbnail"]
 
 
-@pytest.mark.unit
 def test_extract_feed_metadata_minimal(
     patreon_handler: PatreonHandler, minimal_entry_data: dict[str, Any]
 ):
@@ -118,7 +116,6 @@ def test_extract_feed_metadata_minimal(
 # --- Download metadata tests ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_extract_download_metadata_success_with_duration(
     patreon_handler: PatreonHandler,
@@ -135,7 +132,6 @@ async def test_extract_download_metadata_success_with_duration(
     assert download.source_url == valid_video_entry_data["webpage_url"]
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_extract_download_metadata_uses_placeholder_when_filesize_missing(
     patreon_handler: PatreonHandler,
@@ -150,7 +146,6 @@ async def test_extract_download_metadata_uses_placeholder_when_filesize_missing(
     assert download.filesize == 1
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_extract_download_metadata_uses_placeholder_when_filesize_zero(
     patreon_handler: PatreonHandler,
@@ -165,7 +160,6 @@ async def test_extract_download_metadata_uses_placeholder_when_filesize_zero(
     assert download.filesize == 1
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_extract_download_metadata_probes_duration_when_missing(
     patreon_handler: PatreonHandler,
@@ -196,7 +190,6 @@ async def test_extract_download_metadata_probes_duration_when_missing(
     assert kwargs["headers"]["Referer"] == "https://www.patreon.com"
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_extract_download_metadata_filtered_when_ext_missing(
     patreon_handler: PatreonHandler,
@@ -209,7 +202,6 @@ async def test_extract_download_metadata_filtered_when_ext_missing(
         )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_extract_download_metadata_error_when_timestamp_missing(
     patreon_handler: PatreonHandler,
@@ -224,7 +216,6 @@ async def test_extract_download_metadata_error_when_timestamp_missing(
     assert e.value.download_id == data["id"]
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_extract_download_metadata_error_when_mime_unknown(
     patreon_handler: PatreonHandler,
@@ -242,7 +233,6 @@ async def test_extract_download_metadata_error_when_mime_unknown(
 # --- Determine fetch strategy tests ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @patch.object(YtdlpCore, "extract_playlist_info", new_callable=AsyncMock)
 async def test_determine_fetch_strategy_playlist(
@@ -272,7 +262,6 @@ async def test_determine_fetch_strategy_playlist(
     assert st == SourceType.PLAYLIST
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @patch.object(YtdlpCore, "extract_playlist_info", new_callable=AsyncMock)
 async def test_determine_fetch_strategy_single(

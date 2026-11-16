@@ -1,6 +1,8 @@
 # pyright: reportPrivateUsage=false
 """Global pytest configuration for the test suite."""
 
+from pathlib import Path
+
 from _pytest.config import Config
 from _pytest.config.argparsing import Parser
 from _pytest.nodes import Item
@@ -14,6 +16,9 @@ from anypod.logging_config import setup_logging
 # submodule. In pytest-xdist workers, feedgen may be imported before any code
 # triggers the proper lxml.etree import, causing AttributeError. This pre-import
 # ensures lxml.etree is in sys.modules.
+
+
+INTEGRATION_DIR = Path(__file__).parent / "integration"
 
 
 def pytest_addoption(parser: Parser) -> None:
@@ -33,12 +38,20 @@ def pytest_configure() -> None:
     )
 
 
+@pytest.hookimpl(tryfirst=True)
 def pytest_collection_modifyitems(config: Config, items: list[Item]) -> None:
-    """Skip integration tests unless --integration flag is provided."""
-    if config.getoption("--integration"):
-        return
+    """Mark each test by its directory and skip integration tests by default.
 
+    Tests under ``tests/integration/`` get the ``integration`` marker and every
+    other test gets ``unit``. Running first lets ``-m`` select on these markers.
+    Integration tests are skipped unless the ``--integration`` flag is provided.
+    """
+    run_integration = config.getoption("--integration")
     skip_integration = pytest.mark.skip(reason="need --integration option to run")
     for item in items:
-        if "integration" in item.keywords:
-            item.add_marker(skip_integration)
+        if item.path.is_relative_to(INTEGRATION_DIR):
+            item.add_marker(pytest.mark.integration)
+            if not run_integration:
+                item.add_marker(skip_integration)
+        else:
+            item.add_marker(pytest.mark.unit)

@@ -101,7 +101,6 @@ def client(app_with_mocks: FastAPI) -> ClientProtocol:
 # --- Tests for create_app ---
 
 
-@pytest.mark.unit
 def test_create_app_basic_creation(
     mock_file_manager: Mock,
     mock_feed_database: Mock,
@@ -130,7 +129,6 @@ def test_create_app_basic_creation(
     assert app.version == "0.1.0"
 
 
-@pytest.mark.unit
 def test_create_app_dependencies_attached(
     mock_file_manager: Mock,
     mock_feed_database: Mock,
@@ -164,7 +162,6 @@ def test_create_app_dependencies_attached(
     assert app.state.manual_submission_service is mock_manual_submission_service
 
 
-@pytest.mark.unit
 def test_create_app_middleware_configured(
     mock_file_manager: Mock,
     mock_feed_database: Mock,

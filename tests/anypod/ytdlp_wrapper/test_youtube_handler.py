@@ -62,7 +62,6 @@ FEED_ID = "test_feed"
 # --- Tests for YoutubeHandler.extract_feed_metadata ---
 
 
-@pytest.mark.unit
 def test_extract_feed_metadata_with_full_metadata(
     youtube_handler: YoutubeHandler,
     valid_video_entry_data: dict[str, Any],
@@ -96,7 +95,6 @@ def test_extract_feed_metadata_with_full_metadata(
     assert extracted_feed.language is None  # Not available from yt-dlp
 
 
-@pytest.mark.unit
 def test_extract_feed_metadata_author_fallback(
     youtube_handler: YoutubeHandler,
     valid_video_entry_data: dict[str, Any],
@@ -116,7 +114,6 @@ def test_extract_feed_metadata_author_fallback(
     assert extracted_feed.author == "Fallback Channel Name"
 
 
-@pytest.mark.unit
 def test_extract_feed_metadata_minimal_data(
     youtube_handler: YoutubeHandler,
 ):
@@ -148,7 +145,6 @@ def test_extract_feed_metadata_minimal_data(
 # --- Tests for YoutubeHandler.extract_download_metadata (formerly _parse_single_video_entry) ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_parse_single_video_entry_success_basic(
     youtube_handler: YoutubeHandler, valid_video_entry_data: dict[str, Any]
@@ -174,7 +170,6 @@ async def test_parse_single_video_entry_success_basic(
     assert download.feed_id == FEED_ID
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_parse_single_video_entry_success_no_description(
     youtube_handler: YoutubeHandler, valid_video_entry_data: dict[str, Any]
@@ -188,7 +183,6 @@ async def test_parse_single_video_entry_success_no_description(
     assert download.description is None
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_parse_single_video_entry_uses_placeholder_when_filesize_missing(
     youtube_handler: YoutubeHandler, valid_video_entry_data: dict[str, Any]
@@ -202,7 +196,6 @@ async def test_parse_single_video_entry_uses_placeholder_when_filesize_missing(
     assert download.filesize == 1
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_parse_single_video_entry_uses_placeholder_when_filesize_zero(
     youtube_handler: YoutubeHandler, valid_video_entry_data: dict[str, Any]
@@ -216,7 +209,6 @@ async def test_parse_single_video_entry_uses_placeholder_when_filesize_zero(
     assert download.filesize == 1
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "ext, expected_mime",
     [
@@ -250,7 +242,6 @@ async def test_parse_single_video_entry_mime_type_mapping(
     assert download.mime_type == expected_mime
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_parse_single_video_entry_mime_type_unknown_type(
     youtube_handler: YoutubeHandler, valid_video_entry_data: dict[str, Any]
@@ -268,7 +259,6 @@ async def test_parse_single_video_entry_mime_type_unknown_type(
     assert valid_video_entry_data["ext"] in str(exc_info.value)
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_parse_single_video_entry_success_with_upload_date(
     youtube_handler: YoutubeHandler,
@@ -285,7 +275,6 @@ async def test_parse_single_video_entry_success_with_upload_date(
     assert download.published == expected_published
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_parse_single_video_entry_success_with_release_timestamp(
     youtube_handler: YoutubeHandler,
@@ -302,7 +291,6 @@ async def test_parse_single_video_entry_success_with_release_timestamp(
     assert download.published == expected_published
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_parse_single_video_entry_live_upcoming_video(
     youtube_handler: YoutubeHandler,
@@ -322,7 +310,6 @@ async def test_parse_single_video_entry_live_upcoming_video(
     assert download.filesize == valid_video_entry_data["filesize"]
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_parse_single_video_entry_source_url_priority(
     youtube_handler: YoutubeHandler, valid_video_entry_data: dict[str, Any]
@@ -353,7 +340,6 @@ async def test_parse_single_video_entry_source_url_priority(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_parse_single_video_entry_duration_as_int(
     youtube_handler: YoutubeHandler, valid_video_entry_data: dict[str, Any]
@@ -365,7 +351,6 @@ async def test_parse_single_video_entry_duration_as_int(
     assert download.duration == 120
 
 
-@pytest.mark.unit
 def test_parse_single_video_entry_error_missing_id(
     valid_video_entry_data: dict[str, Any],
 ):
@@ -378,7 +363,6 @@ def test_parse_single_video_entry_error_missing_id(
     assert e.value.download_id == "<missing_id>"
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_parse_single_video_entry_error_video_filtered_out(
     youtube_handler: YoutubeHandler,
@@ -394,7 +378,6 @@ async def test_parse_single_video_entry_error_video_filtered_out(
     assert e.value.download_id == valid_video_entry_data["id"]
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "bad_title",
     [None, "[Deleted video]", "[Private video]"],
@@ -420,7 +403,6 @@ async def test_parse_single_video_entry_error_invalid_title(
     assert e.value.download_id == entry_id
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_parse_single_video_entry_error_missing_all_dts(
     youtube_handler: YoutubeHandler,
@@ -435,7 +417,6 @@ async def test_parse_single_video_entry_error_missing_all_dts(
     assert "Missing published datetime" in str(e.value)
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "key, bad_value, expected_msg_part",
     [
@@ -464,7 +445,6 @@ async def test_parse_single_video_entry_error_invalid_date_formats_for_dts(
     assert e.value.download_id == valid_video_entry_data["id"]
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_parse_single_video_entry_error_missing_extension(
     youtube_handler: YoutubeHandler,
@@ -480,7 +460,6 @@ async def test_parse_single_video_entry_error_missing_extension(
     assert e.value.download_id == valid_video_entry_data["id"]
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "bad_duration, expected_msg_part",
     [
@@ -509,7 +488,6 @@ async def test_parse_single_video_entry_error_invalid_duration(
 # --- Tests for YoutubeHandler.determine_fetch_strategy ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @patch.object(YtdlpCore, "extract_playlist_info", new_callable=AsyncMock)
 async def test_determine_fetch_strategy_single_video(
@@ -540,7 +518,6 @@ async def test_determine_fetch_strategy_single_video(
     assert ref_type == SourceType.SINGLE_VIDEO
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @patch.object(YtdlpCore, "extract_playlist_info")
 async def test_determine_fetch_strategy_channel_main_page_finds_videos_tab(
@@ -589,7 +566,6 @@ async def test_determine_fetch_strategy_channel_main_page_finds_videos_tab(
     assert ref_type == SourceType.CHANNEL
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @patch.object(YtdlpCore, "extract_playlist_info")
 async def test_determine_fetch_strategy_channel_main_page_no_videos_tab(
@@ -630,7 +606,6 @@ async def test_determine_fetch_strategy_channel_main_page_no_videos_tab(
     assert ref_type == SourceType.CHANNEL
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @patch("anypod.ytdlp_wrapper.handlers.youtube_handler.YtdlpCore.extract_playlist_info")
 async def test_determine_fetch_strategy_channel_videos_tab_direct(
@@ -660,7 +635,6 @@ async def test_determine_fetch_strategy_channel_videos_tab_direct(
     assert ref_type == SourceType.PLAYLIST
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_determine_fetch_strategy_playlist_url(
     youtube_handler: YoutubeHandler, base_args: YtdlpArgs
@@ -693,7 +667,6 @@ async def test_determine_fetch_strategy_playlist_url(
         assert ref_type == SourceType.PLAYLIST
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @patch("anypod.ytdlp_wrapper.handlers.youtube_handler.YtdlpCore.extract_playlist_info")
 async def test_determine_fetch_strategy_playlists_tab_error(
@@ -717,7 +690,6 @@ async def test_determine_fetch_strategy_playlists_tab_error(
         await youtube_handler.determine_fetch_strategy(FEED_ID, initial_url, base_args)
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @patch.object(YtdlpCore, "extract_playlist_info")
 async def test_determine_fetch_strategy_discovery_fails(
@@ -736,7 +708,6 @@ async def test_determine_fetch_strategy_discovery_fails(
         await youtube_handler.determine_fetch_strategy(FEED_ID, initial_url, base_args)
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @patch.object(YtdlpCore, "extract_playlist_info")
 async def test_determine_fetch_strategy_unknown_extractor(
@@ -766,7 +737,6 @@ async def test_determine_fetch_strategy_unknown_extractor(
     assert ref_type == SourceType.UNKNOWN
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @patch.object(YtdlpCore, "extract_playlist_info")
 async def test_determine_fetch_strategy_channel_with_no_videos_but_has_entries(
@@ -811,7 +781,6 @@ async def test_determine_fetch_strategy_channel_with_no_videos_but_has_entries(
     assert ref_type == SourceType.CHANNEL
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @patch.object(YtdlpCore, "extract_playlist_info")
 async def test_determine_fetch_strategy_channel_with_empty_entries(
@@ -844,7 +813,6 @@ async def test_determine_fetch_strategy_channel_with_empty_entries(
     assert ref_type == SourceType.CHANNEL
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @patch.object(YtdlpCore, "extract_playlist_info")
 async def test_determine_fetch_strategy_existing_channel_tab_not_main_page(
@@ -882,7 +850,6 @@ async def test_determine_fetch_strategy_existing_channel_tab_not_main_page(
 # --- Tests for YoutubeHandler source_type preservation and channel classification ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @patch.object(YtdlpCore, "extract_playlist_info")
 async def test_determine_fetch_strategy_preserves_channel_classification(
@@ -962,7 +929,6 @@ async def test_determine_fetch_strategy_preserves_channel_classification(
     )
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 @patch.object(YtdlpCore, "extract_playlist_info")
 async def test_determine_fetch_strategy_channel_without_videos_tab_still_classified_correctly(
@@ -1020,7 +986,6 @@ async def test_determine_fetch_strategy_channel_without_videos_tab_still_classif
     assert extracted_feed.title == "New Channel"
 
 
-@pytest.mark.unit
 def test_extract_feed_metadata_channel_specific_fields():
     """Test that channel-specific metadata fields are properly extracted."""
     feed_id = "test_channel_metadata"
@@ -1069,7 +1034,6 @@ def test_extract_feed_metadata_channel_specific_fields():
 # --- Tests for thumbnail URL query parameter preservation ---
 
 
-@pytest.mark.unit
 def test_clean_thumbnail_url_preserves_query_parameters():
     """Test that _clean_thumbnail_url preserves query parameters required for YouTube thumbnails."""
     original_url = "https://i.ytimg.com/pl_c/PL8mG-RkN2uTw7PhlnAr4pZZz2QubIbujH/studio_square_thumbnail.jpg?sqp=CNnJ9cQG-oaymwEICOADEOADSFqi85f_AwYIwe77sQY%3D&rs=AOn4CLB5y7iZmQcD8vHcdJ4WtzLCK_wOuQ"
@@ -1096,7 +1060,6 @@ def test_clean_thumbnail_url_preserves_query_parameters():
     assert url == original_url
 
 
-@pytest.mark.unit
 def test_thumbnail_property_preserves_query_parameters(youtube_handler: YoutubeHandler):
     """Test that the thumbnail property preserves query parameters in URLs."""
     thumbnail_url_with_params = (

@@ -100,7 +100,6 @@ async def write_test_media_file(
     media_path.write_text(contents)
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_new_feed_addition(
     state_reconciler: StateReconciler,
@@ -169,7 +168,6 @@ async def test_new_feed_addition(
     assert image_path.exists()
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_reconciliation_is_idempotent(
     state_reconciler: StateReconciler,
@@ -206,7 +204,6 @@ async def test_reconciliation_is_idempotent(
     assert db_feed1 == db_feed2
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_feed_removal_archives_downloads(
     state_reconciler: StateReconciler,
@@ -276,7 +273,6 @@ async def test_feed_removal_archives_downloads(
     assert not media_path.exists()
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_feed_enable_disable_transitions(
     state_reconciler: StateReconciler,
@@ -329,7 +325,6 @@ async def test_feed_enable_disable_transitions(
     assert db_feed.consecutive_failures == 0  # Not changed
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_url_change_resets_error_state(
     state_reconciler: StateReconciler,
@@ -369,7 +364,6 @@ async def test_url_change_resets_error_state(
     assert db_feed.consecutive_failures == 0
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_since_expansion_restores_downloads(
     state_reconciler: StateReconciler,
@@ -439,7 +433,6 @@ async def test_since_expansion_restores_downloads(
     assert archived[0].id == "should_stay_archived"
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_keep_last_increase_restores_downloads(
     state_reconciler: StateReconciler,
@@ -509,7 +502,6 @@ async def test_keep_last_increase_restores_downloads(
     assert archived[0].id == "archived_2"  # The oldest one stays archived
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_metadata_updates(
     state_reconciler: StateReconciler,
@@ -588,7 +580,6 @@ async def test_metadata_updates(
     assert new_image_path.exists()
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_multiple_feeds_parallel_changes(
     state_reconciler: StateReconciler,

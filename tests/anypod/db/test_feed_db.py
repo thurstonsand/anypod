@@ -131,7 +131,6 @@ def sample_downloads() -> list[Download]:
 # --- Tests for FeedDatabase schema initialization ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_feed_db_initialization_and_schema(feed_db: FeedDatabase):
     """Test that the schema (tables) is created upon initialization."""
@@ -145,7 +144,6 @@ async def test_feed_db_initialization_and_schema(feed_db: FeedDatabase):
 # --- Tests for FeedDatabase.upsert_feed ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_upsert_and_get_feed(feed_db: FeedDatabase, sample_feed: Feed):
     """Test adding a new feed and then retrieving it."""
@@ -168,7 +166,6 @@ async def test_upsert_and_get_feed(feed_db: FeedDatabase, sample_feed: Feed):
     assert retrieved_feed.consecutive_failures == sample_feed.consecutive_failures
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_upsert_feed_updates_existing(feed_db: FeedDatabase, sample_feed: Feed):
     """Test that upsert_feed updates an existing feed instead of raising an error."""
@@ -214,7 +211,6 @@ async def test_upsert_feed_updates_existing(feed_db: FeedDatabase, sample_feed: 
     assert retrieved_feed.consecutive_failures == modified_feed.consecutive_failures
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_upsert_feed_with_none_timestamps(
     feed_db: FeedDatabase, minimal_feed: Feed
@@ -245,7 +241,6 @@ async def test_upsert_feed_with_none_timestamps(
 # --- Tests for FeedDatabase.get_feed_by_id ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_get_feed_by_id_not_found(feed_db: FeedDatabase):
     """Test that get_feed_by_id raises FeedNotFoundError for non-existent feed."""
@@ -258,7 +253,6 @@ async def test_get_feed_by_id_not_found(feed_db: FeedDatabase):
 # --- Tests for FeedDatabase.get_feeds ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_get_feeds_all_and_filtered(feed_db: FeedDatabase):
     """Test getting all feeds and filtering by enabled status."""
@@ -316,7 +310,6 @@ async def test_get_feeds_all_and_filtered(feed_db: FeedDatabase):
 # --- Tests for FeedDatabase.mark_sync_success ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_mark_sync_success(feed_db: FeedDatabase, sample_feed: Feed):
     """Test marking a feed sync as successful."""
@@ -338,7 +331,6 @@ async def test_mark_sync_success(feed_db: FeedDatabase, sample_feed: Feed):
     assert time_diff < 5, "last_successful_sync should be close to current time"
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_mark_sync_success_not_found(feed_db: FeedDatabase):
     """Test marking sync success for non-existent feed."""
@@ -351,7 +343,6 @@ async def test_mark_sync_success_not_found(feed_db: FeedDatabase):
 # --- Tests for FeedDatabase.mark_sync_failure ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_mark_sync_failure(feed_db: FeedDatabase, sample_feed: Feed):
     """Test marking a feed sync as failed."""
@@ -375,7 +366,6 @@ async def test_mark_sync_failure(feed_db: FeedDatabase, sample_feed: Feed):
     assert updated_feed2.consecutive_failures == 2
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_mark_sync_failure_not_found(feed_db: FeedDatabase):
     """Test marking sync failure for non-existent feed."""
@@ -388,7 +378,6 @@ async def test_mark_sync_failure_not_found(feed_db: FeedDatabase):
 # --- Tests for FeedDatabase.mark_rss_generated ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_mark_rss_generated(feed_db: FeedDatabase, sample_feed: Feed):
     """Test marking RSS generation for a feed."""
@@ -408,7 +397,6 @@ async def test_mark_rss_generated(feed_db: FeedDatabase, sample_feed: Feed):
     assert time_diff < 5, "last_rss_generation should be close to current time"
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_mark_rss_generated_not_found(feed_db: FeedDatabase):
     """Test marking RSS generated for non-existent feed."""
@@ -421,7 +409,6 @@ async def test_mark_rss_generated_not_found(feed_db: FeedDatabase):
 # --- Tests for FeedDatabase.set_feed_enabled ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_set_feed_enabled(feed_db: FeedDatabase, sample_feed: Feed):
     """Test enabling and disabling a feed."""
@@ -452,7 +439,6 @@ async def test_set_feed_enabled(feed_db: FeedDatabase, sample_feed: Feed):
     assert updated_feed2.image_ext is None  # Stays None after re-enabling
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_set_feed_enabled_not_found(feed_db: FeedDatabase):
     """Test setting enabled status for non-existent feed."""
@@ -465,7 +451,6 @@ async def test_set_feed_enabled_not_found(feed_db: FeedDatabase):
 # --- Tests for FeedDatabase.update_feed_metadata ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_update_feed_metadata(feed_db: FeedDatabase, sample_feed: Feed):
     """Test updating feed metadata fields."""
@@ -500,7 +485,6 @@ async def test_update_feed_metadata(feed_db: FeedDatabase, sample_feed: Feed):
     assert updated_feed.remote_image_url == sample_feed.remote_image_url
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_update_feed_metadata_no_op(feed_db: FeedDatabase, sample_feed: Feed):
     """Test that update_feed_metadata is no-op when all fields are None."""
@@ -521,7 +505,6 @@ async def test_update_feed_metadata_no_op(feed_db: FeedDatabase, sample_feed: Fe
     assert final_feed.updated_at == initial_updated_at
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_update_feed_metadata_not_found(feed_db: FeedDatabase):
     """Test updating metadata for non-existent feed."""
@@ -534,7 +517,6 @@ async def test_update_feed_metadata_not_found(feed_db: FeedDatabase):
 # --- Tests for FeedDatabase timestamp updates ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_database_update_timestamp(feed_db: FeedDatabase, sample_feed: Feed):
     """Test that database correctly updates timestamps."""
@@ -563,7 +545,6 @@ async def test_database_update_timestamp(feed_db: FeedDatabase, sample_feed: Fee
 # --- Tests for Feed.total_downloads property ---
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_total_downloads_property(
     feed_db: FeedDatabase,
@@ -586,7 +567,6 @@ async def test_total_downloads_property(
     assert retrieved_feed.total_downloads == 2
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_total_downloads_property_skip_downloads(
     feed_db: FeedDatabase, sample_feed: Feed
@@ -602,7 +582,6 @@ async def test_total_downloads_property_skip_downloads(
     assert retrieved_feed.total_downloads == 0
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_total_downloads_property_mixed_statuses(
     feed_db: FeedDatabase, download_db: DownloadDatabase, sample_feed: Feed
