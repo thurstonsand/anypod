@@ -140,8 +140,7 @@ class SourceHandlerBase(Protocol):
 
     async def download_transcript(
         self,
-        download_id: str,
-        source_url: str,
+        download: Download,
         transcript_lang: str,
         transcript_source: TranscriptSource,
         output_path: Path,
@@ -157,8 +156,7 @@ class SourceHandlerBase(Protocol):
         is unsupported/unavailable for the handler.
 
         Args:
-            download_id: The video/download identifier.
-            source_url: The source URL for the video.
+            download: The Download to fetch the transcript for.
             transcript_lang: Language code for transcripts (e.g., "en").
             transcript_source: Source type (creator or auto-generated).
             output_path: Full path where the VTT file should be written.

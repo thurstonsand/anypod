@@ -401,9 +401,7 @@ async def test_download_transcript_only(
     download = downloads[0]
 
     result = await ytdlp_wrapper.download_transcript_only(
-        feed_id=feed_id,
-        download_id=download.id,
-        source_url=download.source_url,
+        download=download,
         transcript_lang="en",
         transcript_source=transcript_source,
         cookies_path=cookies_path,
@@ -571,6 +569,9 @@ async def test_download_media_to_file_success(
     )
     assert transcript_path.exists(), (
         f"Transcript file should exist at {transcript_path}"
+    )
+    assert "<c>" not in transcript_path.read_text(), (
+        "Transcript should not contain yt-dlp's karaoke-style word timing cues"
     )
 
 

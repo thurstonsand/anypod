@@ -871,8 +871,7 @@ class YoutubeHandler:
 
     async def download_transcript(
         self,
-        download_id: str,
-        source_url: str,
+        download: Download,
         transcript_lang: str,
         transcript_source: TranscriptSource,
         output_path: Path,
@@ -885,8 +884,7 @@ class YoutubeHandler:
         cues that appear in yt-dlp's auto-generated subtitle download.
 
         Args:
-            download_id: The YouTube video ID.
-            source_url: The source URL for the video (unused, download_id is used directly).
+            download: The Download to fetch the transcript for; its ID is the YouTube video ID.
             transcript_lang: Language code for transcripts (e.g., "en").
             transcript_source: Source type (CREATOR or AUTO).
             output_path: Full path where the VTT file should be written.
@@ -897,7 +895,7 @@ class YoutubeHandler:
         """
         try:
             return await youtube_transcript.download_transcript(
-                video_id=download_id,
+                video_id=download.id,
                 lang=transcript_lang,
                 source=transcript_source,
                 output_path=output_path,
@@ -906,6 +904,6 @@ class YoutubeHandler:
         except YouTubeTranscriptError as e:
             raise YtdlpApiError(
                 message="YouTube transcript API request failed.",
-                download_id=download_id,
-                url=source_url,
+                download_id=download.id,
+                url=download.source_url,
             ) from e

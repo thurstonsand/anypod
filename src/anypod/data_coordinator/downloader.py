@@ -326,9 +326,7 @@ class Downloader:
 
         try:
             transcript_ext = await self.ytdlp_wrapper.download_transcript_only(
-                feed_id=download.feed_id,
-                download_id=download.id,
-                source_url=download.source_url,
+                download=download,
                 transcript_lang=transcript_lang,
                 transcript_source=transcript_source,
                 cookies_path=cookies_path,

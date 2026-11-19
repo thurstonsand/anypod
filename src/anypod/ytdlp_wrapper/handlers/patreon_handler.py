@@ -696,8 +696,7 @@ class PatreonHandler:
 
     async def download_transcript(
         self,
-        download_id: str,
-        source_url: str,
+        download: Download,
         transcript_lang: str,
         transcript_source: TranscriptSource,
         output_path: Path,
@@ -710,8 +709,7 @@ class PatreonHandler:
         YouTube auto-generated subtitles have.
 
         Args:
-            download_id: The Patreon post ID.
-            source_url: The source URL for the post.
+            download: The Download to fetch the transcript for.
             transcript_lang: Language code for transcripts (e.g., "en").
             transcript_source: Source type (CREATOR or AUTO).
             output_path: Full path where the VTT file should be written.
@@ -733,12 +731,15 @@ class PatreonHandler:
             .convert_subs("vtt")
             .paths_temp(transcripts_dir)
             .paths_subtitle(transcripts_dir)
-            .output_subtitle(f"{download_id}.%(ext)s")
+            .output_subtitle(f"{download.id}.%(ext)s")
             .referer(_PATREON_REFERER)
         )
 
         if cookies_path is not None:
             args = args.cookies(cookies_path)
+
+        if download.playlist_index is not None:
+            args = args.playlist_items(download.playlist_index)
 
         if transcript_source == TranscriptSource.CREATOR:
             args = args.write_subs()
@@ -748,10 +749,10 @@ class PatreonHandler:
             return False
 
         try:
-            await YtdlpCore.download(args, source_url)
+            await YtdlpCore.download(args, download.source_url)
         except YtdlpApiError as e:
-            e.download_id = download_id
-            e.url = source_url
+            e.download_id = download.id
+            e.url = download.source_url
             raise
 
         return output_path.exists()

@@ -611,18 +611,15 @@ class YtdlpWrapper:
 
     async def download_transcript_only(
         self,
-        feed_id: str,
-        download_id: str,
-        source_url: str,
+        download: Download,
         transcript_lang: str,
         transcript_source: TranscriptSource,
         cookies_path: Path | None = None,
     ) -> str | None:
         """Download only the transcript for an existing media file.
 
-        Used for backfilling transcripts when transcript support is enabled
-        for feeds that already have downloaded media. The caller must determine
-        transcript_source via metadata refresh before calling this method.
+        Used after a media download, and for backfilling transcripts on media
+        that is already downloaded. The caller determines transcript_source.
 
         Delegates to the appropriate handler's download_transcript() method,
         which uses the best approach for each source:
@@ -630,9 +627,7 @@ class YtdlpWrapper:
         - Others: Uses yt-dlp subtitle download
 
         Args:
-            feed_id: The feed identifier.
-            download_id: The download identifier.
-            source_url: The source URL of the video.
+            download: The Download to fetch the transcript for.
             transcript_lang: Language code for subtitles (e.g., "en").
             transcript_source: Source type (creator or auto-generated) determined by caller.
             cookies_path: Path to cookies.txt file for authentication, or None.
@@ -640,24 +635,24 @@ class YtdlpWrapper:
         Returns:
             Extension string ("vtt") if transcript was downloaded, None otherwise.
         """
+        feed_id = download.feed_id
         output_path = await self._paths.transcript_path(
-            feed_id, download_id, transcript_lang, "vtt"
+            feed_id, download.id, transcript_lang, "vtt"
         )
 
         log_params: dict[str, Any] = {
             "feed_id": feed_id,
-            "download_id": download_id,
-            "source_url": source_url,
+            "download_id": download.id,
+            "source_url": download.source_url,
             "transcript_lang": transcript_lang,
             "transcript_source": str(transcript_source),
         }
 
         logger.debug("Requesting transcript-only download.", extra=log_params)
 
-        handler = self._handler_selector.select(source_url)
+        handler = self._handler_selector.select(download.source_url)
         success = await handler.download_transcript(
-            download_id=download_id,
-            source_url=source_url,
+            download=download,
             transcript_lang=transcript_lang,
             transcript_source=transcript_source,
             output_path=output_path,
@@ -673,7 +668,7 @@ class YtdlpWrapper:
 
         # Verify file exists and normalize language code casing if needed
         transcript_path = await self._find_and_normalize_transcript(
-            feed_id, download_id, transcript_lang
+            feed_id, download.id, transcript_lang
         )
         if transcript_path:
             logger.debug(
@@ -792,8 +787,9 @@ class YtdlpWrapper:
         """Download the media for a given Download to a target directory.
 
         yt-dlp will place the final file in a feed-specific subdirectory within
-        the application's configured data directory. Optionally downloads subtitles
-        as transcripts.
+        the application's configured data directory. When transcript_lang is set and
+        the download has a transcript source, the transcript is fetched afterwards
+        through the source's handler.
 
         Args:
             download: The Download object containing metadata.
@@ -840,25 +836,6 @@ class YtdlpWrapper:
             .paths_temp(download_temp_dir)
             .paths_home(download_data_dir)
         )
-
-        # Add subtitle/transcript options
-        transcripts_dir: Path | None = None
-        if transcript_lang and download.transcript_source in [
-            TranscriptSource.CREATOR,
-            TranscriptSource.AUTO,
-        ]:
-            transcripts_dir = await self._paths.feed_transcripts_dir(download.feed_id)
-            download_args = (
-                download_args.sub_format("vtt")
-                .sub_langs(transcript_lang)
-                .convert_subs("vtt")
-                .paths_subtitle(transcripts_dir)
-                .output_subtitle(f"{download.id}.%(ext)s")
-            )
-            if download.transcript_source == TranscriptSource.CREATOR:
-                download_args = download_args.write_subs()
-            elif download.transcript_source == TranscriptSource.AUTO:
-                download_args = download_args.write_auto_subs()
 
         download_args = await self._update_to(download_args)
         download_args = self._pot_extractor_args(download_args)
@@ -913,34 +890,27 @@ class YtdlpWrapper:
             download_logs,
         )
 
-        # Check if transcript was downloaded
         transcript = None
-        if (
-            transcripts_dir
-            and transcript_lang
-            and download.transcript_source
-            in [TranscriptSource.CREATOR, TranscriptSource.AUTO]
-        ):
-            transcript_path = await self._find_and_normalize_transcript(
-                download.feed_id, download.id, transcript_lang
-            )
-            if transcript_path:
+        if transcript_lang and download.transcript_source in [
+            TranscriptSource.CREATOR,
+            TranscriptSource.AUTO,
+        ]:
+            try:
+                transcript_ext = await self.download_transcript_only(
+                    download, transcript_lang, download.transcript_source, cookies_path
+                )
+            except YtdlpApiError as e:
+                logger.warning(
+                    "Transcript download failed; keeping media without it.",
+                    extra=log_params,
+                    exc_info=e,
+                )
+                transcript_ext = None
+            if transcript_ext:
                 transcript = TranscriptInfo(
-                    ext="vtt",
+                    ext=transcript_ext,
                     lang=transcript_lang,
                     source=download.transcript_source,
-                )
-                logger.debug(
-                    "Transcript downloaded successfully.",
-                    extra={
-                        **log_params,
-                        "transcript_ext": "vtt",
-                    },
-                )
-            else:
-                logger.debug(
-                    "Transcript file not found after download attempt.",
-                    extra=log_params,
                 )
 
         logger.debug(

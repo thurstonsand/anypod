@@ -670,9 +670,7 @@ class StateReconciler:
 
             # Download the transcript using the detected source
             ext = await self._ytdlp_wrapper.download_transcript_only(
-                feed_id=feed_id,
-                download_id=download.id,
-                source_url=download.source_url,
+                download=download,
                 transcript_lang=lang,
                 transcript_source=transcript_source,
                 cookies_path=cookies_path,
