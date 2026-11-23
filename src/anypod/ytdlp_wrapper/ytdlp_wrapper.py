@@ -10,6 +10,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+import aiofiles
 import aiofiles.os
 
 from ..db.app_state_db import AppStateDatabase
@@ -29,6 +30,36 @@ from .handlers import HandlerSelector
 from .types import DownloadedMedia, TranscriptInfo
 
 logger = logging.getLogger(__name__)
+
+
+def _flatten_vtt_cues(vtt: str) -> str:
+    """Join each cue's text lines into one line.
+
+    Podcast apps render every line break inside a cue as a paragraph break,
+    which splits sentences mid-phrase. Header, NOTE, and STYLE blocks have no
+    timing line and are left unchanged.
+
+    Args:
+        vtt: WebVTT file content.
+
+    Returns:
+        The content with every cue's payload on a single line.
+    """
+    normalized = vtt.replace("\r\n", "\n")
+    body = normalized.rstrip("\n")
+    blocks = body.split("\n\n")
+    flattened: list[str] = []
+    for block in blocks:
+        lines = block.split("\n")
+        timing_idx = next((i for i, line in enumerate(lines) if "-->" in line), None)
+        if timing_idx is None:
+            flattened.append(block)
+            continue
+        text = " ".join(
+            line.strip() for line in lines[timing_idx + 1 :] if line.strip()
+        )
+        flattened.append("\n".join([*lines[: timing_idx + 1], text]))
+    return "\n\n".join(flattened) + normalized[len(body) :]
 
 
 class YtdlpWrapper:
@@ -573,11 +604,12 @@ class YtdlpWrapper:
         download_id: str,
         transcript_lang: str,
     ) -> Path | None:
-        """Find transcript file with case-insensitive language code matching.
+        """Find transcript file and normalize its name and cue layout.
 
         yt-dlp creates files with platform-specific language code casing
         (e.g., Twitter uses "EN", YouTube uses "en"). Find matches
-        regardless of casing, then normalizes to lowercase.
+        regardless of casing, then normalizes to lowercase. Multi-line cues
+        are flattened to one line each.
 
         Args:
             feed_id: The feed identifier.
@@ -607,6 +639,10 @@ class YtdlpWrapper:
                     "normalized_name": expected_filename,
                 },
             )
+        async with aiofiles.open(expected_path, encoding="utf-8") as f:
+            content = await f.read()
+        async with aiofiles.open(expected_path, "w", encoding="utf-8") as f:
+            await f.write(_flatten_vtt_cues(content))
         return expected_path
 
     async def download_transcript_only(

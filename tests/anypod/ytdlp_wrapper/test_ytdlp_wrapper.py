@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from anypod.db.app_state_db import AppStateDatabase
-from anypod.db.types import Download, DownloadStatus, Feed, SourceType
+from anypod.db.types import Download, DownloadStatus, Feed, SourceType, TranscriptSource
 from anypod.exceptions import YtdlpApiError
 from anypod.ffmpeg import FFmpeg
 from anypod.ffprobe import FFProbe
@@ -533,6 +533,55 @@ async def test_download_media_thumbnail_failure(
 
     assert exc_info.value is expected_error
     mock_ytdlcore_download.assert_called_once()
+
+
+# --- Tests for YtdlpWrapper.download_transcript_only ---
+
+
+@pytest.mark.asyncio
+async def test_download_transcript_only_flattens_multiline_cues(
+    ytdlp_wrapper: YtdlpWrapper,
+    mock_youtube_handler: MagicMock,
+    paths: PathManager,
+):
+    """Each cue's text ends up on one line; header and cue identifiers stay put."""
+    download = Download(
+        feed_id="test_feed",
+        id="post123",
+        source_url="https://x.com/someone/status/post123",
+        title="Test Post",
+        published=datetime(2023, 1, 1, 0, 0, 0, tzinfo=UTC),
+        ext="mp4",
+        mime_type="video/mp4",
+        filesize=12345,
+        duration=120,
+        status=DownloadStatus.DOWNLOADED,
+    )
+    transcripts_dir = await paths.feed_transcripts_dir(download.feed_id)
+    raw_vtt = (
+        "WEBVTT\r\nKind: captions\r\n\r\n"
+        "intro\r\n00:00:00.161 --> 00:00:03.193\r\n"
+        "Thorsten: When you can dictate\r\n  features into\r\nexistence,\r\n\r\n"
+        "00:00:03.203 --> 00:00:08.861\r\nthe value of features\r\n"
+    )
+
+    async def write_raw_vtt(**_kwargs: object) -> bool:
+        (transcripts_dir / "post123.EN.vtt").write_text(raw_vtt, newline="")
+        return True
+
+    mock_youtube_handler.download_transcript.side_effect = write_raw_vtt
+
+    ext = await ytdlp_wrapper.download_transcript_only(
+        download, "en", TranscriptSource.CREATOR
+    )
+
+    assert ext == "vtt"
+    assert (transcripts_dir / "post123.en.vtt").read_text() == (
+        "WEBVTT\nKind: captions\n\n"
+        "intro\n00:00:00.161 --> 00:00:03.193\n"
+        "Thorsten: When you can dictate features into existence,\n\n"
+        "00:00:03.203 --> 00:00:08.861\nthe value of features\n"
+    )
 
 
 # --- Tests for YtdlpWrapper.download_media_to_file ---
