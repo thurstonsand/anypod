@@ -4,6 +4,7 @@
 
 import json
 from pathlib import Path
+import shutil
 import subprocess
 from unittest.mock import AsyncMock, patch
 
@@ -11,6 +12,11 @@ import pytest
 
 from anypod.exceptions import FFmpegError
 from anypod.ffmpeg import FFmpeg, _to_iso639_2
+
+REQUIRES_FFMPEG = pytest.mark.skipif(
+    shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
+    reason="ffmpeg and ffprobe executables are required",
+)
 
 
 def _create_synthetic_mp4(path: Path) -> None:
@@ -106,6 +112,7 @@ async def test_ffmpeg_convert_image_to_jpg_failure(
         await ffm.convert_image_to_jpg(tmp_path / "in.png", tmp_path / "out.jpg")
 
 
+@REQUIRES_FFMPEG
 @pytest.mark.asyncio
 async def test_embed_subtitles_muxes_mov_text_and_replaces_existing_track(
     tmp_path: Path,
@@ -152,6 +159,7 @@ async def test_embed_subtitles_muxes_mov_text_and_replaces_existing_track(
     assert tags_after["language"] == "deu"
 
 
+@REQUIRES_FFMPEG
 @pytest.mark.asyncio
 async def test_embed_subtitles_failure_preserves_original(
     tmp_path: Path,
