@@ -11,7 +11,8 @@ from pathlib import Path
 from typing import Any
 
 from .config import FeedConfig
-from .data_coordinator import Pruner
+from .data_coordinator import Downloader, Pruner
+from .data_coordinator.types import DownloadArtifact
 from .db import DownloadDatabase
 from .db.feed_db import FeedDatabase
 from .db.types import Download, DownloadStatus, Feed, SourceType, TranscriptSource
@@ -46,8 +47,9 @@ class StateReconciler:
         _image_downloader: ImageDownloader for downloading images.
         _feed_db: Database manager for feed record operations.
         _download_db: Database manager for download record operations.
-        _pruner: Pruner for feed pruning on deletion.
         _ytdlp_wrapper: YtdlpWrapper for feed discovery operations.
+        _downloader: Downloader for artifact downloads during reconciliation.
+        _pruner: Pruner for feed pruning on deletion.
     """
 
     def __init__(
@@ -57,6 +59,7 @@ class StateReconciler:
         feed_db: FeedDatabase,
         download_db: DownloadDatabase,
         ytdlp_wrapper: YtdlpWrapper,
+        downloader: Downloader,
         pruner: Pruner,
     ) -> None:
         self._file_manager = file_manager
@@ -64,6 +67,7 @@ class StateReconciler:
         self._feed_db = feed_db
         self._download_db = download_db
         self._ytdlp_wrapper = ytdlp_wrapper
+        self._downloader = downloader
         self._pruner = pruner
         logger.debug("StateReconciler initialized.")
 
@@ -593,29 +597,29 @@ class StateReconciler:
         self,
         feed_id: str,
         downloads: list[Download],
-        lang: str,
-        transcript_source_priority: list[TranscriptSource] | None,
-        user_yt_cli_args: list[str],
+        feed_config: FeedConfig,
         cookies_path: Path | None,
         log_params: dict[str, Any],
     ) -> None:
         """Download transcripts for a list of downloads.
 
         For each download, refreshes metadata to determine transcript_source,
-        then downloads the transcript if available.
+        then delegates transcript downloading and persistence to Downloader.
 
         Args:
             feed_id: The feed identifier.
             downloads: List of Download objects to process.
-            lang: Language code for subtitles.
-            transcript_source_priority: Ordered list of transcript sources to try.
-            user_yt_cli_args: User-provided yt-dlp CLI arguments.
+            feed_config: Feed configuration containing transcript settings and yt_args.
             cookies_path: Path to cookies.txt file for yt-dlp authentication.
             log_params: Logging parameters for context.
 
         Raises:
             StateReconciliationError: If metadata fetch fails for a download.
         """
+        lang = feed_config.transcript_lang
+        if not lang:
+            return
+
         success_count = 0
         unavailable_count = 0
         fail_count = 0
@@ -628,17 +632,15 @@ class StateReconciler:
 
             # Refresh metadata to get transcript_source
             try:
-                refreshed_downloads = (
-                    await self._ytdlp_wrapper.fetch_new_downloads_metadata(
-                        feed_id=feed_id,
-                        source_type=SourceType.SINGLE_VIDEO,
-                        source_url=download.source_url,
-                        resolved_url=None,
-                        user_yt_cli_args=user_yt_cli_args,
-                        transcript_lang=lang,
-                        transcript_source_priority=transcript_source_priority,
-                        cookies_path=cookies_path,
-                    )
+                refreshed_downloads = await self._ytdlp_wrapper.fetch_new_downloads_metadata(
+                    feed_id=feed_id,
+                    source_type=SourceType.SINGLE_VIDEO,
+                    source_url=download.source_url,
+                    resolved_url=None,
+                    user_yt_cli_args=feed_config.yt_args,
+                    transcript_lang=lang,
+                    transcript_source_priority=feed_config.transcript_source_priority,
+                    cookies_path=cookies_path,
                 )
             except (YtdlpApiError, YtdlpError) as e:
                 raise StateReconciliationError(
@@ -668,36 +670,19 @@ class StateReconciler:
                 unavailable_count += 1
                 continue
 
-            # Download the transcript using the detected source
-            ext = await self._ytdlp_wrapper.download_transcript_only(
-                download=download,
-                transcript_lang=lang,
-                transcript_source=transcript_source,
-                cookies_path=cookies_path,
+            download_with_source = download.model_copy(
+                update={"transcript_source": transcript_source}
+            )
+            result = await self._downloader.download_artifacts(
+                download_with_source,
+                feed_config,
+                DownloadArtifact.TRANSCRIPT,
+                cookies_path,
             )
 
-            if ext:
-                try:
-                    await self._download_db.set_transcript_metadata(
-                        feed_id=feed_id,
-                        download_id=download.id,
-                        transcript_ext=ext,
-                        transcript_lang=lang,
-                        transcript_source=transcript_source,
-                    )
-                    success_count += 1
-                except DatabaseOperationError as e:
-                    logger.warning(
-                        "Failed to persist transcript metadata.",
-                        extra=download_log_params,
-                        exc_info=e,
-                    )
-                    fail_count += 1
+            if result.transcript_downloaded:
+                success_count += 1
             else:
-                logger.debug(
-                    "Transcript file not found after download attempt.",
-                    extra=download_log_params,
-                )
                 fail_count += 1
 
         logger.info(
@@ -787,11 +772,9 @@ class StateReconciler:
     async def _handle_transcript_config_changes(
         self,
         feed_id: str,
-        config_transcript_lang: str | None,
-        config_transcript_source_priority: list[TranscriptSource] | None,
+        feed_config: FeedConfig,
         db_transcript_lang: str | None,
         db_transcript_source_priority: list[TranscriptSource] | None,
-        user_yt_cli_args: list[str],
         cookies_path: Path | None,
         log_params: dict[str, Any],
     ) -> None:
@@ -805,17 +788,18 @@ class StateReconciler:
 
         Args:
             feed_id: The feed identifier.
-            config_transcript_lang: The transcript_lang from config (or None).
-            config_transcript_source_priority: Ordered list of transcript sources to try.
+            feed_config: Feed configuration containing transcript settings and yt_args.
             db_transcript_lang: The transcript_lang stored in database (or None).
             db_transcript_source_priority: Ordered list of transcript sources from database.
-            user_yt_cli_args: User-provided yt-dlp CLI arguments.
             cookies_path: Path to cookies.txt file for yt-dlp authentication.
             log_params: Logging parameters for context.
 
         Raises:
             StateReconciliationError: If database or file operations fail.
         """
+        config_transcript_lang = feed_config.transcript_lang
+        config_transcript_source_priority = feed_config.transcript_source_priority
+
         lang_changed = config_transcript_lang != db_transcript_lang
         priority_changed = (
             config_transcript_source_priority != db_transcript_source_priority
@@ -855,9 +839,7 @@ class StateReconciler:
                 await self._download_transcripts_for_downloads(
                     feed_id,
                     downloads,
-                    new_lang,
-                    config_transcript_source_priority,
-                    user_yt_cli_args,
+                    feed_config,
                     cookies_path,
                     log_params,
                 )
@@ -886,9 +868,7 @@ class StateReconciler:
                 await self._download_transcripts_for_downloads(
                     feed_id,
                     cleared_downloads,
-                    new_lang,
-                    config_transcript_source_priority,
-                    user_yt_cli_args,
+                    feed_config,
                     cookies_path,
                     log_params,
                 )
@@ -915,9 +895,7 @@ class StateReconciler:
                 await self._download_transcripts_for_downloads(
                     feed_id,
                     cleared_downloads,
-                    current_lang,
-                    config_transcript_source_priority,
-                    user_yt_cli_args,
+                    feed_config,
                     cookies_path,
                     log_params,
                 )
@@ -1006,11 +984,9 @@ class StateReconciler:
 
         await self._handle_transcript_config_changes(
             feed_id,
-            feed_config.transcript_lang,
-            feed_config.transcript_source_priority,
+            feed_config,
             db_feed.transcript_lang,
             db_feed.transcript_source_priority,
-            feed_config.yt_args,
             cookies_path,
             log_params,
         )

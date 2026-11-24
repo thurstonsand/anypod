@@ -74,6 +74,7 @@ async def run_debug_downloader_mode(
             file_manager=file_manager,
             ytdlp_wrapper=ytdlp_wrapper,
             ffprobe=ffprobe,
+            ffmpeg=ffmpeg,
         )
     except Exception as e:
         logger.critical(

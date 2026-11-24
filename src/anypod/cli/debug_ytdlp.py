@@ -8,7 +8,7 @@ import logging
 from ..config import AppSettings
 from ..db import AppStateDatabase
 from ..db.sqlalchemy_core import SqlalchemyCore
-from ..db.types import DownloadStatus
+from ..db.types import DownloadStatus, TranscriptSource
 from ..exceptions import YtdlpApiError
 from ..ffmpeg import FFmpeg
 from ..ffprobe import FFProbe
@@ -138,20 +138,42 @@ async def run_debug_ytdlp_mode(settings: AppSettings, paths: PathManager) -> Non
                                     download,
                                     feed_config.yt_args,
                                     cookies_path=settings.cookies_path,
-                                    transcript_lang=feed_config.transcript_lang,
                                 )
                             )
                             logger.info(
                                 "Download successful: %s",
                                 downloaded_media.file_path,
                             )
-                            if downloaded_media.transcript:
-                                logger.info(
-                                    "Transcript downloaded: ext=%s, lang=%s, source=%s",
-                                    downloaded_media.transcript.ext,
-                                    downloaded_media.transcript.lang,
-                                    downloaded_media.transcript.source,
-                                )
+                            if (
+                                feed_config.transcript_lang
+                                and download.transcript_source
+                                in [
+                                    TranscriptSource.CREATOR,
+                                    TranscriptSource.AUTO,
+                                ]
+                            ):
+                                try:
+                                    transcript_ext = (
+                                        await ytdlp_wrapper.download_transcript_only(
+                                            download,
+                                            feed_config.transcript_lang,
+                                            download.transcript_source,
+                                            cookies_path=settings.cookies_path,
+                                        )
+                                    )
+                                except YtdlpApiError as transcript_error:
+                                    logger.warning(
+                                        f"Transcript download failed for {download.title}: {transcript_error}",
+                                        extra={"download_id": download.id},
+                                    )
+                                else:
+                                    if transcript_ext:
+                                        logger.info(
+                                            "Transcript downloaded: ext=%s, lang=%s, source=%s",
+                                            transcript_ext,
+                                            feed_config.transcript_lang,
+                                            download.transcript_source,
+                                        )
                             logger.debug(
                                 "yt-dlp logs for %s:\n%s",
                                 download.id,

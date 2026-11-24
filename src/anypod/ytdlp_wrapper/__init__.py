@@ -1,4 +1,4 @@
-from .types import DownloadedMedia, TranscriptInfo
+from .types import DownloadedMedia
 from .ytdlp_wrapper import YtdlpWrapper
 
-__all__ = ["DownloadedMedia", "TranscriptInfo", "YtdlpWrapper"]
+__all__ = ["DownloadedMedia", "YtdlpWrapper"]

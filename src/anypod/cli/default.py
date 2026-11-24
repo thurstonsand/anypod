@@ -148,6 +148,7 @@ async def _init(
         file_manager=file_manager,
         ytdlp_wrapper=ytdlp_wrapper,
         ffprobe=ffprobe,
+        ffmpeg=ffmpeg,
     )
     pruner = Pruner(feed_db=feed_db, download_db=download_db, file_manager=file_manager)
 
@@ -169,6 +170,7 @@ async def _init(
         feed_db=feed_db,
         download_db=download_db,
         ytdlp_wrapper=ytdlp_wrapper,
+        downloader=downloader,
         pruner=pruner,
     )
 

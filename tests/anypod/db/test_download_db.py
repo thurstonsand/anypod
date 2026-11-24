@@ -15,7 +15,7 @@ from sqlmodel import col
 
 from anypod.db import DownloadDatabase, FeedDatabase
 from anypod.db.sqlalchemy_core import SqlalchemyCore
-from anypod.db.types import Download, DownloadStatus, Feed, SourceType
+from anypod.db.types import Download, DownloadStatus, Feed, SourceType, TranscriptSource
 from anypod.exceptions import DatabaseOperationError, DownloadNotFoundError
 
 # --- Fixtures ---
@@ -463,6 +463,45 @@ async def test_set_thumbnail_extension_nonexistent_download(
     """Setting thumbnail_ext on a nonexistent download raises DownloadNotFoundError."""
     with pytest.raises(DownloadNotFoundError):
         await download_db.set_thumbnail_extension("missing_feed", "missing_id", "jpg")
+
+
+@pytest.mark.asyncio
+async def test_set_transcript_metadata_updates_and_preserves_filesize(
+    download_db: DownloadDatabase,
+    sample_download_queued: Download,
+):
+    """set_transcript_metadata updates filesize when supplied and preserves it when None."""
+    feed_id = sample_download_queued.feed_id
+    dl_id = sample_download_queued.id
+    await download_db.upsert_download(sample_download_queued)
+    await download_db.mark_as_downloaded(feed_id, dl_id, "mp4", 1024)
+
+    await download_db.set_transcript_metadata(
+        feed_id=feed_id,
+        download_id=dl_id,
+        transcript_ext="vtt",
+        transcript_lang="en",
+        transcript_source=TranscriptSource.CREATOR,
+        filesize=2048,
+    )
+    updated = await download_db.get_download_by_id(feed_id, dl_id)
+    assert updated.transcript_ext == "vtt"
+    assert updated.transcript_lang == "en"
+    assert updated.transcript_source == TranscriptSource.CREATOR
+    assert updated.filesize == 2048
+
+    await download_db.set_transcript_metadata(
+        feed_id=feed_id,
+        download_id=dl_id,
+        transcript_ext=None,
+        transcript_lang=None,
+        transcript_source=None,
+    )
+    cleared = await download_db.get_download_by_id(feed_id, dl_id)
+    assert cleared.transcript_ext is None
+    assert cleared.transcript_lang is None
+    assert cleared.transcript_source is None
+    assert cleared.filesize == 2048
 
 
 @pytest.mark.asyncio

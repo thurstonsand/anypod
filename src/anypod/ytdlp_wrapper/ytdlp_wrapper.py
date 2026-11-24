@@ -27,7 +27,7 @@ from ..ffprobe import FFProbe
 from ..path_manager import PathManager
 from .core import YtdlpArgs, YtdlpCore
 from .handlers import HandlerSelector
-from .types import DownloadedMedia, TranscriptInfo
+from .types import DownloadedMedia
 
 logger = logging.getLogger(__name__)
 
@@ -818,23 +818,19 @@ class YtdlpWrapper:
         download: Download,
         user_yt_cli_args: list[str],
         cookies_path: Path | None = None,
-        transcript_lang: str | None = None,
     ) -> DownloadedMedia:
         """Download the media for a given Download to a target directory.
 
         yt-dlp will place the final file in a feed-specific subdirectory within
-        the application's configured data directory. When transcript_lang is set and
-        the download has a transcript source, the transcript is fetched afterwards
-        through the source's handler.
+        the application's configured data directory, along with the episode thumbnail.
 
         Args:
             download: The Download object containing metadata.
             user_yt_cli_args: User-provided yt-dlp CLI arguments for this feed.
             cookies_path: Path to cookies.txt file for authentication, or None if not needed.
-            transcript_lang: Language code for subtitles (e.g., "en"). If None, subtitles are not downloaded.
 
         Returns:
-            DownloadedMedia containing the file path, logs, and optional transcript info.
+            DownloadedMedia containing the file path and execution logs.
 
         Raises:
             YtdlpApiError: If the download fails or the downloaded file is not found.
@@ -848,8 +844,6 @@ class YtdlpWrapper:
             "download_id": download.id,
             "download_target_dir": str(download_data_dir),
             "source_url": download.source_url,
-            "transcript_lang": transcript_lang,
-            "transcript_source": download.transcript_source,
         }
 
         logger.debug(
@@ -926,40 +920,15 @@ class YtdlpWrapper:
             download_logs,
         )
 
-        transcript = None
-        if transcript_lang and download.transcript_source in [
-            TranscriptSource.CREATOR,
-            TranscriptSource.AUTO,
-        ]:
-            try:
-                transcript_ext = await self.download_transcript_only(
-                    download, transcript_lang, download.transcript_source, cookies_path
-                )
-            except YtdlpApiError as e:
-                logger.warning(
-                    "Transcript download failed; keeping media without it.",
-                    extra=log_params,
-                    exc_info=e,
-                )
-                transcript_ext = None
-            if transcript_ext:
-                transcript = TranscriptInfo(
-                    ext=transcript_ext,
-                    lang=transcript_lang,
-                    source=download.transcript_source,
-                )
-
         logger.debug(
             "Download complete.",
             extra={
                 **log_params,
                 "file_path": str(downloaded_file),
-                "has_transcript": transcript is not None,
             },
         )
 
         return DownloadedMedia(
             file_path=downloaded_file,
             logs=download_logs,
-            transcript=transcript,
         )

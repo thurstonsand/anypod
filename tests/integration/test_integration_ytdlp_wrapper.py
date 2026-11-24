@@ -536,7 +536,6 @@ async def test_download_media_to_file_success(
         download=download,
         user_yt_cli_args=YT_DLP_MINIMAL_ARGS,
         cookies_path=cookies_path,
-        transcript_lang="en",
     )
 
     assert result.file_path.exists(), (
@@ -556,16 +555,19 @@ async def test_download_media_to_file_success(
         f"Expected download thumbnail at {download_image_path} to exist"
     )
 
-    assert result.transcript is not None, "Expected transcript to be downloaded"
-    assert result.transcript.ext == "vtt"
-    assert result.transcript.lang == "en"
-    assert result.transcript.source == TranscriptSource.AUTO
+    transcript_ext = await ytdlp_wrapper.download_transcript_only(
+        download=download,
+        transcript_lang="en",
+        transcript_source=TranscriptSource.AUTO,
+        cookies_path=cookies_path,
+    )
+    assert transcript_ext == "vtt", "Expected transcript to be downloaded"
 
     transcript_path = await path_manager.transcript_path(
         download.feed_id,
         download.id,
-        result.transcript.lang,
-        result.transcript.ext,
+        "en",
+        transcript_ext,
     )
     assert transcript_path.exists(), (
         f"Transcript file should exist at {transcript_path}"

@@ -80,7 +80,7 @@ feeds:
 
 ### Transcript Settings
 
-- `transcript_lang` accepts ISO 639-1 two-letter codes (e.g., `en`, `es`). When set, Anypod downloads subtitles in VTT format, stores them under `/transcripts/{feed_id}`, and emits `<podcast:transcript>` tags so podcast players surface captions.
+- `transcript_lang` accepts ISO 639-1 two-letter codes (e.g., `en`, `es`). When set, Anypod downloads subtitles in VTT format, stores them under `/transcripts/{feed_id}`, emits `<podcast:transcript>` tags so podcast players surface captions, and soft-embeds a `mov_text` subtitle track into MP4-family video files (`.mp4`, `.m4v`, `.mov`).
 - `transcript_source_priority` is an ordered list containing `creator` and/or `auto`. The first available source wins. When omitted but `transcript_lang` is set, Anypod defaults to `['creator', 'auto']`.
 
 ```yaml

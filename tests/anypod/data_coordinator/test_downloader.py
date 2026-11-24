@@ -22,12 +22,14 @@ from anypod.db.types import Download, DownloadStatus, Feed, SourceType, Transcri
 from anypod.exceptions import (
     DatabaseOperationError,
     DownloadError,
+    FFmpegError,
     FFProbeError,
     YtdlpApiError,
 )
+from anypod.ffmpeg import FFmpeg
 from anypod.ffprobe import FFProbe
 from anypod.file_manager import FileManager
-from anypod.ytdlp_wrapper import DownloadedMedia, TranscriptInfo, YtdlpWrapper
+from anypod.ytdlp_wrapper import DownloadedMedia, YtdlpWrapper
 
 # Mock Feed object for testing
 MOCK_FEED = Feed(
@@ -60,6 +62,7 @@ def mock_download_db() -> MagicMock:
     mock.bump_retries = AsyncMock()
     mock.set_download_logs = AsyncMock()
     mock.set_thumbnail_extension = AsyncMock()
+    mock.set_transcript_metadata = AsyncMock()
     return mock
 
 
@@ -71,7 +74,9 @@ def mock_file_manager() -> MagicMock:
     # Only mock the specific async methods that FileManager actually has
     mock.delete_download_file = AsyncMock()
     mock.download_exists = AsyncMock()
+    mock.get_download_file_path = AsyncMock(return_value=Path("/final/video.mp4"))
     mock.get_download_stream = AsyncMock()
+    mock.get_transcript_path = AsyncMock(return_value=Path("/transcripts/video.en.vtt"))
     mock.image_exists = AsyncMock(return_value=False)
 
     return mock
@@ -85,6 +90,7 @@ def mock_ytdlp_wrapper() -> MagicMock:
     mock.fetch_metadata = AsyncMock()
     mock.download_media_to_file = AsyncMock()
     mock.download_media_thumbnail = AsyncMock()
+    mock.download_transcript_only = AsyncMock()
     return mock
 
 
@@ -97,11 +103,20 @@ def mock_ffprobe() -> MagicMock:
 
 
 @pytest.fixture
+def mock_ffmpeg() -> MagicMock:
+    """Provides a mock FFmpeg."""
+    mock = MagicMock(spec=FFmpeg)
+    mock.embed_subtitles = AsyncMock()
+    return mock
+
+
+@pytest.fixture
 def downloader(
     mock_download_db: MagicMock,
     mock_file_manager: MagicMock,
     mock_ytdlp_wrapper: MagicMock,
     mock_ffprobe: MagicMock,
+    mock_ffmpeg: MagicMock,
 ) -> Downloader:
     """Provides a Downloader instance with mocked dependencies."""
     return Downloader(
@@ -109,6 +124,7 @@ def downloader(
         mock_file_manager,
         mock_ytdlp_wrapper,
         mock_ffprobe,
+        mock_ffmpeg,
     )
 
 
@@ -316,13 +332,6 @@ async def test_handle_download_failure_db_error_logged(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "transcript",
-    [
-        TranscriptInfo(ext="vtt", lang="en", source=TranscriptSource.CREATOR),
-        None,
-    ],
-)
 @patch.object(Downloader, "_handle_download_success", new_callable=AsyncMock)
 async def test_download_artifacts_all_success_flow(
     mock_handle_success: AsyncMock,
@@ -330,15 +339,13 @@ async def test_download_artifacts_all_success_flow(
     mock_ytdlp_wrapper: MagicMock,
     sample_download: Download,
     sample_feed_config: FeedConfig,
-    transcript: TranscriptInfo | None,
 ):
-    """Tests the success path of download_artifacts with ALL artifacts."""
+    """Tests the success path of download_artifacts with ALL artifacts and no transcript configured."""
     downloaded_path = Path("/final/video.mp4")
     logs = "yt-dlp stdout/stderr"
     mock_ytdlp_wrapper.download_media_to_file.return_value = DownloadedMedia(
         file_path=downloaded_path,
         logs=logs,
-        transcript=transcript,
     )
 
     def set_thumbnail_ext(*_args: object, **_kwargs: object) -> None:
@@ -357,11 +364,204 @@ async def test_download_artifacts_all_success_flow(
         sample_download,
         sample_feed_config.yt_args,
         cookies_path=None,
-        transcript_lang=sample_feed_config.transcript_lang,
     )
-    mock_handle_success.assert_called_once_with(
-        sample_download, downloaded_path, logs, transcript
+    mock_ytdlp_wrapper.download_transcript_only.assert_not_awaited()
+    mock_handle_success.assert_called_once_with(sample_download, downloaded_path, logs)
+
+
+@pytest.mark.asyncio
+async def test_download_artifacts_all_downloads_transcript_through_shared_path(
+    downloader: Downloader,
+    mock_ytdlp_wrapper: MagicMock,
+    mock_download_db: MagicMock,
+    mock_file_manager: MagicMock,
+    mock_ffmpeg: MagicMock,
+    sample_download: Download,
+    sample_feed_config: FeedConfig,
+    tmp_path: Path,
+):
+    """ALL downloads media then falls through to transcript download, MP4 embed, and persistence."""
+    sample_download.ext = "webm"  # metadata ext differs from final remuxed mp4
+    sample_download.transcript_source = TranscriptSource.CREATOR
+    sample_feed_config.transcript_lang = "en"
+
+    downloaded_path = tmp_path / "video.mp4"
+    downloaded_path.write_bytes(b"0" * 1024)
+    subtitle_path = tmp_path / "video.en.vtt"
+    subtitle_path.write_text("WEBVTT\n\n", encoding="utf-8")
+
+    mock_ytdlp_wrapper.download_media_to_file.return_value = DownloadedMedia(
+        file_path=downloaded_path,
+        logs="ok",
     )
+    mock_file_manager.image_exists.return_value = True
+    mock_file_manager.get_download_file_path.return_value = downloaded_path
+    mock_file_manager.get_transcript_path.return_value = subtitle_path
+    mock_ytdlp_wrapper.download_transcript_only.return_value = "vtt"
+
+    async def grow_file_on_embed(
+        media_path: Path, subtitle_path: Path, lang: str
+    ) -> None:
+        media_path.write_bytes(b"1" * 2048)
+
+    mock_ffmpeg.embed_subtitles.side_effect = grow_file_on_embed
+
+    result = await downloader.download_artifacts(
+        sample_download, sample_feed_config, DownloadArtifact.ALL
+    )
+
+    assert result.media_downloaded is True
+    assert result.thumbnail_downloaded is True
+    assert result.transcript_downloaded is True
+    assert result.all_succeeded is True
+    mock_ytdlp_wrapper.download_media_thumbnail.assert_not_awaited()
+    mock_ytdlp_wrapper.download_transcript_only.assert_awaited_once_with(
+        download=sample_download,
+        transcript_lang="en",
+        transcript_source=TranscriptSource.CREATOR,
+        cookies_path=None,
+    )
+    mock_ffmpeg.embed_subtitles.assert_awaited_once_with(
+        media_path=downloaded_path,
+        subtitle_path=subtitle_path,
+        lang="en",
+    )
+    mock_download_db.set_transcript_metadata.assert_awaited_once_with(
+        feed_id=sample_download.feed_id,
+        download_id=sample_download.id,
+        transcript_ext="vtt",
+        transcript_lang="en",
+        transcript_source=TranscriptSource.CREATOR,
+        filesize=2048,
+    )
+    assert sample_download.ext == "mp4"
+    assert sample_download.filesize == 2048
+
+
+@pytest.mark.asyncio
+async def test_download_artifacts_transcript_only_embeds_into_mp4_and_updates_filesize(
+    downloader: Downloader,
+    mock_ytdlp_wrapper: MagicMock,
+    mock_download_db: MagicMock,
+    mock_file_manager: MagicMock,
+    mock_ffmpeg: MagicMock,
+    sample_download: Download,
+    sample_feed_config: FeedConfig,
+    tmp_path: Path,
+):
+    """Standalone TRANSCRIPT download embeds subtitles into existing MP4 and updates filesize."""
+    sample_download.status = DownloadStatus.DOWNLOADED
+    sample_download.ext = "mp4"
+    sample_download.filesize = 1000
+    sample_download.transcript_source = TranscriptSource.AUTO
+    sample_feed_config.transcript_lang = "en"
+
+    media_path = tmp_path / "video.mp4"
+    media_path.write_bytes(b"0" * 1000)
+    subtitle_path = tmp_path / "video.en.vtt"
+    subtitle_path.write_text("WEBVTT\n\n", encoding="utf-8")
+
+    mock_file_manager.get_download_file_path.return_value = media_path
+    mock_file_manager.get_transcript_path.return_value = subtitle_path
+    mock_ytdlp_wrapper.download_transcript_only.return_value = "vtt"
+
+    async def grow_file_on_embed(
+        media_path: Path, subtitle_path: Path, lang: str
+    ) -> None:
+        media_path.write_bytes(b"1" * 4096)
+
+    mock_ffmpeg.embed_subtitles.side_effect = grow_file_on_embed
+
+    result = await downloader.download_artifacts(
+        sample_download, sample_feed_config, DownloadArtifact.TRANSCRIPT
+    )
+
+    assert result.transcript_downloaded is True
+    mock_ffmpeg.embed_subtitles.assert_awaited_once_with(
+        media_path=media_path,
+        subtitle_path=subtitle_path,
+        lang="en",
+    )
+    mock_download_db.set_transcript_metadata.assert_awaited_once_with(
+        feed_id=sample_download.feed_id,
+        download_id=sample_download.id,
+        transcript_ext="vtt",
+        transcript_lang="en",
+        transcript_source=TranscriptSource.AUTO,
+        filesize=4096,
+    )
+    assert sample_download.filesize == 4096
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ext", ["m4a", "mp3", "opus"])
+async def test_download_artifacts_transcript_only_skips_embed_for_audio(
+    downloader: Downloader,
+    mock_ytdlp_wrapper: MagicMock,
+    mock_download_db: MagicMock,
+    mock_ffmpeg: MagicMock,
+    sample_download: Download,
+    sample_feed_config: FeedConfig,
+    ext: str,
+):
+    """Audio-only containers skip FFmpeg subtitle embedding and leave filesize untouched."""
+    sample_download.status = DownloadStatus.DOWNLOADED
+    sample_download.ext = ext
+    sample_download.filesize = 1000
+    sample_download.transcript_source = TranscriptSource.CREATOR
+    sample_feed_config.transcript_lang = "en"
+    mock_ytdlp_wrapper.download_transcript_only.return_value = "vtt"
+
+    result = await downloader.download_artifacts(
+        sample_download, sample_feed_config, DownloadArtifact.TRANSCRIPT
+    )
+
+    assert result.transcript_downloaded is True
+    mock_ffmpeg.embed_subtitles.assert_not_awaited()
+    mock_download_db.set_transcript_metadata.assert_awaited_once_with(
+        feed_id=sample_download.feed_id,
+        download_id=sample_download.id,
+        transcript_ext="vtt",
+        transcript_lang="en",
+        transcript_source=TranscriptSource.CREATOR,
+        filesize=None,
+    )
+    assert sample_download.filesize == 1000
+
+
+@pytest.mark.asyncio
+async def test_download_artifacts_transcript_only_ffmpeg_failure_is_best_effort(
+    downloader: Downloader,
+    mock_ytdlp_wrapper: MagicMock,
+    mock_download_db: MagicMock,
+    mock_ffmpeg: MagicMock,
+    sample_download: Download,
+    sample_feed_config: FeedConfig,
+):
+    """FFmpeg failure during subtitle embed still persists transcript metadata."""
+    sample_download.status = DownloadStatus.DOWNLOADED
+    sample_download.ext = "mp4"
+    sample_download.filesize = 1000
+    sample_download.transcript_source = TranscriptSource.CREATOR
+    sample_feed_config.transcript_lang = "en"
+    mock_ytdlp_wrapper.download_transcript_only.return_value = "vtt"
+    mock_ffmpeg.embed_subtitles.side_effect = FFmpegError("remux boom")
+
+    result = await downloader.download_artifacts(
+        sample_download, sample_feed_config, DownloadArtifact.TRANSCRIPT
+    )
+
+    assert result.transcript_downloaded is True
+    assert result.errors == []
+    mock_download_db.set_transcript_metadata.assert_awaited_once_with(
+        feed_id=sample_download.feed_id,
+        download_id=sample_download.id,
+        transcript_ext="vtt",
+        transcript_lang="en",
+        transcript_source=TranscriptSource.CREATOR,
+        filesize=None,
+    )
+    assert sample_download.filesize == 1000
 
 
 @pytest.mark.asyncio
@@ -386,7 +586,6 @@ async def test_download_artifacts_all_transcript_not_applicable_is_none(
     mock_ytdlp_wrapper.download_media_to_file.return_value = DownloadedMedia(
         file_path=downloaded_path,
         logs="ok",
-        transcript=None,
     )
 
     def set_thumbnail_ext(*_args: object, **_kwargs: object) -> None:
@@ -579,6 +778,32 @@ async def test_download_queued_mixed_success_and_failure(
         ],
         any_order=False,
     )
+
+
+@pytest.mark.asyncio
+@patch.object(Downloader, "download_artifacts", new_callable=AsyncMock)
+@patch.object(Downloader, "_handle_download_failure", new_callable=AsyncMock)
+async def test_download_queued_counts_success_when_media_succeeds_and_transcript_fails(
+    mock_handle_failure: AsyncMock,
+    mock_download_artifacts: AsyncMock,
+    downloader: Downloader,
+    mock_download_db: MagicMock,
+    sample_feed_config: FeedConfig,
+    sample_download: Download,
+):
+    """Best-effort transcript failure after media succeeds does not fail or bump retries."""
+    mock_download_db.get_downloads_by_status.return_value = [sample_download]
+    mock_download_artifacts.return_value = ArtifactDownloadResult(
+        media_downloaded=True,
+        thumbnail_downloaded=True,
+        transcript_downloaded=False,
+    )
+
+    success, failure = await downloader.download_queued("test_feed", sample_feed_config)
+
+    assert success == 1
+    assert failure == 0
+    mock_handle_failure.assert_not_awaited()
 
 
 # --- Tests for download_delay filtering ---

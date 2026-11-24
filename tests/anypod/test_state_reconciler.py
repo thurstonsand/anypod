@@ -19,7 +19,9 @@ from anypod.config.types import (
     PodcastCategories,
     PodcastType,
 )
+from anypod.data_coordinator.downloader import Downloader
 from anypod.data_coordinator.pruner import Pruner
+from anypod.data_coordinator.types import ArtifactDownloadResult, DownloadArtifact
 from anypod.db import DownloadDatabase
 from anypod.db.feed_db import FeedDatabase
 from anypod.db.types import Download, DownloadStatus, Feed, SourceType, TranscriptSource
@@ -183,6 +185,16 @@ def mock_download_db() -> MagicMock:
 
 
 @pytest.fixture
+def mock_downloader() -> MagicMock:
+    """Provides a MagicMock for Downloader."""
+    downloader = MagicMock(spec=Downloader)
+    downloader.download_artifacts = AsyncMock(
+        return_value=ArtifactDownloadResult(transcript_downloaded=True)
+    )
+    return downloader
+
+
+@pytest.fixture
 def mock_pruner() -> MagicMock:
     """Provides a MagicMock for Pruner."""
     pruner = MagicMock(spec=Pruner)
@@ -226,6 +238,7 @@ def state_reconciler(
     mock_feed_db: MagicMock,
     mock_download_db: MagicMock,
     mock_ytdlp_wrapper: MagicMock,
+    mock_downloader: MagicMock,
     mock_pruner: MagicMock,
 ) -> StateReconciler:
     """Provides a StateReconciler instance with mocked dependencies."""
@@ -235,6 +248,7 @@ def state_reconciler(
         mock_feed_db,
         mock_download_db,
         mock_ytdlp_wrapper,
+        mock_downloader,
         mock_pruner,
     )
 
@@ -1649,8 +1663,10 @@ async def test_handle_transcript_config_changes_enable_transcripts(
     state_reconciler: StateReconciler,
     mock_download_db: MagicMock,
     mock_ytdlp_wrapper: MagicMock,
+    mock_downloader: MagicMock,
+    base_feed_config: FeedConfig,
 ) -> None:
-    """Enabling transcripts triggers download for existing downloads."""
+    """Enabling transcripts triggers download for existing downloads via Downloader."""
     downloads = [MOCK_DOWNLOADED_DOWNLOAD_1, MOCK_DOWNLOADED_DOWNLOAD_2]
     mock_download_db.get_downloads_by_status.return_value = downloads
 
@@ -1664,16 +1680,20 @@ async def test_handle_transcript_config_changes_enable_transcripts(
         [refreshed_download_1],
         [refreshed_download_2],
     ]
-    mock_ytdlp_wrapper.download_transcript_only.return_value = "vtt"
+
+    feed_config = base_feed_config.model_copy(
+        update={
+            "transcript_lang": "en",
+            "transcript_source_priority": [TranscriptSource.CREATOR],
+        }
+    )
 
     log_params = {"feed_id": FEED_ID}
     await state_reconciler._handle_transcript_config_changes(
         feed_id=FEED_ID,
-        config_transcript_lang="en",
-        config_transcript_source_priority=[TranscriptSource.CREATOR],
+        feed_config=feed_config,
         db_transcript_lang=None,
         db_transcript_source_priority=None,
-        user_yt_cli_args=[],
         cookies_path=None,
         log_params=log_params,
     )
@@ -1682,8 +1702,15 @@ async def test_handle_transcript_config_changes_enable_transcripts(
         DownloadStatus.DOWNLOADED, feed_id=FEED_ID
     )
     assert mock_ytdlp_wrapper.fetch_new_downloads_metadata.await_count == 2
-    assert mock_ytdlp_wrapper.download_transcript_only.await_count == 2
-    assert mock_download_db.set_transcript_metadata.await_count == 2
+    assert mock_downloader.download_artifacts.await_count == 2
+    first_call_args = mock_downloader.download_artifacts.call_args_list[0].args
+    assert first_call_args[0].id == MOCK_DOWNLOADED_DOWNLOAD_1.id
+    assert first_call_args[0].transcript_source == TranscriptSource.CREATOR
+    assert first_call_args[1] == feed_config
+    assert first_call_args[2] == DownloadArtifact.TRANSCRIPT
+    second_call_args = mock_downloader.download_artifacts.call_args_list[1].args
+    assert second_call_args[0].id == MOCK_DOWNLOADED_DOWNLOAD_2.id
+    assert second_call_args[0].transcript_source == TranscriptSource.AUTO
 
 
 @pytest.mark.asyncio
@@ -1691,19 +1718,22 @@ async def test_handle_transcript_config_changes_disable_transcripts(
     state_reconciler: StateReconciler,
     mock_download_db: MagicMock,
     mock_file_manager: MagicMock,
+    base_feed_config: FeedConfig,
 ) -> None:
     """Disabling transcripts triggers deletion for existing transcripts."""
     downloads = [MOCK_DOWNLOADED_DOWNLOAD_WITH_TRANSCRIPT]
     mock_download_db.get_downloads_by_status.return_value = downloads
 
+    feed_config = base_feed_config.model_copy(
+        update={"transcript_lang": None, "transcript_source_priority": None}
+    )
+
     log_params = {"feed_id": FEED_ID}
     await state_reconciler._handle_transcript_config_changes(
         feed_id=FEED_ID,
-        config_transcript_lang=None,
-        config_transcript_source_priority=None,
+        feed_config=feed_config,
         db_transcript_lang="en",
         db_transcript_source_priority=[TranscriptSource.CREATOR],
-        user_yt_cli_args=[],
         cookies_path=None,
         log_params=log_params,
     )
@@ -1729,24 +1759,30 @@ async def test_handle_transcript_config_changes_language_change(
     mock_download_db: MagicMock,
     mock_file_manager: MagicMock,
     mock_ytdlp_wrapper: MagicMock,
+    mock_downloader: MagicMock,
+    base_feed_config: FeedConfig,
 ) -> None:
-    """Changing transcript language triggers deletion and re-download."""
+    """Changing transcript language triggers deletion and re-download via Downloader."""
     download_with_transcript = deepcopy(MOCK_DOWNLOADED_DOWNLOAD_WITH_TRANSCRIPT)
     mock_download_db.get_downloads_by_status.return_value = [download_with_transcript]
 
     refreshed_download = deepcopy(download_with_transcript)
     refreshed_download.transcript_source = TranscriptSource.CREATOR
     mock_ytdlp_wrapper.fetch_new_downloads_metadata.return_value = [refreshed_download]
-    mock_ytdlp_wrapper.download_transcript_only.return_value = "vtt"
+
+    feed_config = base_feed_config.model_copy(
+        update={
+            "transcript_lang": "es",
+            "transcript_source_priority": [TranscriptSource.CREATOR],
+        }
+    )
 
     log_params = {"feed_id": FEED_ID}
     await state_reconciler._handle_transcript_config_changes(
         feed_id=FEED_ID,
-        config_transcript_lang="es",
-        config_transcript_source_priority=[TranscriptSource.CREATOR],
+        feed_config=feed_config,
         db_transcript_lang="en",
         db_transcript_source_priority=[TranscriptSource.CREATOR],
-        user_yt_cli_args=[],
         cookies_path=None,
         log_params=log_params,
     )
@@ -1755,8 +1791,22 @@ async def test_handle_transcript_config_changes_language_change(
         FEED_ID, "downloaded_3", "en", "vtt"
     )
     mock_ytdlp_wrapper.fetch_new_downloads_metadata.assert_awaited_once()
-    mock_ytdlp_wrapper.download_transcript_only.assert_awaited_once()
-    assert mock_download_db.set_transcript_metadata.await_count == 2
+    mock_download_db.set_transcript_metadata.assert_awaited_once_with(
+        feed_id=FEED_ID,
+        download_id="downloaded_3",
+        transcript_ext=None,
+        transcript_lang=None,
+        transcript_source=None,
+    )
+    mock_downloader.download_artifacts.assert_awaited_once()
+    dl_arg, cfg_arg, artifact_arg, cookies_arg = (
+        mock_downloader.download_artifacts.call_args.args
+    )
+    assert dl_arg.id == "downloaded_3"
+    assert dl_arg.transcript_source == TranscriptSource.CREATOR
+    assert cfg_arg == feed_config
+    assert artifact_arg == DownloadArtifact.TRANSCRIPT
+    assert cookies_arg is None
 
 
 @pytest.mark.asyncio
@@ -1765,48 +1815,60 @@ async def test_handle_transcript_config_changes_priority_change(
     mock_download_db: MagicMock,
     mock_file_manager: MagicMock,
     mock_ytdlp_wrapper: MagicMock,
+    mock_downloader: MagicMock,
+    base_feed_config: FeedConfig,
 ) -> None:
-    """Changing transcript source priority triggers deletion and re-download."""
+    """Changing transcript source priority triggers deletion and re-download via Downloader."""
     download_with_transcript = deepcopy(MOCK_DOWNLOADED_DOWNLOAD_WITH_TRANSCRIPT)
     mock_download_db.get_downloads_by_status.return_value = [download_with_transcript]
 
     refreshed_download = deepcopy(download_with_transcript)
     refreshed_download.transcript_source = TranscriptSource.AUTO
     mock_ytdlp_wrapper.fetch_new_downloads_metadata.return_value = [refreshed_download]
-    mock_ytdlp_wrapper.download_transcript_only.return_value = "vtt"
+
+    feed_config = base_feed_config.model_copy(
+        update={
+            "transcript_lang": "en",
+            "transcript_source_priority": [TranscriptSource.AUTO],
+        }
+    )
 
     log_params = {"feed_id": FEED_ID}
     await state_reconciler._handle_transcript_config_changes(
         feed_id=FEED_ID,
-        config_transcript_lang="en",
-        config_transcript_source_priority=[TranscriptSource.AUTO],
+        feed_config=feed_config,
         db_transcript_lang="en",
         db_transcript_source_priority=[TranscriptSource.CREATOR],
-        user_yt_cli_args=[],
         cookies_path=None,
         log_params=log_params,
     )
 
     mock_file_manager.delete_transcript.assert_awaited_once()
     mock_ytdlp_wrapper.fetch_new_downloads_metadata.assert_awaited_once()
-    mock_ytdlp_wrapper.download_transcript_only.assert_awaited_once()
-    assert mock_download_db.set_transcript_metadata.await_count == 2
+    mock_download_db.set_transcript_metadata.assert_awaited_once()
+    mock_downloader.download_artifacts.assert_awaited_once()
 
 
 @pytest.mark.asyncio
 async def test_handle_transcript_config_changes_no_changes(
     state_reconciler: StateReconciler,
     mock_download_db: MagicMock,
+    base_feed_config: FeedConfig,
 ) -> None:
     """No transcript config changes results in no operations."""
+    feed_config = base_feed_config.model_copy(
+        update={
+            "transcript_lang": "en",
+            "transcript_source_priority": [TranscriptSource.CREATOR],
+        }
+    )
+
     log_params = {"feed_id": FEED_ID}
     await state_reconciler._handle_transcript_config_changes(
         feed_id=FEED_ID,
-        config_transcript_lang="en",
-        config_transcript_source_priority=[TranscriptSource.CREATOR],
+        feed_config=feed_config,
         db_transcript_lang="en",
         db_transcript_source_priority=[TranscriptSource.CREATOR],
-        user_yt_cli_args=[],
         cookies_path=None,
         log_params=log_params,
     )
@@ -1819,18 +1881,23 @@ async def test_handle_transcript_config_changes_no_downloads(
     state_reconciler: StateReconciler,
     mock_download_db: MagicMock,
     mock_ytdlp_wrapper: MagicMock,
+    base_feed_config: FeedConfig,
 ) -> None:
     """Enabling transcripts with no downloads completes without errors."""
     mock_download_db.get_downloads_by_status.return_value = []
+    feed_config = base_feed_config.model_copy(
+        update={
+            "transcript_lang": "en",
+            "transcript_source_priority": [TranscriptSource.CREATOR],
+        }
+    )
 
     log_params = {"feed_id": FEED_ID}
     await state_reconciler._handle_transcript_config_changes(
         feed_id=FEED_ID,
-        config_transcript_lang="en",
-        config_transcript_source_priority=[TranscriptSource.CREATOR],
+        feed_config=feed_config,
         db_transcript_lang=None,
         db_transcript_source_priority=None,
-        user_yt_cli_args=[],
         cookies_path=None,
         log_params=log_params,
     )
@@ -1846,9 +1913,10 @@ async def test_handle_transcript_config_changes_no_downloads(
 async def test_download_transcripts_for_downloads_success(
     state_reconciler: StateReconciler,
     mock_ytdlp_wrapper: MagicMock,
-    mock_download_db: MagicMock,
+    mock_downloader: MagicMock,
+    base_feed_config: FeedConfig,
 ) -> None:
-    """Transcripts are downloaded successfully for downloads without transcripts."""
+    """Transcripts are downloaded via Downloader for downloads without transcripts."""
     downloads = [MOCK_DOWNLOADED_DOWNLOAD_1, MOCK_DOWNLOADED_DOWNLOAD_2]
 
     # Mock metadata refresh
@@ -1861,54 +1929,64 @@ async def test_download_transcripts_for_downloads_success(
         [refreshed_download_1],
         [refreshed_download_2],
     ]
-    mock_ytdlp_wrapper.download_transcript_only.return_value = "vtt"
+
+    feed_config = base_feed_config.model_copy(
+        update={
+            "transcript_lang": "en",
+            "transcript_source_priority": [TranscriptSource.CREATOR],
+        }
+    )
 
     log_params = {"feed_id": FEED_ID}
     await state_reconciler._download_transcripts_for_downloads(
         feed_id=FEED_ID,
         downloads=downloads,
-        lang="en",
-        transcript_source_priority=[TranscriptSource.CREATOR],
-        user_yt_cli_args=[],
+        feed_config=feed_config,
         cookies_path=None,
         log_params=log_params,
     )
 
     assert mock_ytdlp_wrapper.fetch_new_downloads_metadata.await_count == 2
-    assert mock_ytdlp_wrapper.download_transcript_only.await_count == 2
-    assert mock_download_db.set_transcript_metadata.await_count == 2
+    assert mock_downloader.download_artifacts.await_count == 2
 
 
 @pytest.mark.asyncio
 async def test_download_transcripts_for_downloads_skips_existing(
     state_reconciler: StateReconciler,
     mock_ytdlp_wrapper: MagicMock,
+    mock_downloader: MagicMock,
+    base_feed_config: FeedConfig,
 ) -> None:
     """Downloads with existing transcripts are skipped."""
     downloads = [MOCK_DOWNLOADED_DOWNLOAD_WITH_TRANSCRIPT]
+    feed_config = base_feed_config.model_copy(
+        update={
+            "transcript_lang": "en",
+            "transcript_source_priority": [TranscriptSource.CREATOR],
+        }
+    )
 
     log_params = {"feed_id": FEED_ID}
     await state_reconciler._download_transcripts_for_downloads(
         feed_id=FEED_ID,
         downloads=downloads,
-        lang="en",
-        transcript_source_priority=[TranscriptSource.CREATOR],
-        user_yt_cli_args=[],
+        feed_config=feed_config,
         cookies_path=None,
         log_params=log_params,
     )
 
     mock_ytdlp_wrapper.fetch_new_downloads_metadata.assert_not_called()
-    mock_ytdlp_wrapper.download_transcript_only.assert_not_called()
+    mock_downloader.download_artifacts.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_download_transcripts_for_downloads_transcript_unavailable(
     state_reconciler: StateReconciler,
     mock_ytdlp_wrapper: MagicMock,
-    mock_download_db: MagicMock,
+    mock_downloader: MagicMock,
+    base_feed_config: FeedConfig,
 ) -> None:
-    """Unavailable transcripts are logged and counted."""
+    """Unavailable transcripts are logged and not passed to Downloader."""
     downloads = [MOCK_DOWNLOADED_DOWNLOAD_1]
 
     # Mock metadata refresh showing no transcript available
@@ -1916,50 +1994,61 @@ async def test_download_transcripts_for_downloads_transcript_unavailable(
     refreshed_download.transcript_source = TranscriptSource.NOT_AVAILABLE
     mock_ytdlp_wrapper.fetch_new_downloads_metadata.return_value = [refreshed_download]
 
+    feed_config = base_feed_config.model_copy(
+        update={
+            "transcript_lang": "en",
+            "transcript_source_priority": [TranscriptSource.CREATOR],
+        }
+    )
+
     log_params = {"feed_id": FEED_ID}
     await state_reconciler._download_transcripts_for_downloads(
         feed_id=FEED_ID,
         downloads=downloads,
-        lang="en",
-        transcript_source_priority=[TranscriptSource.CREATOR],
-        user_yt_cli_args=[],
+        feed_config=feed_config,
         cookies_path=None,
         log_params=log_params,
     )
 
     mock_ytdlp_wrapper.fetch_new_downloads_metadata.assert_awaited_once()
-    mock_ytdlp_wrapper.download_transcript_only.assert_not_called()
-    mock_download_db.set_transcript_metadata.assert_not_called()
+    mock_downloader.download_artifacts.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_download_transcripts_for_downloads_download_returns_none(
+async def test_download_transcripts_for_downloads_download_returns_failure(
     state_reconciler: StateReconciler,
     mock_ytdlp_wrapper: MagicMock,
-    mock_download_db: MagicMock,
+    mock_downloader: MagicMock,
+    base_feed_config: FeedConfig,
 ) -> None:
-    """Transcript download returning None is handled gracefully."""
+    """Failed transcript download from Downloader is handled gracefully."""
     downloads = [MOCK_DOWNLOADED_DOWNLOAD_1]
 
     # Mock metadata refresh with transcript source
     refreshed_download = deepcopy(MOCK_DOWNLOADED_DOWNLOAD_1)
     refreshed_download.transcript_source = TranscriptSource.CREATOR
     mock_ytdlp_wrapper.fetch_new_downloads_metadata.return_value = [refreshed_download]
-    mock_ytdlp_wrapper.download_transcript_only.return_value = None
+    mock_downloader.download_artifacts.return_value = ArtifactDownloadResult(
+        transcript_downloaded=False
+    )
+
+    feed_config = base_feed_config.model_copy(
+        update={
+            "transcript_lang": "en",
+            "transcript_source_priority": [TranscriptSource.CREATOR],
+        }
+    )
 
     log_params = {"feed_id": FEED_ID}
     await state_reconciler._download_transcripts_for_downloads(
         feed_id=FEED_ID,
         downloads=downloads,
-        lang="en",
-        transcript_source_priority=[TranscriptSource.CREATOR],
-        user_yt_cli_args=[],
+        feed_config=feed_config,
         cookies_path=None,
         log_params=log_params,
     )
 
-    mock_ytdlp_wrapper.download_transcript_only.assert_awaited_once()
-    mock_download_db.set_transcript_metadata.assert_not_called()
+    mock_downloader.download_artifacts.assert_awaited_once()
 
 
 # --- Tests for StateReconciler._delete_transcripts_for_downloads ---

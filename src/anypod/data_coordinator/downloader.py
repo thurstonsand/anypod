@@ -21,16 +21,22 @@ from ..exceptions import (
     DatabaseOperationError,
     DownloadError,
     DownloadNotFoundError,
+    FFmpegError,
     FFProbeError,
     FileOperationError,
     YtdlpApiError,
 )
+from ..ffmpeg import FFmpeg
 from ..ffprobe import FFProbe
 from ..file_manager import FileManager
-from ..ytdlp_wrapper import TranscriptInfo, YtdlpWrapper
+from ..ytdlp_wrapper import YtdlpWrapper
 from .types import ArtifactDownloadResult, DownloadArtifact
 
 logger = logging.getLogger(__name__)
+
+# Video MP4-family containers that support soft mov_text subtitle streams.
+# Audio-only containers (e.g., m4a, mp3, opus) are intentionally excluded.
+EMBEDDABLE_SUBTITLE_EXTENSIONS = frozenset({"mp4", "m4v", "mov"})
 
 
 class Downloader:
@@ -45,6 +51,8 @@ class Downloader:
         download_db: Database manager for download record operations.
         file_manager: File manager for file system operations.
         ytdlp_wrapper: Wrapper for yt-dlp media download operations.
+        _ffprobe: FFProbe helper for inspecting media duration.
+        _ffmpeg: FFmpeg helper for embedding subtitles into video containers.
     """
 
     def __init__(
@@ -53,11 +61,13 @@ class Downloader:
         file_manager: FileManager,
         ytdlp_wrapper: YtdlpWrapper,
         ffprobe: FFProbe,
+        ffmpeg: FFmpeg,
     ):
         self.download_db = download_db
         self.file_manager = file_manager
         self.ytdlp_wrapper = ytdlp_wrapper
         self._ffprobe = ffprobe
+        self._ffmpeg = ffmpeg
         logger.debug("Downloader initialized.")
 
     async def _probe_download_duration(
@@ -95,19 +105,16 @@ class Downloader:
         download: Download,
         downloaded_file_path: Path,
         logs: str,
-        transcript: TranscriptInfo | None = None,
     ) -> None:
         """Process a successfully downloaded file.
 
-        Updates the download record to DOWNLOADED status with all metadata
-        (extension, filesize, duration, thumbnail, transcript, logs) in a single
-        database upsert.
+        Updates the download record to DOWNLOADED status with media metadata
+        (extension, filesize, duration, thumbnail, logs) in a single database upsert.
 
         Args:
             download: The Download object to update.
             downloaded_file_path: Path to the successfully downloaded file.
             logs: yt-dlp execution logs.
-            transcript: Transcript metadata if downloaded, None otherwise.
 
         Raises:
             DownloadError: If file operations or database update fails.
@@ -156,10 +163,6 @@ class Downloader:
         download.last_error = None
         download.download_logs = logs
         download.thumbnail_ext = "jpg" if has_thumb else None
-        if transcript:
-            download.transcript_ext = transcript.ext
-            download.transcript_lang = transcript.lang
-            download.transcript_source = transcript.source
 
         try:
             await self.download_db.update_download(download)
@@ -296,6 +299,75 @@ class Downloader:
         logger.info("Thumbnail artifact downloaded.", extra=log_params)
         return True
 
+    async def _embed_subtitles_if_supported(
+        self,
+        download: Download,
+        transcript_lang: str,
+        transcript_ext: str,
+        log_params: dict[str, Any],
+    ) -> int | None:
+        """Embed subtitles into a video MP4 container when applicable.
+
+        Best-effort: skips audio-only/non-MP4 containers and logs warnings
+        without raising if the media file is missing or ffmpeg fails.
+
+        Args:
+            download: The Download whose media file may be remuxed.
+            transcript_lang: Language code of the downloaded transcript.
+            transcript_ext: File extension of the downloaded transcript.
+            log_params: Logging context dictionary.
+
+        Returns:
+            Updated media filesize in bytes if subtitles were embedded, None otherwise.
+        """
+        if download.ext.lower() not in EMBEDDABLE_SUBTITLE_EXTENSIONS:
+            return None
+
+        try:
+            media_path = await self.file_manager.get_download_file_path(
+                download.feed_id, download.id, download.ext
+            )
+            subtitle_path = await self.file_manager.get_transcript_path(
+                download.feed_id, download.id, transcript_lang.lower(), transcript_ext
+            )
+        except (FileNotFoundError, FileOperationError) as e:
+            logger.warning(
+                "Skipping subtitle embedding; media or transcript file unavailable.",
+                extra=log_params,
+                exc_info=e,
+            )
+            return None
+
+        try:
+            await self._ffmpeg.embed_subtitles(
+                media_path=media_path,
+                subtitle_path=subtitle_path,
+                lang=transcript_lang,
+            )
+        except FFmpegError as e:
+            logger.warning(
+                "Failed to embed subtitles into media container; keeping original file.",
+                extra=log_params,
+                exc_info=e,
+            )
+            return None
+
+        try:
+            file_stat = await aiofiles.os.stat(media_path)
+        except OSError as e:
+            logger.warning(
+                "Failed to stat media file after subtitle embedding.",
+                extra=log_params,
+                exc_info=e,
+            )
+            return None
+
+        logger.debug(
+            "Embedded subtitles into media container.",
+            extra={**log_params, "new_filesize": file_stat.st_size},
+        )
+        return file_stat.st_size
+
     async def _download_transcript_artifact(
         self,
         download: Download,
@@ -304,7 +376,7 @@ class Downloader:
         cookies_path: Path | None,
         log_params: dict[str, Any],
     ) -> bool:
-        """Download transcript and persist to database.
+        """Download transcript, embed into video MP4 if supported, and persist to database.
 
         Args:
             download: The Download object to fetch transcript for.
@@ -346,6 +418,13 @@ class Downloader:
             )
             return False
 
+        updated_filesize = await self._embed_subtitles_if_supported(
+            download=download,
+            transcript_lang=transcript_lang,
+            transcript_ext=transcript_ext,
+            log_params=log_params,
+        )
+
         try:
             await self.download_db.set_transcript_metadata(
                 feed_id=download.feed_id,
@@ -353,6 +432,7 @@ class Downloader:
                 transcript_ext=transcript_ext,
                 transcript_lang=transcript_lang,
                 transcript_source=transcript_source,
+                filesize=updated_filesize,
             )
         except (DownloadNotFoundError, DatabaseOperationError) as e:
             raise DownloadError(
@@ -360,6 +440,12 @@ class Downloader:
                 feed_id=download.feed_id,
                 download_id=download.id,
             ) from e
+
+        download.transcript_ext = transcript_ext
+        download.transcript_lang = transcript_lang
+        download.transcript_source = transcript_source
+        if updated_filesize is not None:
+            download.filesize = updated_filesize
 
         logger.info(
             "Transcript artifact downloaded.",
@@ -506,14 +592,15 @@ class Downloader:
         }
         logger.debug("Downloading artifacts.", extra=log_params)
 
-        # Handle MEDIA download (includes thumbnail + transcript if configured)
+        result = ArtifactDownloadResult()
+
+        # Handle MEDIA download (yt-dlp bundles thumbnail download with media)
         if DownloadArtifact.MEDIA in artifacts:
             try:
                 downloaded_media = await self.ytdlp_wrapper.download_media_to_file(
                     download,
                     feed_config.yt_args,
                     cookies_path=cookies_path,
-                    transcript_lang=feed_config.transcript_lang,
                 )
             except YtdlpApiError as e:
                 await self._persist_download_logs(download, e.logs or "")
@@ -524,8 +611,12 @@ class Downloader:
                 )
                 return ArtifactDownloadResult(
                     media_downloaded=False,
-                    thumbnail_downloaded=False,
-                    transcript_downloaded=False,
+                    thumbnail_downloaded=False
+                    if DownloadArtifact.THUMBNAIL in artifacts
+                    else None,
+                    transcript_downloaded=False
+                    if DownloadArtifact.TRANSCRIPT in artifacts
+                    else None,
                     errors=[
                         DownloadError(
                             message="Failed to download media to file.",
@@ -539,30 +630,18 @@ class Downloader:
                 download,
                 downloaded_media.file_path,
                 downloaded_media.logs,
-                downloaded_media.transcript,
             )
             logger.debug("Media artifact downloaded successfully.", extra=log_params)
 
-            thumbnail_downloaded = download.thumbnail_ext is not None
-            if (
-                feed_config.transcript_lang is None
-                or download.transcript_source
-                not in [TranscriptSource.CREATOR, TranscriptSource.AUTO]
-            ):
-                transcript_downloaded = None
-            else:
-                transcript_downloaded = downloaded_media.transcript is not None
+            result.media_downloaded = True
+            if DownloadArtifact.THUMBNAIL in artifacts:
+                result.thumbnail_downloaded = download.thumbnail_ext is not None
 
-            return ArtifactDownloadResult(
-                media_downloaded=True,
-                thumbnail_downloaded=thumbnail_downloaded,
-                transcript_downloaded=transcript_downloaded,
-            )
-
-        result = ArtifactDownloadResult()
-
-        # Handle THUMBNAIL-only download
-        if DownloadArtifact.THUMBNAIL in artifacts:
+        # Handle standalone THUMBNAIL download (MEDIA already fetches the thumbnail)
+        if (
+            DownloadArtifact.THUMBNAIL in artifacts
+            and DownloadArtifact.MEDIA not in artifacts
+        ):
             try:
                 result.thumbnail_downloaded = await self._download_thumbnail_artifact(
                     download, feed_config.yt_args, cookies_path, log_params
@@ -571,7 +650,7 @@ class Downloader:
                 result.thumbnail_downloaded = False
                 result.errors.append(e)
 
-        # Handle TRANSCRIPT-only download
+        # Handle TRANSCRIPT download (runs for both ALL and standalone TRANSCRIPT)
         if DownloadArtifact.TRANSCRIPT in artifacts:
             # Transcript download requires transcript_lang and transcript_source
             if feed_config.transcript_lang and download.transcript_source in [
@@ -703,7 +782,7 @@ class Downloader:
                 failure_count += 1
                 continue
 
-            if result.all_succeeded:
+            if result.media_downloaded:
                 success_count += 1
             else:
                 await self._handle_download_failure(

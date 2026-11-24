@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 import logging
 
 from ..config import AppSettings
+from ..data_coordinator.downloader import Downloader
 from ..data_coordinator.enqueuer import Enqueuer
 from ..data_coordinator.pruner import Pruner
 from ..db import AppStateDatabase, DownloadDatabase, FeedDatabase
@@ -68,6 +69,9 @@ async def run_debug_enqueuer_mode(
             ffprobe=ffprobe,
             handler_selector=handler_selector,
         )
+        downloader = Downloader(
+            download_db, file_manager, ytdlp_wrapper, ffprobe, ffmpeg
+        )
         pruner = Pruner(feed_db, download_db, file_manager)
         image_downloader = ImageDownloader(paths, ytdlp_wrapper, ffprobe, ffmpeg)
         state_reconciler = StateReconciler(
@@ -76,6 +80,7 @@ async def run_debug_enqueuer_mode(
             feed_db,
             download_db,
             ytdlp_wrapper,
+            downloader,
             pruner,
         )
         enqueuer = Enqueuer(feed_db, download_db, ytdlp_wrapper)

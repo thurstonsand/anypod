@@ -16,6 +16,7 @@ from anypod.config.types import (
     PodcastCategories,
     PodcastType,
 )
+from anypod.data_coordinator.downloader import Downloader
 from anypod.data_coordinator.pruner import Pruner
 from anypod.db import DownloadDatabase, FeedDatabase
 from anypod.db.types import Download, DownloadStatus, Feed, SourceType
@@ -41,6 +42,7 @@ def state_reconciler(
     feed_db: FeedDatabase,
     download_db: DownloadDatabase,
     ytdlp_wrapper: YtdlpWrapper,
+    downloader: Downloader,
     pruner: Pruner,
     file_manager: FileManager,
     path_manager: PathManager,
@@ -57,6 +59,7 @@ def state_reconciler(
         feed_db,
         download_db,
         ytdlp_wrapper,
+        downloader,
         pruner,
     )
 

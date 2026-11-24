@@ -52,7 +52,7 @@ Anypod is a thin Python wrapper around `yt‑dlp` that turns any `yt‑dlp`–su
 - Works with YouTube channels/playlists, Patreon creator pages/posts (beta), and public X/Twitter video posts (beta)
 - Feed metadata overrides (title, description, artwork, categories, explicit, etc.)
 - Thumbnail hosting: Downloads and serves feed artwork and episode thumbnails locally
-- Transcript/subtitle support: Downloads and serves transcripts via `<podcast:transcript>` tags (VTT format)
+- Transcript/subtitle support: Downloads and serves transcripts via `<podcast:transcript>` tags (VTT format), and soft-embeds them as `mov_text` subtitle tracks in MP4 video containers
 - Retention policies: keep the last N items and/or only since YYYYMMDD
 - Manual submission feeds: declare `schedule: "manual"` and push ad-hoc URLs via the admin API
 - Docker image with non‑root (PUID/PGID) support
@@ -177,7 +177,7 @@ Notes:
 
 ### Transcript configuration
 
-Add `transcript_lang` to a feed to fetch subtitles/transcripts (VTT format) and emit `<podcast:transcript>` tags that podcast players understand. Transcript files are stored under `/transcripts/{feed_id}` and served automatically from `/transcripts/{feed_id}/{download_id}.{lang}.vtt`.
+Add `transcript_lang` to a feed to fetch subtitles/transcripts (VTT format) and emit `<podcast:transcript>` tags that podcast players understand. Transcript files are stored under `/transcripts/{feed_id}` and served automatically from `/transcripts/{feed_id}/{download_id}.{lang}.vtt`. For MP4-family video files (`.mp4`, `.m4v`, `.mov`), Anypod also soft-embeds the transcript as a `mov_text` subtitle track with the matching ISO 639-2/T language tag.
 
 Control which subtitles Anypod prefers by setting `transcript_source_priority` to an ordered list of `creator` and/or `auto` sources. When omitted, Anypod tries creator subtitles first and falls back to auto captions.
 

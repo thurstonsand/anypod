@@ -220,6 +220,7 @@ def downloader(
     file_manager: FileManager,
     ytdlp_wrapper: YtdlpWrapper,
     ffprobe: FFProbe,
+    ffmpeg: FFmpeg,
 ) -> Downloader:
     """Provide a Downloader instance for the tests.
 
@@ -231,6 +232,7 @@ def downloader(
         file_manager=file_manager,
         ytdlp_wrapper=ytdlp_wrapper,
         ffprobe=ffprobe,
+        ffmpeg=ffmpeg,
     )
 
 
