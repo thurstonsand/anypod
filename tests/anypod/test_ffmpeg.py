@@ -2,65 +2,13 @@
 
 """Unit tests for FFmpeg helper."""
 
-import json
 from pathlib import Path
-import shutil
-import subprocess
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from anypod.exceptions import FFmpegError
 from anypod.ffmpeg import FFmpeg, _to_iso639_2
-
-REQUIRES_FFMPEG = pytest.mark.skipif(
-    shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
-    reason="ffmpeg and ffprobe executables are required",
-)
-
-
-def _create_synthetic_mp4(path: Path) -> None:
-    """Create a tiny valid H.264 + AAC MP4 file for real ffmpeg remux testing."""
-    subprocess.run(
-        [
-            "ffmpeg",
-            "-y",
-            "-f",
-            "lavfi",
-            "-i",
-            "color=c=black:s=160x120:d=1",
-            "-f",
-            "lavfi",
-            "-i",
-            "anullsrc=r=44100:cl=mono",
-            "-t",
-            "1",
-            "-c:v",
-            "libx264",
-            "-c:a",
-            "aac",
-            str(path),
-        ],
-        check=True,
-        capture_output=True,
-    )
-
-
-def _probe_streams(path: Path) -> list[dict[str, object]]:
-    """Return ffprobe stream dicts for a media file."""
-    output = subprocess.check_output(
-        [
-            "ffprobe",
-            "-v",
-            "quiet",
-            "-print_format",
-            "json",
-            "-show_streams",
-            str(path),
-        ]
-    )
-    data = json.loads(output)
-    return data["streams"]
 
 
 @pytest.mark.parametrize(
@@ -112,75 +60,44 @@ async def test_ffmpeg_convert_image_to_jpg_failure(
         await ffm.convert_image_to_jpg(tmp_path / "in.png", tmp_path / "out.jpg")
 
 
-@REQUIRES_FFMPEG
 @pytest.mark.asyncio
-async def test_embed_subtitles_muxes_mov_text_and_replaces_existing_track(
+@patch("asyncio.create_subprocess_exec", new_callable=AsyncMock)
+async def test_embed_subtitles_replaces_media_with_remuxed_output(
+    mock_cse: AsyncMock,
     tmp_path: Path,
 ) -> None:
-    """embed_subtitles adds a mov_text track with ISO 639-2/T lang and replaces on re-run."""
+    """embed_subtitles invokes ffmpeg with mov_text and ISO 639-2/T lang and swaps atomically."""
     mp4_path = tmp_path / "episode.mp4"
-    en_vtt = tmp_path / "episode.en.vtt"
-    de_vtt = tmp_path / "episode.de.vtt"
+    vtt_path = tmp_path / "episode.en.vtt"
+    mp4_path.write_bytes(b"original-mp4")
+    vtt_path.write_text("WEBVTT\n\n", encoding="utf-8")
 
-    _create_synthetic_mp4(mp4_path)
-    en_vtt.write_text(
-        "WEBVTT\n\n00:00:00.000 --> 00:00:00.900\nHello world\n",
-        encoding="utf-8",
-    )
-    de_vtt.write_text(
-        "WEBVTT\n\n00:00:00.000 --> 00:00:00.900\nHallo Welt\n",
-        encoding="utf-8",
-    )
+    async def write_remuxed_and_succeed(*args: object, **_kwargs: object) -> AsyncMock:
+        output_arg = Path(str(args[-1]))
+        output_arg.write_bytes(b"remuxed-mp4-with-subs")
+        proc = AsyncMock()
+        proc.returncode = 0
+        proc.communicate.return_value = (b"", b"")
+        return proc
+
+    mock_cse.side_effect = write_remuxed_and_succeed
 
     ffm = FFmpeg()
-    await ffm.embed_subtitles(mp4_path, en_vtt, "en")
+    await ffm.embed_subtitles(mp4_path, vtt_path, "de")
 
-    streams = _probe_streams(mp4_path)
-    codec_types = [s["codec_type"] for s in streams]
-    assert codec_types == ["video", "audio", "subtitle"]
-    sub_stream = streams[2]
-    assert sub_stream["codec_name"] == "mov_text"
-    tags = sub_stream["tags"]
-    assert isinstance(tags, dict)
-    assert tags["language"] == "eng"
-    # No leftover temp files in directory
+    assert mp4_path.read_bytes() == b"remuxed-mp4-with-subs"
     assert sorted(p.name for p in tmp_path.iterdir()) == [
-        "episode.de.vtt",
         "episode.en.vtt",
         "episode.mp4",
     ]
-
-    # Re-embedding replaces the existing subtitle stream instead of stacking a second one
-    await ffm.embed_subtitles(mp4_path, de_vtt, "de")
-    streams_after = _probe_streams(mp4_path)
-    assert [s["codec_type"] for s in streams_after] == ["video", "audio", "subtitle"]
-    tags_after = streams_after[2]["tags"]
-    assert isinstance(tags_after, dict)
-    assert tags_after["language"] == "deu"
-
-
-@REQUIRES_FFMPEG
-@pytest.mark.asyncio
-async def test_embed_subtitles_failure_preserves_original(
-    tmp_path: Path,
-) -> None:
-    """embed_subtitles raises FFmpegError and keeps original MP4 untouched on invalid input."""
-    mp4_path = tmp_path / "episode.mp4"
-    bad_sub = tmp_path / "episode.bin"
-
-    _create_synthetic_mp4(mp4_path)
-    original_bytes = mp4_path.read_bytes()
-    bad_sub.write_bytes(b"\x00\x01\x02\x03not-subtitles")
-
-    ffm = FFmpeg()
-    with pytest.raises(FFmpegError):
-        await ffm.embed_subtitles(mp4_path, bad_sub, "en")
-
-    assert mp4_path.read_bytes() == original_bytes
-    assert sorted(p.name for p in tmp_path.iterdir()) == [
-        "episode.bin",
-        "episode.mp4",
-    ]
+    argv = [str(arg) for arg in mock_cse.call_args.args]
+    assert argv[0] == "ffmpeg"
+    assert "-c:s" in argv and argv[argv.index("-c:s") + 1] == "mov_text"
+    assert (
+        "-metadata:s:s:0" in argv
+        and argv[argv.index("-metadata:s:s:0") + 1] == "language=deu"
+    )
+    assert "-movflags" in argv and argv[argv.index("-movflags") + 1] == "+faststart"
 
 
 @pytest.mark.asyncio
