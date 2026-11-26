@@ -1,3 +1,8 @@
+from .generic_handler import (
+    GenericHandler,
+    YtdlpGenericDataError,
+    YtdlpGenericFilteredOutError,
+)
 from .handler_selector import HandlerSelector
 from .patreon_handler import (
     PatreonHandler,
@@ -16,10 +21,13 @@ from .youtube_handler import (
 )
 
 __all__ = [
+    "GenericHandler",
     "HandlerSelector",
     "PatreonHandler",
     "TwitterHandler",
     "YoutubeHandler",
+    "YtdlpGenericDataError",
+    "YtdlpGenericFilteredOutError",
     "YtdlpPatreonDataError",
     "YtdlpPatreonPostFilteredOutError",
     "YtdlpTwitterDataError",

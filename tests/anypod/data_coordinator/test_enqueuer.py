@@ -201,6 +201,7 @@ async def test_handle_existing_upcoming_download_transitions_to_queued(
         sample_feed_config.transcript_lang,
         sample_feed_config.transcript_source_priority,
         cookies_path=None,
+        prefer_audio=False,
     )
     mock_download_db.mark_as_queued_from_upcoming.assert_awaited_once_with(
         FEED_ID, "video1"
@@ -240,6 +241,7 @@ async def test_handle_existing_upcoming_download_remains_upcoming(
         sample_feed_config.transcript_lang,
         sample_feed_config.transcript_source_priority,
         cookies_path=None,
+        prefer_audio=False,
     )
     mock_download_db.mark_as_queued_from_upcoming.assert_not_called()
     mock_download_db.requeue_downloads.assert_not_called()
@@ -370,6 +372,7 @@ async def test_fetch_and_process_new_feed_downloads_no_new_downloads(
         sample_feed_config.transcript_lang,
         sample_feed_config.transcript_source_priority,
         None,
+        prefer_audio=False,
     )
     mock_download_db.get_download_by_id.assert_not_called()
     mock_download_db.upsert_download.assert_not_called()
@@ -592,6 +595,7 @@ async def test_enqueue_new_downloads_full_flow_mixed_scenarios(
             sample_feed_config.transcript_lang,
             sample_feed_config.transcript_source_priority,
             None,
+            prefer_audio=False,
         ),
         call(
             FEED_ID,
@@ -604,6 +608,7 @@ async def test_enqueue_new_downloads_full_flow_mixed_scenarios(
             sample_feed_config.transcript_lang,
             sample_feed_config.transcript_source_priority,
             cookies_path=None,
+            prefer_audio=False,
         ),
         call(
             FEED_ID,
@@ -616,6 +621,7 @@ async def test_enqueue_new_downloads_full_flow_mixed_scenarios(
             sample_feed_config.transcript_lang,
             sample_feed_config.transcript_source_priority,
             cookies_path=None,
+            prefer_audio=False,
         ),
     ]
     mock_ytdlp_wrapper.fetch_new_downloads_metadata.assert_has_calls(expected_calls)
@@ -718,6 +724,7 @@ async def test_enqueue_new_downloads_ytdlp_error_on_main_feed_fetch(
         sample_feed_config.transcript_lang,
         sample_feed_config.transcript_source_priority,
         None,
+        prefer_audio=False,
     )
 
 
@@ -755,6 +762,7 @@ async def test_enqueue_new_downloads_no_upcoming_no_new(
         sample_feed_config.transcript_lang,
         sample_feed_config.transcript_source_priority,
         None,
+        prefer_audio=False,
     )
 
 

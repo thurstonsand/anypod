@@ -289,3 +289,65 @@ async def test_determine_fetch_strategy_single(
     )
     assert fetch_url == initial_url
     assert st == SourceType.SINGLE_VIDEO
+
+
+# --- Attachment filtering & prefer_audio tests ---
+
+
+def test_prepare_downloads_info_args_allows_audio_and_excludes_images(
+    patreon_handler: PatreonHandler,
+    base_args: YtdlpArgs,
+) -> None:
+    """Downloads info match filter excludes images without dropping audio-only posts."""
+    cmd = patreon_handler.prepare_downloads_info_args(base_args).to_list()
+    filter_idx = cmd.index("--match-filter")
+    expr = cmd[filter_idx + 1]
+    assert "ext != 'jpg'" in expr
+    assert "vcodec" not in expr
+
+
+def test_select_post_entries_handles_video_audio_and_prefer_audio() -> None:
+    """Multi-attachment Patreon posts pick video/audio according to prefer_audio and fall back."""
+    video_post1 = YtdlpInfo(
+        {"id": "post1", "ext": "mp4", "vcodec": "h264", "playlist_index": 1}
+    )
+    audio_post1 = YtdlpInfo(
+        {
+            "id": "post1",
+            "ext": "mp3",
+            "vcodec": "none",
+            "acodec": "mp3",
+            "playlist_index": 2,
+        }
+    )
+    image_post1 = YtdlpInfo(
+        {"id": "post1", "ext": "jpg", "vcodec": "mjpeg", "playlist_index": 3}
+    )
+    audio_only_post2 = YtdlpInfo(
+        {
+            "id": "post2",
+            "ext": "mp3",
+            "vcodec": "none",
+            "acodec": "mp3",
+            "playlist_index": 1,
+        }
+    )
+    image_only_post3 = YtdlpInfo({"id": "post3", "ext": "png", "vcodec": "none"})
+
+    entries = [
+        video_post1,
+        audio_post1,
+        image_post1,
+        audio_only_post2,
+        image_only_post3,
+    ]
+
+    default_selected = PatreonHandler.select_post_entries(entries, prefer_audio=False)
+    assert [e.get("id", str) for e in default_selected] == ["post1", "post2"]
+    assert default_selected[0].get("ext", str) == "mp4"
+    assert default_selected[1].get("ext", str) == "mp3"
+
+    audio_preferred = PatreonHandler.select_post_entries(entries, prefer_audio=True)
+    assert [e.get("id", str) for e in audio_preferred] == ["post1", "post2"]
+    assert audio_preferred[0].get("ext", str) == "mp3"
+    assert audio_preferred[1].get("ext", str) == "mp3"

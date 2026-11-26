@@ -28,7 +28,7 @@ from ..ffprobe import FFProbe
 from ..media_processor import default_format_for_preset
 from ..path_manager import PathManager
 from .core import YtdlpArgs, YtdlpCore
-from .handlers import HandlerSelector, YoutubeHandler
+from .handlers import HandlerSelector, PatreonHandler, YoutubeHandler
 from .types import DownloadedMedia
 
 logger = logging.getLogger(__name__)
@@ -555,6 +555,8 @@ class YtdlpWrapper:
         transcript_lang: str | None = None,
         transcript_source_priority: list[TranscriptSource] | None = None,
         cookies_path: Path | None = None,
+        *,
+        prefer_audio: bool = False,
     ) -> list[Download]:
         """Get download metadata for enqueuing. Does not retrieve playlist metadata.
 
@@ -571,6 +573,8 @@ class YtdlpWrapper:
             transcript_source_priority: Ordered list of transcript sources to try.
                 Defaults to [CREATOR, AUTO] if not provided.
             cookies_path: Path to cookies.txt file for authentication.
+            prefer_audio: Prefer audio attachment over video on multi-attachment
+                sources (currently Patreon).
 
         Returns:
             A list of Download objects. Empty list if no downloads are found.
@@ -629,6 +633,10 @@ class YtdlpWrapper:
             )
 
         ytdlp_infos = downloads_result.payload
+        if isinstance(handler, PatreonHandler):
+            ytdlp_infos = handler.select_post_entries(
+                ytdlp_infos, prefer_audio=prefer_audio
+            )
 
         if not ytdlp_infos:
             logger.debug(

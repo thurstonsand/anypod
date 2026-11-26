@@ -97,6 +97,7 @@ async def test_fetch_submission_download_success(
         transcript_lang=feed_config.transcript_lang,
         transcript_source_priority=feed_config.transcript_source_priority,
         cookies_path=cookies_path,
+        prefer_audio=feed_config.prefer_audio,
     )
 
 

@@ -2240,3 +2240,55 @@ async def test_handle_existing_feed_transcript_lang_removed(
         DownloadStatus.DOWNLOADED, feed_id=FEED_ID
     )
     mock_file_manager.delete_transcript.assert_awaited_once()
+
+
+# --- Tests for StateReconciler.reconcile_local_state ---
+
+
+@pytest.mark.asyncio
+async def test_reconcile_local_state_archives_removed_and_disables_paused_without_ytdlp(
+    state_reconciler: StateReconciler,
+    mock_feed_db: MagicMock,
+    mock_pruner: MagicMock,
+    mock_ytdlp_wrapper: MagicMock,
+    base_feed_config: FeedConfig,
+) -> None:
+    """Local reconciliation handles removed/paused feeds via SQLite with zero yt-dlp calls."""
+    active_feed = deepcopy(MOCK_FEED)
+    paused_feed = Feed(
+        id="paused_feed",
+        title="Paused",
+        is_enabled=True,
+        source_type=SourceType.CHANNEL,
+        source_url="https://example.com/paused",
+        last_successful_sync=BASE_TIME,
+        image_ext="jpg",
+    )
+    removed_feed = deepcopy(MOCK_DISABLED_FEED)
+    mock_feed_db.get_feeds.return_value = [active_feed, paused_feed, removed_feed]
+
+    paused_config = deepcopy(base_feed_config)
+    paused_config.enabled = False
+    manual_config = FeedConfig(
+        url=None,
+        schedule="manual",  # type: ignore[arg-type]
+        metadata=FeedMetadataOverrides(title="Manual"),
+    )
+
+    known_scheduled = await state_reconciler.reconcile_local_state(
+        {
+            FEED_ID: base_feed_config,
+            "paused_feed": paused_config,
+            "manual_feed": manual_config,
+        }
+    )
+
+    assert known_scheduled == [FEED_ID]
+    mock_pruner.archive_feed.assert_awaited_once_with(REMOVED_FEED_ID)
+    mock_feed_db.upsert_feed.assert_awaited_once()
+    disabled_arg = mock_feed_db.upsert_feed.call_args.args[0]
+    assert disabled_arg.id == "paused_feed"
+    assert disabled_arg.is_enabled is False
+    assert disabled_arg.image_ext == "jpg"
+    mock_ytdlp_wrapper.discover_feed_properties.assert_not_called()
+    mock_ytdlp_wrapper.fetch_playlist_metadata.assert_not_called()

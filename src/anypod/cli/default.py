@@ -119,6 +119,7 @@ async def graceful_shutdown(
     scheduler: FeedScheduler | None,
     manual_feed_runner: ManualFeedRunner | None,
     db_core: SqlalchemyCore | None,
+    reconcile_task: asyncio.Task[None] | None = None,
 ) -> None:
     """Perform graceful shutdown of all components in correct order.
 
@@ -126,8 +127,19 @@ async def graceful_shutdown(
         scheduler: The feed scheduler instance to shutdown.
         manual_feed_runner: The manual feed runner instance to shutdown.
         db_core: The database core instance to close.
+        reconcile_task: Optional background startup reconciliation task to cancel.
     """
     logger.info("Shutdown signal received.")
+
+    # Step 0: Cancel background startup reconciliation if still running
+    if reconcile_task is not None and not reconcile_task.done():
+        reconcile_task.cancel()
+        try:
+            await reconcile_task
+        except asyncio.CancelledError:
+            logger.info("Background startup reconciliation cancelled.")
+        except Exception as e:
+            logger.error("Error cancelling startup reconciliation.", exc_info=e)
 
     # Step 1: Stop scheduler (finish current jobs, no new ones)
     if scheduler:
@@ -156,6 +168,82 @@ async def graceful_shutdown(
     logger.info("Anypod shutdown completed.")
 
 
+async def _reconcile_and_start_scheduler(
+    state_reconciler: StateReconciler,
+    scheduler: FeedScheduler,
+    settings: AppSettings,
+    known_scheduled_feeds: list[str],
+) -> None:
+    """Run upstream startup reconciliation in the background and start the scheduler.
+
+    Runs after the HTTP server has started listening so health checks and
+    cached RSS/media endpoints are immediately available. Feeds that were
+    already initialized in SQLite remain scheduled (on their next cron tick)
+    even if upstream metadata refresh transiently fails during startup.
+
+    Args:
+        state_reconciler: StateReconciler for upstream feed reconciliation.
+        scheduler: FeedScheduler to register jobs on and start.
+        settings: Application settings containing feed configs and cookies path.
+        known_scheduled_feeds: Enabled, non-manual feed IDs already present in SQLite.
+    """
+    ready_feeds: list[str] = []
+    try:
+        ready_feeds = await state_reconciler.reconcile_startup_state(
+            settings.feeds, settings.cookies_path
+        )
+    except StateReconciliationError as e:
+        logger.error(
+            "Background state reconciliation encountered a critical error; "
+            "existing feeds will still be scheduled for future ticks.",
+            exc_info=e,
+        )
+    except Exception as e:
+        logger.error(
+            "Unexpected error during background state reconciliation.",
+            exc_info=e,
+        )
+
+    ready_set = set(ready_feeds)
+    for feed_id in ready_feeds:
+        scheduler.schedule_feed(feed_id, settings.feeds[feed_id], run_immediately=True)
+
+    # Preserve cron scheduling for already-known DB feeds whose startup fetch
+    # failed transiently, so they self-heal on their next cron tick.
+    for feed_id in known_scheduled_feeds:
+        if feed_id not in ready_set and feed_id in settings.feeds:
+            feed_cfg = settings.feeds[feed_id]
+            if feed_cfg.enabled and not feed_cfg.is_manual:
+                logger.warning(
+                    "Startup reconciliation failed for existing feed; scheduling for "
+                    "next cron tick without immediate run.",
+                    extra={"feed_id": feed_id},
+                )
+                scheduler.schedule_feed(feed_id, feed_cfg, run_immediately=False)
+
+    manual_feed_ids = [
+        fid for fid, cfg in settings.feeds.items() if cfg.enabled and cfg.is_manual
+    ]
+    scheduled_ids = scheduler.get_scheduled_feed_ids()
+    if not scheduled_ids and manual_feed_ids:
+        logger.info(
+            "All enabled feeds are manual; scheduler will stay idle until manual submissions arrive.",
+            extra={"manual_feeds": manual_feed_ids},
+        )
+    elif not scheduled_ids and not manual_feed_ids:
+        logger.warning(
+            "No enabled feeds ready after startup reconciliation. "
+            "HTTP server remains running; check feed configuration or upstream errors above.",
+            extra={"configured_feeds": len(settings.feeds)},
+        )
+
+    await scheduler.start()
+    logger.info(
+        "Background reconciliation finished and scheduler started.",
+        extra={"scheduled_feeds": scheduled_ids},
+    )
+
+
 async def _init(
     settings: AppSettings,
 ) -> tuple[
@@ -168,6 +256,8 @@ async def _init(
     YtdlpWrapper,
     ManualFeedRunner,
     ManualSubmissionService,
+    StateReconciler,
+    list[str],
 ]:
     _validate_runtime_paths(settings)
 
@@ -255,8 +345,7 @@ async def _init(
         cookies_path=settings.cookies_path,
     )
 
-    # Run state reconciliation
-    logger.debug("Running state reconciliation.")
+    # Phase 1: fast local-only reconciliation before binding HTTP servers
     state_reconciler = StateReconciler(
         file_manager=file_manager,
         image_downloader=image_downloader,
@@ -266,40 +355,9 @@ async def _init(
         downloader=downloader,
         pruner=pruner,
     )
+    known_scheduled_feeds = await state_reconciler.reconcile_local_state(settings.feeds)
 
-    try:
-        ready_feeds = await state_reconciler.reconcile_startup_state(
-            settings.feeds, settings.cookies_path
-        )
-    except StateReconciliationError as e:
-        logger.error("State reconciliation failed, cannot continue.", exc_info=e)
-        raise
-
-    manual_feed_ids = [
-        fid for fid, cfg in settings.feeds.items() if cfg.enabled and cfg.is_manual
-    ]
-
-    if not ready_feeds and not manual_feed_ids:
-        logger.warning(
-            "No enabled feeds ready after reconciliation, exiting.",
-            extra={"configured_feeds": len(settings.feeds)},
-        )
-        raise RuntimeError(
-            f"No enabled feeds ready after reconciliation. "
-            f"Configured {len(settings.feeds)} feed(s), but all failed during setup. "
-            f"Check the logs above for specific errors (e.g., yt-dlp, network, or configuration issues)."
-        )
-
-    if not ready_feeds and manual_feed_ids:
-        logger.info(
-            "All enabled feeds are manual; scheduler will stay idle until manual submissions arrive.",
-            extra={"manual_feeds": manual_feed_ids},
-        )
-
-    # Initialize and start scheduler
-    logger.debug(
-        "Initializing feed scheduler.", extra={"ready_feeds": len(ready_feeds)}
-    )
+    # Initialize scheduler (feeds will be registered by background reconciliation)
     feed_semaphore = asyncio.Semaphore(1)
     manual_feed_runner = ManualFeedRunner(
         data_coordinator=data_coordinator,
@@ -308,7 +366,7 @@ async def _init(
     )
     manual_submission_service = ManualSubmissionService(ytdlp_wrapper)
     scheduler = FeedScheduler(
-        ready_feed_ids=ready_feeds,
+        ready_feed_ids=[],
         feed_configs=settings.feeds,
         data_coordinator=data_coordinator,
         feed_semaphore=feed_semaphore,
@@ -331,14 +389,17 @@ async def _init(
         ytdlp_wrapper,
         manual_feed_runner,
         manual_submission_service,
+        state_reconciler,
+        known_scheduled_feeds,
     )
 
 
 async def default(settings: AppSettings) -> None:
     """Main async entry point for default mode.
 
-    Initializes all components, runs state reconciliation, starts scheduler,
-    and manages application lifecycle.
+    Initializes local state and HTTP servers immediately, then runs upstream
+    feed reconciliation and starts the scheduler in the background so startup
+    never blocks health checks or cached RSS/media serving.
 
     Args:
         settings: Application settings object containing configuration.
@@ -351,6 +412,7 @@ async def default(settings: AppSettings) -> None:
     db_core: SqlalchemyCore | None = None
     scheduler: FeedScheduler | None = None
     manual_feed_runner: ManualFeedRunner | None = None
+    reconcile_task: asyncio.Task[None] | None = None
     try:
         (
             db_core,
@@ -362,6 +424,8 @@ async def default(settings: AppSettings) -> None:
             ytdlp_wrapper,
             manual_feed_runner,
             manual_submission_service,
+            state_reconciler,
+            known_scheduled_feeds,
         ) = await _init(settings)
 
         # Create HTTP server with shutdown callback
@@ -377,14 +441,14 @@ async def default(settings: AppSettings) -> None:
             feed_configs=settings.feeds,
             cookies_path=settings.cookies_path,
             shutdown_callback=lambda: graceful_shutdown(
-                scheduler, manual_feed_runner, db_core
+                scheduler, manual_feed_runner, db_core, reconcile_task
             ),
             include_admin=settings.single_server_mode,
         )
 
         servers = [server]
         log_extra: dict[str, object] = {
-            "scheduled_feeds": scheduler.get_scheduled_feed_ids(),
+            "configured_feeds": len(settings.feeds),
             "server_host": settings.server_host,
             "server_port": settings.server_port,
         }
@@ -415,7 +479,7 @@ async def default(settings: AppSettings) -> None:
             log_extra["admin_port"] = settings.admin_server_port
 
         logger.info(
-            "Starting scheduler and HTTP server.",
+            "Starting HTTP server and background state reconciliation.",
             extra=log_extra,
         )
 
@@ -437,10 +501,18 @@ async def default(settings: AppSettings) -> None:
                 settings.admin_server_port,
             )
 
-        await scheduler.start()
+        # Phase 2: Run upstream reconciliation + scheduler start asynchronously
+        reconcile_task = asyncio.create_task(
+            _reconcile_and_start_scheduler(
+                state_reconciler,
+                scheduler,
+                settings,
+                known_scheduled_feeds,
+            )
+        )
 
         # Will gracefully shutdown on SIGINT/SIGTERM
         await asyncio.gather(*(s.serve() for s in servers))
     except Exception as e:
         logger.error("Unexpected error during execution.", exc_info=e)
-        await graceful_shutdown(scheduler, manual_feed_runner, db_core)
+        await graceful_shutdown(scheduler, manual_feed_runner, db_core, reconcile_task)

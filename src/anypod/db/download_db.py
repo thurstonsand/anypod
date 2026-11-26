@@ -18,7 +18,11 @@ from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import col, select
 
 from ..exceptions import DatabaseOperationError, DownloadNotFoundError, NotFoundError
-from .decorators import handle_download_db_errors, handle_feed_db_errors
+from .decorators import (
+    handle_db_errors,
+    handle_download_db_errors,
+    handle_feed_db_errors,
+)
 from .sqlalchemy_core import SqlalchemyCore
 from .types import Download, DownloadStatus, TranscriptSource
 
@@ -902,3 +906,63 @@ class DownloadDatabase:
                 feed_id=feed_id,
             )
         return count
+
+    @handle_feed_db_errors("get downloads for feed")
+    async def get_downloads_for_feed(
+        self,
+        feed_id: str,
+        *,
+        status: DownloadStatus | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[Download]:
+        """Retrieve downloads for a feed, newest first, with optional status filter.
+
+        Args:
+            feed_id: Feed identifier to query.
+            status: Optional status filter. When None, returns downloads of any status.
+            limit: Maximum number of records to return.
+            offset: Number of records to skip for pagination.
+
+        Returns:
+            List of Download objects ordered newest first.
+
+        Raises:
+            DatabaseOperationError: If the database query fails.
+        """
+        async with self._db.session() as session:
+            stmt = select(Download).where(col(Download.feed_id) == feed_id)
+            if status is not None:
+                stmt = stmt.where(col(Download.status) == status)
+            stmt = (
+                stmt.order_by(col(Download.published).desc())
+                .limit(limit)
+                .offset(offset)
+            )
+            results = await session.execute(stmt)
+            return list(results.scalars().all())
+
+    @handle_db_errors("count downloads by feed and status")
+    async def count_downloads_by_feed_and_status(
+        self,
+    ) -> dict[str, dict[DownloadStatus, int]]:
+        """Count downloads grouped by feed ID and status in a single query.
+
+        Returns:
+            Nested mapping of ``feed_id -> {DownloadStatus: count}``.
+
+        Raises:
+            DatabaseOperationError: If the database query fails.
+        """
+        async with self._db.session() as session:
+            stmt = select(
+                col(Download.feed_id),
+                col(Download.status),
+                func.count(col(Download.id)),
+            ).group_by(col(Download.feed_id), col(Download.status))
+            results = await session.execute(stmt)
+            counts: dict[str, dict[DownloadStatus, int]] = {}
+            for row_feed_id, row_status, row_count in results.all():
+                feed_counts = counts.setdefault(row_feed_id, {})
+                feed_counts[row_status] = int(row_count)
+            return counts

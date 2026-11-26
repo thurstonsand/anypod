@@ -18,7 +18,7 @@ from anypod.config.types import CronExpression, FeedMetadataOverrides
 from anypod.data_coordinator import DataCoordinator
 from anypod.data_coordinator.types import ProcessingResults
 from anypod.db import DownloadDatabase, FeedDatabase
-from anypod.db.types import Download, DownloadStatus
+from anypod.db.types import Download, DownloadStatus, Feed, SourceType
 from anypod.exceptions import (
     DatabaseOperationError,
     DownloadNotFoundError,
@@ -950,3 +950,141 @@ def test_refresh_metadata_enqueue_error(
 
     assert response.status_code == 500
     assert response.json()["detail"] == "Failed to refresh metadata"
+
+
+def test_refresh_metadata_accepts_empty_request_body(
+    client: TestClient,
+    feed_configs: dict[str, FeedConfig],
+    mock_feed_database: Mock,
+    mock_data_coordinator: Mock,
+    scheduled_feed_config: FeedConfig,
+    sample_download: Download,
+) -> None:
+    """Bare POST without JSON body defaults refresh_transcript=False."""
+    feed_configs[FEED_ID] = scheduled_feed_config
+    mock_feed_database.get_feed_by_id.return_value = object()
+    mock_data_coordinator.refresh_download_metadata.return_value = (
+        sample_download,
+        ["title"],
+        None,
+        None,
+    )
+
+    response = client.post(
+        f"{ADMIN_PREFIX}/feeds/{FEED_ID}/downloads/{sample_download.id}/refresh-metadata",
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["metadata_changed"] is True
+    assert data["updated_fields"] == ["title"]
+    mock_data_coordinator.refresh_download_metadata.assert_called_once_with(
+        feed_id=FEED_ID,
+        download_id=sample_download.id,
+        feed_config=scheduled_feed_config,
+        refresh_transcript=False,
+    )
+
+
+def test_list_admin_feeds_includes_disabled_and_counts(
+    client: TestClient,
+    mock_feed_database: Mock,
+    mock_download_database: Mock,
+) -> None:
+    """GET /admin/feeds returns all feeds with per-status download counts."""
+    now = datetime(2025, 1, 1, tzinfo=UTC)
+    enabled_feed = Feed(
+        id="feed_a",
+        title="Feed A",
+        is_enabled=True,
+        source_type=SourceType.CHANNEL,
+        source_url="https://youtube.com/@feeda",
+        last_successful_sync=now,
+    )
+    disabled_feed = Feed(
+        id="feed_b",
+        title="Feed B",
+        is_enabled=False,
+        source_type=SourceType.PLAYLIST,
+        source_url="https://youtube.com/playlist?list=PL1",
+        last_successful_sync=now,
+        consecutive_failures=3,
+    )
+    mock_feed_database.get_feeds.return_value = [enabled_feed, disabled_feed]
+    mock_download_database.count_downloads_by_feed_and_status.return_value = {
+        "feed_a": {DownloadStatus.DOWNLOADED: 2, DownloadStatus.QUEUED: 1},
+        "feed_b": {DownloadStatus.ERROR: 4},
+    }
+
+    response = client.get(f"{ADMIN_PREFIX}/feeds")
+
+    assert response.status_code == 200
+    feeds = response.json()["feeds"]
+    assert [f["id"] for f in feeds] == ["feed_a", "feed_b"]
+    assert feeds[0]["is_enabled"] is True
+    assert feeds[0]["download_counts"]["downloaded"] == 2
+    assert feeds[0]["download_counts"]["queued"] == 1
+    assert feeds[1]["is_enabled"] is False
+    assert feeds[1]["consecutive_failures"] == 3
+    assert feeds[1]["download_counts"]["error"] == 4
+
+
+def test_list_feed_downloads_filters_by_status_and_limit(
+    client: TestClient,
+    mock_feed_database: Mock,
+    mock_download_database: Mock,
+    sample_download: Download,
+) -> None:
+    """GET /admin/feeds/{feed_id}/downloads filters and formats downloads."""
+    mock_feed_database.get_feed_by_id.return_value = object()
+    mock_download_database.get_downloads_for_feed.return_value = [sample_download]
+
+    response = client.get(
+        f"{ADMIN_PREFIX}/feeds/{FEED_ID}/downloads?status=downloaded&limit=10&offset=5"
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["feed_id"] == FEED_ID
+    assert body["count"] == 1
+    assert body["downloads"][0]["id"] == sample_download.id
+    assert body["downloads"][0]["status"] == DownloadStatus.DOWNLOADED.value
+    mock_download_database.get_downloads_for_feed.assert_called_once_with(
+        feed_id=FEED_ID,
+        status=DownloadStatus.DOWNLOADED,
+        limit=10,
+        offset=5,
+    )
+
+
+def test_delete_download_removes_transcript_file(
+    client: TestClient,
+    feed_configs: dict[str, FeedConfig],
+    mock_feed_database: Mock,
+    mock_download_database: Mock,
+    mock_file_manager: Mock,
+    mock_data_coordinator: Mock,
+    manual_feed_config: FeedConfig,
+    sample_download: Download,
+) -> None:
+    """Deleting a manual download also deletes its transcript file when present."""
+    feed_configs[FEED_ID] = manual_feed_config
+    dl_with_transcript = sample_download.model_copy(
+        update={"transcript_lang": "en", "transcript_ext": "vtt"}
+    )
+    mock_feed_database.get_feed_by_id.return_value = object()
+    mock_download_database.delete_download.return_value = dl_with_transcript
+    mock_data_coordinator.regenerate_rss.return_value = ProcessingResults(
+        feed_id=FEED_ID,
+        start_time=datetime(2025, 1, 1, tzinfo=UTC),
+        overall_success=True,
+    )
+
+    response = client.delete(
+        f"{ADMIN_PREFIX}/feeds/{FEED_ID}/downloads/{dl_with_transcript.id}"
+    )
+
+    assert response.status_code == 204
+    mock_file_manager.delete_transcript.assert_called_once_with(
+        FEED_ID, dl_with_transcript.id, "en", "vtt"
+    )

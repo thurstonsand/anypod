@@ -7,10 +7,10 @@ or port, and not exposed on the public internet.
 
 from datetime import datetime
 import logging
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query, Response
-from pydantic import AwareDatetime, BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, BeforeValidator, Field
 
 from ...db.types import Download, DownloadStatus
 from ...exceptions import (
@@ -33,12 +33,187 @@ from ..dependencies import (
     ManualFeedRunnerDep,
     ManualSubmissionServiceDep,
 )
+from ..feed_listing import FeedSummary, list_feeds
 from ..validation import ValidatedFeedId
 
 logger = logging.getLogger(__name__)
 
 
 router = APIRouter(prefix="/admin")
+
+
+class FeedListResponse(BaseModel):
+    """Response model for listing all feeds with status and download counts.
+
+    Attributes:
+        feeds: Ordered list of feed summaries.
+    """
+
+    feeds: list[FeedSummary]
+
+
+@router.get("/feeds", response_model=FeedListResponse)
+async def list_admin_feeds(
+    feed_db: FeedDatabaseDep,
+    download_db: DownloadDatabaseDep,
+) -> FeedListResponse:
+    """List all feeds in the database with sync state and download counts.
+
+    Includes both enabled and disabled/paused feeds, sharing the underlying
+    query helper with the public ``GET /feeds`` listing.
+
+    Args:
+        feed_db: Feed database dependency.
+        download_db: Download database dependency.
+
+    Returns:
+        FeedListResponse with structured summaries for all feeds.
+
+    Raises:
+        HTTPException: 500 on database errors.
+    """
+    logger.debug("Admin feed list request received.")
+    try:
+        feeds = await list_feeds(feed_db, download_db, enabled_only=False)
+    except DatabaseOperationError as e:
+        raise HTTPException(status_code=500, detail="Database error") from e
+    return FeedListResponse(feeds=feeds)
+
+
+class DownloadSummary(BaseModel):
+    """Summary of a download record returned by the admin listing endpoint.
+
+    Attributes:
+        id: Download identifier.
+        title: Episode title.
+        status: Current download state machine status.
+        published: Published timestamp.
+        ext: Media file extension.
+        filesize: Media size in bytes.
+        duration: Media duration in seconds.
+        retries: Consecutive failure count.
+        last_error: Most recent error message, if any.
+        source_url: Original source URL.
+    """
+
+    id: str
+    title: str
+    status: DownloadStatus
+    published: datetime
+    ext: str
+    filesize: int
+    duration: int
+    retries: int
+    last_error: str | None
+    source_url: str
+
+
+class DownloadListResponse(BaseModel):
+    """Response model for listing downloads belonging to a feed.
+
+    Attributes:
+        feed_id: The feed identifier.
+        count: Number of downloads returned in this page.
+        downloads: List of download summaries, newest first.
+    """
+
+    feed_id: str
+    count: int
+    downloads: list[DownloadSummary]
+
+
+def _normalize_download_status(value: Any) -> Any:
+    """Normalize string status query parameters to uppercase enum values."""
+    if isinstance(value, str):
+        return value.strip().upper()
+    return value
+
+
+@router.get("/feeds/{feed_id}/downloads", response_model=DownloadListResponse)
+async def list_feed_downloads(
+    feed_id: ValidatedFeedId,
+    feed_db: FeedDatabaseDep,
+    download_db: DownloadDatabaseDep,
+    status: Annotated[
+        DownloadStatus | None,
+        BeforeValidator(_normalize_download_status),
+        Query(
+            description="Optional status filter (case-insensitive, e.g. queued, downloaded, error).",
+        ),
+    ] = None,
+    limit: Annotated[
+        int,
+        Query(
+            ge=1,
+            le=500,
+            description="Maximum number of downloads to return (1-500).",
+        ),
+    ] = 50,
+    offset: Annotated[
+        int,
+        Query(
+            ge=0,
+            description="Number of downloads to skip for pagination.",
+        ),
+    ] = 0,
+) -> DownloadListResponse:
+    """List downloads for a feed, newest first, with optional status filtering.
+
+    Args:
+        feed_id: The feed identifier (validated and sanitized).
+        feed_db: Feed database dependency.
+        download_db: Download database dependency.
+        status: Optional DownloadStatus filter.
+        limit: Maximum number of records to return.
+        offset: Pagination offset.
+
+    Returns:
+        DownloadListResponse with matching downloads.
+
+    Raises:
+        HTTPException: 404 if feed does not exist; 500 on database errors.
+    """
+    logger.debug(
+        "Admin download list request received.",
+        extra={"feed_id": feed_id, "status": status, "limit": limit, "offset": offset},
+    )
+    try:
+        await feed_db.get_feed_by_id(feed_id)
+    except FeedNotFoundError as e:
+        raise HTTPException(status_code=404, detail="Feed not found") from e
+    except DatabaseOperationError as e:
+        raise HTTPException(status_code=500, detail="Database error") from e
+
+    try:
+        downloads = await download_db.get_downloads_for_feed(
+            feed_id=feed_id,
+            status=status,
+            limit=limit,
+            offset=offset,
+        )
+    except DatabaseOperationError as e:
+        raise HTTPException(status_code=500, detail="Database error") from e
+
+    summaries = [
+        DownloadSummary(
+            id=dl.id,
+            title=dl.title,
+            status=dl.status,
+            published=dl.published,
+            ext=dl.ext,
+            filesize=dl.filesize,
+            duration=dl.duration,
+            retries=dl.retries,
+            last_error=dl.last_error,
+            source_url=dl.source_url,
+        )
+        for dl in downloads
+    ]
+    return DownloadListResponse(
+        feed_id=feed_id,
+        count=len(summaries),
+        downloads=summaries,
+    )
 
 
 class RefreshFeedResponse(BaseModel):
@@ -578,7 +753,7 @@ async def refresh_download_metadata(
     feed_db: FeedDatabaseDep,
     feed_configs: FeedConfigsDep,
     data_coordinator: DataCoordinatorDep,
-    payload: RefreshMetadataRequest,
+    payload: RefreshMetadataRequest | None = None,
 ) -> RefreshMetadataResponse:
     """Re-fetch metadata for a specific download from yt-dlp.
 
@@ -592,7 +767,8 @@ async def refresh_download_metadata(
         feed_db: Feed database dependency.
         feed_configs: Configured feeds keyed by identifier.
         data_coordinator: Coordinator for refresh operations.
-        payload: request body with refresh options.
+        payload: Optional request body with refresh options (defaults to
+            ``refresh_transcript=False`` when omitted).
 
     Returns:
         RefreshMetadataResponse with details of updated fields.
@@ -617,6 +793,8 @@ async def refresh_download_metadata(
     except DatabaseOperationError as e:
         raise HTTPException(status_code=500, detail="Database error") from e
 
+    refresh_transcript = payload.refresh_transcript if payload is not None else False
+
     try:
         (
             _,
@@ -627,7 +805,7 @@ async def refresh_download_metadata(
             feed_id=feed_id,
             download_id=download_id,
             feed_config=feed_config,
-            refresh_transcript=payload.refresh_transcript,
+            refresh_transcript=refresh_transcript,
         )
     except EnqueueError as e:
         # Map specific error causes to appropriate HTTP status codes
@@ -741,11 +919,31 @@ async def delete_download(
                 status_code=500, detail="Failed to delete thumbnail"
             ) from e
 
+    transcript_deleted = False
+    if download.transcript_lang and download.transcript_ext:
+        try:
+            await file_manager.delete_transcript(
+                feed_id,
+                download.id,
+                download.transcript_lang,
+                download.transcript_ext,
+            )
+            transcript_deleted = True
+        except FileNotFoundError:
+            logger.warning(
+                "Transcript missing during deletion; continuing.", extra=log_params
+            )
+        except FileOperationError as e:
+            raise HTTPException(
+                status_code=500, detail="Failed to delete transcript"
+            ) from e
+
     logger.info(
         "Download deleted for manual feed.",
         extra={
             **log_params,
             "thumbnail_deleted": bool(download.thumbnail_ext),
+            "transcript_deleted": transcript_deleted,
             "total_duration_seconds": rss_result.total_duration_seconds,
         },
     )

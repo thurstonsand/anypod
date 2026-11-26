@@ -2,10 +2,14 @@
 
 """Tests for the health check router."""
 
+from unittest.mock import AsyncMock, Mock
+
 from fastapi import FastAPI
 from helpers.test_client import ClientProtocol, create_test_client
 import pytest
 
+from anypod.db import FeedDatabase
+from anypod.exceptions import DatabaseOperationError
 from anypod.server.routers.health import router
 
 
@@ -38,3 +42,16 @@ def test_health_check_success(client: ClientProtocol):
     assert data["service"] == "anypod"
     assert data["version"] == "0.1.0"
     assert "timestamp" in data
+
+
+def test_health_check_returns_503_when_db_unhealthy(app: FastAPI) -> None:
+    """Health check verifies DB connectivity and returns 503 when DB fails."""
+    mock_db = Mock(spec=FeedDatabase)
+    mock_db.get_feeds = AsyncMock(side_effect=DatabaseOperationError("DB down"))
+    app.state.feed_database = mock_db
+
+    client = create_test_client(app)
+    response = client.get("/api/health")
+
+    assert response.status_code == 503
+    assert response.json()["status"] == "unhealthy"

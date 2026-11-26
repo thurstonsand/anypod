@@ -2179,3 +2179,58 @@ async def test_total_downloads_computed_column(
     # Archive one downloaded item - should reduce count
     await download_db.archive_download(feed.id, "downloaded_video")
     assert (await feed_db.get_feed_by_id(feed.id)).total_downloads == 1
+
+
+@pytest.mark.asyncio
+async def test_get_downloads_for_feed_and_grouped_status_counts(
+    feed_db: FeedDatabase,
+    download_db: DownloadDatabase,
+) -> None:
+    """Admin listing queries return newest-first slices and grouped status counts."""
+    base_time = datetime(2025, 1, 10, 12, 0, tzinfo=UTC)
+    for fid in ("admin_feed_1", "admin_feed_2"):
+        await feed_db.upsert_feed(
+            Feed(
+                id=fid,
+                is_enabled=True,
+                source_type=SourceType.CHANNEL,
+                source_url=f"https://example.com/{fid}",
+                last_successful_sync=base_time,
+            )
+        )
+
+    for dl_id, fid, status, offset_days in [
+        ("d1", "admin_feed_1", DownloadStatus.DOWNLOADED, 1),
+        ("d2", "admin_feed_1", DownloadStatus.ERROR, 2),
+        ("d3", "admin_feed_1", DownloadStatus.DOWNLOADED, 3),
+        ("d4", "admin_feed_2", DownloadStatus.QUEUED, 1),
+    ]:
+        await download_db.upsert_download(
+            Download(
+                feed_id=fid,
+                id=dl_id,
+                source_url=f"https://example.com/{dl_id}",
+                title=dl_id,
+                published=base_time + timedelta(days=offset_days),
+                ext="mp4",
+                mime_type="video/mp4",
+                filesize=100,
+                duration=60,
+                status=status,
+            )
+        )
+
+    all_f1 = await download_db.get_downloads_for_feed("admin_feed_1")
+    assert [d.id for d in all_f1] == ["d3", "d2", "d1"]
+
+    err_f1 = await download_db.get_downloads_for_feed(
+        "admin_feed_1", status=DownloadStatus.ERROR, limit=10
+    )
+    assert [d.id for d in err_f1] == ["d2"]
+
+    counts = await download_db.count_downloads_by_feed_and_status()
+    assert counts["admin_feed_1"] == {
+        DownloadStatus.DOWNLOADED: 2,
+        DownloadStatus.ERROR: 1,
+    }
+    assert counts["admin_feed_2"] == {DownloadStatus.QUEUED: 1}

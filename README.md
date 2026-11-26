@@ -3,9 +3,9 @@
 [![License](https://img.shields.io/github/license/thurstonsand/anypod)](LICENSE)
 [![CI](https://img.shields.io/github/actions/workflow/status/thurstonsand/anypod/ci.yml?branch=main)](https://github.com/thurstonsand/anypod/actions/workflows/ci.yml)
 
-Your self-hosted, YAML-driven bridge from yt-dlp–supported sources (YouTube channels/playlists, Patreon posts, X/Twitter video statuses) to podcast‑consumable RSS feeds. Runs as a long‑lived service that periodically downloads media and serves RSS and media over HTTP.
+Your self-hosted, YAML-driven bridge from `yt-dlp`–supported sources (YouTube channels/playlists, Patreon creators/posts, X/Twitter video statuses, and arbitrary `yt-dlp` sites) to podcast‑consumable RSS feeds. Runs as a long‑lived service that periodically fetches metadata, downloads and normalizes media, and serves RSS and media over HTTP.
 
-> Designed for small, self‑hosted deployments. Admin is private/trusted; only RSS and media endpoints are for public access.
+> Designed for small, self‑hosted deployments. Admin endpoints assume trusted local access; only RSS and media endpoints are meant for public access.
 
 ## Table of contents
 
@@ -17,6 +17,7 @@ Your self-hosted, YAML-driven bridge from yt-dlp–supported sources (YouTube ch
     - [Using Docker Compose (recommended)](#using-docker-compose-recommended)
     - [Using Docker directly](#using-docker-directly)
   - [Configuration](#configuration)
+    - [Media conversion presets](#media-conversion-presets)
     - [Transcript configuration](#transcript-configuration)
   - [Environment variables](#environment-variables)
   - [HTTP endpoints](#http-endpoints)
@@ -30,7 +31,8 @@ Your self-hosted, YAML-driven bridge from yt-dlp–supported sources (YouTube ch
     - [Pocket Casts](#pocket-casts)
     - [Filtering](#filtering)
     - [X / Twitter](#x--twitter)
-    - [Patreon (Beta)](#patreon-beta)
+    - [Patreon](#patreon)
+    - [Other yt-dlp Sources](#other-yt-dlp-sources)
     - [Error Handling and Logging](#error-handling-and-logging)
   - [Development](#development)
   - [Architecture](#architecture)
@@ -39,83 +41,84 @@ Your self-hosted, YAML-driven bridge from yt-dlp–supported sources (YouTube ch
 
 ## High Level
 
-Anypod is a thin Python wrapper around `yt‑dlp` that turns any `yt‑dlp`–supported source into an RSS feed consumable by podcast players. You declare feeds in YAML with a cron schedule and optional `yt‑dlp` format rules; Anypod periodically:
+Anypod is a thin Python wrapper around `yt-dlp` and `ffmpeg` that turns `yt-dlp`–supported sources into RSS feeds consumable by podcast players. You declare feeds in YAML with a cron schedule (or `manual`) and optional global `defaults:`; Anypod periodically:
 
-1. Discovers new items from channels or playlists
-2. Enqueues and downloads media files
-3. Prunes any out-of-scope media according to retention rules
-4. Regenerates RSS feeds and serves both the feeds and the media over HTTP
+1. Discovers new items from channels, playlists, or creator pages
+2. Enqueues, downloads, and converts media into podcast-friendly MP4/M4A files (with embedded episode artwork and fast-start moov atoms)
+3. Prunes out-of-scope media according to retention rules (`keep_last`, `since`)
+4. Regenerates RSS feeds and serves feeds, media, artwork, and transcripts over HTTP
 
 ## Features
 
-- Simple YAML config with per‑feed schedules
-- Works with YouTube channels/playlists, Patreon creator pages/posts (beta), and public X/Twitter video posts (beta)
+- Simple YAML config with top-level `defaults:` and per-feed overrides
+- First-class support for YouTube channels/playlists, Patreon creator pages/posts (video + audio-only fallback + `prefer_audio`), and X/Twitter video posts, plus best-effort support for arbitrary `yt-dlp` sites
+- First-class media conversion presets (`light`, `optimized`, `off`, `custom`) with fast-start MP4 remuxing, embedded episode artwork, and custom post-processing hook support
 - Feed metadata overrides (title, description, artwork, categories, explicit, etc.)
 - Thumbnail hosting: Downloads and serves feed artwork and episode thumbnails locally
 - Transcript/subtitle support: Downloads and serves transcripts via `<podcast:transcript>` tags (VTT format), and soft-embeds them as `mov_text` subtitle tracks in MP4 video containers
-- Retention policies: keep the last N items and/or only since YYYYMMDD
+- Retention policies: keep the last N items (`keep_last`) and/or only items since a cutoff date (`since`)
 - Manual submission feeds: declare `schedule: "manual"` and push ad-hoc URLs via the admin API
-- Docker image with non‑root (PUID/PGID) support
+- Non-blocking startup: HTTP server and health checks come up immediately while upstream feed reconciliation runs in the background
+- Docker image with non-root (`PUID`/`PGID`) support
 
 ## Quick start
 
 ### Using Docker Compose (recommended)
 
+Copy `example_feeds.yaml` to `feeds.yaml`, edit it with your channels, and start Anypod:
+
+```bash
+cp example_feeds.yaml feeds.yaml
+```
+
 ```yaml
 services:
   anypod:
-    image: ghcr.io/thurstonsand/anypod:latest # or 'nightly' for tracking main branch
+    image: ghcr.io/thurstonsand/anypod:latest # or 'nightly' to track main
     container_name: anypod
     restart: unless-stopped
     ports:
-      - "8024:8024"
-      - "8025:8025"
+      - "8024:8024" # Public RSS/media server
+      - "127.0.0.1:8025:8025" # Admin API (bound to localhost only)
     volumes:
-      - ./example_feeds.yaml:/config/feeds.yaml
+      - ./feeds.yaml:/config/feeds.yaml:ro
       - ./data:/data
-      # - ./cookies.txt:/cookies/cookies.txt # optional; mount only if you need cookies
+      # - ./cookies.txt:/cookies/cookies.txt:ro # optional; mount only if you need cookies
       - /etc/localtime:/etc/localtime:ro
     environment:
-      # Identity / permissions
       PUID: 1000
       PGID: 1000
+      SERVER_PORT: 8024
+      ADMIN_SERVER_PORT: 8025
 
-      SERVER_PORT: 8024 # Public server port
-      ADMIN_SERVER_PORT: 8025 # Admin server port (keep private)
+      # Set to the URL your podcast app reaches (required for external apps)
+      BASE_URL: http://localhost:8024
 
-      # COOKIES_PATH: /cookies/cookies.txt # optional; only set if mounting the cookie file
+      # Optional: mount cookies.txt above and uncomment:
+      # COOKIES_PATH: /cookies/cookies.txt
 
-      # External URL (set when behind a reverse proxy)
-      # BASE_URL: https://reverseproxy.example
+      # Optional: reverse proxy trusted IPs/CIDRs (comma-separated or JSON array)
+      # TRUSTED_PROXIES: "192.168.1.0/24"
 
-      # Trusted proxy networks; enables X-Forwarded-* processing
-      # TRUSTED_PROXIES:
-      #   - "192.168.1.0/24"
-      #   - "192.168.3.213" # e.g. your reverse proxy
-
-      # Logging
-      # LOG_FORMAT: json                     # json | human
-      # LOG_LEVEL: INFO                      # DEBUG | INFO | WARNING | ERROR
-      # LOG_INCLUDE_STACKTRACE: "false"      # true to include stack traces
-
-      # Timezone for date parsing in config (optional)
+      # Optional: timezone for cron schedules and `since` dates
       # TZ: "America/New_York"
 
-      # yt-dlp update behavior
-      # YT_CHANNEL: stable                   # stable | nightly | master | version
-      # YT_DLP_UPDATE_FREQ: 12h              # e.g., 6h, 12h, 1d
-
-      # Optional: YouTube PO Token provider for yt-dlp
+      # Optional: YouTube PO Token provider
       POT_PROVIDER_URL: http://bgutil-provider:4416
     depends_on:
-      - bgutil-provider
+      bgutil-provider:
+        condition: service_healthy
 
   bgutil-provider:
     image: brainicism/bgutil-ytdlp-pot-provider:latest
     container_name: bgutil-provider
     restart: unless-stopped
-    ports:
-      - "4416:4416"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4416/ping || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 ```
 
 Start it:
@@ -124,8 +127,9 @@ Start it:
 docker compose up -d
 ```
 
-- See all available feeds at `https://reverseproxy.example/feeds`
-- Subscribe in your podcast app to `https://reverseproxy.example/feeds/<feed_id>.xml`
+- Browse available feeds at `http://localhost:8024/feeds` (or your `BASE_URL`)
+- Subscribe in your podcast app to `<BASE_URL>/feeds/<feed_id>.xml`
+- Explore the interactive Admin API docs at `http://127.0.0.1:8025/docs`
 
 ### Using Docker directly
 
@@ -133,30 +137,37 @@ docker compose up -d
 docker run -d \
   --name anypod \
   -p 8024:8024 \
-  -v ./example_feeds.yaml:/config/feeds.yaml \
+  -p 127.0.0.1:8025:8025 \
+  -v ./feeds.yaml:/config/feeds.yaml:ro \
   -v ./data:/data \
-  # Uncomment the next line if you need cookies for authenticated feeds
-  # -e COOKIES_PATH=/cookies/cookies.txt -v ./cookies.txt:/cookies/cookies.txt \
-  ghcr.io/thurstonsand/anypod:latest # or nightly
+  -e BASE_URL=http://localhost:8024 \
+  ghcr.io/thurstonsand/anypod:latest
 ```
+
+To use cookies with `docker run`, add `-e COOKIES_PATH=/cookies/cookies.txt -v ./cookies.txt:/cookies/cookies.txt:ro`.
 
 ## Configuration
 
-Put your feeds in a YAML file. Example:
+Put your feeds in `/config/feeds.yaml`. Shared settings can be defined once under top-level `defaults:` and overridden per feed:
 
 ```yaml
+defaults:
+  media_conversion: light # off | light (default) | optimized | custom
+  keep_last: 20
+  transcript_lang: en
+
 feeds:
-  channel:
+  my_channel:
     url: https://www.youtube.com/@example
-    yt_args: "-f best[ext=mp4]"
-    schedule: "0 3 * * *"
-    since: "20220101"
+    schedule: "@daily"
+    since: "2024-01-01"
+
   favorite_podcast:
-    url: https://www.youtube.com/@favorite_podcast # will default to the 'videos' feed/playlist
+    url: https://www.youtube.com/@favorite_podcast
     schedule: "0 6 * * *"
-    yt_args: "-f best[ext=mp4]"
+    media_conversion: optimized # HEVC hvc1 + AAC for smaller files
     metadata:
-      title: "My Premium Podcast"
+      title: "My Favorite Podcast"
       subtitle: "Daily insights and discussions"
       description: "A daily podcast about technology and culture"
       language: "en"
@@ -170,43 +181,47 @@ feeds:
 
 Notes:
 
-- `schedule` accepts a [cron expression](https://crontab.cronhub.io/) or `"manual"` for ad-hoc feeds
-- `since` must be in the format `YYYYMMDD` (day‑precision; see Limitation below)
-- `image_url` allows you to override the feed artwork (downloaded and hosted locally)
-- `yt_args` are passed directly to [`yt-dlp`](https://github.com/yt-dlp/yt-dlp); see their docs for options
+- `schedule` accepts standard 5-field [cron expressions](https://crontab.cronhub.io/) (with POSIX Sunday `0`/`7` handled accurately in your configured `TZ`), `@hourly`/`@daily`/`@weekly`/`@monthly`, or `"manual"` for ad-hoc feeds
+- `since` accepts `YYYY-MM-DD`, `YYYYMMDD`, or unquoted YAML dates (day precision)
+- `image_url` overrides feed artwork (downloaded and hosted locally)
+- `yt_args` passes extra options directly to [`yt-dlp`](https://github.com/yt-dlp/yt-dlp)
+
+### Media conversion presets
+
+Anypod converts downloaded media into podcast-player-compatible files automatically (default: `light`):
+
+- **`light` (default)**: Prefers H.264/AAC streams from `yt-dlp`, stream-copies H.264/HEVC/AV1 video without re-encoding (only transcoding VP9/incompatible codecs), encodes non-AAC audio to 128k AAC, remuxes into MP4 with `-movflags +faststart`, and embeds episode artwork. Audio-only files are preserved as `.m4a`.
+- **`optimized`**: Re-encodes video to compact HEVC (`libx265`, `-tag:v:0 hvc1`, CRF 28) + 128k AAC + `+faststart` + embedded artwork for Apple Podcasts / Pocket Casts / mobile devices.
+- **`off`**: Keeps raw `yt-dlp` output untouched.
+- **`custom`**: Runs your own executable script (default `/config/post_process.sh`, or `MEDIA_CONVERSION_SCRIPT`) in an isolated per-download staging directory.
+
+See [docs/configuration.md](docs/configuration.md#media-conversion) for full preset details, `embed_thumbnail`, `prefer_audio`, and the custom hook contract.
 
 ### Transcript configuration
 
-Add `transcript_lang` to a feed to fetch subtitles/transcripts (VTT format) and emit `<podcast:transcript>` tags that podcast players understand. Transcript files are stored under `/transcripts/{feed_id}` and served automatically from `/transcripts/{feed_id}/{download_id}.{lang}.vtt`. For MP4-family video files (`.mp4`, `.m4v`, `.mov`), Anypod also soft-embeds the transcript as a `mov_text` subtitle track with the matching ISO 639-2/T language tag.
+Add `transcript_lang` to a feed (or `defaults:`) to fetch subtitles/transcripts (VTT format) and emit `<podcast:transcript>` tags. Transcripts are served from `/transcripts/{feed_id}/{download_id}.{lang}.vtt`. For MP4-family video files (`.mp4`, `.m4v`, `.mov`), Anypod also soft-embeds the transcript as a `mov_text` subtitle track with the matching ISO 639-2/T language tag.
 
-Control which subtitles Anypod prefers by setting `transcript_source_priority` to an ordered list of `creator` and/or `auto` sources. When omitted, Anypod tries creator subtitles first and falls back to auto captions.
+Control preference with `transcript_source_priority` (defaults to `['creator', 'auto']`).
 
-```yaml
-feeds:
-  channel:
-    url: https://www.youtube.com/@example
-    schedule: "0 3 * * *"
-    transcript_lang: en
-    transcript_source_priority:
-      - creator
-      - auto
-```
-
-For full configuration details including manual feeds, metadata overrides, and reserved yt-dlp options, see [docs/configuration.md](docs/configuration.md).
+For full configuration details including `defaults:`, manual feeds, metadata overrides, and reserved `yt-dlp` options, see [docs/configuration.md](docs/configuration.md).
 
 ## Environment variables
 
-All can be provided via env or CLI flags (kebab‑case). Common ones:
+All settings can be provided via environment variables or CLI flags (kebab-case). Common ones:
 
-| Name                 | Default                            | Description                                                       |
-| -------------------- | ---------------------------------- | ----------------------------------------------------------------- |
-| `BASE_URL`           | `http://reverseproxy.example:8024` | Public base URL for feed/media links                              |
-| `SERVER_PORT`        | `8024`                             | Bind port for public server                                       |
-| `ADMIN_SERVER_PORT`  | `8025`                             | Bind port for admin server (should not be exposed publicly)       |
-| `SINGLE_SERVER_MODE` | `false`                            | Mount admin routes on main server (requires external path gating) |
-| `TRUSTED_PROXIES`    | unset                              | Trusted proxy IPs/networks (e.g. `["192.168.1.0/24"]`)            |
-| `POT_PROVIDER_URL`   | unset                              | bgutil POT provider URL for YouTube PO Tokens                     |
-| `PUID` / `PGID`      | `1000`                             | Container user/group                                              |
+| Name                      | Default                   | Description                                                            |
+| ------------------------- | ------------------------- | ---------------------------------------------------------------------- |
+| `BASE_URL`                | `http://localhost:8024`   | Public base URL for feed/media links (supports subpath prefixes)       |
+| `SERVER_PORT`             | `8024`                    | Bind port for public server                                            |
+| `ADMIN_SERVER_PORT`       | `8025`                    | Bind port for admin server (keep private)                              |
+| `SINGLE_SERVER_MODE`      | `false`                   | Mount admin routes on main server (requires external path gating)      |
+| `TRUSTED_PROXIES`         | unset                     | Trusted proxy IPs/CIDRs (comma-separated, `*`, or JSON array)          |
+| `COOKIES_PATH`            | unset                     | Path to `cookies.txt` file for authenticated sources                   |
+| `POT_PROVIDER_URL`        | unset                     | `bgutil` POT provider URL for YouTube PO Tokens                        |
+| `MEDIA_CONVERSION_SCRIPT` | `<config>/post_process.sh`| Custom executable hook path for `media_conversion: custom`             |
+| `LOG_FORMAT`              | `human`                   | Log output format (`human` or `json`)                                  |
+| `TZ`                      | system local / `UTC`      | Timezone for cron schedules and `since` dates                          |
+| `PUID` / `PGID`           | `1000`                    | Container user/group                                                   |
 
 For the complete list of environment variables, see [docs/configuration.md](docs/configuration.md#environment-variables).
 
@@ -214,109 +229,144 @@ For the complete list of environment variables, see [docs/configuration.md](docs
 
 ### Public endpoints
 
-- `GET /feeds` – directory listing of feeds
+- `GET /` – redirects (`307`) to `/feeds`
+- `GET /feeds` – directory listing of enabled feeds
 - `GET /feeds/{feed_id}.xml` – podcast RSS
 - `GET /media` – directory listing of feeds with media
 - `GET /media/{feed_id}` – directory listing of media files for a feed
 - `GET /media/{feed_id}/{filename}.{ext}` – media file download
-- `GET /images/{feed_id}.jpg` – feed artwork/thumbnail
-- `GET /images/{feed_id}/{download_id}.jpg` – episode thumbnail
+- `GET /images/{feed_id}.{ext}` – feed artwork/thumbnail
+- `GET /images/{feed_id}/{download_id}.{ext}` – episode thumbnail
 - `GET /transcripts/{feed_id}/{download_id}.{lang}.{ext}` – episode transcript file
-- `GET /api/health` – health check
+- `GET /api/health` – health check (verifies SQLite database reachability)
 
 ### Admin endpoints (trusted/local access only)
 
+Interactive Swagger UI is available at `http://127.0.0.1:8025/docs`.
+
+- `GET /admin/feeds` – list all feeds (enabled and disabled) with sync timestamps, failure counts, and per-status download counts
+- `GET /admin/feeds/{feed_id}/downloads` – list downloads for a feed (supports `?status=`, `?limit=`, `?offset=`)
+- `GET /admin/feeds/{feed_id}/downloads/{download_id}` – retrieve selected fields for a download record (supports `?fields=`)
 - `POST /admin/feeds/{feed_id}/refresh` – trigger immediate feed processing (enqueue + download cycle)
-- `POST /admin/feeds/{feed_id}/reset-errors` – reset all ERROR downloads for a feed to QUEUED status
+- `POST /admin/feeds/{feed_id}/requeue` – requeue all `ERROR` downloads for a feed to `QUEUED` and trigger processing
+- `POST /admin/feeds/{feed_id}/downloads/{download_id}/requeue` – requeue a single `ERROR` download to `QUEUED`
+- `POST /admin/feeds/{feed_id}/reset-sync` – reset `last_successful_sync` (`{"sync_time": "2025-01-01T00:00:00Z"}`)
 - `POST /admin/feeds/{feed_id}/downloads` – queue a single URL for manual feeds (`schedule: "manual"`)
-- `GET /admin/feeds/{feed_id}/downloads/{download_id}` – retrieve selected fields for a download record (supports `?fields=` query parameter)
-- `POST /admin/feeds/{feed_id}/downloads/{download_id}/refresh-metadata` – re-fetch metadata from yt-dlp for a specific download (updates title, description, thumbnail URL, etc.)
-- `DELETE /admin/feeds/{feed_id}/downloads/{download_id}` – delete a download from a manual feed and clean up associated media files and thumbnails; regenerates RSS
+- `POST /admin/feeds/{feed_id}/downloads/{download_id}/refresh-metadata` – re-fetch metadata from `yt-dlp` (body optional; pass `{"refresh_transcript": true}` to force transcript refresh)
+- `DELETE /admin/feeds/{feed_id}/downloads/{download_id}` – delete a download from a manual feed (removes media, thumbnail, transcript, and regenerates RSS)
 - `GET /api/health` – health check
 
-Admin endpoints run on a separate server by default. No authentication is implemented. Only expose the public server publicly.
+Quick `curl` examples:
 
-When `SINGLE_SERVER_MODE=true`, admin routes are mounted on the main server under `/admin/`. Use this only when external access control (e.g., Cloudflare Access, Nginx auth) protects admin paths. See [docs/configuration.md](docs/configuration.md#single-server-mode) for details.
+```bash
+# Inspect all feeds and download counts
+curl -s http://127.0.0.1:8025/admin/feeds | jq
+
+# Trigger an immediate refresh
+curl -X POST http://127.0.0.1:8025/admin/feeds/my_channel/refresh
+
+# Requeue failed episodes
+curl -X POST http://127.0.0.1:8025/admin/feeds/my_channel/requeue
+
+# Submit a URL to a manual feed
+curl -X POST http://127.0.0.1:8025/admin/feeds/manual_drop/downloads \
+  -H 'Content-Type: application/json' \
+  -d '{"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"}'
+```
+
+Admin endpoints run on a separate server by default with no authentication. Only expose the public server publicly.
+
+When `SINGLE_SERVER_MODE=true`, admin routes are mounted on the main server under `/admin/`. Use this only when external access control (e.g., Cloudflare Access, Nginx/Caddy auth) protects `/admin/`. See [docs/configuration.md](docs/configuration.md#single-server-mode) for details.
 
 ## Reverse proxies
 
-Set `BASE_URL` to your public URL and configure `TRUSTED_PROXIES` if running behind a reverse proxy so that link generation and client IP handling are correct.
+Set `BASE_URL` to your external URL (including any subpath prefix, e.g., `https://podcasts.example.com` or `https://home.example.com/anypod`) and set `TRUSTED_PROXIES` to your proxy's IP/CIDR so forwarded headers are trusted.
+
+**Caddy:**
+
+```caddyfile
+podcasts.example.com {
+    reverse_proxy anypod:8024
+}
+```
+
+**Nginx:**
+
+```nginx
+server {
+    server_name podcasts.example.com;
+    location / {
+        proxy_pass http://127.0.0.1:8024;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+**Cloudflare Tunnel:** Point your public hostname (`podcasts.example.com`) to `http://anypod:8024`, set `BASE_URL=https://podcasts.example.com`, and keep port `8025` unbound from the tunnel (or protect `/admin/*` with Cloudflare Access if using `SINGLE_SERVER_MODE=true`).
 
 ## Limitations and Notes
 
 ### Scheduling and Rate Limiting
 
-Even if you set 2 feeds to have the same schedule, it will only ever run one at a time; this is a simple way to ensure we stay under rate limits.
+Even if multiple feeds share the same cron schedule, Anypod processes one feed at a time to reduce rate-limiting pressure.
 
-On the subject of rate limiting, Youtube can be fairly aggressive, and you may find your downloads failing. You can get much higher rate limits [using cookies](#cookies) with a logged in account, but Youtube does reserve the right to ban your account if it detects excessive bot activity, so I would recommend using a burner account. Reports I've seen online say that you can download pretty aggressively, like hundreds of videos an hour, and still not get flagged, but better safe than sorry.
+YouTube can aggressively rate-limit unauthenticated requests. Using [cookies](#cookies) (preferably on a dedicated account) and/or a [PO Token provider](#po-tokens-youtube) significantly improves reliability.
 
 ### Cookies
 
-In order to get cookies, I have successfully followed these instructions:
+Helpful references for exporting cookies:
 
-- [Exporting Youtube cookies](https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies)
+- [Exporting YouTube cookies](https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies)
 - [How to pass cookies to yt-dlp](https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp)
 - [Error 429: Too many requests](https://github.com/yt-dlp/yt-dlp/wiki/FAQ#http-error-429-too-many-requests-or-402-payment-required)
-- a couple comments:
-- specifically, I've used the [Get cookies.txt LOCALLY](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc) Chrome extension to retrieve them in a file
-- if you are on Windows, watch out for the newlines. The Docker container will expect `LF`, and Windows might default to `CRLF`
-- With youtube cookies, I have seen that this actually blocks you from even seeing "Premium" (enhanced bitrate) videos; this is a known problem
-- PO Tokens might also help. See the section below on how to set those up
-- even without cookies, I mostly just got 403's when trying to download Premium anyway
+
+Notes:
+
+- Extensions such as [Get cookies.txt LOCALLY](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc) work well
+- On Windows, ensure the file uses `LF` line endings rather than `CRLF`
+- Make sure `cookies.txt` exists as a regular file on the host before starting Docker so Docker does not auto-create an empty directory
+- When YouTube runs with cookies, Anypod automatically passes `--extractor-args youtubetab:skip=authcheck` unless you specify your own `youtubetab:` extractor arg in `yt_args`
 
 ### PO Tokens (YouTube)
 
-Some YouTube endpoints and qualities require short‑lived Proof‑of‑Origin (PO) tokens. In practice, using PO Tokens can:
-
-- Improve reliability for otherwise rate‑limited or blocked videos
-- Unlock higher qualities for some content (e.g., 1080p+ or Premium‑gated variants)
-
-Anypod defaults to POT disabled. To opt‑in, run a PO Token provider and set `POT_PROVIDER_URL` to its HTTP endpoint. Anypod will then configure `yt‑dlp` to use that provider; when unset, POT fetching is disabled.
-
-References:
-
-- yt‑dlp PO‑Token Guide: [PO‑Token‑Guide](https://github.com/yt-dlp/yt-dlp/wiki/PO-Token-Guide)
-- Recommended provider: [bgutil‑ytdlp‑pot‑provider](https://github.com/Brainicism/bgutil-ytdlp-pot-provider)
+Some YouTube endpoints and qualities require short-lived Proof-of-Origin (PO) tokens. Anypod defaults to POT disabled; to enable it, run a PO Token provider such as [bgutil-ytdlp-pot-provider](https://github.com/Brainicism/bgutil-ytdlp-pot-provider) and set `POT_PROVIDER_URL` (included in the Docker Compose quick start above).
 
 ### Pocket Casts
 
-For users of Pocket Casts, I would not test out feeds in the app, since they permanently cache on their end. If you get any configuration wrong, you'll be stuck with it until you change the feed's id, which will generate a new url.
-
-If you do want to test you have everything configured correctly (which I recommend), I have found Apple Podcasts to be just fine.
+Pocket Casts caches feed URLs and metadata aggressively. Test new feeds in Apple Podcasts or Overcast first (and make sure `BASE_URL` points to your final public URL) before subscribing in Pocket Casts.
 
 ### Filtering
 
-I recommend using a filter (either `since` or `keep_last`) when setting up your feed, otherwise Anypod will download EVERY video in the playlist. On that note, `yt-dlp` only allows for day precision filtering (YYYYMMDD), tho this should be sufficient for most people.
+Set `since` or `keep_last` on every new feed (or in `defaults:`), otherwise Anypod will enqueue every item in the channel/playlist. Anypod logs a startup warning if a scheduled feed has neither set. Note that `yt-dlp`'s date filtering is day-precision (`YYYYMMDD`).
 
 ### X / Twitter
 
-Public X/Twitter video posts are supported with the following constraints:
+Public X/Twitter video status URLs (`https://x.com/<handle>/status/<id>` or `https://twitter.com/<handle>/status/<id>`) are supported. Profile/timeline URLs are not supported. Supply `cookies.txt` for private or member-only posts.
 
-- Only direct status URLs (`https://x.com/<handle>/status/<id>` or `https://twitter.com/<handle>/status/<id>`) are recognized; profile or timeline URLs are not supported.
-- supply `cookies.txt` if you follow private or member-only posts.
+### Patreon
 
-### Patreon (Beta)
+Patreon creator pages and individual posts are supported:
 
-Patreon creator pages and individual posts are supported with the following considerations:
+- **Cookies required**: Paywalled content requires `cookies.txt`
+- **Video + audio support**: Posts with both video and audio attachments pick video by default, or audio when `prefer_audio: true` is configured on the feed. Audio-only posts automatically fall back to their audio attachment instead of being dropped.
 
-- **Cookies required**: Patreon content typically requires authentication via cookies.txt for access to paywalled content
-- **Video-only by default**: Audio-only posts are filtered out automatically (configurable in future releases)
-- Limited testing across creator tiers; some edge cases may exist
+### Other yt-dlp Sources
+
+URLs outside YouTube, Patreon, and X/Twitter (such as Vimeo, Twitch, SoundCloud, Nebula, etc.) are routed through a best-effort generic `yt-dlp` handler. Because third-party extractors vary widely, set `metadata.title` and `since`/`keep_last` explicitly if needed.
 
 ### Error Handling and Logging
 
-**Current behavior**: Anypod uses lenient error handling for yt-dlp operations. When yt-dlp encounters errors (e.g., inaccessible content, authentication issues), Anypod logs warnings but continues processing whatever content is available. This means:
+Anypod tolerates partial failures during feed runs:
 
-- **Partial failures are tolerated**: If some posts/videos are inaccessible but others succeed, the feed will be updated with the accessible content
-- **Corrupt files are quarantined**: After each download yt-dlp reports success, Anypod probes the media with `ffprobe`. Files that can't be read or report non-positive durations are deleted so broken media never reaches RSS subscribers.
-- **No exceptions raised**: Failed downloads won't stop feed processing
-- **Check your logs**: Since errors don't stop processing, you should monitor logs to identify issues like missing credentials, rate limiting, or content access problems
-
-**Future improvement**: Error handling will be enhanced to better distinguish between temporary failures (worth retrying) and permanent errors (should skip). Until then, reviewing logs regularly is recommended to catch configuration or access issues early.
+- Individual inaccessible videos/posts are retried up to `max_errors` times before moving to `ERROR` status (requeueable via `POST /admin/feeds/{feed_id}/requeue`)
+- After each download, Anypod validates the media with `ffprobe` and deletes unreadable/corrupt files so broken media never reaches RSS subscribers
+- Startup state reconciliation runs asynchronously after the HTTP server starts, so transient upstream errors never block health checks or crash-loop the container
 
 ## Development
 
-Requirements: Python 3.14+, [`uv`](https://docs.astral.sh/uv/) package manager, ffmpeg and ffprobe.
+Requirements: Python 3.14+, [`uv`](https://docs.astral.sh/uv/), `ffmpeg`, and `ffprobe`.
 
 ```bash
 uv run pre-commit run --all-files # Lint/format/type-check
@@ -328,39 +378,33 @@ For dev server scripts, debug modes, Docker workflows, and coverage, see [docs/d
 
 ## Architecture
 
-High‑level components:
+High-level components:
 
-- Configuration: Pydantic settings; YAML + env + CLI
-- Database: SQLite via SQLModel/SQLAlchemy (async) with Alembic migrations
-- Data Coordinator: Enqueuer → Downloader → Pruner → RSS generation
-- yt‑dlp wrapper: async subprocess invocations with typed parsing
-- File/Path management: consistent on‑disk and URL mapping
-- HTTP server: FastAPI + Uvicorn serving RSS/media endpoints
+- Configuration: Pydantic settings (`defaults:` + per-feed YAML + env + CLI)
+- Database: SQLite via SQLModel/SQLAlchemy (async) with automatic startup Alembic migrations
+- Data Coordinator: Enqueuer → Downloader (+ MediaProcessor) → Pruner → RSS generation
+- `yt-dlp` wrapper: async subprocess invocations with source-specific + generic handlers
+- File/Path management: consistent on-disk and URL mapping (including subpath `BASE_URL`)
+- HTTP server: FastAPI + Uvicorn serving public RSS/media and private Admin endpoints
 
 For details, see `DESIGN_DOC.md`.
 
 ## Roadmap
 
-High‑level upcoming work. See `TASK_LIST.md` for the full checklist.
+Tracked in [GitHub Issues](https://github.com/thurstonsand/anypod/issues). Planned areas include:
 
-- Admin Dashboard
-- Advanced video conversion
-- AI transcription fallback (Whisper) when source doesn't provide transcripts
-- Grab timestamps and convert to chapters
-- Include global size limit such that all podcasts across all feeds don't exceed a certain size
-- Integrate sponsorblock to automatically cut out or add chapter markers for ads
-- Podcast feed with an endpoint you can send videos to, to dynamically create your own playlist
-  - You can recreate this functionality now by creating an unlisted youtube playlist and add videos to it
-- Expand Patreon support (audio-only posts, improved tier handling)
-- Support for additional sources beyond YouTube, Patreon, and X/Twitter
-- Embed episode-specific artwork directly into media files for better podcast client compatibility (especially Pocket Casts, which requires embedded artwork for per-episode images to display properly)
-  - yt-dlp supports this
+- Web Admin Dashboard
+- AI transcription fallback (Whisper) when a source has no subtitles
+- Chapter marker generation from video descriptions/timestamps
+- Global disk-usage cap across all feeds
+- SponsorBlock integration (cut segments or add chapter markers)
 
 ## FAQ / Troubleshooting
 
-- 429/403 from YouTube: back off your schedule or use cookies. Some content (e.g., YouTube Premium) may 403; cookies can also reduce available qualities.
-- If you see errors like "Playlists that require authentication may not extract correctly without a successful webpage download", add `--extractor-args youtubetab:skip=authcheck` to your feed's `yt_args`. Safe to add if you're downloading public playlists or only have cookies for one YouTube account.
-- Certain yt‑dlp flags get ignored: see the Reserved options list above.
-- Where are files and DB?
-  - DB: `${DATA_DIR}/db/anypod.db`
+- **429 / 403 from YouTube**: Back off your cron schedule, enable `POT_PROVIDER_URL`, or provide `cookies.txt`.
+- **Certain `yt-dlp` flags are managed by Anypod**: See [yt-dlp Arguments Caveats](docs/configuration.md#yt-dlp-arguments-caveats).
+- **Where are files and the database stored?**
+  - Database: `${DATA_DIR}/db/anypod.db`
   - Media: `${DATA_DIR}/media/<feed_id>/<download_id>.<ext>`
+  - Feed XML: `${DATA_DIR}/feeds/<feed_id>.xml`
+  - Transcripts: `${DATA_DIR}/transcripts/<feed_id>/<download_id>.<lang>.vtt`

@@ -286,6 +286,7 @@ class Enqueuer:
                 feed_config.transcript_lang,
                 feed_config.transcript_source_priority,
                 cookies_path=cookies_path,
+                prefer_audio=feed_config.prefer_audio,
             )
         except YtdlpApiError as e:
             error_message = "Failed to re-fetch metadata for upcoming download."
@@ -635,6 +636,7 @@ class Enqueuer:
                     feed_config.transcript_lang,
                     feed_config.transcript_source_priority,
                     cookies_path,
+                    prefer_audio=feed_config.prefer_audio,
                 )
             )
         except YtdlpApiError as e:

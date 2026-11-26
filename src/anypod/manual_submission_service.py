@@ -92,6 +92,7 @@ class ManualSubmissionService:
                 transcript_lang=feed_config.transcript_lang,
                 transcript_source_priority=feed_config.transcript_source_priority,
                 cookies_path=cookies_path,
+                prefer_audio=feed_config.prefer_audio,
             )
         except YtdlpError as e:
             raise ManualSubmissionUnsupportedURLError(

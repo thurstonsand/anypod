@@ -14,6 +14,7 @@ from ..dependencies import (
     FeedDatabaseDep,
     FileManagerDep,
 )
+from ..feed_listing import list_feeds
 from ..validation import ValidatedExtension, ValidatedFeedId, ValidatedFilename
 
 logger = logging.getLogger(__name__)
@@ -140,7 +141,7 @@ async def browse_feeds(
     logger.debug("Browsing feeds directory")
 
     try:
-        feeds = await feed_db.get_feeds(enabled=True)
+        feeds = await list_feeds(feed_db, enabled_only=True)
     except DatabaseOperationError as e:
         logger.error("Database error while retrieving feeds", exc_info=e)
         raise HTTPException(status_code=500, detail="Internal server error") from e
@@ -175,7 +176,7 @@ async def browse_media(
     logger.debug("Browsing media directory")
 
     try:
-        feeds = await feed_db.get_feeds(enabled=True)
+        feeds = await list_feeds(feed_db, enabled_only=True)
     except DatabaseOperationError as e:
         logger.error(
             "Database error while retrieving feeds for media browsing", exc_info=e

@@ -29,6 +29,31 @@ from ..core import YtdlpArgs, YtdlpCore, YtdlpInfo
 logger = logging.getLogger(__name__)
 
 _PATREON_REFERER = "https://www.patreon.com"
+_IMAGE_EXTENSIONS = frozenset({"jpg", "jpeg", "png", "webp", "gif"})
+_VIDEO_EXTENSIONS = frozenset({"mp4", "mkv", "webm", "mov", "m4v"})
+_AUDIO_EXTENSIONS = frozenset({"mp3", "m4a", "aac", "ogg", "opus", "wav", "flac"})
+
+
+def _classify_patreon_attachment(info: YtdlpInfo) -> str:
+    """Classify a Patreon yt-dlp entry as 'image', 'video', 'audio', or 'other'.
+
+    Args:
+        info: Raw YtdlpInfo entry for a single attachment.
+
+    Returns:
+        Attachment category string.
+    """
+    ext = (info.get("ext", str) or "").lower()
+    vcodec = (info.get("vcodec", str) or "").lower()
+    acodec = (info.get("acodec", str) or "").lower()
+
+    if ext in _IMAGE_EXTENSIONS or vcodec == "mjpeg":
+        return "image"
+    if (vcodec and vcodec != "none") or ext in _VIDEO_EXTENSIONS:
+        return "video"
+    if (acodec and acodec != "none") or ext in _AUDIO_EXTENSIONS:
+        return "audio"
+    return "other"
 
 
 class YtdlpPatreonDataError(YtdlpDataError):
@@ -516,15 +541,84 @@ class PatreonHandler:
         self,
         args: YtdlpArgs,
     ) -> YtdlpArgs:
-        """Apply Patreon referer and match filter for downloads metadata calls."""
-        # Patreon multi-attachment posts often expose JPEG poster frames as separate
-        # playlist entries with ``vcodec=mjpeg``. ``match_filter("vcodec")`` alone lets
-        # those through, which causes .jpg downloads to be enqueued. Require a real
-        # video codec and explicitly ignore image extensions so only playable media is
-        # discovered.
+        """Apply Patreon referer and exclude image attachments for downloads metadata."""
+        # Exclude image poster-frame attachments while keeping both video and
+        # audio attachments so audio-only posts and prefer_audio work cleanly.
         return args.referer(_PATREON_REFERER).match_filter(
-            "vcodec & vcodec != 'none' & ext != 'jpg' & ext != 'png' & ext != 'webp'"
+            "ext != 'jpg' & ext != 'jpeg' & ext != 'png' & ext != 'webp' & ext != 'gif'"
         )
+
+    @staticmethod
+    def select_post_entries(
+        ytdlp_infos: list[YtdlpInfo],
+        *,
+        prefer_audio: bool = False,
+    ) -> list[YtdlpInfo]:
+        """Deduplicate multi-attachment Patreon entries per post.
+
+        When a Patreon post exposes both video and audio attachments (sharing
+        the same post ``id`` with different ``playlist_index`` values), selects:
+        - audio when ``prefer_audio=True`` (falling back to video if audio-less)
+        - video when ``prefer_audio=False`` (falling back to audio for audio-only posts)
+        Image attachments are always discarded.
+
+        Args:
+            ytdlp_infos: Raw list of YtdlpInfo entries returned by yt-dlp.
+            prefer_audio: Whether to prefer audio attachments over video.
+
+        Returns:
+            Deduplicated list of selected YtdlpInfo entries preserving post order.
+        """
+        grouped: dict[str, list[YtdlpInfo]] = {}
+        order: list[str] = []
+        passthrough: list[tuple[int, YtdlpInfo]] = []
+
+        for idx, info in enumerate(ytdlp_infos):
+            entry_id = info.get("id", str)
+            if not entry_id:
+                passthrough.append((idx, info))
+                continue
+            if entry_id not in grouped:
+                grouped[entry_id] = []
+                order.append(entry_id)
+            grouped[entry_id].append(info)
+
+        selected: list[YtdlpInfo] = []
+        preferred_order = (
+            ("audio", "video", "other")
+            if prefer_audio
+            else (
+                "video",
+                "audio",
+                "other",
+            )
+        )
+
+        for entry_id in order:
+            candidates = grouped[entry_id]
+            categorized: dict[str, list[YtdlpInfo]] = {
+                "video": [],
+                "audio": [],
+                "other": [],
+            }
+            for info in candidates:
+                kind = _classify_patreon_attachment(info)
+                if kind == "image":
+                    continue
+                categorized[kind].append(info)
+
+            chosen: YtdlpInfo | None = None
+            for kind in preferred_order:
+                if categorized[kind]:
+                    chosen = categorized[kind][0]
+                    break
+            if chosen is not None:
+                selected.append(chosen)
+
+        for _, info in passthrough:
+            selected.append(info)
+
+        return selected
 
     async def _probe_duration(self, feed_id: str, entry: PatreonEntry) -> int:
         """Probe duration using entry URLs; raise wrapped error on failure.

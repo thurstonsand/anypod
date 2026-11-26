@@ -1010,7 +1010,6 @@ class StateReconciler:
 
         Args:
             feed_id: The feed identifier.
-            db_feed: The existing Feed from database.
 
         Raises:
             StateReconciliationError: If archive action fails.
@@ -1022,6 +1021,90 @@ class StateReconciler:
                 "Failed to archive feed.",
                 feed_id=feed_id,
             ) from e
+
+    async def reconcile_local_state(
+        self, config_feeds: dict[str, FeedConfig]
+    ) -> list[str]:
+        """Apply fast, SQLite-only startup reconciliation without network calls.
+
+        Runs synchronously before the HTTP server binds so removed or disabled
+        feeds disappear from public listings immediately while upstream yt-dlp
+        reconciliation runs asynchronously in the background.
+
+        Actions performed:
+        - Feeds enabled in DB but removed from ``config_feeds`` are archived.
+        - Feeds enabled in DB with ``enabled: false`` in ``config_feeds`` are
+          marked disabled in DB without deleting their existing artwork.
+
+        Args:
+            config_feeds: Dictionary mapping feed_id to FeedConfig from YAML.
+
+        Returns:
+            List of already-known enabled, scheduled (non-manual) feed IDs
+            present in both SQLite and ``config_feeds``.
+
+        Raises:
+            StateReconciliationError: If reading feeds from SQLite fails.
+        """
+        logger.debug(
+            "Starting local-only startup state reconciliation.",
+            extra={"config_feed_count": len(config_feeds)},
+        )
+
+        try:
+            db_feeds = await self._feed_db.get_feeds()
+        except (DatabaseOperationError, ValueError) as e:
+            raise StateReconciliationError(
+                "Failed to fetch feeds from database during local reconciliation.",
+            ) from e
+
+        removed_count = 0
+        disabled_count = 0
+        known_scheduled_feeds: list[str] = []
+
+        for db_feed in db_feeds:
+            feed_config = config_feeds.get(db_feed.id)
+            if feed_config is None:
+                if db_feed.is_enabled:
+                    try:
+                        await self._handle_removed_feed(db_feed.id)
+                    except StateReconciliationError as e:
+                        logger.warning(
+                            "Failed to archive removed feed during local reconciliation.",
+                            extra={"feed_id": db_feed.id},
+                            exc_info=e,
+                        )
+                    else:
+                        removed_count += 1
+                continue
+
+            if not feed_config.enabled:
+                if db_feed.is_enabled:
+                    disabled_feed = db_feed.model_copy(update={"is_enabled": False})
+                    try:
+                        await self._feed_db.upsert_feed(disabled_feed)
+                    except DatabaseOperationError as e:
+                        logger.warning(
+                            "Failed to disable paused feed during local reconciliation.",
+                            extra={"feed_id": db_feed.id},
+                            exc_info=e,
+                        )
+                    else:
+                        disabled_count += 1
+                continue
+
+            if not feed_config.is_manual:
+                known_scheduled_feeds.append(db_feed.id)
+
+        logger.info(
+            "Local startup state reconciliation completed.",
+            extra={
+                "removed_feeds": removed_count,
+                "disabled_feeds": disabled_count,
+                "known_scheduled_feeds": len(known_scheduled_feeds),
+            },
+        )
+        return known_scheduled_feeds
 
     async def reconcile_startup_state(
         self, config_feeds: dict[str, FeedConfig], cookies_path: Path | None = None
