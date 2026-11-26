@@ -364,6 +364,8 @@ async def test_download_artifacts_all_success_flow(
         sample_download,
         sample_feed_config.yt_args,
         cookies_path=None,
+        media_conversion=sample_feed_config.media_conversion,
+        prefer_audio=sample_feed_config.prefer_audio,
     )
     mock_ytdlp_wrapper.download_transcript_only.assert_not_awaited()
     mock_handle_success.assert_called_once_with(sample_download, downloaded_path, logs)

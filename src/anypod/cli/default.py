@@ -6,6 +6,7 @@ runs state reconciliation, starts the scheduler, and manages the application lif
 
 import asyncio
 import logging
+import os
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -13,7 +14,7 @@ from alembic.config import Config as AlembicConfig
 
 from alembic import command as alembic_command
 
-from ..config import AppSettings
+from ..config import AppSettings, MediaConversionPreset
 from ..data_coordinator import DataCoordinator, Downloader, Enqueuer, Pruner
 from ..db import AppStateDatabase, DownloadDatabase, FeedDatabase
 from ..db.sqlalchemy_core import SqlalchemyCore
@@ -28,6 +29,7 @@ from ..file_manager import FileManager
 from ..image_downloader import ImageDownloader
 from ..manual_feed_runner import ManualFeedRunner
 from ..manual_submission_service import ManualSubmissionService
+from ..media_processor import MediaProcessor
 from ..path_manager import PathManager
 from ..rss import RSSFeedGenerator
 from ..schedule import FeedScheduler
@@ -80,6 +82,26 @@ def _validate_runtime_paths(settings: AppSettings) -> None:
             raise ConfigLoadError(
                 f"COOKIES_PATH '{settings.cookies_path}' does not exist or is not a regular file.",
                 config_file=str(settings.cookies_path),
+            )
+
+    custom_feeds = [
+        fid
+        for fid, cfg in settings.feeds.items()
+        if cfg.enabled and cfg.media_conversion == MediaConversionPreset.CUSTOM
+    ]
+    if custom_feeds:
+        script_path = settings.effective_custom_conversion_script
+        if not script_path.is_file():
+            raise ConfigLoadError(
+                f"Feeds {custom_feeds} use 'media_conversion: custom', but hook script "
+                f"'{script_path}' does not exist. Create it or set MEDIA_CONVERSION_SCRIPT.",
+                config_file=str(script_path),
+            )
+        if not os.access(script_path, os.X_OK):
+            raise ConfigLoadError(
+                f"Custom media conversion hook script '{script_path}' is not executable "
+                "(run chmod +x).",
+                config_file=str(script_path),
             )
 
     parsed_base = urlparse(settings.base_url)
@@ -207,12 +229,19 @@ async def _init(
         download_db=download_db,
         feed_db=feed_db,
     )
+    media_processor = MediaProcessor(
+        ffmpeg=ffmpeg,
+        ffprobe=ffprobe,
+        paths=path_manager,
+        custom_script_path=settings.effective_custom_conversion_script,
+    )
     downloader = Downloader(
         download_db=download_db,
         file_manager=file_manager,
         ytdlp_wrapper=ytdlp_wrapper,
         ffprobe=ffprobe,
         ffmpeg=ffmpeg,
+        media_processor=media_processor,
     )
     pruner = Pruner(feed_db=feed_db, download_db=download_db, file_manager=file_manager)
 

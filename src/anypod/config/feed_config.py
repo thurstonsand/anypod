@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 import pytimeparse2  # pyright: ignore[reportMissingTypeStubs]
 
 from ..db.types.transcript_source import TranscriptSource
-from .types import CronExpression, FeedMetadataOverrides
+from .types import CronExpression, FeedMetadataOverrides, MediaConversionPreset
 
 
 class FeedConfig(BaseModel):
@@ -81,9 +81,55 @@ class FeedConfig(BaseModel):
             "Allows metadata to stabilize before downloading."
         ),
     )
+    media_conversion: MediaConversionPreset = Field(
+        default=MediaConversionPreset.LIGHT,
+        description=(
+            "Post-download media conversion preset: 'off', 'light' (default), "
+            "'optimized', or 'custom'."
+        ),
+    )
+    embed_thumbnail: bool | None = Field(
+        default=None,
+        description=(
+            "Embed episode artwork into MP4/M4A media files. Defaults to true for "
+            "'light' and 'optimized' presets and false for 'off' and 'custom'."
+        ),
+    )
+    prefer_audio: bool = Field(
+        default=False,
+        description=(
+            "Prefer audio-only streams/attachments when available (e.g., Patreon "
+            "video+audio posts or YouTube audio-only podcasts)."
+        ),
+    )
     metadata: FeedMetadataOverrides | None = Field(
         None, description="Podcast metadata overrides"
     )
+
+    @field_validator("media_conversion", mode="before")
+    @classmethod
+    def parse_media_conversion(cls, v: Any) -> MediaConversionPreset:
+        """Parse media_conversion case-insensitively."""
+        match v:
+            case None:
+                return MediaConversionPreset.LIGHT
+            case MediaConversionPreset():
+                return v
+            case str() as s:
+                normalized = s.strip().lower()
+                if not normalized:
+                    return MediaConversionPreset.LIGHT
+                try:
+                    return MediaConversionPreset(normalized)
+                except ValueError as e:
+                    valid = ", ".join(p.value for p in MediaConversionPreset)
+                    raise ValueError(
+                        f"Invalid media_conversion '{s}'. Valid presets: {valid}"
+                    ) from e
+            case _:
+                raise TypeError(
+                    f"media_conversion must be a string or MediaConversionPreset, got {type(v).__name__}"
+                )
 
     @field_validator("yt_args", mode="before")
     @classmethod
@@ -433,3 +479,13 @@ class FeedConfig(BaseModel):
     def is_manual(self) -> bool:
         """Return True when the feed runs via manual submissions only."""
         return self.schedule is None
+
+    @property
+    def effective_embed_thumbnail(self) -> bool:
+        """Return whether episode artwork should be embedded into media files."""
+        if self.embed_thumbnail is not None:
+            return self.embed_thumbnail
+        return self.media_conversion in (
+            MediaConversionPreset.LIGHT,
+            MediaConversionPreset.OPTIMIZED,
+        )

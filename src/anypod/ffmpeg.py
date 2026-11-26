@@ -67,6 +67,7 @@ class FFmpeg:
         except asyncio.CancelledError:
             # Ensure subprocess cleanup on cancellation
             process.kill()
+            await process.wait()
             raise
 
         return process.returncode or 0, stdout or b"", stderr or b""
@@ -88,7 +89,7 @@ class FFmpeg:
         if rc != 0:
             raise FFmpegError(
                 "Image conversion to JPG failed",
-                stderr=stderr.decode() if stderr else None,
+                stderr=stderr.decode(errors="replace") if stderr else None,
             )
 
     async def embed_subtitles(
@@ -155,3 +156,24 @@ class FFmpeg:
                 with contextlib.suppress(OSError):
                     await aiofiles.os.remove(temp_path)
             raise
+
+    async def run_conversion(self, args: list[str]) -> str:
+        """Execute an ffmpeg media conversion command.
+
+        Args:
+            args: Full list of arguments passed after ``ffmpeg``.
+
+        Returns:
+            Decoded stderr output (if any) for diagnostic logging.
+
+        Raises:
+            FFmpegError: When ffmpeg is unavailable or exits with a non-zero code.
+        """
+        rc, _, stderr = await self._run(*args)
+        stderr_text = stderr.decode(errors="replace") if stderr else ""
+        if rc != 0:
+            raise FFmpegError(
+                f"Media conversion failed with exit code {rc}",
+                stderr=stderr_text or None,
+            )
+        return stderr_text

@@ -18,6 +18,7 @@ from ..exceptions import DatabaseOperationError, DownloadError
 from ..ffmpeg import FFmpeg
 from ..ffprobe import FFProbe
 from ..file_manager import FileManager
+from ..media_processor import MediaProcessor
 from ..path_manager import PathManager
 from ..ytdlp_wrapper import YtdlpWrapper
 from ..ytdlp_wrapper.handlers import HandlerSelector
@@ -69,12 +70,19 @@ async def run_debug_downloader_mode(
             ffprobe=ffprobe,
             handler_selector=handler_selector,
         )
+        media_processor = MediaProcessor(
+            ffmpeg=ffmpeg,
+            ffprobe=ffprobe,
+            paths=paths,
+            custom_script_path=settings.effective_custom_conversion_script,
+        )
         downloader = Downloader(
             download_db=download_db,
             file_manager=file_manager,
             ytdlp_wrapper=ytdlp_wrapper,
             ffprobe=ffprobe,
             ffmpeg=ffmpeg,
+            media_processor=media_processor,
         )
     except Exception as e:
         logger.critical(

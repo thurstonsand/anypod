@@ -1,7 +1,10 @@
 #!/bin/bash -e
-# Video conversion script for anypod
-# Converts non-optimal codecs to h.265/AAC for efficient podcast delivery
+# DEPRECATED: Built-in video conversion is now handled directly by Anypod via
+# `media_conversion: optimized` (or `light` / `custom`) in feeds.yaml.
+# This script is kept temporarily for backwards compatibility with older configs.
 # Usage: convert_video.sh <video_file>
+
+echo "WARNING: convert_video.sh is deprecated. Set 'media_conversion: optimized' in feeds.yaml and remove the --exec hook." >&2
 
 FILENAME="$1"
 

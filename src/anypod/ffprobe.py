@@ -9,11 +9,29 @@ blocking the event loop.
 """
 
 import asyncio
+from dataclasses import dataclass
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from .exceptions import FFProbeError
+
+
+@dataclass(frozen=True, slots=True)
+class MediaStreamInfo:
+    """Summary of primary media streams discovered by ffprobe.
+
+    Attributes:
+        video_codec: Lowercase codec name of the first non-attached-picture video stream, or None.
+        video_codec_tag: Lowercase codec tag string (e.g., 'hvc1', 'hev1', 'avc1'), or None.
+        audio_codec: Lowercase codec name of the first audio stream, or None.
+        has_attached_pic: True if an attached picture (embedded thumbnail) stream is present.
+    """
+
+    video_codec: str | None
+    video_codec_tag: str | None
+    audio_codec: str | None
+    has_attached_pic: bool
 
 
 class FFProbe:
@@ -158,3 +176,81 @@ class FFProbe:
     ) -> int:
         """Return media duration in seconds by probing a remote URL; raises on failure."""
         return await self._duration_seconds(url, headers=headers)
+
+    async def probe_media_streams(self, file_path: Path) -> MediaStreamInfo:
+        """Probe a local media file for its video/audio codecs and attached artwork.
+
+        Distinguishes real video streams from attached picture streams (embedded thumbnails).
+
+        Args:
+            file_path: Local filesystem path to the media file.
+
+        Returns:
+            MediaStreamInfo describing the primary video, audio, and artwork streams.
+
+        Raises:
+            FFProbeError: When ffprobe fails or JSON output cannot be parsed.
+        """
+        rc, stdout, stderr = await self._run(
+            "-v",
+            "quiet",
+            "-print_format",
+            "json",
+            "-show_streams",
+            str(file_path),
+        )
+        if rc != 0:
+            raise FFProbeError(
+                "ffprobe failed (probe_media_streams)",
+                stderr=stderr.decode(errors="replace") if stderr else None,
+            )
+
+        try:
+            data: dict[str, Any] = json.loads(stdout.decode(errors="replace"))
+        except json.JSONDecodeError as e:
+            raise FFProbeError(
+                "Failed to parse ffprobe JSON output (probe_media_streams)",
+                stderr=stdout.decode(errors="replace"),
+            ) from e
+
+        video_codec: str | None = None
+        video_codec_tag: str | None = None
+        audio_codec: str | None = None
+        has_attached_pic = False
+
+        streams = data.get("streams", [])
+        if not isinstance(streams, list):
+            raise FFProbeError(
+                "Unexpected ffprobe streams payload",
+                stderr=stdout.decode(errors="replace"),
+            )
+
+        for raw_stream in cast(list[Any], streams):
+            if not isinstance(raw_stream, dict):
+                continue
+            stream = cast(dict[str, Any], raw_stream)
+            codec_type = str(stream.get("codec_type", "")).lower()
+            codec_name = str(stream.get("codec_name", "")).lower() or None
+            disposition = stream.get("disposition")
+            is_attached = isinstance(disposition, dict) and bool(
+                cast(dict[str, Any], disposition).get("attached_pic")
+            )
+
+            if codec_type == "video":
+                if is_attached:
+                    has_attached_pic = True
+                elif video_codec is None:
+                    video_codec = codec_name
+                    raw_tag = stream.get("codec_tag_string")
+                    video_codec_tag = (
+                        raw_tag.lower() if isinstance(raw_tag, str) else None
+                    )
+            elif codec_type == "audio" and audio_codec is None:
+                audio_codec = codec_name
+
+        return MediaStreamInfo(
+            video_codec=video_codec,
+            video_codec_tag=video_codec_tag,
+            audio_codec=audio_codec,
+            has_attached_pic=has_attached_pic,
+        )

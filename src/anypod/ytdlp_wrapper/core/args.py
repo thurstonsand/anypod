@@ -36,6 +36,9 @@ class YtdlpArgs:
     def __init__(self, user_args: list[str] | None = None):
         self._additional_args = user_args or []
 
+        # Format selection
+        self._format: str | None = None
+
         # Output control
         self._quiet = False
         self._no_warnings = False
@@ -91,6 +94,35 @@ class YtdlpArgs:
         self._convert_subs: str | None = None
         self._paths_subtitle: Path | None = None
         self._subtitle_output: str | None = None
+
+    @staticmethod
+    def has_format_arg(args: list[str]) -> bool:
+        """Return True if raw user arguments already specify a yt-dlp format selector."""
+        return any(
+            arg in ("-f", "--format")
+            or arg.startswith("--format=")
+            or (arg.startswith("-f") and len(arg) > 2)
+            for arg in args
+        )
+
+    @staticmethod
+    def has_extractor_arg_prefix(args: list[str], prefix: str) -> bool:
+        """Return True if raw user arguments already specify an extractor arg with ``prefix``."""
+        lower_prefix = prefix.lower()
+        for idx, arg in enumerate(args):
+            if arg == "--extractor-args" and idx + 1 < len(args):
+                if args[idx + 1].lower().startswith(lower_prefix):
+                    return True
+            elif arg.startswith("--extractor-args="):
+                val = arg.split("=", 1)[1].lower()
+                if val.startswith(lower_prefix):
+                    return True
+        return False
+
+    def format(self, format_selector: str) -> YtdlpArgs:
+        """Set default yt-dlp format selector (-f/--format)."""
+        self._format = format_selector
+        return self
 
     def quiet(self) -> YtdlpArgs:
         """Enable quiet mode (suppress verbose output)."""
@@ -399,6 +431,10 @@ class YtdlpArgs:
 
         # Add user-provided arguments
         cmd.extend(self._additional_args)
+
+        # Format selection (applied when not overridden by user args)
+        if self._format is not None:
+            cmd.extend(["--format", self._format])
 
         # Output control
         if self._quiet:

@@ -408,6 +408,28 @@ class FFmpegError(AnypodError):
         self.stderr = stderr
 
 
+class MediaProcessingError(DataCoordinatorError):
+    """Raised when post-download media conversion or custom hook execution fails.
+
+    Attributes:
+        feed_id: The feed identifier associated with the error.
+        download_id: The download identifier associated with the error.
+        logs: Captured stdout/stderr output from ffmpeg or the custom hook script.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        feed_id: str | None = None,
+        download_id: str | None = None,
+        logs: str | None = None,
+    ):
+        super().__init__(message)
+        self.feed_id = feed_id
+        self.download_id = download_id
+        self.logs = logs
+
+
 class YouTubeTranscriptError(AnypodError):
     """Raised when fetching a transcript from the YouTube Transcript API fails.
 

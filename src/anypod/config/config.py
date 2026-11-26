@@ -56,7 +56,7 @@ def _collect_yaml_unknown_key_warnings(
     """Inspect raw YAML data for unrecognized keys and stash warnings for startup logging."""
     warnings: list[str] = []
 
-    valid_top_keys: set[str] = set()
+    valid_top_keys: set[str] = {"defaults"}
     for name, field_info in settings_cls.model_fields.items():
         valid_top_keys.add(name)
         if isinstance(field_info.validation_alias, str):
@@ -67,10 +67,27 @@ def _collect_yaml_unknown_key_warnings(
         if key not in valid_top_keys:
             warnings.append(f"Unrecognized top-level config key '{key}' (ignored).")
 
+    valid_feed_keys = set(FeedConfig.model_fields.keys())
+    valid_meta_keys = set(FeedMetadataOverrides.model_fields.keys())
+
+    raw_defaults = yaml_data.get("defaults")
+    if isinstance(raw_defaults, dict):
+        defaults_dict = cast(dict[str, Any], raw_defaults)
+        for dkey in sorted(defaults_dict.keys()):
+            if dkey not in valid_feed_keys or dkey == "url":
+                warnings.append(
+                    f"Unrecognized key '{dkey}' in top-level 'defaults' (ignored)."
+                )
+        raw_default_meta = defaults_dict.get("metadata")
+        if isinstance(raw_default_meta, dict):
+            for mkey in sorted(cast(dict[str, Any], raw_default_meta).keys()):
+                if mkey not in valid_meta_keys:
+                    warnings.append(
+                        f"Unrecognized metadata key '{mkey}' in top-level 'defaults' (ignored)."
+                    )
+
     raw_feeds = yaml_data.get("feeds")
     if isinstance(raw_feeds, dict):
-        valid_feed_keys = set(FeedConfig.model_fields.keys())
-        valid_meta_keys = set(FeedMetadataOverrides.model_fields.keys())
         for feed_id, feed_val in cast(dict[str, Any], raw_feeds).items():
             if not isinstance(feed_val, dict):
                 continue
@@ -89,6 +106,50 @@ def _collect_yaml_unknown_key_warnings(
                         )
 
     _PENDING_CONFIG_WARNINGS.set(warnings or None)
+
+
+def _apply_feed_defaults(yaml_data: dict[str, Any]) -> dict[str, Any]:
+    """Merge top-level YAML ``defaults`` into each entry under ``feeds``.
+
+    Feed-specific keys (including explicit ``None`` values) take precedence over
+    defaults. Nested ``metadata`` dicts are merged one level deep.
+    """
+    raw_defaults = yaml_data.get("defaults")
+    raw_feeds = yaml_data.get("feeds")
+    if not isinstance(raw_defaults, dict) or not isinstance(raw_feeds, dict):
+        return yaml_data
+
+    defaults_dict = {
+        k: v for k, v in cast(dict[str, Any], raw_defaults).items() if k != "url"
+    }
+    default_meta = (
+        cast(dict[str, Any], defaults_dict["metadata"])
+        if isinstance(defaults_dict.get("metadata"), dict)
+        else None
+    )
+
+    merged_feeds: dict[str, Any] = {}
+    for feed_id, feed_val in cast(dict[str, Any], raw_feeds).items():
+        if not isinstance(feed_val, dict):
+            merged_feeds[feed_id] = feed_val
+            continue
+
+        feed_dict = cast(dict[str, Any], feed_val)
+        merged_feed = {**defaults_dict, **feed_dict}
+
+        if default_meta is not None:
+            feed_meta = feed_dict.get("metadata")
+            if isinstance(feed_meta, dict):
+                merged_feed["metadata"] = {
+                    **default_meta,
+                    **cast(dict[str, Any], feed_meta),
+                }
+            elif "metadata" not in feed_dict:
+                merged_feed["metadata"] = dict(default_meta)
+
+        merged_feeds[feed_id] = merged_feed
+
+    return {**yaml_data, "feeds": merged_feeds}
 
 
 class DynamicYamlConfigSettingsSource(YamlConfigSettingsSource):
@@ -147,6 +208,7 @@ class DynamicYamlConfigSettingsSource(YamlConfigSettingsSource):
             ) from e
 
         _collect_yaml_unknown_key_warnings(self.settings_cls, self.yaml_data)
+        self.yaml_data = _apply_feed_defaults(self.yaml_data)
         InitSettingsSource.__init__(self, self.settings_cls, self.yaml_data)
         return super().__call__()
 
@@ -256,6 +318,14 @@ class AppSettings(BaseSettings):
         default=None,
         validation_alias="COOKIES_PATH",
         description="Optional path to the cookies.txt file for yt-dlp authentication.",
+    )
+    media_conversion_script: Path | None = Field(
+        default=None,
+        validation_alias="MEDIA_CONVERSION_SCRIPT",
+        description=(
+            "Path to the executable hook script used when a feed has "
+            "media_conversion: custom. Defaults to '<config_dir>/post_process.sh'."
+        ),
     )
 
     # yt-dlp POT provider configuration
@@ -500,7 +570,14 @@ class AppSettings(BaseSettings):
                 pass
         return datetime.now().astimezone().tzinfo or ZoneInfo("UTC")
 
-    @field_validator("cookies_path", mode="before")
+    @property
+    def effective_custom_conversion_script(self) -> Path:
+        """Resolve the hook script path for feeds using ``media_conversion: custom``."""
+        if self.media_conversion_script is not None:
+            return self.media_conversion_script.expanduser()
+        return self.config_file.expanduser().parent / "post_process.sh"
+
+    @field_validator("cookies_path", "media_conversion_script", mode="before")
     @classmethod
     def normalize_cookies_path(cls, v: Any) -> Any:
         """Treat blank cookie paths as unset.

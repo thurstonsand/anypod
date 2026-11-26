@@ -18,7 +18,7 @@ from anypod.config.config import (
     DynamicYamlConfigSettingsSource,
     FeedConfig,
 )
-from anypod.config.types import FeedMetadataOverrides
+from anypod.config.types import FeedMetadataOverrides, MediaConversionPreset
 from anypod.exceptions import ConfigLoadError
 
 # --- Tests for AppSettings configuration loading ---
@@ -731,3 +731,87 @@ def test_example_feeds_yaml_loads_cleanly():
     assert "example_channel" in settings.feeds
     assert "manual_drops" in settings.feeds
     assert settings.config_warnings == []
+
+
+def test_yaml_defaults_merge_and_allow_per_feed_overrides(tmp_path: Path):
+    """Top-level YAML defaults apply to all feeds while per-feed keys override them."""
+    config_path = tmp_path / "feeds.yaml"
+    with config_path.open("w", encoding="utf-8") as f:
+        yaml.safe_dump(
+            {
+                "defaults": {
+                    "media_conversion": "optimized",
+                    "transcript_lang": "en",
+                    "embed_thumbnail": True,
+                    "keep_last": 10,
+                    "metadata": {
+                        "language": "en",
+                        "explicit": "no",
+                    },
+                },
+                "feeds": {
+                    "inherited": {
+                        "url": "https://example.com/a",
+                        "schedule": "@daily",
+                    },
+                    "overridden": {
+                        "url": "https://example.com/b",
+                        "schedule": "@hourly",
+                        "media_conversion": "off",
+                        "transcript_lang": None,
+                        "embed_thumbnail": False,
+                        "metadata": {
+                            "explicit": "yes",
+                            "title": "Custom Title",
+                        },
+                    },
+                },
+            },
+            f,
+        )
+
+    settings = AppSettings(config_file=config_path)
+
+    inherited = settings.feeds["inherited"]
+    assert inherited.media_conversion == MediaConversionPreset.OPTIMIZED
+    assert inherited.transcript_lang == "en"
+    assert inherited.effective_embed_thumbnail is True
+    assert inherited.keep_last == 10
+    assert inherited.metadata is not None
+    assert inherited.metadata.language == "en"
+    assert inherited.metadata.explicit is False
+
+    overridden = settings.feeds["overridden"]
+    assert overridden.media_conversion == MediaConversionPreset.OFF
+    assert overridden.transcript_lang is None
+    assert overridden.effective_embed_thumbnail is False
+    assert overridden.keep_last == 10
+    assert overridden.metadata is not None
+    assert overridden.metadata.language == "en"
+    assert overridden.metadata.explicit is True
+    assert overridden.metadata.title == "Custom Title"
+    assert settings.config_warnings == []
+
+
+def test_media_conversion_defaults_and_custom_script_resolution(tmp_path: Path):
+    """media_conversion defaults to light; custom script defaults beside config_file."""
+    config_path = tmp_path / "feeds.yaml"
+    with config_path.open("w", encoding="utf-8") as f:
+        yaml.safe_dump(
+            {
+                "feeds": {
+                    "default_show": {
+                        "url": "https://example.com/show",
+                        "schedule": "@daily",
+                        "keep_last": 5,
+                    }
+                }
+            },
+            f,
+        )
+
+    settings = AppSettings(config_file=config_path)
+    feed = settings.feeds["default_show"]
+    assert feed.media_conversion == MediaConversionPreset.LIGHT
+    assert feed.effective_embed_thumbnail is True
+    assert settings.effective_custom_conversion_script == tmp_path / "post_process.sh"

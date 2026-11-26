@@ -13,6 +13,7 @@ from typing import Any
 import aiofiles
 import aiofiles.os
 
+from ..config.types import MediaConversionPreset
 from ..db.app_state_db import AppStateDatabase
 from ..db.types import Download, Feed, SourceType, TranscriptSource
 from ..exceptions import (
@@ -24,9 +25,10 @@ from ..exceptions import (
 )
 from ..ffmpeg import FFmpeg
 from ..ffprobe import FFProbe
+from ..media_processor import default_format_for_preset
 from ..path_manager import PathManager
 from .core import YtdlpArgs, YtdlpCore
-from .handlers import HandlerSelector
+from .handlers import HandlerSelector, YoutubeHandler
 from .types import DownloadedMedia
 
 logger = logging.getLogger(__name__)
@@ -183,6 +185,22 @@ class YtdlpWrapper:
         )
         return args.extractor_args(extractor_arg)
 
+    @staticmethod
+    def _apply_youtube_cookie_args(
+        args: YtdlpArgs,
+        handler: object,
+        user_yt_cli_args: list[str],
+        cookies_path: Path | None,
+    ) -> YtdlpArgs:
+        """Apply youtubetab:skip=authcheck when YouTube runs with cookies unless overridden."""
+        if (
+            cookies_path is not None
+            and isinstance(handler, YoutubeHandler)
+            and not YtdlpArgs.has_extractor_arg_prefix(user_yt_cli_args, "youtubetab:")
+        ):
+            args = args.extractor_args("youtubetab:skip=authcheck")
+        return args
+
     async def discover_feed_properties(
         self,
         feed_id: str,
@@ -221,6 +239,9 @@ class YtdlpWrapper:
             discovery_args = discovery_args.cookies(cookies_path)
 
         handler = self._handler_selector.select(url)
+        discovery_args = self._apply_youtube_cookie_args(
+            discovery_args, handler, [], cookies_path
+        )
         resolved_url, source_type = await handler.determine_fetch_strategy(
             feed_id, url, discovery_args
         )
@@ -306,6 +327,9 @@ class YtdlpWrapper:
             info_args = info_args.cookies(cookies_path)
 
         handler = self._handler_selector.select(resolved_url)
+        info_args = self._apply_youtube_cookie_args(
+            info_args, handler, user_yt_cli_args, cookies_path
+        )
         info_args = handler.prepare_playlist_info_args(info_args)
 
         logger.debug(
@@ -590,6 +614,9 @@ class YtdlpWrapper:
         )
 
         handler = self._handler_selector.select(resolved_url)
+        info_args = self._apply_youtube_cookie_args(
+            info_args, handler, user_yt_cli_args, cookies_path
+        )
         info_args = handler.prepare_downloads_info_args(info_args)
 
         downloads_result = await YtdlpCore.extract_downloads_info(
@@ -861,6 +888,8 @@ class YtdlpWrapper:
         download: Download,
         user_yt_cli_args: list[str],
         cookies_path: Path | None = None,
+        media_conversion: MediaConversionPreset = MediaConversionPreset.OFF,
+        prefer_audio: bool = False,
     ) -> DownloadedMedia:
         """Download the media for a given Download to a target directory.
 
@@ -871,6 +900,8 @@ class YtdlpWrapper:
             download: The Download object containing metadata.
             user_yt_cli_args: User-provided yt-dlp CLI arguments for this feed.
             cookies_path: Path to cookies.txt file for authentication, or None if not needed.
+            media_conversion: Conversion preset used to select a smart default format when no -f is given.
+            prefer_audio: Whether to prefer audio-only streams when choosing a default format.
 
         Returns:
             DownloadedMedia containing the file path and execution logs.
@@ -910,12 +941,22 @@ class YtdlpWrapper:
             .paths_home(download_data_dir)
         )
 
+        if not YtdlpArgs.has_format_arg(user_yt_cli_args):
+            preset_fmt = default_format_for_preset(
+                media_conversion, prefer_audio=prefer_audio
+            )
+            if preset_fmt:
+                download_args = download_args.format(preset_fmt)
+
         download_args = self._pot_extractor_args(download_args)
 
         if cookies_path:
             download_args = download_args.cookies(cookies_path)
 
         handler = self._handler_selector.select(download.source_url)
+        download_args = self._apply_youtube_cookie_args(
+            download_args, handler, user_yt_cli_args, cookies_path
+        )
         download_args = handler.prepare_media_download_args(
             download_args,
             download,
