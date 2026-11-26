@@ -31,6 +31,7 @@ from anypod.exceptions import (
     ImageDownloadError,
     PruneError,
     StateReconciliationError,
+    YtdlpApiError,
 )
 from anypod.file_manager import FileManager
 from anypod.image_downloader import ImageDownloader
@@ -2269,10 +2270,11 @@ async def test_reconcile_local_state_archives_removed_and_disables_paused_withou
 
     paused_config = deepcopy(base_feed_config)
     paused_config.enabled = False
-    manual_config = FeedConfig(
-        url=None,
-        schedule="manual",  # type: ignore[arg-type]
-        metadata=FeedMetadataOverrides(title="Manual"),
+    manual_config = FeedConfig.model_validate(
+        {
+            "schedule": "manual",
+            "metadata": {"title": "Manual"},
+        }
     )
 
     known_scheduled = await state_reconciler.reconcile_local_state(
@@ -2292,3 +2294,36 @@ async def test_reconcile_local_state_archives_removed_and_disables_paused_withou
     assert disabled_arg.image_ext == "jpg"
     mock_ytdlp_wrapper.discover_feed_properties.assert_not_called()
     mock_ytdlp_wrapper.fetch_playlist_metadata.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_reconcile_startup_state_continues_after_ytdlp_api_error(
+    state_reconciler: StateReconciler,
+    mock_feed_db: MagicMock,
+    mock_ytdlp_wrapper: MagicMock,
+    base_feed_config: FeedConfig,
+) -> None:
+    """Transient YtdlpApiError on one feed does not abort reconciling remaining feeds."""
+    mock_feed_db.get_feeds.return_value = []
+
+    second_config = deepcopy(base_feed_config)
+    second_config.url = NEW_FEED_URL
+
+    async def discover_side_effect(
+        feed_id: str, url: str, _cookies_path: object
+    ) -> tuple[SourceType, str]:
+        if feed_id == "failing_feed":
+            raise YtdlpApiError("YouTube 429", feed_id=feed_id, url=url)
+        return SourceType.CHANNEL, url
+
+    mock_ytdlp_wrapper.discover_feed_properties.side_effect = discover_side_effect
+    mock_ytdlp_wrapper.fetch_playlist_metadata.return_value = deepcopy(MOCK_FEED)
+
+    ready = await state_reconciler.reconcile_startup_state(
+        {
+            "failing_feed": base_feed_config,
+            NEW_FEED_ID: second_config,
+        }
+    )
+
+    assert ready == [NEW_FEED_ID]

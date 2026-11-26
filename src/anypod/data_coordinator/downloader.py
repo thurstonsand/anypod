@@ -64,7 +64,7 @@ class Downloader:
         ytdlp_wrapper: YtdlpWrapper,
         ffprobe: FFProbe,
         ffmpeg: FFmpeg,
-        media_processor: MediaProcessor | None = None,
+        media_processor: MediaProcessor,
     ):
         self.download_db = download_db
         self.file_manager = file_manager
@@ -635,58 +635,57 @@ class Downloader:
             final_media_path = downloaded_media.file_path
             combined_logs = downloaded_media.logs
 
-            if self._media_processor is not None:
-                thumb_path: Path | None = None
-                try:
-                    thumb_path = await self.file_manager.get_image_path(
-                        download.feed_id, download.id, "jpg"
-                    )
-                except FileNotFoundError, FileOperationError:
-                    thumb_path = None
+            thumb_path: Path | None = None
+            try:
+                thumb_path = await self.file_manager.get_image_path(
+                    download.feed_id, download.id, "jpg"
+                )
+            except FileNotFoundError, FileOperationError:
+                thumb_path = None
 
-                try:
-                    processed = await self._media_processor.process(
-                        feed_id=download.feed_id,
-                        download_id=download.id,
-                        source_url=download.source_url,
-                        media_path=downloaded_media.file_path,
-                        preset=feed_config.media_conversion,
-                        embed_thumbnail=feed_config.effective_embed_thumbnail,
-                        thumbnail_path=thumb_path,
-                    )
-                except MediaProcessingError as e:
-                    failure_logs = (
-                        f"{combined_logs}\n\n{e.logs}" if e.logs else combined_logs
-                    )
-                    await self._persist_download_logs(download, failure_logs)
-                    logger.warning(
-                        "Post-download media processing failed.",
-                        extra={
-                            **log_params,
-                            "preset": feed_config.media_conversion.value,
-                        },
-                        exc_info=e,
-                    )
-                    return ArtifactDownloadResult(
-                        media_downloaded=False,
-                        thumbnail_downloaded=False,
-                        transcript_downloaded=False,
-                        errors=[
-                            DownloadError(
-                                message=str(e),
-                                feed_id=download.feed_id,
-                                download_id=download.id,
-                            )
-                        ],
-                    )
+            try:
+                processed = await self._media_processor.process(
+                    feed_id=download.feed_id,
+                    download_id=download.id,
+                    source_url=download.source_url,
+                    media_path=downloaded_media.file_path,
+                    preset=feed_config.media_conversion,
+                    embed_thumbnail=feed_config.effective_embed_thumbnail,
+                    thumbnail_path=thumb_path,
+                )
+            except MediaProcessingError as e:
+                failure_logs = (
+                    f"{combined_logs}\n\n{e.logs}" if e.logs else combined_logs
+                )
+                await self._persist_download_logs(download, failure_logs)
+                logger.warning(
+                    "Post-download media processing failed.",
+                    extra={
+                        **log_params,
+                        "preset": feed_config.media_conversion.value,
+                    },
+                    exc_info=e,
+                )
+                return ArtifactDownloadResult(
+                    media_downloaded=False,
+                    thumbnail_downloaded=False,
+                    transcript_downloaded=False,
+                    errors=[
+                        DownloadError(
+                            message=str(e),
+                            feed_id=download.feed_id,
+                            download_id=download.id,
+                        )
+                    ],
+                )
 
-                final_media_path = processed.file_path
-                if processed.logs:
-                    combined_logs = (
-                        f"{combined_logs}\n\n{processed.logs}"
-                        if combined_logs
-                        else processed.logs
-                    )
+            final_media_path = processed.file_path
+            if processed.logs:
+                combined_logs = (
+                    f"{combined_logs}\n\n{processed.logs}"
+                    if combined_logs
+                    else processed.logs
+                )
 
             await self._handle_download_success(
                 download,

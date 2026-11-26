@@ -25,6 +25,7 @@ from anypod.file_manager import FileManager
 from anypod.image_downloader import ImageDownloader
 from anypod.manual_feed_runner import ManualFeedRunner
 from anypod.manual_submission_service import ManualSubmissionService
+from anypod.media_processor import MediaProcessor
 from anypod.path_manager import PathManager
 from anypod.rss.rss_feed import RSSFeedGenerator
 from anypod.server.app import create_admin_app, create_app
@@ -219,20 +220,29 @@ def downloader(
     download_db: DownloadDatabase,
     file_manager: FileManager,
     ytdlp_wrapper: YtdlpWrapper,
-    ffprobe: FFProbe,
     ffmpeg: FFmpeg,
+    ffprobe: FFProbe,
+    path_manager: PathManager,
+    tmp_path: Path,
 ) -> Downloader:
     """Provide a Downloader instance for the tests.
 
     Returns:
         Downloader instance configured with test components.
     """
+    media_processor = MediaProcessor(
+        ffmpeg=ffmpeg,
+        ffprobe=ffprobe,
+        paths=path_manager,
+        custom_script_path=tmp_path / "post_process.sh",
+    )
     return Downloader(
         download_db=download_db,
         file_manager=file_manager,
         ytdlp_wrapper=ytdlp_wrapper,
         ffprobe=ffprobe,
         ffmpeg=ffmpeg,
+        media_processor=media_processor,
     )
 
 

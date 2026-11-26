@@ -465,6 +465,9 @@ class YtdlpWrapper:
         thumb_args = self._pot_extractor_args(thumb_args)
 
         handler = self._handler_selector.select(resolved_url)
+        thumb_args = self._apply_youtube_cookie_args(
+            thumb_args, handler, user_yt_cli_args, cookies_path
+        )
         thumb_args = handler.prepare_thumbnail_args(thumb_args)
 
         # For single video feeds, use the video's thumbnail as the feed image.
@@ -533,6 +536,9 @@ class YtdlpWrapper:
         thumb_args = self._pot_extractor_args(thumb_args)
 
         handler = self._handler_selector.select(download.source_url)
+        thumb_args = self._apply_youtube_cookie_args(
+            thumb_args, handler, user_yt_cli_args, cookies_path
+        )
         thumb_args = handler.prepare_thumbnail_args(thumb_args)
 
         if cookies_path:

@@ -9,6 +9,7 @@ posts act like single videos.
 from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime
+from enum import StrEnum
 import logging
 from pathlib import Path
 from typing import Any, cast
@@ -34,26 +35,35 @@ _VIDEO_EXTENSIONS = frozenset({"mp4", "mkv", "webm", "mov", "m4v"})
 _AUDIO_EXTENSIONS = frozenset({"mp3", "m4a", "aac", "ogg", "opus", "wav", "flac"})
 
 
-def _classify_patreon_attachment(info: YtdlpInfo) -> str:
-    """Classify a Patreon yt-dlp entry as 'image', 'video', 'audio', or 'other'.
+class _PatreonAttachmentKind(StrEnum):
+    """Category of a single Patreon yt-dlp playlist attachment."""
+
+    IMAGE = "image"
+    VIDEO = "video"
+    AUDIO = "audio"
+    OTHER = "other"
+
+
+def _classify_patreon_attachment(info: YtdlpInfo) -> _PatreonAttachmentKind:
+    """Classify a Patreon yt-dlp entry by media type.
 
     Args:
         info: Raw YtdlpInfo entry for a single attachment.
 
     Returns:
-        Attachment category string.
+        Attachment category enum value.
     """
     ext = (info.get("ext", str) or "").lower()
     vcodec = (info.get("vcodec", str) or "").lower()
     acodec = (info.get("acodec", str) or "").lower()
 
     if ext in _IMAGE_EXTENSIONS or vcodec == "mjpeg":
-        return "image"
+        return _PatreonAttachmentKind.IMAGE
     if (vcodec and vcodec != "none") or ext in _VIDEO_EXTENSIONS:
-        return "video"
+        return _PatreonAttachmentKind.VIDEO
     if (acodec and acodec != "none") or ext in _AUDIO_EXTENSIONS:
-        return "audio"
-    return "other"
+        return _PatreonAttachmentKind.AUDIO
+    return _PatreonAttachmentKind.OTHER
 
 
 class YtdlpPatreonDataError(YtdlpDataError):
@@ -585,25 +595,29 @@ class PatreonHandler:
 
         selected: list[YtdlpInfo] = []
         preferred_order = (
-            ("audio", "video", "other")
+            (
+                _PatreonAttachmentKind.AUDIO,
+                _PatreonAttachmentKind.VIDEO,
+                _PatreonAttachmentKind.OTHER,
+            )
             if prefer_audio
             else (
-                "video",
-                "audio",
-                "other",
+                _PatreonAttachmentKind.VIDEO,
+                _PatreonAttachmentKind.AUDIO,
+                _PatreonAttachmentKind.OTHER,
             )
         )
 
         for entry_id in order:
             candidates = grouped[entry_id]
-            categorized: dict[str, list[YtdlpInfo]] = {
-                "video": [],
-                "audio": [],
-                "other": [],
+            categorized: dict[_PatreonAttachmentKind, list[YtdlpInfo]] = {
+                _PatreonAttachmentKind.VIDEO: [],
+                _PatreonAttachmentKind.AUDIO: [],
+                _PatreonAttachmentKind.OTHER: [],
             }
             for info in candidates:
                 kind = _classify_patreon_attachment(info)
-                if kind == "image":
+                if kind == _PatreonAttachmentKind.IMAGE:
                     continue
                 categorized[kind].append(info)
 

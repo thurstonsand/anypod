@@ -471,6 +471,7 @@ def test_feed_config_no_yt_args_uses_default_factory():
         ("20240115", 2024, 1, 15, 5),  # January 15, 2024 (EST, no DST) -> 05:00 UTC
         ("2024-01-15", 2024, 1, 15, 5),  # ISO YYYY-MM-DD string
         (20240115, 2024, 1, 15, 5),  # Unquoted YAML int
+        (date(2025, 1, 15), 2025, 1, 15, 5),  # Unquoted YAML native date
         ("2024031", 2024, 3, 1, 5),  # March 1, 2024 (strptime parses 7 digits as this)
     ],
 )
@@ -703,24 +704,6 @@ def test_unknown_yaml_keys_and_unbounded_feed_produce_warnings(tmp_path: Path):
     assert "keep_latest" in warnings_joined
     assert "artwork" in warnings_joined
     assert "neither 'since' nor 'keep_last'" in warnings_joined
-
-
-@patch.dict(os.environ, {"TZ": "America/New_York"})
-def test_feed_config_since_accepts_yaml_native_date():
-    """Unquoted YAML dates (parsed as datetime.date) are accepted for since."""
-    feed = FeedConfig(  # type: ignore[call-arg]
-        url="https://example.com",
-        schedule="@daily",
-        since=date(2025, 1, 15),
-    )
-
-    assert feed.since is not None
-    assert (feed.since.year, feed.since.month, feed.since.day, feed.since.hour) == (
-        2025,
-        1,
-        15,
-        5,
-    )
 
 
 def test_example_feeds_yaml_loads_cleanly():

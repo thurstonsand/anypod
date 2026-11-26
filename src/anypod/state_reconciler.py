@@ -1165,7 +1165,7 @@ class StateReconciler:
                 # New feed - add to database
                 try:
                     await self._handle_new_feed(feed_id, feed_config, cookies_path)
-                except StateReconciliationError as e:
+                except (StateReconciliationError, YtdlpError) as e:
                     error_summary = str(e)
                     failed_feeds[feed_id] = error_summary
                     logger.warning(
@@ -1184,7 +1184,7 @@ class StateReconciler:
                         feed_id, feed_config, db_feed, cookies_path
                     ):
                         changed_count += 1
-                except StateReconciliationError as e:
+                except (StateReconciliationError, YtdlpError) as e:
                     error_summary = str(e)
                     failed_feeds[feed_id] = error_summary
                     logger.warning(

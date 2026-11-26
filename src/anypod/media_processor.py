@@ -132,7 +132,6 @@ def _build_ffmpeg_args(
         if not (needs_audio_encode or needs_container or attach_thumb):
             return None
 
-        audio_bitrate = "96k" if preset == MediaConversionPreset.OPTIMIZED else "128k"
         args: list[str] = [
             "-y",
             "-hide_banner",
@@ -143,16 +142,21 @@ def _build_ffmpeg_args(
         ]
         if attach_thumb and thumbnail_path is not None:
             args.extend(["-i", str(thumbnail_path), "-map", "0:a:0", "-map", "1:0"])
+        elif streams.has_attached_pic:
+            # Preserve an already-embedded cover image across remux/transcode
+            args.extend(["-map", "0:a:0", "-map", "0:v:0?"])
         else:
             args.extend(["-map", "0:a:0"])
 
         if needs_audio_encode:
-            args.extend(["-c:a", "aac", "-b:a", audio_bitrate])
+            args.extend(["-c:a", "aac", "-b:a", "128k"])
         else:
             args.extend(["-c:a", "copy"])
 
         if attach_thumb:
             args.extend(["-c:v:0", "mjpeg", "-disposition:v:0", "attached_pic"])
+        elif streams.has_attached_pic:
+            args.extend(["-c:v:0", "copy", "-disposition:v:0", "attached_pic"])
 
         args.extend(["-movflags", "+faststart", str(output_path)])
         return args
@@ -246,10 +250,7 @@ def _build_ffmpeg_args(
     # Audio stream encoding/copy settings
     if streams.audio_codec is not None:
         if needs_audio_encode:
-            audio_bitrate = (
-                "96k" if preset == MediaConversionPreset.OPTIMIZED else "128k"
-            )
-            args.extend(["-c:a", "aac", "-b:a", audio_bitrate])
+            args.extend(["-c:a", "aac", "-b:a", "128k"])
         else:
             args.extend(["-c:a", "copy"])
 
@@ -276,7 +277,7 @@ class MediaProcessor:
         ffmpeg: FFmpeg,
         ffprobe: FFProbe,
         paths: PathManager,
-        custom_script_path: Path | None = None,
+        custom_script_path: Path,
     ):
         self._ffmpeg = ffmpeg
         self._ffprobe = ffprobe
@@ -497,7 +498,7 @@ class MediaProcessor:
     ) -> ProcessedMediaResult:
         """Run a user-provided post-processing hook in an isolated staging directory."""
         script = self._custom_script_path
-        if script is None or not script.is_file():
+        if not script.is_file():
             raise MediaProcessingError(
                 f"Custom conversion script not found at '{script}'.",
                 feed_id=feed_id,
@@ -662,9 +663,25 @@ class MediaProcessor:
                     thumbnail_path=valid_thumb,
                 )
             case MediaConversionPreset.CUSTOM:
-                return await self._run_custom_hook(
+                hook_result = await self._run_custom_hook(
                     feed_id=feed_id,
                     download_id=download_id,
                     source_url=source_url,
                     media_path=media_path,
                 )
+                if valid_thumb is not None:
+                    embed_result = await self._embed_thumbnail_only(
+                        feed_id=feed_id,
+                        download_id=download_id,
+                        media_path=hook_result.file_path,
+                        thumbnail_path=valid_thumb,
+                    )
+                    combined_logs = "\n\n".join(
+                        part for part in (hook_result.logs, embed_result.logs) if part
+                    )
+                    return ProcessedMediaResult(
+                        file_path=embed_result.file_path,
+                        converted=True,
+                        logs=combined_logs or None,
+                    )
+                return hook_result

@@ -29,6 +29,7 @@ from anypod.exceptions import (
 from anypod.ffmpeg import FFmpeg
 from anypod.ffprobe import FFProbe
 from anypod.file_manager import FileManager
+from anypod.media_processor import MediaProcessor, ProcessedMediaResult
 from anypod.ytdlp_wrapper import DownloadedMedia, YtdlpWrapper
 
 # Mock Feed object for testing
@@ -78,6 +79,7 @@ def mock_file_manager() -> MagicMock:
     mock.get_download_stream = AsyncMock()
     mock.get_transcript_path = AsyncMock(return_value=Path("/transcripts/video.en.vtt"))
     mock.image_exists = AsyncMock(return_value=False)
+    mock.get_image_path = AsyncMock(side_effect=FileNotFoundError())
 
     return mock
 
@@ -102,6 +104,19 @@ def mock_ffprobe() -> MagicMock:
     return mock
 
 
+def _passthrough_media(*, media_path: Path, **_kwargs: object) -> ProcessedMediaResult:
+    """Return the original media path unchanged."""
+    return ProcessedMediaResult(file_path=media_path, converted=False)
+
+
+@pytest.fixture
+def mock_media_processor() -> MagicMock:
+    """Provides a pass-through mock MediaProcessor."""
+    mock = MagicMock(spec=MediaProcessor)
+    mock.process = AsyncMock(side_effect=_passthrough_media)
+    return mock
+
+
 @pytest.fixture
 def mock_ffmpeg() -> MagicMock:
     """Provides a mock FFmpeg."""
@@ -117,6 +132,7 @@ def downloader(
     mock_ytdlp_wrapper: MagicMock,
     mock_ffprobe: MagicMock,
     mock_ffmpeg: MagicMock,
+    mock_media_processor: MagicMock,
 ) -> Downloader:
     """Provides a Downloader instance with mocked dependencies."""
     return Downloader(
@@ -125,6 +141,7 @@ def downloader(
         mock_ytdlp_wrapper,
         mock_ffprobe,
         mock_ffmpeg,
+        mock_media_processor,
     )
 
 

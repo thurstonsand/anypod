@@ -414,6 +414,11 @@ class AppSettings(BaseSettings):
         Returns:
             List of trusted proxy IPs/CIDRs, empty list to trust all, or None if disabled.
         """
+
+        def _normalize_items(items: list[str]) -> list[str]:
+            cleaned = [item.strip() for item in items if item.strip()]
+            return [] if cleaned == ["*"] else cleaned
+
         match v:
             case None:
                 return None
@@ -421,8 +426,7 @@ class AppSettings(BaseSettings):
                 raw_items = cast(list[Any], v)
                 if not all(isinstance(item, str) for item in raw_items):
                     raise TypeError("trusted_proxies list items must be strings")
-                cleaned = [item.strip() for item in raw_items if item.strip()]
-                return [] if cleaned == ["*"] else cleaned
+                return _normalize_items(cast(list[str], raw_items))
             case str() as s:
                 stripped = s.strip()
                 if not stripped:
@@ -445,14 +449,8 @@ class AppSettings(BaseSettings):
                         raise ValueError(
                             "TRUSTED_PROXIES JSON value must be a list of strings"
                         )
-                    cleaned_json = [
-                        item.strip() for item in parsed_items if item.strip()
-                    ]
-                    return [] if cleaned_json == ["*"] else cleaned_json
-                cleaned_csv = [
-                    part.strip() for part in stripped.split(",") if part.strip()
-                ]
-                return [] if cleaned_csv == ["*"] else cleaned_csv
+                    return _normalize_items(cast(list[str], parsed_items))
+                return _normalize_items(stripped.split(","))
             case _:
                 raise TypeError(
                     f"trusted_proxies must be a list of strings or string, got {type(v).__name__}"
@@ -579,14 +577,14 @@ class AppSettings(BaseSettings):
 
     @field_validator("cookies_path", "media_conversion_script", mode="before")
     @classmethod
-    def normalize_cookies_path(cls, v: Any) -> Any:
-        """Treat blank cookie paths as unset.
+    def normalize_optional_paths(cls, v: Any) -> Any:
+        """Treat blank optional filesystem paths as unset.
 
         Args:
-            v: Value to parse, can be string or None.
+            v: Value to parse, can be string, Path, or None.
 
         Returns:
-            Path to the cookies.txt file, or None if not provided.
+            Unmodified path value, or None if blank/unset.
         """
         match v:
             case None:

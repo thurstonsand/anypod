@@ -30,7 +30,7 @@ feeds:
       # ... other fields
 ```
 
-`feed_id` values must contain only letters, digits, underscores, and hyphens (`^[a-zA-Z0-9_-]+$`, max 64 chars).
+`feed_id` values must contain only letters, digits, underscores, and hyphens (`^[a-zA-Z0-9_-]+$`, max 255 chars).
 
 ### Global Defaults (`defaults:`)
 
@@ -130,43 +130,44 @@ Anypod includes a built-in `ffmpeg`-powered media processor so episodes play rel
 | Preset      | Default `yt-dlp` format (when `-f` not in `yt_args`) | Video handling | Audio handling | Container / tags |
 | ----------- | ---------------------------------------------------- | -------------- | -------------- | ---------------- |
 | `off`       | `yt-dlp` default                                     | Untouched      | Untouched      | Untouched        |
-| `light`     | `bestvideo[vcodec^=avc1]+bestaudio[acodec^=mp4a]/bestvideo+bestaudio/best` | Stream-copies `h264`, `hevc`, `av1`; transcodes other codecs (e.g. VP9) to fast H.264 | Stream-copies `aac`; encodes others to 128k AAC | `.mp4` with `-movflags +faststart` (`.m4a` for audio-only) |
-| `optimized` | `bestvideo[height<=720]+bestaudio/best[height<=720]/best` | Re-encodes to HEVC (`libx265`, CRF 28, `-tag:v:0 hvc1`, `yuv420p`) | Encodes to 128k AAC | `.mp4` with `-movflags +faststart` (`.m4a` for audio-only) |
+| `light`     | `bestvideo*[height<=1080][vcodec^=avc1]+bestaudio[acodec^=mp4a]/...` (prefers H.264/AAC up to 1080p) | Stream-copies `h264`, `hevc`, `av1`; transcodes other codecs (e.g. VP9) to fast H.264 | Stream-copies `aac`; encodes others to 128k AAC | `.mp4` with `-movflags +faststart` (`.m4a` for audio-only) |
+| `optimized` | `bestvideo*[height<=1080][vcodec*=av01]+bestaudio/...` (prefers AV1/HEVC/VP9 up to 1080p) | Stream-copies `hevc`/`av1` (adding `-tag:v:0 hvc1` for HEVC); re-encodes other codecs to HEVC (`libx265`, CRF 28, `-tag:v:0 hvc1`, `yuv420p`) | Stream-copies `aac`; encodes others to 128k AAC | `.mp4` with `-movflags +faststart` (`.m4a` for audio-only) |
 | `custom`    | `yt-dlp` default                                     | Delegated to custom script | Delegated to custom script | Determined by script output |
 
 Notes:
 
 - If you pass your own `-f` / `--format` flag in `yt_args`, Anypod respects it and does not inject a preset format.
-- Audio-only downloads (e.g. `-f bestaudio` or Patreon audio-only posts) stay audio-only in `light` and `optimized` modes (remuxed/transcoded to `.m4a` with `+faststart`, preserving embedded artwork).
-- `embed_thumbnail` defaults to `true` for `light` and `optimized` and `false` for `off` and `custom`. When enabled, Anypod embeds the episode thumbnail as an attached picture stream (`attached_pic`) and preserves it through conversion.
+- Audio-only downloads (e.g. `-f bestaudio`, `prefer_audio: true`, or Patreon audio-only posts) stay audio-only in `light` and `optimized` modes (remuxed/transcoded to `.m4a` with `+faststart`, preserving embedded artwork).
+- `embed_thumbnail` defaults to `true` for `light` and `optimized` and `false` for `off` and `custom`. When enabled, Anypod embeds the episode thumbnail as an attached picture stream (`attached_pic`) and preserves it through conversion (including after a `custom` hook finishes).
 - Conversions run atomically in `tmp/` before swapping into `media/` so podcast clients never see half-written files.
 
 #### Custom Hook Script (`media_conversion: custom`)
 
 For full control over encoding (e.g., hardware acceleration via VAAPI/NVENC/VideoToolbox), set `media_conversion: custom` and place an executable script at `<config_dir>/post_process.sh` (or set `MEDIA_CONVERSION_SCRIPT`).
 
-Anypod validates at startup that the script exists and is executable (`chmod +x`), then invokes it per download inside an isolated staging directory under `tmp/` with:
+Anypod validates at startup that the script exists and is executable (`chmod +x`), then moves the downloaded file into an isolated per-download staging directory under `tmp/` and invokes your script with `cwd` set to that staging directory:
 
-- **Positional argument `$1`**: Path to the input media file inside the staging directory
+- **Positional argument `$1`**: Full path to the staged media file
 - **Environment variables**:
-  - `ANYPOD_INPUT`: Full path to the input media file
-  - `ANYPOD_OUTPUT`: Suggested output path (defaulting to `<staging>/<download_id>.mp4`)
   - `ANYPOD_FEED_ID`: Feed identifier
   - `ANYPOD_DOWNLOAD_ID`: Download identifier
-  - `ANYPOD_THUMBNAIL`: Path to the episode thumbnail JPG (empty string if unavailable)
-  - `ANYPOD_EMBED_THUMBNAIL`: `"true"` or `"false"`
+  - `ANYPOD_SOURCE_URL`: Original source URL of the episode
+  - `ANYPOD_TMP_DIR`: Path to the isolated staging working directory
 
 Contract:
 
 - Exit `0` on success; non-zero fails the download and cleans up staging files automatically.
-- Write the final file to `ANYPOD_OUTPUT` (or overwrite `ANYPOD_INPUT` in place). Anypod detects the resulting file extension, atomically moves it into `media/<feed_id>/<download_id>.<ext>`, and updates SQLite metadata (`ext`, `mime_type`, `filesize`, `duration`).
+- Modify `$1` in place or write a replacement file (e.g. with a new extension) and remove the original so **exactly one file** remains in `$ANYPOD_TMP_DIR` when the script exits. Anypod adopts its extension, atomically moves it into `media/<feed_id>/<download_id>.<ext>`, optionally embeds the episode thumbnail if `embed_thumbnail: true`, and updates SQLite metadata (`ext`, `mime_type`, `filesize`, `duration`).
 
 Minimal example (`/config/post_process.sh`):
 
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
-ffmpeg -y -i "$ANYPOD_INPUT" -c:v copy -c:a aac -b:a 128k -movflags +faststart "$ANYPOD_OUTPUT"
+INPUT="$1"
+OUT="${INPUT%.*}.converted.mp4"
+ffmpeg -y -v error -i "$INPUT" -c:v copy -c:a aac -b:a 128k -movflags +faststart "$OUT"
+rm -f "$INPUT"
 ```
 
 ### Transcript Settings

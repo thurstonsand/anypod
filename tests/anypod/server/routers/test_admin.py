@@ -1057,6 +1057,23 @@ def test_list_feed_downloads_filters_by_status_and_limit(
     )
 
 
+def test_list_feed_downloads_rejects_invalid_inputs(
+    client: TestClient,
+    mock_feed_database: Mock,
+) -> None:
+    """GET /admin/feeds/{feed_id}/downloads validates feed_id, status, and bounds."""
+    assert client.get(f"{ADMIN_PREFIX}/feeds/bad$feed/downloads").status_code == 422
+    assert (
+        client.get(f"{ADMIN_PREFIX}/feeds/{FEED_ID}/downloads?status=bogus").status_code
+        == 422
+    )
+    assert (
+        client.get(f"{ADMIN_PREFIX}/feeds/{FEED_ID}/downloads?limit=9999").status_code
+        == 422
+    )
+    mock_feed_database.get_feed_by_id.assert_not_called()
+
+
 def test_delete_download_removes_transcript_file(
     client: TestClient,
     feed_configs: dict[str, FeedConfig],

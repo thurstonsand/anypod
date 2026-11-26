@@ -53,12 +53,13 @@ def path_manager(tmp_path: Path) -> PathManager:
 
 
 @pytest.fixture
-def processor(path_manager: PathManager) -> MediaProcessor:
+def processor(path_manager: PathManager, tmp_path: Path) -> MediaProcessor:
     """Provide a MediaProcessor wired to real FFmpeg and FFProbe."""
     return MediaProcessor(
         ffmpeg=FFmpeg(),
         ffprobe=FFProbe(),
         paths=path_manager,
+        custom_script_path=tmp_path / "post_process.sh",
     )
 
 
@@ -260,6 +261,51 @@ async def test_audio_only_file_converts_to_m4a_with_artwork(
 
 
 @pytest.mark.asyncio
+async def test_audio_only_preserves_existing_attached_pic_during_conversion(
+    processor: MediaProcessor, path_manager: PathManager, tmp_path: Path
+):
+    """Audio-only files that already contain cover art keep it when converted to .m4a."""
+    feed_dir = await path_manager.feed_data_dir("audio_cover")
+    src = feed_dir / "ep_mp3_art.mp3"
+    thumb = await _create_jpg(tmp_path / "cover.jpg")
+    await _run_ffmpeg(
+        "-f",
+        "lavfi",
+        "-i",
+        "sine=frequency=440:duration=0.5",
+        "-i",
+        str(thumb),
+        "-map",
+        "0:a:0",
+        "-map",
+        "1:0",
+        "-c:a",
+        "libmp3lame",
+        "-c:v",
+        "mjpeg",
+        "-disposition:v:0",
+        "attached_pic",
+        str(src),
+    )
+
+    result = await processor.process(
+        feed_id="audio_cover",
+        download_id="ep_mp3_art",
+        source_url="https://example.com/ep_mp3_art",
+        media_path=src,
+        preset=MediaConversionPreset.LIGHT,
+        embed_thumbnail=False,
+    )
+
+    assert result.converted is True
+    assert result.file_path == feed_dir / "ep_mp3_art.m4a"
+    streams = await FFProbe().probe_media_streams(result.file_path)
+    assert streams.video_codec is None
+    assert streams.audio_codec == "aac"
+    assert streams.has_attached_pic is True
+
+
+@pytest.mark.asyncio
 async def test_custom_hook_renames_extension_and_passes_env_vars(
     path_manager: PathManager, tmp_path: Path
 ):
@@ -341,3 +387,51 @@ async def test_custom_hook_nonzero_exit_raises_media_processing_error(
 
     assert exc_info.value.logs is not None
     assert "hook blew up" in exc_info.value.logs
+
+
+@pytest.mark.asyncio
+async def test_custom_hook_embeds_thumbnail_when_enabled(
+    path_manager: PathManager, tmp_path: Path
+):
+    """CUSTOM preset honors embed_thumbnail=True by attaching cover art after the hook."""
+    hook = tmp_path / "copy_hook.sh"
+    hook.write_text("#!/bin/bash -e\nexit 0\n", encoding="utf-8")
+    hook.chmod(hook.stat().st_mode | stat.S_IXUSR)
+
+    custom_proc = MediaProcessor(
+        ffmpeg=FFmpeg(),
+        ffprobe=FFProbe(),
+        paths=path_manager,
+        custom_script_path=hook,
+    )
+    feed_dir = await path_manager.feed_data_dir("custom_thumb")
+    src = feed_dir / "ep_custom_thumb.mp4"
+    thumb = await _create_jpg(tmp_path / "custom_thumb.jpg")
+    await _run_ffmpeg(
+        "-f",
+        "lavfi",
+        "-i",
+        "color=c=red:s=64x64:d=0.5",
+        "-f",
+        "lavfi",
+        "-i",
+        "sine=frequency=440:duration=0.5",
+        "-c:v",
+        "libx264",
+        "-c:a",
+        "aac",
+        str(src),
+    )
+
+    result = await custom_proc.process(
+        feed_id="custom_thumb",
+        download_id="ep_custom_thumb",
+        source_url="https://example.com/ep_custom_thumb",
+        media_path=src,
+        preset=MediaConversionPreset.CUSTOM,
+        embed_thumbnail=True,
+        thumbnail_path=thumb,
+    )
+
+    streams = await FFProbe().probe_media_streams(result.file_path)
+    assert streams.has_attached_pic is True

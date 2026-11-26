@@ -14,10 +14,19 @@ from anypod.server.routers.health import router
 
 
 @pytest.fixture
-def app() -> FastAPI:
-    """Create a minimal FastAPI app with just the health router."""
+def mock_feed_db() -> Mock:
+    """Create a healthy mock FeedDatabase."""
+    db = Mock(spec=FeedDatabase)
+    db.get_feeds = AsyncMock(return_value=[])
+    return db
+
+
+@pytest.fixture
+def app(mock_feed_db: Mock) -> FastAPI:
+    """Create a FastAPI app with the health router and attached FeedDatabase."""
     app = FastAPI()
     app.include_router(router)
+    app.state.feed_database = mock_feed_db
     return app
 
 
@@ -44,11 +53,11 @@ def test_health_check_success(client: ClientProtocol):
     assert "timestamp" in data
 
 
-def test_health_check_returns_503_when_db_unhealthy(app: FastAPI) -> None:
+def test_health_check_returns_503_when_db_unhealthy(
+    app: FastAPI, mock_feed_db: Mock
+) -> None:
     """Health check verifies DB connectivity and returns 503 when DB fails."""
-    mock_db = Mock(spec=FeedDatabase)
-    mock_db.get_feeds = AsyncMock(side_effect=DatabaseOperationError("DB down"))
-    app.state.feed_database = mock_db
+    mock_feed_db.get_feeds = AsyncMock(side_effect=DatabaseOperationError("DB down"))
 
     client = create_test_client(app)
     response = client.get("/api/health")
