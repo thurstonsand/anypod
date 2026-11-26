@@ -7,18 +7,21 @@ for managing scheduled feed processing jobs using APScheduler with async support
 graceful error handling, and proper lifecycle management.
 """
 
+import asyncio
 from asyncio import Semaphore
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import time
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from pydantic import ValidationError
 import pytest
+from pytest_mock import MockerFixture
 
 from anypod.config import FeedConfig
 from anypod.config.types import FeedMetadataOverrides
 from anypod.data_coordinator.types import PhaseResult, ProcessingResults
-from anypod.schedule import scheduler
+from anypod.schedule import apscheduler_core, scheduler
 from anypod.schedule.scheduler import FeedScheduler
 
 # --- Fixtures ---
@@ -168,6 +171,55 @@ def test_init_with_empty_ready_feeds(
     assert scheduler.get_scheduled_feed_ids() == []
 
 
+# --- Tests for schedule_maintenance_job ---
+
+
+@pytest.mark.asyncio
+async def test_schedule_maintenance_job_dispatches_without_warning(
+    mock_data_coordinator: MagicMock,
+    mocker: MockerFixture,
+):
+    """Test that completing a maintenance job invokes the registered listener without warnings."""
+    dispatched = asyncio.Event()
+    warning_spy = mocker.spy(apscheduler_core.logger, "warning")
+    original_debug = scheduler.logger.debug
+
+    def _debug_and_signal(msg: object, *args: Any, **kwargs: Any) -> None:
+        original_debug(msg, *args, **kwargs)
+        extra: dict[str, Any] | None = kwargs.get("extra")
+        if (
+            extra is not None
+            and extra.get("job_id") == "yt_dlp_update"
+            and extra.get("ran") is True
+        ):
+            dispatched.set()
+
+    mocker.patch.object(scheduler.logger, "debug", side_effect=_debug_and_signal)
+
+    async def maintenance_cb() -> bool:
+        return True
+
+    feed_scheduler = FeedScheduler(
+        ready_feed_ids=[],
+        feed_configs={},
+        data_coordinator=mock_data_coordinator,
+    )
+    feed_scheduler.schedule_maintenance_job(
+        job_id="yt_dlp_update",
+        interval=timedelta(hours=12),
+        callback=maintenance_cb,
+        run_immediately=True,
+    )
+
+    await feed_scheduler.start()
+    try:
+        await asyncio.wait_for(dispatched.wait(), timeout=2.0)
+    finally:
+        await feed_scheduler.stop(wait_for_jobs=True)
+
+    warning_spy.assert_not_called()
+
+
 # --- Tests for get_scheduled_feed_ids ---
 
 
@@ -253,8 +305,6 @@ async def test_process_feed_with_context_sets_context_and_calls_coordinator(
 
 def test_cron_trigger_posix_sunday_and_timezone():
     """POSIX Sunday (0 or 7) fires on Sunday in the configured timezone, not Monday UTC."""
-    from datetime import datetime
-    from typing import Any
     from zoneinfo import ZoneInfo
 
     from anypod.config.types import CronExpression

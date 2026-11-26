@@ -7,6 +7,7 @@ graceful error handling, and proper lifecycle management.
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta, tzinfo
 import logging
 import time
@@ -18,6 +19,17 @@ from ..logging_config import set_context_id
 from .apscheduler_core import APSchedulerCore
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class _MaintenanceJobResult:
+    """Completion payload for periodic maintenance jobs.
+
+    Attributes:
+        ran: Whether the maintenance callback reported performing work.
+    """
+
+    ran: bool
 
 
 class FeedScheduler:
@@ -50,6 +62,9 @@ class FeedScheduler:
         # Register event listeners
         self._scheduler.add_job_completed_listener(
             ProcessingResults, self._job_completed_callback
+        )
+        self._scheduler.add_job_completed_listener(
+            _MaintenanceJobResult, self._maintenance_job_completed_callback
         )
         self._scheduler.add_job_failed_listener(self._job_failed_callback)
         self._scheduler.add_job_missed_listener(self._job_missed_callback)
@@ -104,9 +119,9 @@ class FeedScheduler:
         if interval <= timedelta(0):
             return
 
-        async def _guarded() -> None:
+        async def _guarded() -> _MaintenanceJobResult:
             async with self._feed_semaphore:
-                await callback()
+                return _MaintenanceJobResult(ran=await callback())
 
         self._scheduler.schedule_interval_job(
             job_id=job_id,
@@ -268,6 +283,26 @@ class FeedScheduler:
                 "Scheduled feed processing job completed with errors.",
                 extra=log_params,
             )
+
+    @staticmethod
+    def _maintenance_job_completed_callback(
+        job_id: str, scheduled_run_time: datetime, retval: _MaintenanceJobResult
+    ) -> None:
+        """Handle maintenance job completion events.
+
+        Args:
+            job_id: The job identifier.
+            scheduled_run_time: The scheduled run time of the job.
+            retval: The completion result from the maintenance job.
+        """
+        logger.debug(
+            "Scheduled maintenance job completed.",
+            extra={
+                "job_id": job_id,
+                "scheduled_run_time": scheduled_run_time.isoformat(),
+                "ran": retval.ran,
+            },
+        )
 
     @staticmethod
     def _job_failed_callback(
