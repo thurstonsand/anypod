@@ -1,49 +1,28 @@
 # pyright: reportPrivateUsage=false
 
-"""Behavioral tests for MediaProcessor using real ffmpeg/ffprobe on synthetic clips."""
+"""Binary-free unit tests for MediaProcessor.
 
-import asyncio
+Real ffmpeg/ffprobe conversion tests live in
+``tests/integration/test_integration_media_processor.py`` so the default unit
+suite stays fast and requires no system ffmpeg binary in CI.
+"""
+
 from pathlib import Path
 import stat
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from anypod.config.types import MediaConversionPreset
 from anypod.exceptions import MediaProcessingError
 from anypod.ffmpeg import FFmpeg
-from anypod.ffprobe import FFProbe
-from anypod.media_processor import MediaProcessor, default_format_for_preset
+from anypod.ffprobe import FFProbe, MediaStreamInfo
+from anypod.media_processor import (
+    MediaProcessor,
+    _build_ffmpeg_args,
+    default_format_for_preset,
+)
 from anypod.path_manager import PathManager
-
-
-async def _run_ffmpeg(*args: str) -> None:
-    """Create a tiny synthetic media fixture with real ffmpeg."""
-    proc = await asyncio.create_subprocess_exec(
-        "ffmpeg",
-        "-y",
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        *args,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    _, stderr = await proc.communicate()
-    assert proc.returncode == 0, f"ffmpeg fixture generation failed: {stderr.decode()}"
-
-
-async def _create_jpg(path: Path) -> Path:
-    """Generate a tiny valid JPEG thumbnail file."""
-    await _run_ffmpeg(
-        "-f",
-        "lavfi",
-        "-i",
-        "color=c=blue:s=64x64:d=0.1",
-        "-frames:v",
-        "1",
-        str(path),
-    )
-    return path
 
 
 @pytest.fixture
@@ -52,18 +31,7 @@ def path_manager(tmp_path: Path) -> PathManager:
     return PathManager(tmp_path / "data", "https://podcasts.example.com")
 
 
-@pytest.fixture
-def processor(path_manager: PathManager, tmp_path: Path) -> MediaProcessor:
-    """Provide a MediaProcessor wired to real FFmpeg and FFProbe."""
-    return MediaProcessor(
-        ffmpeg=FFmpeg(),
-        ffprobe=FFProbe(),
-        paths=path_manager,
-        custom_script_path=tmp_path / "post_process.sh",
-    )
-
-
-def test_default_format_for_preset_modes():
+def test_default_format_for_preset_modes() -> None:
     """Built-in presets emit distinct format selectors; off/custom defer to yt-dlp."""
     assert default_format_for_preset(MediaConversionPreset.OFF) is None
     assert default_format_for_preset(MediaConversionPreset.CUSTOM) is None
@@ -83,28 +51,122 @@ def test_default_format_for_preset_modes():
     assert "bestaudio" in audio_fmt
 
 
+def test_build_ffmpeg_args_light_copies_h264_transcodes_opus_and_embeds_thumb(
+    tmp_path: Path,
+) -> None:
+    """LIGHT stream-copies H.264, encodes Opus to 128k AAC, and attaches artwork."""
+    args = _build_ffmpeg_args(
+        input_path=tmp_path / "ep.mkv",
+        output_path=tmp_path / "ep.mp4",
+        streams=MediaStreamInfo(
+            video_codec="h264",
+            video_codec_tag="avc1",
+            audio_codec="opus",
+            has_attached_pic=False,
+        ),
+        preset=MediaConversionPreset.LIGHT,
+        thumbnail_path=tmp_path / "thumb.jpg",
+    )
+    assert args is not None
+    assert args[args.index("-c:v:0") : args.index("-c:v:0") + 2] == ["-c:v:0", "copy"]
+    assert args[args.index("-c:a") : args.index("-c:a") + 4] == [
+        "-c:a",
+        "aac",
+        "-b:a",
+        "128k",
+    ]
+    assert "-disposition:v:1" in args
+    assert "attached_pic" in args
+    assert "+faststart" in args
+
+
+def test_build_ffmpeg_args_optimized_encodes_hevc_hvc1_and_128k_aac(
+    tmp_path: Path,
+) -> None:
+    """OPTIMIZED re-encodes H.264 to libx265 (hvc1) and Opus to 128k AAC."""
+    args = _build_ffmpeg_args(
+        input_path=tmp_path / "ep.mp4",
+        output_path=tmp_path / "out.mp4",
+        streams=MediaStreamInfo(
+            video_codec="h264",
+            video_codec_tag="avc1",
+            audio_codec="opus",
+            has_attached_pic=False,
+        ),
+        preset=MediaConversionPreset.OPTIMIZED,
+        thumbnail_path=None,
+    )
+    assert args is not None
+    assert "libx265" in args
+    assert args[args.index("-tag:v:0") : args.index("-tag:v:0") + 2] == [
+        "-tag:v:0",
+        "hvc1",
+    ]
+    assert args[args.index("-c:a") : args.index("-c:a") + 4] == [
+        "-c:a",
+        "aac",
+        "-b:a",
+        "128k",
+    ]
+
+
+def test_build_ffmpeg_args_audio_only_preserves_existing_attached_pic(
+    tmp_path: Path,
+) -> None:
+    """Audio-only conversion preserves pre-existing cover art when no new thumb is attached."""
+    args = _build_ffmpeg_args(
+        input_path=tmp_path / "ep.mp3",
+        output_path=tmp_path / "ep.m4a",
+        streams=MediaStreamInfo(
+            video_codec=None,
+            video_codec_tag=None,
+            audio_codec="mp3",
+            has_attached_pic=True,
+        ),
+        preset=MediaConversionPreset.LIGHT,
+        thumbnail_path=None,
+    )
+    assert args is not None
+    assert "0:v:0?" in args
+    assert args[args.index("-c:v:0") : args.index("-c:v:0") + 4] == [
+        "-c:v:0",
+        "copy",
+        "-disposition:v:0",
+        "attached_pic",
+    ]
+
+
+def test_build_ffmpeg_args_noop_when_already_compliant(tmp_path: Path) -> None:
+    """Returns None when container, codecs, tag, and artwork already match preset."""
+    args = _build_ffmpeg_args(
+        input_path=tmp_path / "ep.mp4",
+        output_path=tmp_path / "out.mp4",
+        streams=MediaStreamInfo(
+            video_codec="hevc",
+            video_codec_tag="hvc1",
+            audio_codec="aac",
+            has_attached_pic=True,
+        ),
+        preset=MediaConversionPreset.OPTIMIZED,
+        thumbnail_path=tmp_path / "thumb.jpg",
+    )
+    assert args is None
+
+
 @pytest.mark.asyncio
 async def test_off_preset_leaves_media_untouched(
-    processor: MediaProcessor, path_manager: PathManager
-):
+    path_manager: PathManager, tmp_path: Path
+) -> None:
     """OFF preset without thumbnail embedding leaves downloaded media untouched."""
+    processor = MediaProcessor(
+        ffmpeg=MagicMock(spec=FFmpeg),
+        ffprobe=MagicMock(spec=FFProbe),
+        paths=path_manager,
+        custom_script_path=tmp_path / "post_process.sh",
+    )
     feed_dir = await path_manager.feed_data_dir("show")
     src = feed_dir / "ep1.mkv"
-    await _run_ffmpeg(
-        "-f",
-        "lavfi",
-        "-i",
-        "color=c=black:s=64x64:d=0.5",
-        "-f",
-        "lavfi",
-        "-i",
-        "sine=frequency=440:duration=0.5",
-        "-c:v",
-        "libx264",
-        "-c:a",
-        "libopus",
-        str(src),
-    )
+    src.write_bytes(b"raw-media")
 
     result = await processor.process(
         feed_id="show",
@@ -117,198 +179,13 @@ async def test_off_preset_leaves_media_untouched(
 
     assert result.converted is False
     assert result.file_path == src
-    assert src.exists()
-
-
-@pytest.mark.asyncio
-async def test_light_preset_remuxes_h264_opus_mkv_to_mp4_and_embeds_thumbnail(
-    processor: MediaProcessor, path_manager: PathManager, tmp_path: Path
-):
-    """LIGHT copies H.264 video, transcodes Opus -> AAC, remuxes to MP4, and embeds artwork."""
-    feed_dir = await path_manager.feed_data_dir("show")
-    src = feed_dir / "ep_light.mkv"
-    thumb = await _create_jpg(tmp_path / "thumb.jpg")
-    await _run_ffmpeg(
-        "-f",
-        "lavfi",
-        "-i",
-        "color=c=red:s=64x64:d=0.5",
-        "-f",
-        "lavfi",
-        "-i",
-        "sine=frequency=440:duration=0.5",
-        "-c:v",
-        "libx264",
-        "-c:a",
-        "libopus",
-        str(src),
-    )
-
-    result = await processor.process(
-        feed_id="show",
-        download_id="ep_light",
-        source_url="https://example.com/ep_light",
-        media_path=src,
-        preset=MediaConversionPreset.LIGHT,
-        embed_thumbnail=True,
-        thumbnail_path=thumb,
-    )
-
-    assert result.converted is True
-    assert result.file_path == feed_dir / "ep_light.mp4"
-    assert result.file_path.exists()
-    assert not src.exists()
-
-    streams = await FFProbe().probe_media_streams(result.file_path)
-    assert streams.video_codec == "h264"
-    assert streams.audio_codec == "aac"
-    assert streams.has_attached_pic is True
-
-
-@pytest.mark.asyncio
-async def test_optimized_preset_transcodes_h264_to_hevc_hvc1_and_embeds_thumbnail(
-    processor: MediaProcessor, path_manager: PathManager, tmp_path: Path
-):
-    """OPTIMIZED transcodes H.264 to H.265 (hvc1), Opus to AAC, and preserves artwork."""
-    feed_dir = await path_manager.feed_data_dir("show")
-    src = feed_dir / "ep_opt.mp4"
-    thumb = await _create_jpg(tmp_path / "thumb_opt.jpg")
-    await _run_ffmpeg(
-        "-f",
-        "lavfi",
-        "-i",
-        "color=c=green:s=64x64:d=0.5",
-        "-f",
-        "lavfi",
-        "-i",
-        "sine=frequency=440:duration=0.5",
-        "-c:v",
-        "libx264",
-        "-c:a",
-        "libopus",
-        str(src),
-    )
-
-    result = await processor.process(
-        feed_id="show",
-        download_id="ep_opt",
-        source_url="https://example.com/ep_opt",
-        media_path=src,
-        preset=MediaConversionPreset.OPTIMIZED,
-        embed_thumbnail=True,
-        thumbnail_path=thumb,
-    )
-
-    assert result.converted is True
-    assert result.file_path == feed_dir / "ep_opt.mp4"
-
-    streams = await FFProbe().probe_media_streams(result.file_path)
-    assert streams.video_codec == "hevc"
-    assert streams.video_codec_tag == "hvc1"
-    assert streams.audio_codec == "aac"
-    assert streams.has_attached_pic is True
-
-    # Running OPTIMIZED a second time on the already-optimized file is a no-op
-    second = await processor.process(
-        feed_id="show",
-        download_id="ep_opt",
-        source_url="https://example.com/ep_opt",
-        media_path=result.file_path,
-        preset=MediaConversionPreset.OPTIMIZED,
-        embed_thumbnail=True,
-        thumbnail_path=thumb,
-    )
-    assert second.converted is False
-
-
-@pytest.mark.asyncio
-async def test_audio_only_file_converts_to_m4a_with_artwork(
-    processor: MediaProcessor, path_manager: PathManager, tmp_path: Path
-):
-    """Audio-only inputs convert to AAC .m4a (not .mp4) and attach cover art cleanly."""
-    feed_dir = await path_manager.feed_data_dir("audio_show")
-    src = feed_dir / "ep_audio.webm"
-    thumb = await _create_jpg(tmp_path / "thumb_audio.jpg")
-    await _run_ffmpeg(
-        "-f",
-        "lavfi",
-        "-i",
-        "sine=frequency=440:duration=0.5",
-        "-c:a",
-        "libopus",
-        str(src),
-    )
-
-    result = await processor.process(
-        feed_id="audio_show",
-        download_id="ep_audio",
-        source_url="https://example.com/ep_audio",
-        media_path=src,
-        preset=MediaConversionPreset.OPTIMIZED,
-        embed_thumbnail=True,
-        thumbnail_path=thumb,
-    )
-
-    assert result.converted is True
-    assert result.file_path == feed_dir / "ep_audio.m4a"
-    assert result.file_path.exists()
-    assert not src.exists()
-
-    streams = await FFProbe().probe_media_streams(result.file_path)
-    assert streams.video_codec is None
-    assert streams.audio_codec == "aac"
-    assert streams.has_attached_pic is True
-
-
-@pytest.mark.asyncio
-async def test_audio_only_preserves_existing_attached_pic_during_conversion(
-    processor: MediaProcessor, path_manager: PathManager, tmp_path: Path
-):
-    """Audio-only files that already contain cover art keep it when converted to .m4a."""
-    feed_dir = await path_manager.feed_data_dir("audio_cover")
-    src = feed_dir / "ep_mp3_art.mp3"
-    thumb = await _create_jpg(tmp_path / "cover.jpg")
-    await _run_ffmpeg(
-        "-f",
-        "lavfi",
-        "-i",
-        "sine=frequency=440:duration=0.5",
-        "-i",
-        str(thumb),
-        "-map",
-        "0:a:0",
-        "-map",
-        "1:0",
-        "-c:a",
-        "libmp3lame",
-        "-c:v",
-        "mjpeg",
-        "-disposition:v:0",
-        "attached_pic",
-        str(src),
-    )
-
-    result = await processor.process(
-        feed_id="audio_cover",
-        download_id="ep_mp3_art",
-        source_url="https://example.com/ep_mp3_art",
-        media_path=src,
-        preset=MediaConversionPreset.LIGHT,
-        embed_thumbnail=False,
-    )
-
-    assert result.converted is True
-    assert result.file_path == feed_dir / "ep_mp3_art.m4a"
-    streams = await FFProbe().probe_media_streams(result.file_path)
-    assert streams.video_codec is None
-    assert streams.audio_codec == "aac"
-    assert streams.has_attached_pic is True
+    assert src.read_bytes() == b"raw-media"
 
 
 @pytest.mark.asyncio
 async def test_custom_hook_renames_extension_and_passes_env_vars(
     path_manager: PathManager, tmp_path: Path
-):
+) -> None:
     """CUSTOM preset executes hook in isolated dir, passes context env, and adopts new ext."""
     hook = tmp_path / "post_process.sh"
     env_dump = tmp_path / "hook_env.txt"
@@ -326,8 +203,8 @@ echo "converted to mp4"
     hook.chmod(hook.stat().st_mode | stat.S_IXUSR)
 
     custom_proc = MediaProcessor(
-        ffmpeg=FFmpeg(),
-        ffprobe=FFProbe(),
+        ffmpeg=MagicMock(spec=FFmpeg),
+        ffprobe=MagicMock(spec=FFProbe),
         paths=path_manager,
         custom_script_path=hook,
     )
@@ -358,15 +235,15 @@ echo "converted to mp4"
 @pytest.mark.asyncio
 async def test_custom_hook_nonzero_exit_raises_media_processing_error(
     path_manager: PathManager, tmp_path: Path
-):
+) -> None:
     """Non-zero custom hook exit raises MediaProcessingError with stderr logs."""
     hook = tmp_path / "fail_hook.sh"
     hook.write_text("#!/bin/bash\necho 'hook blew up' >&2\nexit 2\n", encoding="utf-8")
     hook.chmod(hook.stat().st_mode | stat.S_IXUSR)
 
     custom_proc = MediaProcessor(
-        ffmpeg=FFmpeg(),
-        ffprobe=FFProbe(),
+        ffmpeg=MagicMock(spec=FFmpeg),
+        ffprobe=MagicMock(spec=FFProbe),
         paths=path_manager,
         custom_script_path=hook,
     )
@@ -390,48 +267,54 @@ async def test_custom_hook_nonzero_exit_raises_media_processing_error(
 
 
 @pytest.mark.asyncio
-async def test_custom_hook_embeds_thumbnail_when_enabled(
+async def test_custom_hook_invokes_thumbnail_embed_when_enabled(
     path_manager: PathManager, tmp_path: Path
-):
-    """CUSTOM preset honors embed_thumbnail=True by attaching cover art after the hook."""
-    hook = tmp_path / "copy_hook.sh"
+) -> None:
+    """CUSTOM preset embeds artwork after hook finishes when embed_thumbnail=True."""
+    hook = tmp_path / "noop_hook.sh"
     hook.write_text("#!/bin/bash -e\nexit 0\n", encoding="utf-8")
     hook.chmod(hook.stat().st_mode | stat.S_IXUSR)
 
+    mock_ffprobe = MagicMock(spec=FFProbe)
+    mock_ffprobe.probe_media_streams = AsyncMock(
+        return_value=MediaStreamInfo(
+            video_codec="h264",
+            video_codec_tag="avc1",
+            audio_codec="aac",
+            has_attached_pic=False,
+        )
+    )
+    mock_ffmpeg = MagicMock(spec=FFmpeg)
+
+    async def fake_run_conversion(args: list[str]) -> str:
+        Path(args[-1]).write_bytes(b"embedded-mp4")
+        return ""
+
+    mock_ffmpeg.run_conversion = AsyncMock(side_effect=fake_run_conversion)
+
     custom_proc = MediaProcessor(
-        ffmpeg=FFmpeg(),
-        ffprobe=FFProbe(),
+        ffmpeg=mock_ffmpeg,
+        ffprobe=mock_ffprobe,
         paths=path_manager,
         custom_script_path=hook,
     )
+
     feed_dir = await path_manager.feed_data_dir("custom_thumb")
-    src = feed_dir / "ep_custom_thumb.mp4"
-    thumb = await _create_jpg(tmp_path / "custom_thumb.jpg")
-    await _run_ffmpeg(
-        "-f",
-        "lavfi",
-        "-i",
-        "color=c=red:s=64x64:d=0.5",
-        "-f",
-        "lavfi",
-        "-i",
-        "sine=frequency=440:duration=0.5",
-        "-c:v",
-        "libx264",
-        "-c:a",
-        "aac",
-        str(src),
-    )
+    src = feed_dir / "ep1.mp4"
+    src.write_bytes(b"original-mp4")
+    thumb = tmp_path / "thumb.jpg"
+    thumb.write_bytes(b"fake-jpg")
 
     result = await custom_proc.process(
         feed_id="custom_thumb",
-        download_id="ep_custom_thumb",
-        source_url="https://example.com/ep_custom_thumb",
+        download_id="ep1",
+        source_url="https://example.com/ep1",
         media_path=src,
         preset=MediaConversionPreset.CUSTOM,
         embed_thumbnail=True,
         thumbnail_path=thumb,
     )
 
-    streams = await FFProbe().probe_media_streams(result.file_path)
-    assert streams.has_attached_pic is True
+    assert result.converted is True
+    assert result.file_path.read_bytes() == b"embedded-mp4"
+    mock_ffmpeg.run_conversion.assert_awaited_once()

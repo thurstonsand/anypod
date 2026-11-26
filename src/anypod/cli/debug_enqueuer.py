@@ -19,6 +19,7 @@ from ..ffmpeg import FFmpeg
 from ..ffprobe import FFProbe
 from ..file_manager import FileManager
 from ..image_downloader import ImageDownloader
+from ..media_processor import MediaProcessor
 from ..path_manager import PathManager
 from ..state_reconciler import StateReconciler
 from ..ytdlp_wrapper import YtdlpWrapper
@@ -69,8 +70,14 @@ async def run_debug_enqueuer_mode(
             ffprobe=ffprobe,
             handler_selector=handler_selector,
         )
+        media_processor = MediaProcessor(
+            ffmpeg=ffmpeg,
+            ffprobe=ffprobe,
+            paths=paths,
+            custom_script_path=settings.effective_custom_conversion_script,
+        )
         downloader = Downloader(
-            download_db, file_manager, ytdlp_wrapper, ffprobe, ffmpeg
+            download_db, file_manager, ytdlp_wrapper, ffprobe, ffmpeg, media_processor
         )
         pruner = Pruner(feed_db, download_db, file_manager)
         image_downloader = ImageDownloader(paths, ytdlp_wrapper, ffprobe, ffmpeg)
