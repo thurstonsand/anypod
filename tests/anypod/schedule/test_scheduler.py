@@ -249,3 +249,29 @@ async def test_process_feed_with_context_sets_context_and_calls_coordinator(
 
     # Verify result is returned
     assert result == mock_data_coordinator.process_feed.return_value
+
+
+def test_cron_trigger_posix_sunday_and_timezone():
+    """POSIX Sunday (0 or 7) fires on Sunday in the configured timezone, not Monday UTC."""
+    from datetime import datetime
+    from typing import Any
+    from zoneinfo import ZoneInfo
+
+    from anypod.config.types import CronExpression
+    from anypod.schedule.apscheduler_core import APSchedulerCore
+
+    ny = ZoneInfo("America/New_York")
+    core = APSchedulerCore(timezone=ny)
+
+    # Thursday 2026-11-26 00:00 EST -> next Sunday is 2026-11-29 03:00 EST
+    ref = datetime(2026, 11, 26, 0, 0, tzinfo=ny)
+
+    for expr_str in ("0 3 * * 0", "0 3 * * 7", "@weekly"):
+        trigger: Any = core._trigger_from_cron_expression(
+            CronExpression(expr_str), jitter=0
+        )
+        next_fire: Any = trigger.get_next_fire_time(None, ref)
+        assert isinstance(next_fire, datetime)
+        assert next_fire.weekday() == 6  # Python weekday 6 == Sunday
+        assert next_fire.tzinfo is not None
+        assert next_fire.utcoffset() == ref.utcoffset()

@@ -33,6 +33,9 @@ async def main_cli():
 
     logger = logging.getLogger(__name__)
 
+    for warning_msg in settings.config_warnings:
+        logger.warning(warning_msg)
+
     logger.debug(
         "Application logging configured.",
         extra={

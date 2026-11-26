@@ -108,13 +108,61 @@ class YtdlpWrapper:
             },
         )
 
-    async def _update_to(self, args: YtdlpArgs) -> YtdlpArgs:
-        """Apply --update-to if allowed by rate limiter and record timestamp."""
-        if await self._app_state_db.update_yt_dlp_timestamp_if_stale(
-            self._yt_update_freq
+    _DISABLED_UPDATE_CHANNELS = frozenset({"", "disabled", "none", "off", "false"})
+
+    async def update_yt_dlp(self) -> bool:
+        """Run a standalone best-effort yt-dlp self-update if due.
+
+        Checks whether updates are enabled and whether the minimum interval
+        tracked in ``app_state`` has elapsed. Failures are logged as warnings
+        and never raise so feed processing is unaffected.
+
+        Returns:
+            True if an update command ran and succeeded, False otherwise.
+        """
+        channel = self._yt_channel.strip()
+        if (
+            channel.lower() in self._DISABLED_UPDATE_CHANNELS
+            or self._yt_update_freq <= timedelta(0)
         ):
-            args.update_to(self._yt_channel)
-        return args
+            logger.debug(
+                "yt-dlp self-update disabled.",
+                extra={
+                    "yt_channel": self._yt_channel,
+                    "yt_update_freq_seconds": int(self._yt_update_freq.total_seconds()),
+                },
+            )
+            return False
+
+        try:
+            is_stale = await self._app_state_db.update_yt_dlp_timestamp_if_stale(
+                self._yt_update_freq
+            )
+        except Exception as e:
+            logger.warning(
+                "Failed to check yt-dlp update schedule; skipping self-update.",
+                exc_info=e,
+            )
+            return False
+
+        if not is_stale:
+            return False
+
+        try:
+            logs = await YtdlpCore.update(channel)
+        except YtdlpApiError as e:
+            logger.warning(
+                "Standalone yt-dlp self-update failed; continuing with existing binary.",
+                extra={"yt_channel": channel},
+                exc_info=e,
+            )
+            return False
+
+        logger.info(
+            "yt-dlp self-update check completed.",
+            extra={"yt_channel": channel, "ytdlp_logs": logs or None},
+        )
+        return True
 
     def _pot_extractor_args(self, args: YtdlpArgs) -> YtdlpArgs:
         """Apply POT provider related extractor args to the given builder.
@@ -168,7 +216,6 @@ class YtdlpWrapper:
 
         # Prepare discovery args with centralized configuration and universal options
         discovery_args = YtdlpArgs().quiet().no_warnings()
-        discovery_args = await self._update_to(discovery_args)
         discovery_args = self._pot_extractor_args(discovery_args)
         if cookies_path:
             discovery_args = discovery_args.cookies(cookies_path)
@@ -254,7 +301,6 @@ class YtdlpWrapper:
         logger.debug("Fetching playlist metadata for feed.", extra=log_config)
 
         info_args = YtdlpArgs(user_yt_cli_args)
-        info_args = await self._update_to(info_args)
         info_args = self._pot_extractor_args(info_args)
         if cookies_path:
             info_args = info_args.cookies(cookies_path)
@@ -392,7 +438,6 @@ class YtdlpWrapper:
             .convert_thumbnails("jpg")
             .paths_temp(feed_tmp_dir)
         )
-        thumb_args = await self._update_to(thumb_args)
         thumb_args = self._pot_extractor_args(thumb_args)
 
         handler = self._handler_selector.select(resolved_url)
@@ -461,7 +506,6 @@ class YtdlpWrapper:
             .paths_temp(temp_dir)
         )
 
-        thumb_args = await self._update_to(thumb_args)
         thumb_args = self._pot_extractor_args(thumb_args)
 
         handler = self._handler_selector.select(download.source_url)
@@ -521,7 +565,6 @@ class YtdlpWrapper:
         logger.debug("Fetching new downloads metadata for feed.", extra=log_config)
 
         info_args = YtdlpArgs(user_yt_cli_args).convert_thumbnails("jpg")
-        info_args = await self._update_to(info_args)
         info_args = self._pot_extractor_args(info_args)
 
         # Apply filtering for playlists/channels
@@ -867,7 +910,6 @@ class YtdlpWrapper:
             .paths_home(download_data_dir)
         )
 
-        download_args = await self._update_to(download_args)
         download_args = self._pot_extractor_args(download_args)
 
         if cookies_path:

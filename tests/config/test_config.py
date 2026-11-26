@@ -3,7 +3,7 @@
 """Tests for the configuration loading and validation functionality."""
 
 # tests/test_config.py
-from datetime import timedelta
+from datetime import date, timedelta
 import os
 from pathlib import Path
 from typing import Any
@@ -469,18 +469,20 @@ def test_feed_config_no_yt_args_uses_default_factory():
     "since_value,expected_year,expected_month,expected_day,expected_hour",
     [
         ("20240115", 2024, 1, 15, 5),  # January 15, 2024 (EST, no DST) -> 05:00 UTC
+        ("2024-01-15", 2024, 1, 15, 5),  # ISO YYYY-MM-DD string
+        (20240115, 2024, 1, 15, 5),  # Unquoted YAML int
         ("2024031", 2024, 3, 1, 5),  # March 1, 2024 (strptime parses 7 digits as this)
     ],
 )
 @patch.dict(os.environ, {"TZ": "America/New_York"})
 def test_feed_config_since_valid_values(
-    since_value: str,
+    since_value: Any,
     expected_year: int,
     expected_month: int,
     expected_day: int,
     expected_hour: int,
 ):
-    """Tests that valid since strings are correctly parsed."""
+    """Tests that valid since values are correctly parsed."""
     feed = FeedConfig(  # type: ignore
         url="http://example.com",
         schedule="* * * * *",
@@ -499,9 +501,9 @@ def test_feed_config_since_valid_values(
     "since_value,expected_exception",
     [
         ("202403155", ValidationError),  # Too long - has unconverted data
-        ("2024-03-15", ValidationError),  # Contains dashes - doesn't match format
+        ("2024/03/15", ValidationError),  # Slashes not supported
         ("20240230", ValidationError),  # February 30 doesn't exist
-        (20240315, TypeError),  # Wrong type
+        (True, TypeError),  # Bool rejected
     ],
 )
 def test_feed_config_since_invalid_values(
@@ -600,3 +602,132 @@ def test_feed_config_download_delay_invalid_type_raises_type_error():
             schedule="* * * * *",
             download_delay=123,
         )
+
+
+# --- Tests for Batch 1 onboarding/config hardening ---
+
+
+@pytest.mark.parametrize(
+    "raw_value,expected",
+    [
+        ("12h", timedelta(hours=12)),
+        ("1d", timedelta(days=1)),
+        ("30m", timedelta(minutes=30)),
+        ("0", timedelta(0)),
+        ("PT6H", timedelta(hours=6)),
+    ],
+)
+def test_yt_dlp_update_freq_human_durations(
+    tmp_path: Path, raw_value: str, expected: timedelta
+):
+    """YT_DLP_UPDATE_FREQ accepts human duration strings, zero, and ISO-8601."""
+    config_path = tmp_path / "feeds.yaml"
+    config_path.write_text("feeds: {}\n", encoding="utf-8")
+
+    with patch.dict(os.environ, {"YT_DLP_UPDATE_FREQ": raw_value}, clear=False):
+        settings = AppSettings(config_file=config_path)
+
+    assert settings.yt_dlp_update_freq == expected
+
+
+@pytest.mark.parametrize(
+    "raw_value,expected",
+    [
+        ('["192.168.1.0/24", "10.0.0.1"]', ["192.168.1.0/24", "10.0.0.1"]),
+        ("192.168.1.0/24, 10.0.0.1", ["192.168.1.0/24", "10.0.0.1"]),
+        ("*", []),
+        ("   ", None),
+    ],
+)
+def test_trusted_proxies_env_formats(
+    tmp_path: Path, raw_value: str, expected: list[str] | None
+):
+    """TRUSTED_PROXIES accepts JSON arrays, comma-separated strings, wildcard, and blank."""
+    config_path = tmp_path / "feeds.yaml"
+    config_path.write_text("feeds: {}\n", encoding="utf-8")
+
+    with patch.dict(os.environ, {"TRUSTED_PROXIES": raw_value}, clear=False):
+        settings = AppSettings(config_file=config_path)
+
+    assert settings.trusted_proxies == expected
+
+
+@pytest.mark.parametrize("bad_id", ["has space", "has.dot", "..", "a/b"])
+def test_invalid_feed_id_rejected_at_config_load(tmp_path: Path, bad_id: str):
+    """Feed IDs incompatible with HTTP routes fail fast during config validation."""
+    config_path = tmp_path / "feeds.yaml"
+    with config_path.open("w", encoding="utf-8") as f:
+        yaml.safe_dump(
+            {
+                "feeds": {
+                    bad_id: {
+                        "url": "https://example.com/channel",
+                        "schedule": "@daily",
+                        "keep_last": 5,
+                    }
+                }
+            },
+            f,
+        )
+
+    with pytest.raises(ValidationError):
+        AppSettings(config_file=config_path)
+
+
+def test_unknown_yaml_keys_and_unbounded_feed_produce_warnings(tmp_path: Path):
+    """Unknown keys and unbounded feeds emit warnings without blocking startup."""
+    config_path = tmp_path / "feeds.yaml"
+    with config_path.open("w", encoding="utf-8") as f:
+        yaml.safe_dump(
+            {
+                "bogus_top": 1,
+                "feeds": {
+                    "unbounded_feed": {
+                        "url": "https://example.com/channel",
+                        "schedule": "@daily",
+                        "keep_latest": 5,  # typo for keep_last
+                        "metadata": {
+                            "title": "Show",
+                            "artwork": "http://example.com/a.jpg",
+                        },
+                    }
+                },
+            },
+            f,
+        )
+
+    settings = AppSettings(config_file=config_path)
+
+    warnings_joined = "\n".join(settings.config_warnings)
+    assert "bogus_top" in warnings_joined
+    assert "keep_latest" in warnings_joined
+    assert "artwork" in warnings_joined
+    assert "neither 'since' nor 'keep_last'" in warnings_joined
+
+
+@patch.dict(os.environ, {"TZ": "America/New_York"})
+def test_feed_config_since_accepts_yaml_native_date():
+    """Unquoted YAML dates (parsed as datetime.date) are accepted for since."""
+    feed = FeedConfig(  # type: ignore[call-arg]
+        url="https://example.com",
+        schedule="@daily",
+        since=date(2025, 1, 15),
+    )
+
+    assert feed.since is not None
+    assert (feed.since.year, feed.since.month, feed.since.day, feed.since.hour) == (
+        2025,
+        1,
+        15,
+        5,
+    )
+
+
+def test_example_feeds_yaml_loads_cleanly():
+    """Shipped example_feeds.yaml is valid and loads without warnings."""
+    repo_root = Path(__file__).resolve().parents[2]
+    settings = AppSettings(config_file=repo_root / "example_feeds.yaml")
+
+    assert "example_channel" in settings.feeds
+    assert "manual_drops" in settings.feeds
+    assert settings.config_warnings == []

@@ -2,7 +2,6 @@
 
 import logging
 from pathlib import Path
-from urllib.parse import urljoin
 import uuid
 
 import aiofiles.os
@@ -287,9 +286,7 @@ class PathManager:
         if not lang or not lang.strip():
             raise ValueError("lang cannot be empty or whitespace-only")
 
-        return urljoin(
-            self._base_url, f"/transcripts/{feed_id}/{download_id}.{lang}.{ext}"
-        )
+        return f"{self._base_url}/transcripts/{feed_id}/{download_id}.{lang}.{ext}"
 
     def feed_url(self, feed_id: str) -> str:
         """Return the full URL for a feed's RSS XML.
@@ -306,7 +303,7 @@ class PathManager:
         if not feed_id or not feed_id.strip():
             raise ValueError("feed_id cannot be empty or whitespace-only")
 
-        return urljoin(self._base_url, f"/feeds/{feed_id}.xml")
+        return f"{self._base_url}/feeds/{feed_id}.xml"
 
     def feed_media_url(self, feed_id: str) -> str:
         """Return the base URL for a feed's media files.
@@ -323,7 +320,7 @@ class PathManager:
         if not feed_id or not feed_id.strip():
             raise ValueError("feed_id cannot be empty or whitespace-only")
 
-        return urljoin(self._base_url, f"/media/{feed_id}/")
+        return f"{self._base_url}/media/{feed_id}/"
 
     async def feed_xml_path(self, feed_id: str) -> Path:
         """Return the full file system path for a feed's RSS XML file.
@@ -391,7 +388,7 @@ class PathManager:
         if not download_id or not download_id.strip():
             raise ValueError("download_id cannot be empty or whitespace-only")
 
-        return urljoin(self.feed_media_url(feed_id), f"{download_id}.{ext}")
+        return f"{self.feed_media_url(feed_id)}{download_id}.{ext}"
 
     def image_url(self, feed_id: str, download_id: str | None, ext: str) -> str:
         """Return the HTTP URL for an image file.
@@ -415,10 +412,10 @@ class PathManager:
 
         if download_id is None:
             # Feed-level image
-            return urljoin(self._base_url, f"/images/{feed_id}.{ext}")
+            return f"{self._base_url}/images/{feed_id}.{ext}"
         else:
             # Download-level image
-            return urljoin(self._base_url, f"/images/{feed_id}/{download_id}.{ext}")
+            return f"{self._base_url}/images/{feed_id}/{download_id}.{ext}"
 
     async def image_path(self, feed_id: str, download_id: str | None, ext: str) -> Path:
         """Return the full file system path for an image file.

@@ -26,7 +26,7 @@ TEST_FEED_ID = "test_feed"
 TEST_PODCAST_TITLE = "Test Podcast"
 TEST_PODCAST_DESCRIPTION = "A test podcast description"
 TEST_AUTHOR = "Test Author"
-EXPECTED_GENERATOR = "AnyPod: https://github.com/thurstonsan/anypod"
+EXPECTED_GENERATOR = "AnyPod: https://github.com/thurstonsand/anypod"
 
 
 @pytest.fixture
@@ -909,3 +909,29 @@ async def test_transcript_with_different_language_codes(
         ja_transcript.get("url")
         == f"{TEST_BASE_URL}/transcripts/{TEST_FEED_ID}/video_ja.ja.vtt"
     )
+
+
+@pytest.mark.asyncio
+async def test_feed_with_none_description_and_empty_author_email(
+    rss_generator: RSSFeedGenerator,
+    mock_download_db: MagicMock,
+    test_feed: Feed,
+    capture_rss_write: dict[str, bytes],
+):
+    """Manual/minimal feeds with description=None and no author_email generate valid RSS."""
+    test_feed.description = None
+    test_feed.author_email = ""
+    mock_download_db.get_downloads_by_status.return_value = []
+
+    await rss_generator.update_feed(TEST_FEED_ID, test_feed)
+    xml_bytes = capture_rss_write["data"]
+
+    root = ET.fromstring(xml_bytes)
+    channel = root.find("channel")
+    assert channel is not None
+    desc = channel.find("description")
+    assert desc is not None and desc.text == "No description available"
+
+    itunes_ns = {"itunes": "http://www.itunes.com/dtds/podcast-1.0.dtd"}
+    assert channel.find("itunes:author", itunes_ns) is not None
+    assert channel.find("itunes:owner", itunes_ns) is None

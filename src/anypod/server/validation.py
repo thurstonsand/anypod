@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import HTTPException, Path
 from pydantic.functional_validators import AfterValidator
 
-SAFE_FEED_ID_PATTERN = r"^[a-zA-Z0-9_-]{1,255}$"
+from ..config.config import SAFE_FEED_ID_PATTERN
 
 SAFE_FILENAME_PATTERN = r"^[a-zA-Z0-9_.-]{1,255}$"
 

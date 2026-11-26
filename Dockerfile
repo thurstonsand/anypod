@@ -78,12 +78,12 @@ ENV PATH="/app/bin:/app/.venv/bin:$PATH" \
     SERVER_HOST=0.0.0.0 \
     SERVER_PORT=8024 \
     ADMIN_SERVER_PORT=8025 \
-    LOG_FORMAT=json \
+    LOG_FORMAT=human \
     LOG_LEVEL=INFO \
-    LOG_INCLUDE_STACKTRACE=true
+    LOG_INCLUDE_STACKTRACE=false
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:8024/api/health || exit 1
+    CMD curl -f "http://localhost:${SERVER_PORT:-8024}/api/health" || exit 1
 
 ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["anypod"]

@@ -227,7 +227,7 @@ class YtdlpCore:
                     clean_line = line.strip()
                     if clean_line:
                         logger.warning(
-                            f"yt-dlp error: ${clean_line}",
+                            f"yt-dlp error: {clean_line}",
                             extra={
                                 "exit_code": proc.returncode,
                             },
@@ -303,6 +303,57 @@ class YtdlpCore:
                     f"Download failed with exit code {proc.returncode}: {stderr_text}"
                 ),
                 url=url,
+                logs=combined_logs or None,
+            )
+        return combined_logs
+
+    @staticmethod
+    async def update(channel: str) -> str:
+        """Run a standalone yt-dlp self-update against the given channel.
+
+        Args:
+            channel: Target update channel or version (e.g., 'stable', 'nightly').
+
+        Returns:
+            Combined stdout/stderr output from yt-dlp.
+
+        Raises:
+            YtdlpApiError: If yt-dlp is missing or exits non-zero.
+        """
+        cmd = YtdlpArgs().update_to(channel).to_list()
+        if "--update-to" not in cmd:
+            return ""
+
+        logger.debug("Running standalone yt-dlp self-update.", extra={"cmd": cmd})
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        except FileNotFoundError as e:
+            raise YtdlpApiError(
+                message="yt-dlp executable not found. Please ensure yt-dlp is installed and in PATH.",
+            ) from e
+
+        try:
+            stdout, stderr = await proc.communicate()
+        except asyncio.CancelledError:
+            proc.kill()
+            raise
+        finally:
+            await proc.wait()
+
+        stdout_text = stdout.decode("utf-8", errors="replace") if stdout else ""
+        stderr_text = stderr.decode("utf-8", errors="replace") if stderr else ""
+        combined_logs = _format_run_output(stdout_text, stderr_text)
+
+        if proc.returncode != 0:
+            raise YtdlpApiError(
+                message=(
+                    f"yt-dlp self-update failed with exit code {proc.returncode}: {stderr_text}"
+                ),
                 logs=combined_logs or None,
             )
         return combined_logs

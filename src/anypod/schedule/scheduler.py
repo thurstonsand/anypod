@@ -6,7 +6,8 @@ graceful error handling, and proper lifecycle management.
 """
 
 import asyncio
-from datetime import datetime
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime, timedelta, tzinfo
 import logging
 import time
 
@@ -37,28 +38,14 @@ class FeedScheduler:
         feed_configs: dict[str, FeedConfig],
         data_coordinator: DataCoordinator,
         feed_semaphore: asyncio.Semaphore | None = None,
+        timezone: tzinfo | str = UTC,
     ):
-        self._scheduler = APSchedulerCore()
+        self._scheduler = APSchedulerCore(timezone=timezone)
         self._feed_semaphore = feed_semaphore or asyncio.Semaphore(1)
+        self._data_coordinator = data_coordinator
 
         for ready_feed_id in ready_feed_ids:
-            feed_config = feed_configs[ready_feed_id]
-            assert feed_config.schedule is not None, (
-                "Manual feeds should not be scheduled"
-            )
-
-            self._scheduler.schedule_job(
-                job_id=FeedScheduler._feed_to_job_id(ready_feed_id),
-                cron_expression=feed_config.schedule,
-                # TODO: evaluate if we want jitter
-                jitter=0,
-                callback=FeedScheduler._process_feed_with_context,
-                run_immediately=True,
-                data_coordinator=data_coordinator,
-                feed_id=ready_feed_id,
-                feed_config=feed_config,
-                feed_semaphore=self._feed_semaphore,
-            )
+            self.schedule_feed(ready_feed_id, feed_configs[ready_feed_id])
 
         # Register event listeners
         self._scheduler.add_job_completed_listener(
@@ -70,6 +57,62 @@ class FeedScheduler:
         logger.debug(
             "FeedScheduler initialized.",
             extra={"ready_feed_count": len(ready_feed_ids)},
+        )
+
+    def schedule_feed(
+        self,
+        feed_id: str,
+        feed_config: FeedConfig,
+        run_immediately: bool = True,
+    ) -> None:
+        """Schedule (or reschedule) a single feed job.
+
+        Args:
+            feed_id: Unique feed identifier.
+            feed_config: Feed configuration containing a cron schedule.
+            run_immediately: If True, run once immediately after scheduling.
+        """
+        assert feed_config.schedule is not None, "Manual feeds should not be scheduled"
+        self._scheduler.schedule_job(
+            job_id=FeedScheduler._feed_to_job_id(feed_id),
+            cron_expression=feed_config.schedule,
+            # TODO: evaluate if we want jitter
+            jitter=0,
+            callback=FeedScheduler._process_feed_with_context,
+            run_immediately=run_immediately,
+            data_coordinator=self._data_coordinator,
+            feed_id=feed_id,
+            feed_config=feed_config,
+            feed_semaphore=self._feed_semaphore,
+        )
+
+    def schedule_maintenance_job(
+        self,
+        job_id: str,
+        interval: timedelta,
+        callback: Callable[[], Awaitable[bool]],
+        run_immediately: bool = False,
+    ) -> None:
+        """Schedule a periodic maintenance job serialized with feed processing.
+
+        Args:
+            job_id: Unique maintenance job identifier (should not start with 'feed_').
+            interval: Positive interval between runs.
+            callback: Async callable to run under the shared feed semaphore.
+            run_immediately: Whether to fire immediately on scheduler start.
+        """
+        if interval <= timedelta(0):
+            return
+
+        async def _guarded() -> None:
+            async with self._feed_semaphore:
+                await callback()
+
+        self._scheduler.schedule_interval_job(
+            job_id=job_id,
+            interval=interval,
+            callback=_guarded,
+            run_immediately=run_immediately,
         )
 
     async def start(self) -> None:
@@ -123,7 +166,8 @@ class FeedScheduler:
 
         for job_id in job_ids:
             feed_id = self._job_to_feed_id(job_id)
-            feed_ids.append(feed_id or f"<invalid job id: {job_id}>")
+            if feed_id is not None:
+                feed_ids.append(feed_id)
 
         return feed_ids
 

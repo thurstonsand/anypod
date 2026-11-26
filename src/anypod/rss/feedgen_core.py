@@ -42,8 +42,6 @@ class FeedgenCore:
         # Check if required metadata is available
         if not feed.title:
             raise ValueError("Feed title is required when creating an RSS feed.")
-        if feed.description is None:
-            raise ValueError("Feed description is required when creating an RSS feed.")
 
         fg = FeedGenerator()  # type: ignore
 
@@ -67,11 +65,10 @@ class FeedgenCore:
             fg.podcast.itunes_subtitle(feed.subtitle)  # type: ignore
         fg.link(href=feed_self_url, rel="self")  # type: ignore
         fg.link(href=self._source_url, rel="alternate")  # type: ignore
-        # Use a default description if "" to satisfy feedgen requirements
+        # Use a default description if missing or empty to satisfy feedgen requirements
         description = feed.description or "No description available"
         fg.description(description)  # type: ignore
         fg.podcast.itunes_summary(description)  # type: ignore
-        fg.description(description)  # type: ignore
         fg.language(feed.language or "en")  # type: ignore
 
         # Handle optional fields with null checks
@@ -110,13 +107,14 @@ class FeedgenCore:
             )
         if feed.author:
             fg.podcast.itunes_author(feed.author)  # type: ignore
-            fg.podcast.itunes_owner(  # type: ignore
-                name=feed.author, email=feed.author_email
-            )
+            if feed.author_email:
+                fg.podcast.itunes_owner(  # type: ignore
+                    name=feed.author, email=feed.author_email
+                )
 
         fg.lastBuildDate(None)  # type: ignore # None == now()
         fg.generator(  # type: ignore
-            "AnyPod: https://github.com/thurstonsan/anypod"
+            "AnyPod: https://github.com/thurstonsand/anypod"
         )
         # for now, hardcode to 60 minutes
         fg.ttl(60)  # type: ignore

@@ -5,26 +5,37 @@ application, including feed configurations, application settings, and custom
 YAML file loading capabilities.
 """
 
-from datetime import timedelta
+from contextvars import ContextVar
+from datetime import datetime, timedelta, tzinfo
 from enum import StrEnum
+import json
 import logging
+import os
 from pathlib import Path
+import re
 from typing import Any, Literal, cast
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import Field, field_validator
+from pydantic import Field, PrivateAttr, field_validator, model_validator
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
     SettingsConfigDict,
 )
 from pydantic_settings.sources import InitSettingsSource, YamlConfigSettingsSource
+import pytimeparse2  # pyright: ignore[reportMissingTypeStubs]
 import yaml
 
 from ..exceptions import ConfigLoadError
 from .feed_config import FeedConfig
+from .types import FeedMetadataOverrides
 
 logger = logging.getLogger(__name__)
+SAFE_FEED_ID_PATTERN = r"^[a-zA-Z0-9_-]{1,255}$"
+_FEED_ID_RE = re.compile(SAFE_FEED_ID_PATTERN)
+_PENDING_CONFIG_WARNINGS: ContextVar[list[str] | None] = ContextVar(
+    "_PENDING_CONFIG_WARNINGS", default=None
+)
 
 
 class DebugMode(StrEnum):
@@ -37,6 +48,47 @@ class DebugMode(StrEnum):
     YTDLP = "ytdlp"
     ENQUEUER = "enqueuer"
     DOWNLOADER = "downloader"
+
+
+def _collect_yaml_unknown_key_warnings(
+    settings_cls: type[BaseSettings], yaml_data: dict[str, Any]
+) -> None:
+    """Inspect raw YAML data for unrecognized keys and stash warnings for startup logging."""
+    warnings: list[str] = []
+
+    valid_top_keys: set[str] = set()
+    for name, field_info in settings_cls.model_fields.items():
+        valid_top_keys.add(name)
+        if isinstance(field_info.validation_alias, str):
+            valid_top_keys.add(field_info.validation_alias)
+            valid_top_keys.add(field_info.validation_alias.lower())
+
+    for key in sorted(yaml_data.keys()):
+        if key not in valid_top_keys:
+            warnings.append(f"Unrecognized top-level config key '{key}' (ignored).")
+
+    raw_feeds = yaml_data.get("feeds")
+    if isinstance(raw_feeds, dict):
+        valid_feed_keys = set(FeedConfig.model_fields.keys())
+        valid_meta_keys = set(FeedMetadataOverrides.model_fields.keys())
+        for feed_id, feed_val in cast(dict[str, Any], raw_feeds).items():
+            if not isinstance(feed_val, dict):
+                continue
+            feed_dict = cast(dict[str, Any], feed_val)
+            for fkey in sorted(feed_dict.keys()):
+                if fkey not in valid_feed_keys:
+                    warnings.append(
+                        f"Unrecognized config key '{fkey}' in feed '{feed_id}' (ignored)."
+                    )
+            raw_meta = feed_dict.get("metadata")
+            if isinstance(raw_meta, dict):
+                for mkey in sorted(cast(dict[str, Any], raw_meta).keys()):
+                    if mkey not in valid_meta_keys:
+                        warnings.append(
+                            f"Unrecognized metadata key '{mkey}' in feed '{feed_id}' (ignored)."
+                        )
+
+    _PENDING_CONFIG_WARNINGS.set(warnings or None)
 
 
 class DynamicYamlConfigSettingsSource(YamlConfigSettingsSource):
@@ -93,6 +145,8 @@ class DynamicYamlConfigSettingsSource(YamlConfigSettingsSource):
                 "Failed to load or parse YAML configuration file.",
                 config_file=str(path),
             ) from e
+
+        _collect_yaml_unknown_key_warnings(self.settings_cls, self.yaml_data)
         InitSettingsSource.__init__(self, self.settings_cls, self.yaml_data)
         return super().__call__()
 
@@ -127,7 +181,7 @@ class AppSettings(BaseSettings):
         description="Specifies the debug mode to run ('ytdlp', 'enqueuer', or None for default).",
     )
     log_format: Literal["human", "json"] = Field(
-        default="json",
+        default="human",
         validation_alias="LOG_FORMAT",
         description="Format for application logs ('human' or 'json').",
     )
@@ -180,12 +234,16 @@ class AppSettings(BaseSettings):
     trusted_proxies: list[str] | None = Field(
         default=None,
         validation_alias="TRUSTED_PROXIES",
-        description="List of trusted proxy IP addresses or networks. When set, enables proxy header processing. Set to null/empty to trust all proxies. Format: ['192.168.1.0/24', '10.0.0.1'].",
+        description=(
+            "List of trusted proxy IP addresses or CIDR networks. When unset/null, "
+            "proxy header processing is disabled. Set to '[]' or '*' to trust all proxies. "
+            "Accepts JSON array ('[\"192.168.1.0/24\"]') or comma-separated string ('192.168.1.0/24,10.0.0.1')."
+        ),
     )
     tz: ZoneInfo | None = Field(
         default=None,
         validation_alias="TZ",
-        description="Timezone for date parsing in config files (e.g., 'America/New_York', 'Europe/London'). Must be explicitly set.",
+        description="Timezone for cron schedules and date parsing (e.g., 'America/New_York', 'UTC'). Defaults to system timezone.",
     )
 
     # Feeds config
@@ -215,14 +273,15 @@ class AppSettings(BaseSettings):
         default="stable",
         validation_alias="YT_CHANNEL",
         description=(
-            "yt-dlp update channel: stable, nightly, master, or specific version/repository."
+            "yt-dlp update channel: stable, nightly, master, specific version/repository, "
+            "or 'disabled' to turn off self-updates."
         ),
     )
     yt_dlp_update_freq: timedelta = Field(
         default=timedelta(hours=12),
         validation_alias="YT_DLP_UPDATE_FREQ",
         description=(
-            "Minimum interval between yt-dlp --update-to invocations (e.g., '12h', '1d')."
+            "Minimum interval between yt-dlp self-updates (e.g., '12h', '1d', or '0' to disable)."
         ),
     )
 
@@ -230,6 +289,8 @@ class AppSettings(BaseSettings):
         default_factory=dict[str, FeedConfig],
         description="Configuration for all podcast feeds. Must be read from a YAML file.",
     )
+
+    _config_warnings: list[str] = PrivateAttr(default_factory=list)
 
     model_config = SettingsConfigDict(
         env_prefix="",
@@ -271,6 +332,173 @@ class AppSettings(BaseSettings):
                     ) from e
             case _:
                 raise TypeError(f"tz must be a string, got {type(v).__name__}")
+
+    @field_validator("trusted_proxies", mode="before")
+    @classmethod
+    def parse_trusted_proxies(cls, v: Any) -> list[str] | None:
+        """Parse trusted_proxies from JSON array, comma-separated string, or list.
+
+        Args:
+            v: Raw value from env, CLI, or YAML.
+
+        Returns:
+            List of trusted proxy IPs/CIDRs, empty list to trust all, or None if disabled.
+        """
+        match v:
+            case None:
+                return None
+            case list():
+                raw_items = cast(list[Any], v)
+                if not all(isinstance(item, str) for item in raw_items):
+                    raise TypeError("trusted_proxies list items must be strings")
+                cleaned = [item.strip() for item in raw_items if item.strip()]
+                return [] if cleaned == ["*"] else cleaned
+            case str() as s:
+                stripped = s.strip()
+                if not stripped:
+                    return None
+                if stripped == "*":
+                    return []
+                if stripped.startswith("["):
+                    try:
+                        parsed: Any = json.loads(stripped)
+                    except json.JSONDecodeError as e:
+                        raise ValueError(
+                            f"Invalid JSON array for TRUSTED_PROXIES: {s!r}"
+                        ) from e
+                    if not isinstance(parsed, list):
+                        raise ValueError(
+                            "TRUSTED_PROXIES JSON value must be a list of strings"
+                        )
+                    parsed_items = cast(list[Any], parsed)
+                    if not all(isinstance(item, str) for item in parsed_items):
+                        raise ValueError(
+                            "TRUSTED_PROXIES JSON value must be a list of strings"
+                        )
+                    cleaned_json = [
+                        item.strip() for item in parsed_items if item.strip()
+                    ]
+                    return [] if cleaned_json == ["*"] else cleaned_json
+                cleaned_csv = [
+                    part.strip() for part in stripped.split(",") if part.strip()
+                ]
+                return [] if cleaned_csv == ["*"] else cleaned_csv
+            case _:
+                raise TypeError(
+                    f"trusted_proxies must be a list of strings or string, got {type(v).__name__}"
+                )
+
+    @field_validator("yt_dlp_update_freq", mode="before")
+    @classmethod
+    def parse_yt_dlp_update_freq(cls, v: Any) -> Any:
+        """Parse yt_dlp_update_freq from duration strings (e.g., '12h', '1d'), seconds, or timedelta.
+
+        Args:
+            v: Value to parse.
+
+        Returns:
+            Parsed timedelta or value delegated to Pydantic's built-in ISO-8601 parser.
+        """
+        match v:
+            case timedelta() as td:
+                if td < timedelta(0):
+                    raise ValueError(
+                        f"yt_dlp_update_freq must be non-negative, got {td}"
+                    )
+                return td
+            case bool():
+                raise TypeError("yt_dlp_update_freq cannot be a boolean")
+            case int() | float() as num:
+                if num < 0:
+                    raise ValueError(
+                        f"yt_dlp_update_freq must be non-negative, got {num}"
+                    )
+                return timedelta(seconds=num)
+            case str() as s:
+                stripped = s.strip()
+                if not stripped:
+                    raise ValueError("yt_dlp_update_freq cannot be empty")
+                if stripped == "0":
+                    return timedelta(0)
+                seconds = cast(
+                    int | float | None,
+                    pytimeparse2.parse(stripped),  # pyright: ignore[reportUnknownMemberType]
+                )
+                if seconds is not None:
+                    if seconds < 0:
+                        raise ValueError(
+                            f"yt_dlp_update_freq must be non-negative, got '{s}'"
+                        )
+                    return timedelta(seconds=seconds)
+                # Delegate ISO-8601 (e.g. 'PT12H') or HH:MM:SS to Pydantic
+                return stripped
+            case _:
+                raise TypeError(
+                    f"yt_dlp_update_freq must be a duration string or timedelta, got {type(v).__name__}"
+                )
+
+    @field_validator("yt_dlp_update_freq", mode="after")
+    @classmethod
+    def validate_yt_dlp_update_freq_non_negative(cls, v: timedelta) -> timedelta:
+        """Ensure parsed yt_dlp_update_freq is non-negative."""
+        if v < timedelta(0):
+            raise ValueError(f"yt_dlp_update_freq must be non-negative, got {v}")
+        return v
+
+    @field_validator("feeds", mode="after")
+    @classmethod
+    def validate_feed_ids(cls, feeds: dict[str, FeedConfig]) -> dict[str, FeedConfig]:
+        """Validate that all feed IDs are URL-safe and match HTTP route constraints."""
+        for feed_id in feeds:
+            if feed_id in (".", "..") or not _FEED_ID_RE.match(feed_id):
+                raise ValueError(
+                    f"Invalid feed ID '{feed_id}'. Feed IDs must be 1-255 characters "
+                    "containing only letters, numbers, hyphens, and underscores "
+                    "(matching ^[a-zA-Z0-9_-]{1,255}$)."
+                )
+        return feeds
+
+    @model_validator(mode="after")
+    def finalize_config_warnings(self) -> AppSettings:
+        """Finalize collected warnings including unbounded-feed checks."""
+        pending = _PENDING_CONFIG_WARNINGS.get()
+        _PENDING_CONFIG_WARNINGS.set(None)
+        if pending:
+            self._config_warnings.extend(pending)
+
+        for feed_id, feed_cfg in self.feeds.items():
+            if (
+                feed_cfg.enabled
+                and not feed_cfg.is_manual
+                and feed_cfg.since is None
+                and feed_cfg.keep_last is None
+            ):
+                self._config_warnings.append(
+                    f"Feed '{feed_id}' has neither 'since' nor 'keep_last' set; "
+                    "Anypod will attempt to download every item in the source."
+                )
+        return self
+
+    @property
+    def config_warnings(self) -> list[str]:
+        """Return non-fatal configuration warnings detected during loading."""
+        return list(self._config_warnings)
+
+    @property
+    def effective_timezone(self) -> tzinfo:
+        """Resolve the effective timezone for scheduling and date parsing.
+
+        Precedence: explicit ``tz`` setting -> ``TZ`` env var -> local system timezone -> UTC.
+        """
+        if self.tz is not None:
+            return self.tz
+        tz_env = os.environ.get("TZ")
+        if tz_env:
+            try:
+                return ZoneInfo(tz_env.strip())
+            except ZoneInfoNotFoundError:
+                pass
+        return datetime.now().astimezone().tzinfo or ZoneInfo("UTC")
 
     @field_validator("cookies_path", mode="before")
     @classmethod

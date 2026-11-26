@@ -4,7 +4,7 @@ import html
 import logging
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, RedirectResponse, Response
 
 from ...db.types import DownloadStatus
 from ...exceptions import DatabaseOperationError, FileOperationError
@@ -77,6 +77,12 @@ def _generate_directory_listing(
     <hr>
 </body>
 </html>"""
+
+
+@router.get("/", include_in_schema=False)
+async def redirect_root() -> RedirectResponse:
+    """Redirect root requests to the public feeds listing."""
+    return RedirectResponse(url="feeds", status_code=307)
 
 
 @router.api_route("/feeds/{feed_id}.xml", methods=["GET", "HEAD"])

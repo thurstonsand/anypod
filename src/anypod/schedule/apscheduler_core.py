@@ -7,7 +7,7 @@ while isolating the rest of the codebase from direct APScheduler dependencies.
 
 import asyncio
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, tzinfo
 import logging
 from typing import Any
 
@@ -22,6 +22,7 @@ from apscheduler.jobstores.memory import MemoryJobStore  # type: ignore
 from apscheduler.schedulers.asyncio import AsyncIOScheduler  # type: ignore
 from apscheduler.triggers.cron import CronTrigger  # type: ignore
 from apscheduler.triggers.date import DateTrigger  # type: ignore
+from apscheduler.triggers.interval import IntervalTrigger  # type: ignore
 
 from ..config.types import CronExpression
 
@@ -42,7 +43,8 @@ class APSchedulerCore:
     It also provides a typesafe interface for adding listeners to the scheduler.
     """
 
-    def __init__(self):
+    def __init__(self, timezone: tzinfo | str = UTC):
+        self._timezone: tzinfo | str = timezone
         self._scheduler = AsyncIOScheduler(  # type: ignore
             jobstores={"default": MemoryJobStore()},
             executors={"default": AsyncIOExecutor()},
@@ -52,7 +54,7 @@ class APSchedulerCore:
                 "misfire_grace_time": 300,  # 5 minutes grace for missed jobs
                 "replace_existing": True,  # Replace jobs with same ID on restart
             },
-            timezone="UTC",
+            timezone=timezone,
         )
 
         self._job_completed_type_listeners: dict[
@@ -64,8 +66,7 @@ class APSchedulerCore:
             EVENT_JOB_EXECUTED,
         )
 
-    @staticmethod
-    def _trigger_from_cron_expression(expr: CronExpression, jitter: int) -> CronTrigger:  # type: ignore
+    def _trigger_from_cron_expression(self, expr: CronExpression, jitter: int) -> Any:
         """Convert a CronExpression to a CronTrigger.
 
         Args:
@@ -80,9 +81,10 @@ class APSchedulerCore:
             hour=expr.hour,
             day=expr.day,
             month=expr.month,
-            day_of_week=expr.day_of_week,
+            day_of_week=expr.apscheduler_day_of_week,
             second=expr.second,
             jitter=jitter,
+            timezone=self._timezone,
         )
 
     def _dispatch_job_completed_event(self, event: JobExecutionEvent) -> None:  # type: ignore
@@ -198,6 +200,44 @@ class APSchedulerCore:
             SchedulerError: If the cron expression is invalid.
         """
         trigger = self._trigger_from_cron_expression(cron_expression, jitter=jitter)  # type: ignore
+        job = self._scheduler.add_job(  # type: ignore
+            callback,
+            args=args,
+            kwargs=kwargs,
+            trigger=trigger,
+            id=job_id,
+            coalesce=True,
+            max_instances=1,
+            misfire_grace_time=300,
+            replace_existing=True,
+        )
+
+        if run_immediately:
+            job.modify(next_run_time=datetime.now(UTC))  # type: ignore
+
+    def schedule_interval_job[**P, R](
+        self,
+        job_id: str,
+        interval: timedelta,
+        callback: Callable[P, R],
+        run_immediately: bool = False,
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> None:
+        """Schedule a recurring job on a fixed time interval.
+
+        Args:
+            job_id: Unique job identifier.
+            interval: Positive interval between executions.
+            callback: Callable to invoke on each tick.
+            run_immediately: If True, fire the first run right away.
+            args: Positional arguments forwarded to callback.
+            kwargs: Keyword arguments forwarded to callback.
+        """
+        trigger = IntervalTrigger(  # type: ignore
+            seconds=int(interval.total_seconds()),
+            timezone=self._timezone,
+        )
         job = self._scheduler.add_job(  # type: ignore
             callback,
             args=args,

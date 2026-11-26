@@ -127,6 +127,14 @@ def _file_response_side_effect(
 # --- Tests for RSS feed endpoint ---
 
 
+def test_root_redirects_to_feeds(client: TestClient):
+    """GET / redirects visitors to the public feeds listing."""
+    response = client.get("/", follow_redirects=False)
+
+    assert response.status_code == 307
+    assert response.headers["location"] == "feeds"
+
+
 @patch("anypod.server.routers.static.FileResponse")
 def test_serve_feed_success(
     mock_file_response: Mock, client: TestClient, mock_file_manager: Mock

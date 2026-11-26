@@ -1,64 +1,32 @@
+# Copy this file to feeds.yaml and customize your feeds.
+# Full reference: docs/configuration.md
+
 feeds:
-  channel:
-    url: https://www.youtube.com/@coletdjnz
-    yt_args: "-f worst[ext=mp4]"
-    schedule: "0 3 * * *"
-    since: "20220101"
-    keep_last: 3
-  channel_tab:
-    url: https://www.youtube.com/@coletdjnz/shorts
-    yt_args: "-f worst[ext=mp4]"
-    schedule: "0 3 * * *"
-    since: "20220101"
-    keep_last: 3
-  videos_tab:
-    url: https://www.youtube.com/@coletdjnz/videos
-    yt_args: "-f worst[ext=mp4]"
-    schedule: "0 3 * * *"
-    since: "20220101"
-    keep_last: 3
-  playlist:
-    url: https://youtube.com/playlist?list=PLt5yu3-wZAlSLRHmI1qNm0wjyVNWw1pCU&si=ZSBBgcLWYf2bxd5l
-    yt_args: "-f worst[ext=mp4]"
-    schedule: "0 3 * * *"
-    since: "20220101"
-    keep_last: 3
-  video_short_link:
-    url: https://youtu.be/aqz-KE-bpKQ?si=gggSJ6WU2A1w7_FL
-    yt_args: "-f worst[ext=mp4]"
-    schedule: "0 3 * * *"
-    since: "20220101"
-    keep_last: 3
-  video:
-    url: https://www.youtube.com/watch?v=aqz-KE-bpKQ
-    yt_args: "-f worst[ext=mp4]"
-    schedule: "0 3 * * *"
-    since: "20090101"
-    keep_last: 3
-    transcript_lang: en  # Download English subtitles/transcripts when available
-    transcript_source_priority:
-      - creator          # Prefer creator-provided subtitles
-      - auto             # Fall back to auto-generated captions
+  # YouTube channel (defaults to the channel's Videos tab)
+  example_channel:
+    url: https://www.youtube.com/@example
+    schedule: "@daily" # Cron expression or @hourly, @daily, @weekly, @monthly
+    keep_last: 10 # Keep the 10 most recent episodes
+    since: "2025-01-01" # Optional cutoff date (YYYY-MM-DD or YYYYMMDD)
+    transcript_lang: en # Optional: fetch English captions as <podcast:transcript>
 
-  # Example with video conversion using the built-in conversion script
-
-  high_quality_with_conversion:
-    url: https://www.youtube.com/@coletdjnz/videos
-    # Prefer h.265/av1, exclude vp9, get good quality
-    yt_args: >
-      -f
-      bestvideo*[height<=1080][vcodec*=av01]+bestaudio/bestvideo*[height<=1080][vcodec*=av01]/bestvideo*[height<=1080][vcodec*=vp9]+bestaudio/bestvideo*[height<=1080][vcodec*=vp9]/bestvideo*[height<=1080][vcodec*=h265]+bestaudio/bestvideo*[height<=1080][vcodec*=h265]/bestvideo*[height<=1080][vcodec*=hevc]+bestaudio/bestvideo*[height<=1080][vcodec*=hevc]/bestvideo*[height<=1080]+bestaudio/bestvideo*[height<=1080]/best[height<=1080]
-      --exec
-      post_process:'convert_video.sh %(filepath)q'
+  # YouTube playlist with custom podcast metadata
+  example_playlist:
+    url: https://www.youtube.com/playlist?list=PLexamplePlaylistId
     schedule: "0 6 * * *"
-    since: "20220101"
     keep_last: 5
     metadata:
-      title: "High Quality Converted Podcast"
-      subtitle: "Automatically converts to H.265/AAC for optimal streaming"
+      title: "My Curated Playlist"
+      description: "Selected videos delivered straight to my podcast app"
+      language: "en"
+      category:
+        - "Technology"
+      podcast_type: "episodic"
+      explicit: "no"
 
-  manual_dropbox:
+  # Manual feed: submit individual URLs on demand via POST /admin/feeds/manual_drops/downloads
+  manual_drops:
     schedule: "manual"
     metadata:
       title: "Manual Drops"
-      description: "Sample feed that only ingests URLs you POST to the admin API"
+      description: "Ad-hoc videos submitted via the admin API"

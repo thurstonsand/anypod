@@ -37,8 +37,10 @@ _ = db_types  # signal that we want to keep the import
 config = context.config
 
 # Interpret the config file for Python logging.
-# This line sets up loggers basically.
-if config.config_file_name is not None:
+# Skip when invoked programmatically from inside the running application.
+if config.config_file_name is not None and config.attributes.get(
+    "configure_logger", True
+):
     fileConfig(config.config_file_name)
 
 # add your model's MetaData object here
@@ -152,10 +154,9 @@ def run_migrations_online() -> None:
             f"Alembic .ini file is missing section: {config.config_ini_section}"
         )
 
-    # Allow overriding the URL with an environment variable, which is useful
-    # for production environments.
+    # Allow overriding the URL programmatically or with an environment variable
     ini_url = config.get_main_option("sqlalchemy.url")
-    url = os.getenv("DATABASE_URL", ini_url)
+    url = config.attributes.get("database_url") or os.getenv("DATABASE_URL", ini_url)
     if not url:
         raise ValueError(
             "Database URL is not configured. Set sqlalchemy.url in alembic.ini or DATABASE_URL env var."

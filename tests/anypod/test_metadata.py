@@ -258,7 +258,7 @@ def test_merge_feed_metadata_removes_none_values():
     # Non-None values should be included
     assert result["title"] == "Video Title"
     assert result["language"] == "en"
-    assert result["author_email"] == "notifications@thurstons.house"  # default value
+    assert result["author_email"] == ""
     assert result["remote_image_url"] == "https://example.com/image.jpg"
     assert result["category"] == PodcastCategories("Technology")
 

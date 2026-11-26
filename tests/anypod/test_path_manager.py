@@ -837,3 +837,27 @@ async def test_transcript_url_path_consistency(path_manager: PathManager):
     assert download_id in str(file_path)
     assert lang in str(file_path)
     assert ext in str(file_path)
+
+
+def test_subpath_base_url_preserved_across_all_urls(data_dir: Path):
+    """Subpath prefixes in BASE_URL (e.g. /anypod) are preserved in generated URLs."""
+    pm = PathManager(data_dir, "https://example.com/anypod/")
+
+    assert pm.feed_url("show") == "https://example.com/anypod/feeds/show.xml"
+    assert pm.feed_media_url("show") == "https://example.com/anypod/media/show/"
+    assert (
+        pm.media_file_url("show", "ep1", "mp4")
+        == "https://example.com/anypod/media/show/ep1.mp4"
+    )
+    assert (
+        pm.image_url("show", None, "jpg")
+        == "https://example.com/anypod/images/show.jpg"
+    )
+    assert (
+        pm.image_url("show", "ep1", "jpg")
+        == "https://example.com/anypod/images/show/ep1.jpg"
+    )
+    assert (
+        pm.transcript_url("show", "ep1", "en", "vtt")
+        == "https://example.com/anypod/transcripts/show/ep1.en.vtt"
+    )

@@ -1,66 +1,72 @@
 services:
   anypod:
-    image: ghcr.io/thurstonsand/anypod:nightly
+    image: ghcr.io/thurstonsand/anypod:latest # or 'nightly' to track main
     container_name: anypod
+    init: true
     restart: unless-stopped
 
     ports:
-      - "8024:8024"
-      - "8025:8025"
+      - "8024:8024" # Public RSS & media server
+      - "127.0.0.1:8025:8025" # Admin API (localhost-only; never expose publicly)
 
     volumes:
-      # Configuration file
-      - ./example_feeds.yaml:/config/feeds.yaml
+      # Copy example_feeds.yaml to feeds.yaml and customize before starting
+      - ./feeds.yaml:/config/feeds.yaml:ro
 
-      # Data directory for database and media files
-      - ./test-data:/data
+      # Persistent database, downloaded media, thumbnails, and transcripts
+      - ./data:/data
 
-      # Optional: cookies.txt for authentication
-      # - ./cookies.txt:/cookies/cookies.txt
+      # Optional: cookies.txt for authenticated feeds (create the file before starting)
+      # - ./cookies.txt:/cookies/cookies.txt:ro
 
-      # System timezone
+      # System timezone (or set TZ below)
       - /etc/localtime:/etc/localtime:ro
 
     environment:
-      # Identity / permissions
-      PUID: 501
-      PGID: 20
+      # Container user/group (run `id -u` and `id -g` on your host)
+      PUID: 1000
+      PGID: 1000
 
-      SERVER_PORT: 8024 # Public server port
-      ADMIN_SERVER_PORT: 8025 # Admin server port (keep private)
+      # Public URL used inside generated RSS feeds (required for phone podcast apps)
+      # BASE_URL: https://podcasts.example.com
 
-      # Optional: point to mounted cookies file for authenticated feeds
+      # Reverse proxy trusted IPs/CIDRs (JSON array or comma-separated string)
+      # TRUSTED_PROXIES: '["192.168.1.0/24"]'
+
+      # Optional: enable cookies for authenticated sources (e.g. Patreon)
       # COOKIES_PATH: /cookies/cookies.txt
 
-      # External URL (set when behind a reverse proxy)
-      # BASE_URL: https://reverseproxy.example
-
-      # Trusted proxy networks; enables X-Forwarded-* processing
-      # TRUSTED_PROXIES:
-      #   - "192.168.1.0/24"
-      #   - "192.168.3.213" # e.g. your reverse proxy
-
       # Logging
-      # LOG_FORMAT: json                     # json | human
-      # LOG_LEVEL: INFO                      # DEBUG | INFO | WARNING | ERROR
-      # LOG_INCLUDE_STACKTRACE: "false"      # true to include stack traces
+      # LOG_FORMAT: human                  # human | json
+      # LOG_LEVEL: INFO                    # DEBUG | INFO | WARNING | ERROR
+      # LOG_INCLUDE_STACKTRACE: "false"    # true to include stack traces
 
-      # Timezone for date parsing in config (optional)
+      # Timezone for cron schedules and date parsing (optional)
       # TZ: "America/New_York"
 
-      # yt-dlp update behavior
-      # YT_CHANNEL: stable                   # stable | nightly | master | version
-      # YT_DLP_UPDATE_FREQ: 12h              # e.g., 6h, 12h, 1d
+      # yt-dlp self-update behavior
+      # YT_CHANNEL: stable                 # stable | nightly | master | disabled
+      # YT_DLP_UPDATE_FREQ: 12h            # e.g., 6h, 12h, 1d, or 0 to disable
 
-      # Optional: YouTube PO Token provider for yt-dlp
+      # Optional: YouTube PO Token provider (recommended for YouTube reliability)
       POT_PROVIDER_URL: http://bgutil-provider:4416
 
     depends_on:
-      - bgutil-provider
+      bgutil-provider:
+        condition: service_healthy
 
   bgutil-provider:
     image: brainicism/bgutil-ytdlp-pot-provider:latest
     container_name: bgutil-provider
+    init: true
     restart: unless-stopped
-    ports:
-      - "4416:4416"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:4416/ping').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s

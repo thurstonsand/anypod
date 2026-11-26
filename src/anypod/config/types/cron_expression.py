@@ -105,6 +105,32 @@ class CronExpression:
         """
         return self._itr.get_prev(datetime, start_time=start_time)  # type: ignore[return-value]
 
+    @property
+    def apscheduler_day_of_week(self) -> str | None:
+        """Convert POSIX day-of-week field to APScheduler 3.x numbering.
+
+        POSIX cron (and croniter) treats Sunday as 0 or 7 and Monday as 1,
+        whereas APScheduler 3.x treats Monday as 0 and Sunday as 6.
+
+        Returns:
+            APScheduler-compatible day-of-week string, or None if unset.
+        """
+        if self.day_of_week is None:
+            return None
+        if str(self.day_of_week) == "*":
+            return "*"
+
+        expanded_dow = self._itr.expanded[4]
+        if expanded_dow == ["*"]:
+            return "*"
+
+        # Convert POSIX ints (0=Sun..6=Sat, 7=Sun) -> APScheduler ints (0=Mon..6=Sun)
+        if expanded_dow and all(isinstance(d, int) for d in expanded_dow):
+            ap_days = sorted({(d - 1) % 7 for d in expanded_dow if isinstance(d, int)})
+            return ",".join(str(d) for d in ap_days)
+
+        return str(self.day_of_week)
+
     def __str__(self) -> str:
         """Return the cron expression string."""
         return self.cron_str

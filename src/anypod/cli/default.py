@@ -6,12 +6,19 @@ runs state reconciliation, starts the scheduler, and manages the application lif
 
 import asyncio
 import logging
+from pathlib import Path
+from urllib.parse import urlparse
+
+from alembic.config import Config as AlembicConfig
+
+from alembic import command as alembic_command
 
 from ..config import AppSettings
 from ..data_coordinator import DataCoordinator, Downloader, Enqueuer, Pruner
 from ..db import AppStateDatabase, DownloadDatabase, FeedDatabase
 from ..db.sqlalchemy_core import SqlalchemyCore
 from ..exceptions import (
+    ConfigLoadError,
     DatabaseOperationError,
     StateReconciliationError,
 )
@@ -30,6 +37,60 @@ from ..ytdlp_wrapper import YtdlpWrapper
 from ..ytdlp_wrapper.handlers import HandlerSelector
 
 logger = logging.getLogger(__name__)
+
+
+def _find_alembic_ini() -> Path | None:
+    """Locate alembic.ini in the working directory or project root."""
+    candidates = [
+        Path.cwd() / "alembic.ini",
+        Path(__file__).resolve().parents[3] / "alembic.ini",
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _run_migrations_sync(db_dir: Path) -> None:
+    """Run Alembic migrations synchronously against the SQLite database."""
+    alembic_ini = _find_alembic_ini()
+    if alembic_ini is None:
+        logger.debug("alembic.ini not found; skipping automatic startup migrations.")
+        return
+
+    db_path = (db_dir / "anypod.db").resolve()
+    alembic_cfg = AlembicConfig(str(alembic_ini))
+    alembic_cfg.set_main_option("script_location", str(alembic_ini.parent / "alembic"))
+    alembic_cfg.attributes["configure_logger"] = False
+    alembic_cfg.attributes["database_url"] = f"sqlite:///{db_path}"
+    alembic_command.upgrade(alembic_cfg, "head")
+
+
+def _validate_runtime_paths(settings: AppSettings) -> None:
+    """Validate runtime-only filesystem paths and emit helpful startup warnings."""
+    if settings.cookies_path is not None:
+        if settings.cookies_path.is_dir():
+            raise ConfigLoadError(
+                f"COOKIES_PATH '{settings.cookies_path}' is a directory, not a file. "
+                "If using Docker, make sure the cookies file exists on the host before "
+                "starting the container so Docker does not auto-create an empty directory.",
+                config_file=str(settings.cookies_path),
+            )
+        if not settings.cookies_path.is_file():
+            raise ConfigLoadError(
+                f"COOKIES_PATH '{settings.cookies_path}' does not exist or is not a regular file.",
+                config_file=str(settings.cookies_path),
+            )
+
+    parsed_base = urlparse(settings.base_url)
+    if parsed_base.hostname in ("localhost", "127.0.0.1", "::1"):
+        logger.warning(
+            "BASE_URL points to a loopback address (%s). RSS enclosures and artwork URLs "
+            "will not be reachable from external podcast apps (and apps like Pocket Casts "
+            "cache feed URLs permanently). Set BASE_URL to your reachable URL.",
+            settings.base_url,
+            extra={"base_url": settings.base_url},
+        )
 
 
 async def graceful_shutdown(
@@ -86,6 +147,8 @@ async def _init(
     ManualFeedRunner,
     ManualSubmissionService,
 ]:
+    _validate_runtime_paths(settings)
+
     # Initialize path manager
     path_manager = PathManager(
         base_data_dir=settings.data_dir,
@@ -107,6 +170,7 @@ async def _init(
 
     # Initialize low-level components
     db_dir = await path_manager.db_dir()
+    await asyncio.to_thread(_run_migrations_sync, db_dir)
     db_core = SqlalchemyCore(db_dir)
     file_manager = FileManager(path_manager)
 
@@ -219,6 +283,13 @@ async def _init(
         feed_configs=settings.feeds,
         data_coordinator=data_coordinator,
         feed_semaphore=feed_semaphore,
+        timezone=settings.effective_timezone,
+    )
+    scheduler.schedule_maintenance_job(
+        job_id="yt_dlp_update",
+        interval=settings.yt_dlp_update_freq,
+        callback=ytdlp_wrapper.update_yt_dlp,
+        run_immediately=True,
     )
 
     return (
@@ -318,6 +389,24 @@ async def default(settings: AppSettings) -> None:
             "Starting scheduler and HTTP server.",
             extra=log_extra,
         )
+
+        # Log actionable startup summary with RSS and admin URLs
+        enabled_feed_ids = [fid for fid, cfg in settings.feeds.items() if cfg.enabled]
+        summary_paths = PathManager(
+            base_data_dir=settings.data_dir, base_url=settings.base_url
+        )
+        for fid in enabled_feed_ids:
+            logger.info(
+                "Feed RSS available at %s",
+                summary_paths.feed_url(fid),
+                extra={"feed_id": fid, "rss_url": summary_paths.feed_url(fid)},
+            )
+        if not settings.single_server_mode:
+            logger.info(
+                "Admin API docs available at http://%s:%d/docs",
+                settings.server_host,
+                settings.admin_server_port,
+            )
 
         await scheduler.start()
 

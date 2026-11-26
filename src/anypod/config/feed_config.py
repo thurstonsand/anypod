@@ -5,7 +5,7 @@ metadata definitions, category validation, and feed-specific settings
 that control how content is fetched and processed.
 """
 
-from datetime import UTC, datetime, timedelta, tzinfo
+from datetime import UTC, date, datetime, timedelta, tzinfo
 import os
 import shlex
 from typing import Any, cast
@@ -175,44 +175,73 @@ class FeedConfig(BaseModel):
     @field_validator("since", mode="before")
     @classmethod
     def parse_since_date(cls, v: Any) -> datetime | None:
-        """Parse since date string in YYYYMMDD format into a UTC datetime object.
+        """Parse since date into a UTC datetime representing 00:00 local time.
 
-        Accepts date strings in YYYYMMDD format only and converts them to UTC
-        representing 00:00 local time using a tiered timezone lookup system:
-        1. TZ environment variable
-        2. System's local timezone (from /etc/localtime on Unix)
+        Accepts:
+        - ``YYYYMMDD`` strings (e.g. ``"20250101"``)
+        - ``YYYY-MM-DD`` ISO date strings (e.g. ``"2025-01-01"``)
+        - 8-digit integers from unquoted YAML (e.g. ``20250101``)
+        - ``datetime.date`` objects from unquoted ISO YAML dates (e.g. ``2025-01-01``)
+        - ``datetime.datetime`` objects
+
+        Local timezone is resolved via TZ env var, falling back to system timezone.
 
         Args:
-            v: Value to parse, can be string or None.
+            v: Value to parse.
 
         Returns:
             UTC datetime object representing 00:00 local time, or None if not provided.
 
         Raises:
-            ValueError: If the date string format is invalid or date is invalid.
-            TypeError: If the value is not a string or None.
+            ValueError: If the date format or calendar date is invalid.
+            TypeError: If the value type is unsupported.
         """
         match v:
             case None:
                 return None
-            case str() as s if not s.strip():  # Handle empty string
-                return None
-            case str() as s:
-                date_string = s.strip()
+            case bool():
+                raise TypeError(
+                    "since must be a date (YYYY-MM-DD or YYYYMMDD) or None, got bool"
+                )
+            case datetime():
+                return v.astimezone(UTC)
+            case date() as d:
+                naive_dt = datetime(d.year, d.month, d.day)  # noqa: DTZ001
+                return naive_dt.replace(
+                    tzinfo=FeedConfig._get_local_timezone()
+                ).astimezone(UTC)
+            case int() as n:
+                date_string = str(n)
                 try:
-                    naive_dt = datetime.strptime(date_string, "%Y%m%d")  # noqa: DTZ007 # we want the naive dt here
+                    naive_dt = datetime.strptime(date_string, "%Y%m%d")  # noqa: DTZ007
                 except ValueError as e:
                     raise ValueError(
-                        f"Invalid date '{date_string}' must be in YYYYMMDD format"
+                        f"Invalid date '{n}' must be in YYYYMMDD or YYYY-MM-DD format"
                     ) from e
                 return naive_dt.replace(
                     tzinfo=FeedConfig._get_local_timezone()
                 ).astimezone(UTC)
-            case datetime():
-                return v.astimezone(UTC)
+            case str() as s if not s.strip():  # Handle empty string
+                return None
+            case str() as s:
+                date_string = s.strip()
+                naive_dt = None
+                for fmt in ("%Y%m%d", "%Y-%m-%d"):
+                    try:
+                        naive_dt = datetime.strptime(date_string, fmt)  # noqa: DTZ007
+                        break
+                    except ValueError:
+                        continue
+                if naive_dt is None:
+                    raise ValueError(
+                        f"Invalid date '{date_string}' must be in YYYYMMDD or YYYY-MM-DD format"
+                    )
+                return naive_dt.replace(
+                    tzinfo=FeedConfig._get_local_timezone()
+                ).astimezone(UTC)
             case _:
                 raise TypeError(
-                    f"since must be a string in YYYYMMDD format or None, got {type(v).__name__}"
+                    f"since must be a date (YYYY-MM-DD or YYYYMMDD) or None, got {type(v).__name__}"
                 )
 
     @field_validator("transcript_lang", mode="before")
